@@ -6,8 +6,9 @@
         <div class="flex justify-between h-16">
           <div class="flex">
             <div class="flex-shrink-0 flex items-center">
-              <router-link :to="{ name: 'home' }">
-                <img class="h-8 w-auto" src="/src/assets/logo.svg" alt="MyGuy" />
+              <router-link :to="{ name: 'home' }" class="flex items-center">
+                <img class="h-8 w-auto" src="../assets/myguy-icon.svg" alt="MyGuy" />
+                <span class="ml-2 text-xl font-bold text-indigo-600">MyGuy</span>
               </router-link>
             </div>
             <div class="hidden sm:ml-6 sm:flex sm:space-x-8">

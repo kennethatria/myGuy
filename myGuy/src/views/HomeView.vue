@@ -11,7 +11,10 @@ const navigateToLogin = () => {
 <template>
   <div class="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
     <div class="sm:mx-auto sm:w-full sm:max-w-md">
-      <img class="mx-auto h-16 w-auto" src="/src/assets/logo.svg" alt="MyGuy" />
+      <div class="flex justify-center items-center">
+        <img class="h-12 w-auto" src="../assets/myguy-icon.svg" alt="MyGuy" />
+        <span class="ml-3 text-3xl font-extrabold text-indigo-600">MyGuy</span>
+      </div>
       <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
         Welcome to MyGuy
       </h2>
