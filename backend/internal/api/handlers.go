@@ -106,12 +106,20 @@ func (h *Handler) CreateTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	
+	// Parse the deadline string to time.Time
+	deadline, err := time.Parse(time.RFC3339, req.Deadline)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid deadline format. Must be RFC3339 format (e.g., 2025-05-15T12:00:00Z)"})
+		return
+	}
 
 	userID := c.GetUint("userID")
 	task, err := h.taskService.CreateTask(c.Request.Context(), services.CreateTaskInput{
 		Title:       req.Title,
 		Description: req.Description,
 		Fee:         req.Fee,
+		Deadline:    deadline,
 		CreatedBy:   userID,
 	})
 
