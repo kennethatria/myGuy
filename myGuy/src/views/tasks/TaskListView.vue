@@ -137,65 +137,31 @@ const fetchTasks = async () => {
     console.log('Current user ID:', currentUserId)
     console.log('All tasks:', tasksStore.tasks)
     
-    console.log('FINAL DEBUG - Authentication data:', {
-      currentUserId,
-      userObject: authStore.user,
-      allTasks: tasksStore.tasks
-    });
+    // The filtering is now handled by the task store directly
+    // We'll just use the filtered list provided by the store
+    tasks.value = tasksStore.tasks;
     
-    // LAST RESORT: Modify the tasksStore.tasks array directly to remove your tasks
-    // This is a temporary solution to ensure you can continue development
+    console.log('Using pre-filtered tasks from store:', tasks.value);
     
-    // Step 1: First get ONLY tasks with open status
-    const openTasks = tasksStore.tasks.filter(task => task.status === 'open');
-    console.log('Open tasks only:', openTasks);
-    
-    // Step 2: Make sure we have a user ID to filter with
-    if (!currentUserId) {
-      console.error('NO USER ID FOUND - Cannot filter tasks properly!');
-      tasks.value = [];
-      return;
+    // Quick double-check if any tasks still exist from the current user
+    if (currentUserId) {
+      const userTasksStillPresent = tasks.value.some(task => 
+        String(task.createdBy) === String(currentUserId)
+      );
+      
+      if (userTasksStillPresent) {
+        console.warn('WARNING: User tasks still in the filtered list!');
+        
+        // Add one final fallback filter if needed
+        tasks.value = tasks.value.filter(task => 
+          String(task.createdBy) !== String(currentUserId)
+        );
+        
+        console.log('After final filter:', tasks.value);
+      } else {
+        console.log('Filtering validated: No user tasks in the list');
+      }
     }
-    
-    // Step 3: Force exclusion using multiple strategies
-    tasks.value = openTasks.filter(task => {
-      // STRATEGY 1: Try direct createdBy comparison
-      if (task.createdBy === currentUserId) {
-        console.log(`EXCLUDED: Task "${task.title}" - direct match`);
-        return false;
-      }
-      
-      // STRATEGY 2: Try numeric conversion
-      if (Number(task.createdBy) === Number(currentUserId)) {
-        console.log(`EXCLUDED: Task "${task.title}" - numeric match`);
-        return false;
-      }
-      
-      // STRATEGY 3: Try string comparison
-      if (String(task.createdBy) === String(currentUserId)) {
-        console.log(`EXCLUDED: Task "${task.title}" - string match`);
-        return false;
-      }
-      
-      // STRATEGY 4: Check JSON stringify (catches deeply equal objects)
-      if (JSON.stringify(task.createdBy) === JSON.stringify(currentUserId)) {
-        console.log(`EXCLUDED: Task "${task.title}" - JSON match`);
-        return false;
-      }
-      
-      // STRATEGY 5: Direct ID check for dev/testing - MODIFY THIS TO YOUR USER ID
-      // Try this if none of the above work
-      if (task.createdBy === 1 || task.createdBy === "1") {
-        console.log(`EXCLUDED: Task "${task.title}" - hardcoded user ID match`);
-        return false;
-      }
-      
-      // If we get here, task should be included
-      console.log(`INCLUDED: Task "${task.title}" - created by ${task.createdBy}`);
-      return true;
-    });
-    
-    console.log('FINAL FILTERED TASKS:', tasks.value);
     
     console.log('Filtered tasks:', tasks.value)
     

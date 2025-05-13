@@ -96,16 +96,46 @@ export const useTasksStore = defineStore('tasks', () => {
   const fetchTasks = async () => {
     const authStore = useAuthStore();
     const token = authStore.token;
+    const userId = authStore.user?.id;
     
     try {
-      const response = await fetch(config.ENDPOINTS.TASKS, {
+      // Add query parameter to exclude tasks created by current user
+      const url = new URL(config.ENDPOINTS.TASKS);
+      
+      // Critical: Add parameter to only fetch tasks NOT created by current user
+      if (userId) {
+        url.searchParams.append('exclude_created_by', String(userId));
+        url.searchParams.append('status', 'open');
+      }
+      
+      console.log('Fetching tasks with URL:', url.toString());
+      
+      const response = await fetch(url.toString(), {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       })
       if (!response.ok) throw new Error('Failed to fetch tasks')
-      tasks.value = await response.json()
+      
+      // Get tasks from API
+      const allTasks = await response.json();
+      
+      // Additional client-side filtering as backup
+      if (userId) {
+        console.log('User ID for filtering:', userId);
+        console.log('All tasks before filtering:', allTasks.length);
+        
+        // Apply client-side filter to exclude user's own tasks
+        tasks.value = allTasks.filter(task => 
+          String(task.createdBy) !== String(userId) && 
+          task.status === 'open'
+        );
+        
+        console.log('Tasks after filtering:', tasks.value.length);
+      } else {
+        tasks.value = allTasks;
+      }
     } catch (error) {
       console.error('Error fetching tasks:', error)
       throw error
