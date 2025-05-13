@@ -182,14 +182,24 @@ const createdTasks = computed(() => {
 })
 
 const assignedTasks = computed(() => {
-  return tasksStore.assignedTasks || []
-})
+  const authStore = useAuthStore()
+  const currentUserId = authStore.user?.id
+  
+  // Filter out tasks that were created by the current user
+  // Only show tasks assigned to me by OTHER users
+  return (tasksStore.assignedTasks || []).filter(task => {
+    return task.createdBy !== currentUserId
+  })
+}
 
 const stats = computed<Stats>(() => {
   const created = createdTasks.value.length
   const assigned = assignedTasks.value.length
-  const completed = createdTasks.value.filter(task => task.status === 'completed').length +
-                   assignedTasks.value.filter(task => task.status === 'completed').length
+  
+  // Only count completed tasks once, don't double-count tasks that appear in both lists
+  const completedCreated = createdTasks.value.filter(task => task.status === 'completed').length
+  const completedAssigned = assignedTasks.value.filter(task => task.status === 'completed').length
+  const completed = completedCreated + completedAssigned
   
   return {
     createdTasks: created,
