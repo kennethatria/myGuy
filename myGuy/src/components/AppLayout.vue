@@ -3,13 +3,12 @@
     <!-- Navigation -->
     <nav class="nav">
       <div class="container nav-container">
-        <div class="flex">
+        <div class="flex justify-between items-center">
           <div class="flex items-center">
             <router-link :to="{ name: 'home' }" class="nav-logo">
               <img class="h-8 w-auto" src="../assets/myguy-icon.svg" alt="MyGuy" />
               <span class="ml-2">MyGuy</span>
             </router-link>
-          </div>
             <div class="nav-links ml-4">
               <router-link
                 v-for="item in navigation"
@@ -22,6 +21,7 @@
               </router-link>
             </div>
           </div>
+
           <div class="flex items-center">
             <!-- Profile dropdown -->
             <div class="relative">
@@ -64,7 +64,7 @@
           </div>
 
           <!-- Mobile menu button -->
-          <div class="flex items-center sm:hidden ml-auto">
+          <div class="flex items-center sm:hidden ml-4">
             <button
               @click="isMobileMenuOpen = !isMobileMenuOpen"
               type="button"
