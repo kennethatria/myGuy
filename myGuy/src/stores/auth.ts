@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import config from '@/config'
 
 interface User {
   id: number
@@ -31,7 +32,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      const response = await fetch('/api/login', {
+      const response = await fetch(config.ENDPOINTS.LOGIN, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -57,10 +58,10 @@ export const useAuthStore = defineStore('auth', () => {
 
   const register = async (username: string, email: string, password: string, fullName: string): Promise<boolean> => {
     try {
-      const response = await fetch('/api/register', {
+      const response = await fetch(config.ENDPOINTS.REGISTER, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, email, password, fullName })
+        body: JSON.stringify({ username, email, password, full_name: fullName })
       })
 
       if (!response.ok) {
@@ -83,7 +84,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (!token.value) return false
 
     try {
-      const response = await fetch('/api/profile', {
+      const response = await fetch(config.ENDPOINTS.PROFILE, {
         headers: {
           'Authorization': `Bearer ${token.value}`,
           'Content-Type': 'application/json'

@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import config from '@/config'
+import { useAuthStore } from './auth'
 
 interface Task {
   id: number
@@ -34,8 +36,16 @@ export const useTasksStore = defineStore('tasks', () => {
   const assignedTasks = ref<Task[]>([])
 
   const getTask = async (taskId: number): Promise<Task> => {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
     try {
-      const response = await fetch(`/api/tasks/${taskId}`)
+      const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
       if (!response.ok) throw new Error('Failed to fetch task')
       return await response.json()
     } catch (error) {
@@ -56,8 +66,16 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   const fetchTasks = async () => {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
     try {
-      const response = await fetch('/api/tasks')
+      const response = await fetch(config.ENDPOINTS.TASKS, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
       if (!response.ok) throw new Error('Failed to fetch tasks')
       tasks.value = await response.json()
     } catch (error) {
@@ -89,13 +107,24 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   const createTask = async (task: Omit<Task, 'id' | 'status' | 'createdBy' | 'assignedTo' | 'created_at'>) => {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
     try {
-      const response = await fetch('/api/tasks', {
+      const response = await fetch(config.ENDPOINTS.TASKS, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json' 
+        },
         body: JSON.stringify(task)
       })
-      if (!response.ok) throw new Error('Failed to create task')
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create task');
+      }
+      
       return await response.json()
     } catch (error) {
       console.error('Error creating task:', error)
@@ -104,13 +133,24 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   const updateTaskStatus = async (taskId: number, status: Task['status']) => {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
     try {
-      const response = await fetch(`/api/tasks/${taskId}/status`, {
+      const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json' 
+        },
         body: JSON.stringify({ status })
       })
-      if (!response.ok) throw new Error('Failed to update task status')
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update task status');
+      }
+      
       return await response.json()
     } catch (error) {
       console.error('Error updating task status:', error)
@@ -119,13 +159,24 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   const applyForTask = async (taskId: number, application: ApplicationInput) => {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
     try {
-      const response = await fetch(`/api/tasks/${taskId}/apply`, {
+      const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}/apply`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json' 
+        },
         body: JSON.stringify(application)
       })
-      if (!response.ok) throw new Error('Failed to apply for task')
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to apply for task');
+      }
+      
       return await response.json()
     } catch (error) {
       console.error('Error applying for task:', error)
