@@ -1,0 +1,118 @@
+package main
+
+import (
+	"log"
+	"os"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+
+	"myguy/internal/api"
+	"myguy/internal/middleware"
+	"myguy/internal/models"
+	"myguy/internal/repositories"
+	"myguy/internal/services"
+)
+
+func main() {
+	// Load environment variables
+	if err := godotenv.Load(); err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	// Initialize database
+	db, err := gorm.Open(postgres.Open(os.Getenv("DB_CONNECTION")), &gorm.Config{})
+	if err != nil {
+		log.Fatal("Failed to connect to database:", err)
+	}
+
+	// Auto migrate database
+	err = db.AutoMigrate(
+		&models.User{},
+		&models.Task{},
+		&models.Application{},
+		&models.Message{},
+		&models.Review{},
+	)
+	if err != nil {
+		log.Fatal("Failed to migrate database:", err)
+	}
+	// Initialize repositories
+	userRepo := repositories.NewGormUserRepository(db)
+	taskRepo := repositories.NewGormTaskRepository(db)
+	applicationRepo := repositories.NewGormApplicationRepository(db)
+	messageRepo := repositories.NewGormMessageRepository(db)
+	reviewRepo := repositories.NewGormReviewRepository(db)
+
+	// Initialize services
+	userService := services.NewUserService(userRepo)
+	taskService := services.NewTaskService(taskRepo, applicationRepo)
+	messageService := services.NewMessageService(messageRepo)
+	reviewService := services.NewReviewService(reviewRepo, taskRepo, userRepo)
+
+	// Initialize JWT middleware
+	jwtMiddleware := middleware.NewJWTAuthMiddleware(os.Getenv("JWT_SECRET"))
+	// Initialize handlers
+	handler := api.NewHandler(userService, taskService, messageService, reviewService, jwtMiddleware)
+
+	// Setup router
+	r := gin.Default()
+
+	// Enable CORS
+	r.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	})
+
+	// Public routes
+	r.GET("/api/v1/time", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"time": time.Now().Format(time.RFC3339),
+		})
+	})
+	r.POST("/api/v1/register", handler.Register)
+	r.POST("/api/v1/login", handler.Login)
+	// Protected routes
+	auth := r.Group("/api/v1")
+	auth.Use(jwtMiddleware.AuthRequired())
+	{
+		// Task routes
+		auth.POST("/tasks", handler.CreateTask)
+		auth.GET("/tasks/:id", handler.GetTask)
+		auth.POST("/tasks/:id/apply", handler.ApplyForTask)
+
+		// Message routes
+		auth.POST("/tasks/:id/messages", handler.CreateMessage)
+		auth.GET("/tasks/:id/messages", handler.GetTaskMessages)
+
+		// Review routes
+		auth.POST("/tasks/:id/reviews", handler.CreateReview)
+		auth.GET("/users/:id/reviews", handler.GetUserReviews)
+
+		// Profile routes
+		auth.GET("/profile", handler.GetProfile)
+		auth.PUT("/profile", handler.UpdateProfile)
+	}
+
+	// Start server
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	if err := r.Run(":" + port); err != nil {
+		log.Fatal("Failed to start server:", err)
+	}
+}
