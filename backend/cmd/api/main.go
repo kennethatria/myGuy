@@ -80,6 +80,7 @@ func main() {
 			"time": time.Now().Format(time.RFC3339),
 		})
 	})
+	r.GET("/api/v1/server-time", handler.GetServerTime)
 	r.POST("/api/v1/register", handler.Register)
 	r.POST("/api/v1/login", handler.Login)
 	// Protected routes

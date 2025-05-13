@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"myguy/internal/middleware"
@@ -306,4 +307,22 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, user)
+}
+
+// GetServerTime returns the current server time and a valid deadline
+func (h *Handler) GetServerTime(c *gin.Context) {
+	now := time.Now().UTC()
+	
+	// Create a response with current time and valid deadlines
+	response := gin.H{
+		"current_time": now.Format(time.RFC3339),
+		"valid_deadline_examples": []string{
+			now.AddDate(0, 0, 2).Format(time.RFC3339),  // 2 days from now
+			now.AddDate(0, 0, 7).Format(time.RFC3339),  // 1 week from now
+			now.AddDate(0, 1, 0).Format(time.RFC3339),  // 1 month from now
+		},
+		"minimum_valid_deadline": now.AddDate(0, 0, 1).Format(time.RFC3339), // 1 day from now
+	}
+	
+	c.JSON(http.StatusOK, response)
 }
