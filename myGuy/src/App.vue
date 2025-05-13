@@ -4,11 +4,12 @@ import AppLayout from './components/AppLayout.vue'
 </script>
 
 <template>
-  <app-layout>
-    <router-view></router-view>
-  </app-layout>
+  <app-layout />
 </template>
 
 <style>
-@import '@/assets/main.css';
+/* Skip importing main.css as it conflicts with Tailwind */
+/* @import '@/assets/main.css'; */
+
+/* Tailwind is already imported at the project level */
 </style>

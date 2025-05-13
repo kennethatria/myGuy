@@ -156,11 +156,19 @@
     </nav>
 
     <!-- Main content -->
-    <main>
+    <main class="py-6">
       <router-view></router-view>
     </main>
   </div>
 </template>
+
+<style>
+/* Reset any conflicting CSS */
+main {
+  width: 100%;
+  display: block;
+}
+</style>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'

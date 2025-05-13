@@ -30,11 +30,11 @@
               </div>
               <div class="mt-2 sm:flex sm:justify-between">
                 <div class="sm:flex">
-                  <p class="flex items-center text-sm text-gray-500">
+                  <p class="flex items-center text-sm text-gray-500 truncate max-w-md">
                     {{ task.description }}
                   </p>
                 </div>
-                <div class="mt-2 flex items-center text-sm text-gray-500 sm:mt-0">
+                <div class="mt-2 flex items-center text-sm text-gray-500 sm:mt-0 whitespace-nowrap">
                   <p>
                     Deadline: {{ formatDate(task.deadline) }}
                   </p>

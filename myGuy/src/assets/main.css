@@ -1,35 +1,25 @@
 @import './base.css';
 
+/* Remove conflicting styles that break layout */
 #app {
-  max-width: 1280px;
   margin: 0 auto;
-  padding: 2rem;
   font-weight: normal;
+  /* Removed max-width, padding, and grid layout */
 }
 
-a,
+/* Keep basic link styling but make it more subtle to not conflict with Tailwind */
+a:not([class]),
 .green {
   text-decoration: none;
   color: hsla(160, 100%, 37%, 1);
   transition: 0.4s;
-  padding: 3px;
 }
 
 @media (hover: hover) {
-  a:hover {
+  a:not([class]):hover {
     background-color: hsla(160, 100%, 37%, 0.2);
   }
 }
 
-@media (min-width: 1024px) {
-  body {
-    display: flex;
-    place-items: center;
-  }
-
-  #app {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    padding: 0 2rem;
-  }
-}
+/* Remove problematic layout rules that break the UI */
+/* Removed @media (min-width: 1024px) block that was centering the body */
