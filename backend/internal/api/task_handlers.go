@@ -125,13 +125,19 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 		return
 	}
 
+	deadline, err := time.Parse(time.RFC3339, req.Deadline)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid deadline format. Use RFC3339 format (e.g., 2025-12-31T00:00:00Z)"})
+		return
+	}
+
 	userID := c.GetUint("userID")
 	input := services.UpdateTaskInput{
 		ID:          uint(id),
 		Title:       req.Title,
 		Description: req.Description,
 		Fee:         req.Fee,
-		Deadline:    req.Deadline,
+		Deadline:    deadline,
 		UpdatedBy:   userID,
 	}
 
