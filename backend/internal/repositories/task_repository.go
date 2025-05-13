@@ -20,6 +20,7 @@ func (r *GormTaskRepository) Create(ctx context.Context, task *models.Task) erro
 
 func (r *GormTaskRepository) GetByID(ctx context.Context, id uint) (*models.Task, error) {
 	var task models.Task
+	// Preload applications to show interested parties
 	err := r.db.WithContext(ctx).First(&task, id).Error
 	if err != nil {
 		return nil, err
@@ -36,7 +37,8 @@ func (r *GormTaskRepository) List(ctx context.Context, filters map[string]interf
 		query = query.Where(key, value)
 	}
 
-	err := query.Find(&tasks).Error
+	// Order by most recent first
+	err := query.Order("created_at DESC").Find(&tasks).Error
 	if err != nil {
 		return nil, err
 	}
