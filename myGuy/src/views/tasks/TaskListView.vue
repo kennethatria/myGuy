@@ -127,28 +127,58 @@ const fetchTasks = async () => {
     // Only show gigs from others that are still open
     const currentUserId = authStore.user?.id
     
+    // Safety check - ensure we have a valid user
+    if (!currentUserId) {
+      console.warn('No user ID found, cannot filter tasks properly');
+      tasks.value = [];
+      return;
+    }
+    
     console.log('Current user ID:', currentUserId)
     console.log('All tasks:', tasksStore.tasks)
     
+    // First debug the raw data
+    console.log('Raw user object from auth store:', authStore.user);
+    console.log('Raw tasks from task store:', JSON.stringify(tasksStore.tasks));
+    
+    // Create a manual filter that will definitely exclude tasks created by the current user
     tasks.value = tasksStore.tasks.filter(task => {
-      // Only include tasks that meet both conditions:
-      // 1. Not created by the current user (i.e., created by someone else)
-      // 2. Have an 'open' status (available for applications)
-      
-      // First check if we have a valid current user ID
-      if (!currentUserId) {
-        return false; // If no user is logged in, don't show any tasks
+      // Required: task must have open status
+      const isOpenTask = task.status === 'open';
+      if (!isOpenTask) {
+        console.log(`Excluding task ${task.id} "${task.title}" - Not open status`);
+        return false;
       }
       
-      // Always compare numbers with numbers to avoid type coercion issues
-      const isCreatedByCurrentUser = task.createdBy === currentUserId;
-      const isOpenTask = task.status === 'open';
+      // Required: Must have a valid current user ID
+      if (!currentUserId) {
+        console.log('No current user ID available - excluding all tasks');
+        return false;
+      }
       
-      // Debug logging
-      console.log(`Task ${task.id} - Title: ${task.title} - Created by: ${task.createdBy}, Current user: ${currentUserId}`);
-      console.log(`- Created by current user: ${isCreatedByCurrentUser}, Status: ${task.status}`);
+      // Convert both createdBy and currentUserId to primitive values for accurate comparison
+      // This catches cases where the values might be different types (string vs number)
+      const currentUserIdNum = +currentUserId; // Convert to number
+      const taskCreatorIdNum = +task.createdBy; // Convert to number
       
-      // Only include tasks NOT created by the current user AND that are open
+      // Extra safety: Also try string comparison
+      const currentUserIdStr = String(currentUserId);
+      const taskCreatorIdStr = String(task.createdBy);
+      
+      // Try both number and string comparisons
+      const isCreatedByCurrentUser = 
+        taskCreatorIdNum === currentUserIdNum || 
+        taskCreatorIdStr === currentUserIdStr;
+      
+      // Extensive debug logging
+      console.log(`Task ${task.id} - "${task.title}"`);
+      console.log(`- Task.createdBy=${task.createdBy} (${typeof task.createdBy}), currentUserId=${currentUserId} (${typeof currentUserId})`);
+      console.log(`- Number comparison: ${taskCreatorIdNum} === ${currentUserIdNum} => ${taskCreatorIdNum === currentUserIdNum}`);
+      console.log(`- String comparison: "${taskCreatorIdStr}" === "${currentUserIdStr}" => ${taskCreatorIdStr === currentUserIdStr}`);
+      console.log(`- Final comparison: isCreatedByCurrentUser=${isCreatedByCurrentUser}, isOpenTask=${isOpenTask}`);
+      console.log(`- Task ${isCreatedByCurrentUser ? 'EXCLUDED' : 'INCLUDED'}`);
+      
+      // Only include tasks NOT created by the current user AND have an open status
       return !isCreatedByCurrentUser && isOpenTask;
     })
     
