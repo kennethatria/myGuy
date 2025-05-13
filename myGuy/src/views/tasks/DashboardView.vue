@@ -190,7 +190,7 @@ const assignedTasks = computed(() => {
   return (tasksStore.assignedTasks || []).filter(task => {
     return task.createdBy !== currentUserId
   })
-}
+})
 
 const stats = computed<Stats>(() => {
   const created = createdTasks.value.length
