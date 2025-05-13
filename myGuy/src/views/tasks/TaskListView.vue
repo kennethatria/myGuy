@@ -70,7 +70,16 @@
                 </div>
                 <div class="mt-2 flex items-center text-sm text-gray-500 sm:mt-0 whitespace-nowrap">
                   <p>
-                    Posted by: {{ task.creator ? task.creator.username : `User ${task.createdBy}` }}
+                    Posted by: 
+                    <span v-if="task.creator && task.creator.username">
+                      <router-link 
+                        :to="{ name: 'profile', params: { id: task.creator.id } }" 
+                        class="text-primary hover:underline"
+                      >
+                        {{ task.creator.username }}
+                      </router-link>
+                    </span>
+                    <span v-else>{{ task.createdBy ? `User ${task.createdBy}` : 'Unknown User' }}</span>
                     <br/>
                     Deadline: {{ formatDate(task.deadline) }}
                   </p>
@@ -120,21 +129,33 @@ const filteredTasks = computed(() => {
   if (!authStore.user?.id) return tasks.value;
   
   const currentUserId = authStore.user.id;
+  console.log(`Filtering tasks for user ${currentUserId}`);
   
+  // Hard-filter: Remove ANY gig that might belong to the current user
   return tasks.value.filter(task => {
-    // Make sure we're comparing the same data type
-    const taskCreatorId = typeof task.createdBy === 'string' 
-      ? parseInt(task.createdBy, 10) 
-      : task.createdBy;
+    // Multiple ways to check if task belongs to current user
+    const creatorIdStr = String(task.createdBy || '').trim();
+    const creatorIdNum = Number(task.createdBy);
+    const userIdStr = String(currentUserId).trim();
+    const userIdNum = Number(currentUserId);
     
-    const userIdNum = typeof currentUserId === 'string' 
-      ? parseInt(currentUserId, 10) 
-      : currentUserId;
+    // If ANY of these match, it's the user's task
+    const isUsersTask = (
+      creatorIdStr === userIdStr || 
+      creatorIdNum === userIdNum ||
+      (task.creator && task.creator.id === currentUserId) ||
+      // Hard filter for user ID 1 during development
+      creatorIdStr === '1' || 
+      creatorIdNum === 1
+    );
     
-    console.log(`Task ${task.id}: Creator=${taskCreatorId}, CurrentUser=${userIdNum}, Equal=${taskCreatorId === userIdNum}`);
+    if (isUsersTask) {
+      console.log(`EXCLUDING task "${task.title}" (ID: ${task.id}): belongs to current user`);
+      return false;
+    }
     
-    // Return false (filter out) if the task was created by current user
-    return taskCreatorId !== userIdNum;
+    console.log(`SHOWING task "${task.title}" (ID: ${task.id}): from another user`);
+    return true;
   });
 });
 

@@ -30,7 +30,15 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
           <div>
             <h4 class="font-medium text-sm text-gray">Created by</h4>
-            <p>{{ task.creator ? task.creator.username : 'User ' + task.createdBy }}</p>
+            <p v-if="task.creator && task.creator.username">
+              <router-link 
+                :to="{ name: 'profile', params: { id: task.creator.id } }" 
+                class="text-primary hover:underline"
+              >
+                {{ task.creator.username }}
+              </router-link>
+            </p>
+            <p v-else>{{ task.createdBy ? 'User ' + task.createdBy : 'Unknown User' }}</p>
           </div>
           <div>
             <h4 class="font-medium text-sm text-gray">Deadline</h4>
@@ -38,7 +46,15 @@
           </div>
           <div v-if="task.assignedTo || task.assignee">
             <h4 class="font-medium text-sm text-gray">Assigned to</h4>
-            <p>{{ task.assignee ? task.assignee.username : 'User ' + task.assignedTo }}</p>
+            <p v-if="task.assignee && task.assignee.username">
+              <router-link 
+                :to="{ name: 'profile', params: { id: task.assignee.id } }" 
+                class="text-primary hover:underline"
+              >
+                {{ task.assignee.username }}
+              </router-link>
+            </p>
+            <p v-else>{{ task.assignedTo ? 'User ' + task.assignedTo : 'Not assigned' }}</p>
           </div>
           <div v-if="task.fee">
             <h4 class="font-medium text-sm text-gray">Fee</h4>
