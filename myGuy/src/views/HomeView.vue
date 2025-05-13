@@ -19,7 +19,7 @@ const navigateToLogin = () => {
         Welcome to MyGuy
       </h1>
       <p class="text-center text-sm">
-        Your platform for connecting with skilled professionals and getting things done
+        Looking for a part-time gig? This is the place. Share and apply for gigs around you.
       </p>
     </div>
 

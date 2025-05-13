@@ -197,8 +197,8 @@ const user = ref<User | null>(null)
 
 const navigation = [
   { name: 'dashboard', to: { name: 'dashboard' }, text: 'Dashboard' },
-  { name: 'tasks', to: { name: 'tasks' }, text: 'Browse Tasks' },
-  { name: 'create-task', to: { name: 'create-task' }, text: 'Create Task' }
+  { name: 'tasks', to: { name: 'tasks' }, text: 'Browse Gigs' },
+  { name: 'create-task', to: { name: 'create-task' }, text: 'Post a Gig' }
 ]
 
 const profileMenu = [

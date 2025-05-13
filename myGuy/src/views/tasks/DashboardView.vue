@@ -14,7 +14,7 @@
             </div>
             <div class="ml-5 w-0 flex-1">
               <dl>
-                <dt class="text-sm font-medium text-gray-500 truncate">Created Tasks</dt>
+                <dt class="text-sm font-medium text-gray-500 truncate">Gigs Posted</dt>
                 <dd class="flex items-baseline">
                   <div class="text-2xl font-semibold text-gray-900">{{ stats.createdTasks }}</div>
                 </dd>
@@ -34,7 +34,7 @@
             </div>
             <div class="ml-5 w-0 flex-1">
               <dl>
-                <dt class="text-sm font-medium text-gray-500 truncate">Assigned Tasks</dt>
+                <dt class="text-sm font-medium text-gray-500 truncate">Gigs Assigned</dt>
                 <dd class="flex items-baseline">
                   <div class="text-2xl font-semibold text-gray-900">{{ stats.assignedTasks }}</div>
                 </dd>
@@ -54,7 +54,7 @@
             </div>
             <div class="ml-5 w-0 flex-1">
               <dl>
-                <dt class="text-sm font-medium text-gray-500 truncate">Completed Tasks</dt>
+                <dt class="text-sm font-medium text-gray-500 truncate">Completed Gigs</dt>
                 <dd class="flex items-baseline">
                   <div class="text-2xl font-semibold text-gray-900">{{ stats.completedTasks }}</div>
                 </dd>
@@ -70,7 +70,7 @@
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <!-- Created Tasks -->
         <div>
-          <h2 class="text-lg font-medium text-gray-900 mb-4">Tasks Created by Me</h2>
+          <h2 class="text-lg font-medium text-gray-900 mb-4">Gigs Posted by Me</h2>
           <div class="bg-white shadow overflow-hidden sm:rounded-md">
             <ul role="list" class="divide-y divide-gray-200">
               <li v-for="task in createdTasks" :key="task.id">
@@ -110,7 +110,7 @@
 
         <!-- Assigned Tasks -->
         <div>
-          <h2 class="text-lg font-medium text-gray-900 mb-4">Tasks Assigned to Me</h2>
+          <h2 class="text-lg font-medium text-gray-900 mb-4">Gigs Assigned to Me</h2>
           <div class="bg-white shadow overflow-hidden sm:rounded-md">
             <ul role="list" class="divide-y divide-gray-200">
               <li v-for="task in assignedTasks" :key="task.id">
