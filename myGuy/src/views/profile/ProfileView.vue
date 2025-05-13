@@ -84,7 +84,7 @@
             </div>
 
             <div class="form-group" v-if="formError">
-              <div class="invalid-feedback d-block">{{ formError }}</div>
+              <div class="alert alert-danger">{{ formError }}</div>
             </div>
 
             <div class="flex justify-end mt-4">
@@ -321,7 +321,7 @@ const handleSubmit = async () => {
     }
     
     const response = await fetch(config.ENDPOINTS.PROFILE, {
-      method: 'PATCH',
+      method: 'PUT',  // Changed from PATCH to PUT to match backend route
       headers: {
         'Authorization': `Bearer ${authStore.token}`,
         'Content-Type': 'application/json'
@@ -329,7 +329,8 @@ const handleSubmit = async () => {
       body: JSON.stringify({
         full_name: profile.value.fullName,
         email: profile.value.email,
-        bio: profile.value.bio
+        bio: profile.value.bio,
+        phone_number: '' // Including empty phone_number to match backend struct
       })
     })
     
@@ -344,8 +345,23 @@ const handleSubmit = async () => {
       }
     }
     
-    // Update the user data in auth store
-    await authStore.checkAuth()
+    // Get updated user data from response
+    const updatedUser = await response.json()
+    
+    // Update the profile with the returned data
+    if (updatedUser) {
+      // Update local profile data
+      profile.value = {
+        ...profile.value,
+        username: updatedUser.username,
+        email: updatedUser.email,
+        fullName: updatedUser.fullName || updatedUser.full_name,
+        bio: updatedUser.bio || ''
+      }
+      
+      // Also update the auth store to ensure consistency
+      await authStore.checkAuth()
+    }
     
     // Show success message
     alert('Profile updated successfully!')
@@ -362,7 +378,21 @@ const handleSubmit = async () => {
 </script>
 
 <style scoped>
-.invalid-feedback.d-block {
+.alert {
+  position: relative;
+  padding: 0.75rem 1.25rem;
+  margin-bottom: 1rem;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+}
+
+.alert-danger {
+  color: #721c24;
+  background-color: #f8d7da;
+  border-color: #f5c6cb;
+}
+
+.invalid-feedback {
   display: block;
   width: 100%;
   margin-top: 0.25rem;
