@@ -45,8 +45,12 @@ type UpdateTaskInput struct {
 }
 
 func (s *TaskService) CreateTask(ctx context.Context, input CreateTaskInput) (*models.Task, error) {
-	// Add a small buffer to allow for processing time
-	if input.Deadline.Before(time.Now().Add(time.Minute * 5)) {
+	// Compare dates in UTC
+	now := time.Now().UTC()
+	minDeadline := now.Add(5 * time.Minute)
+	deadline := input.Deadline.UTC()
+
+	if deadline.Before(minDeadline) {
 		return nil, ErrInvalidDeadline
 	}
 
@@ -54,7 +58,7 @@ func (s *TaskService) CreateTask(ctx context.Context, input CreateTaskInput) (*m
 		Title:       input.Title,
 		Description: input.Description,
 		Fee:         input.Fee,
-		Deadline:    input.Deadline,
+		Deadline:    deadline,
 		CreatedBy:   input.CreatedBy,
 		Status:      "open",
 	}

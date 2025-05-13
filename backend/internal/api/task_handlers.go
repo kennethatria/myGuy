@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -40,6 +41,9 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		return
 	}
 
+	// Add debug logging
+	fmt.Printf("Parsed deadline: %v, Now: %v\n", deadline.UTC(), time.Now().UTC())
+
 	userID := c.GetUint("userID") // Set by auth middleware
 	input := services.CreateTaskInput{
 		Title:       req.Title,
@@ -53,7 +57,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	if err != nil {
 		switch err {
 		case services.ErrInvalidDeadline:
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "deadline must be in the future"})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create task"})
 		}
