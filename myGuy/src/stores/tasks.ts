@@ -53,17 +53,37 @@ export const useTasksStore = defineStore('tasks', () => {
     const token = authStore.token;
     
     try {
+      console.log(`Fetching task with ID: ${taskId}`);
+      
+      // First check if we already have this task in our local state
+      const cachedTask = tasks.value.find(t => t.id === taskId) || 
+                         userTasks.value.find(t => t.id === taskId) ||
+                         assignedTasks.value.find(t => t.id === taskId);
+      
+      if (cachedTask) {
+        console.log(`Using cached task data for ID ${taskId}`);
+        return cachedTask;
+      }
+      
+      // If not in cache, fetch from API
       const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
-      })
-      if (!response.ok) throw new Error('Failed to fetch task')
-      return await response.json()
+      });
+      
+      if (!response.ok) {
+        console.error(`Error response for task ${taskId}:`, response.status, response.statusText);
+        throw new Error('Failed to fetch task');
+      }
+      
+      const taskData = await response.json();
+      console.log(`Successfully fetched task data for ID ${taskId}:`, taskData);
+      return taskData;
     } catch (error) {
-      console.error('Error fetching task:', error)
-      throw error
+      console.error(`Error fetching task ${taskId}:`, error);
+      throw error;
     }
   }
 

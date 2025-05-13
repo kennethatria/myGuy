@@ -41,8 +41,12 @@
 
     <!-- Task list -->
     <div v-else class="bg-white shadow overflow-hidden sm:rounded-md">
+      <div class="p-4 bg-blue-50 text-blue-700 border-b border-blue-100">
+        <p class="text-sm"><strong>Note:</strong> Only showing gigs created by other users. Your own gigs appear in the Dashboard.</p>
+      </div>
+      
       <ul role="list" class="divide-y divide-gray-200">
-        <li v-for="task in tasks" :key="task.id">
+        <li v-for="task in filteredTasks" :key="task.id">
           <router-link :to="{ name: 'task-details', params: { id: task.id }}" class="block hover:bg-gray-50">
             <div class="px-4 py-4 sm:px-6">
               <div class="flex items-center justify-between">
@@ -81,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { format } from 'date-fns'
 import { useTasksStore } from '@/stores/tasks'
 import { useAuthStore } from '@/stores/auth'
@@ -110,6 +114,29 @@ const authStore = useAuthStore()
 const tasks = ref<Task[]>([])
 const isLoading = ref(true)
 const error = ref('')
+
+// Computed property to filter out tasks created by the current user
+const filteredTasks = computed(() => {
+  if (!authStore.user?.id) return tasks.value;
+  
+  const currentUserId = authStore.user.id;
+  
+  return tasks.value.filter(task => {
+    // Make sure we're comparing the same data type
+    const taskCreatorId = typeof task.createdBy === 'string' 
+      ? parseInt(task.createdBy, 10) 
+      : task.createdBy;
+    
+    const userIdNum = typeof currentUserId === 'string' 
+      ? parseInt(currentUserId, 10) 
+      : currentUserId;
+    
+    console.log(`Task ${task.id}: Creator=${taskCreatorId}, CurrentUser=${userIdNum}, Equal=${taskCreatorId === userIdNum}`);
+    
+    // Return false (filter out) if the task was created by current user
+    return taskCreatorId !== userIdNum;
+  });
+});
 
 const formatDate = (date: string) => {
   return format(new Date(date), 'MMM dd, yyyy')
