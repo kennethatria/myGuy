@@ -9,45 +9,43 @@ const navigateToLogin = () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-    <div class="sm:mx-auto sm:w-full sm:max-w-md">
+  <div class="h-full flex flex-col justify-center p-4">
+    <div class="container mx-auto max-width-md">
       <div class="flex justify-center items-center">
         <img class="h-12 w-auto" src="../assets/myguy-icon.svg" alt="MyGuy" />
-        <span class="ml-3 text-3xl font-extrabold text-indigo-600">MyGuy</span>
+        <span class="ml-3 text-xl font-bold text-primary">MyGuy</span>
       </div>
-      <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
+      <h1 class="mt-4 text-center">
         Welcome to MyGuy
-      </h2>
-      <p class="mt-2 text-center text-sm text-gray-600">
+      </h1>
+      <p class="text-center text-sm">
         Your platform for connecting with skilled professionals and getting things done
       </p>
     </div>
 
-    <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-      <div class="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-        <div class="mt-6">
-          <div class="relative">
-            <div class="absolute inset-0 flex items-center">
-              <div class="w-full border-t border-gray-300"></div>
-            </div>
-            <div class="relative flex justify-center text-sm">
-              <span class="px-2 bg-white text-gray-500">
+    <div class="container mx-auto mt-4" style="max-width: 480px;">
+      <div class="card p-4">
+        <div class="my-4">
+          <div class="relative py-2">
+            <div class="w-full" style="border-top: 1px solid var(--color-border);"></div>
+            <div class="flex justify-center" style="margin-top: -12px;">
+              <span class="px-2 bg-white text-sm">
                 Ready to get started?
               </span>
             </div>
           </div>
 
-          <div class="mt-6 flex flex-col space-y-4">
+          <div class="mt-4 flex flex-col">
             <button
               @click="navigateToLogin"
-              class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              class="btn btn-primary w-full mb-2"
             >
               Sign In
             </button>
             
             <router-link
               :to="{ name: 'register' }"
-              class="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              class="btn btn-outline w-full"
             >
               Create an Account
             </router-link>

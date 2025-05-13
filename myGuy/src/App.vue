@@ -17,8 +17,5 @@ const showLayout = computed(() => {
 </template>
 
 <style>
-/* Skip importing main.css as it conflicts with Tailwind */
-/* @import '@/assets/main.css'; */
-
-/* Tailwind is already imported at the project level */
+/* Custom styles are imported in main.ts */
 </style>
