@@ -153,16 +153,16 @@ import { useTasksStore } from '@/stores/tasks'
 import { useAuthStore } from '@/stores/auth'
 
 interface Task {
-  id: number
-  title: string
-  description: string
-  status: 'open' | 'in_progress' | 'completed'
+  id: number,
+  title: string,
+  description: string,
+  status: 'open' | 'in_progress' | 'completed',
   deadline: string
 }
 
 interface Stats {
-  createdTasks: number
-  assignedTasks: number
+  createdTasks: number,
+  assignedTasks: number,
   completedTasks: number
 }
 
@@ -204,7 +204,7 @@ const stats = computed<Stats>(() => {
   return {
     createdTasks: created,
     assignedTasks: assigned,
-    completedTasks: completed
+    completedTasks: completed,
   }
 })
 
@@ -223,7 +223,7 @@ const loadSampleData = () => {
       status: "open",
       createdBy: 1,
       deadline: "2023-12-31T00:00:00Z",
-      created_at: "2023-09-15T10:30:00Z"
+      created_at: "2023-09-15T10:30:00Z",
     },
     {
       id: 2,
@@ -233,7 +233,7 @@ const loadSampleData = () => {
       createdBy: 1,
       assignedTo: 2,
       deadline: "2023-11-15T00:00:00Z",
-      created_at: "2023-09-10T14:20:00Z"
+      created_at: "2023-09-10T14:20:00Z",
     },
     {
       id: 3,
@@ -243,7 +243,7 @@ const loadSampleData = () => {
       createdBy: 1,
       assignedTo: 3,
       deadline: "2023-10-01T00:00:00Z",
-      created_at: "2023-08-25T09:15:00Z"
+      created_at: "2023-08-25T09:15:00Z",
     }
   ]
   
@@ -260,7 +260,7 @@ const loadSampleData = () => {
       createdBy: 2,
       assignedTo: 1,
       deadline: "2023-11-30T00:00:00Z",
-      created_at: "2023-09-18T11:45:00Z"
+      created_at: "2023-09-18T11:45:00Z",
     },
     {
       id: 5,
@@ -270,7 +270,7 @@ const loadSampleData = () => {
       createdBy: 3,
       assignedTo: 1,
       deadline: "2023-12-15T00:00:00Z",
-      created_at: "2023-09-05T16:30:00Z"
+      created_at: "2023-09-05T16:30:00Z",
     }
   ]
 }
