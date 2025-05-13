@@ -147,6 +147,55 @@ func (h *Handler) GetTask(c *gin.Context) {
 	c.JSON(http.StatusOK, task)
 }
 
+// UpdateTask updates a task with new details
+func (h *Handler) UpdateTask(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+		return
+	}
+
+	var req createTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	
+	// Parse the deadline string to time.Time
+	deadline, err := time.Parse(time.RFC3339, req.Deadline)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid deadline format. Must be RFC3339 format (e.g., 2025-05-15T12:00:00Z)"})
+		return
+	}
+
+	userID := c.GetUint("userID")
+	input := services.UpdateTaskInput{
+		ID:          uint(id),
+		Title:       req.Title,
+		Description: req.Description,
+		Fee:         req.Fee,
+		Deadline:    deadline,
+		UpdatedBy:   userID,
+	}
+
+	task, err := h.taskService.UpdateTask(c.Request.Context(), input)
+	if err != nil {
+		switch err {
+		case services.ErrTaskNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
+		case services.ErrUnauthorized:
+			c.JSON(http.StatusForbidden, gin.H{"error": "Not authorized to update this task"})
+		case services.ErrInvalidDeadline:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Deadline must be at least one day (24 hours) in the future"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update task"})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, task)
+}
+
 // ListTasks returns all tasks with optional filtering
 func (h *Handler) ListTasks(c *gin.Context) {
 	// Create filters from query parameters
@@ -343,6 +392,69 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, user)
+}
+
+// UpdateTaskStatusRequest contains the data for updating a task's status
+type UpdateTaskStatusRequest struct {
+	Status string `json:"status" binding:"required,oneof=open in_progress completed cancelled"`
+}
+
+// UpdateTaskStatus updates the status of a task
+func (h *Handler) UpdateTaskStatus(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+		return
+	}
+
+	var req UpdateTaskStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID := c.GetUint("userID")
+	task, err := h.taskService.UpdateTaskStatus(c.Request.Context(), uint(id), req.Status, userID)
+	if err != nil {
+		switch err {
+		case services.ErrTaskNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
+		case services.ErrUnauthorized:
+			c.JSON(http.StatusForbidden, gin.H{"error": "Not authorized to update this task's status"})
+		case services.ErrInvalidStatus:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status transition"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update task status"})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, task)
+}
+
+// DeleteTask deletes a task
+func (h *Handler) DeleteTask(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+		return
+	}
+
+	userID := c.GetUint("userID")
+	err = h.taskService.DeleteTask(c.Request.Context(), uint(id), userID)
+	if err != nil {
+		switch err {
+		case services.ErrTaskNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
+		case services.ErrUnauthorized:
+			c.JSON(http.StatusForbidden, gin.H{"error": "Not authorized to delete this task"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete task"})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Task deleted successfully"})
 }
 
 // GetServerTime returns the current server time and a valid deadline
