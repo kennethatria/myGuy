@@ -78,6 +78,7 @@
               aria-controls="mobile-menu"
               aria-expanded="false"
               :class="{ 'open': isMobileMenuOpen }"
+              style="background: transparent; border: none; box-shadow: none;"
             >
               <span class="sr-only">Toggle menu</span>
               <!-- Three horizontal lines for hamburger menu -->

@@ -825,7 +825,7 @@ input[type="datetime-local"].form-input {
 }
 
 .mobile-menu-button {
-  display: none;
+  display: none; /* Hidden by default, will be shown in media query */
   margin-left: 1rem;
 }
 
@@ -835,27 +835,30 @@ input[type="datetime-local"].form-input {
   justify-content: space-between;
   width: 2rem;
   height: 1.5rem;
-  background: transparent;
-  border: none;
+  background-color: transparent !important;
+  border: none !important;
   cursor: pointer;
-  padding: 0;
+  padding: 0.25rem 0;
+  position: relative;
+}
+
+.hamburger-line {
+  display: block;
+  width: 100%;
+  height: 2px;
+  background-color: var(--color-text);
+  margin: 0.25rem 0;
+  transition: all 0.3s ease;
+  border-radius: 2px;
 }
 
 .mobile-menu-button button:hover .hamburger-line {
   background-color: var(--color-primary);
 }
 
-.hamburger-line {
-  width: 100%;
-  height: 2px;
-  background-color: var(--color-text);
-  transition: all 0.3s ease;
-  border-radius: 2px;
-}
-
 /* When menu is open, transform lines to an X */
 .mobile-menu-button button.open .hamburger-line:nth-child(1) {
-  transform: translateY(10px) rotate(45deg);
+  transform: translateY(6px) rotate(45deg);
 }
 
 .mobile-menu-button button.open .hamburger-line:nth-child(2) {
@@ -863,11 +866,13 @@ input[type="datetime-local"].form-input {
 }
 
 .mobile-menu-button button.open .hamburger-line:nth-child(3) {
-  transform: translateY(-10px) rotate(-45deg);
+  transform: translateY(-6px) rotate(-45deg);
 }
 
-.menu-icon {
-  display: none; /* Hide the SVG icon */
+/* Hide any SVG icon that might be present */
+.mobile-menu-button svg,
+.mobile-menu-button .menu-icon {
+  display: none !important;
 }
 
 /* Mobile menu */
@@ -953,16 +958,18 @@ input[type="datetime-local"].form-input {
   
   /* Navigation responsive styles */
   .nav-links {
-    display: none;
+    display: none !important;
   }
   
   .mobile-menu-button {
-    display: flex;
+    display: flex !important;
     align-items: center;
   }
   
   .nav-wrapper {
     position: relative;
+    width: 100%;
+    justify-content: space-between;
   }
   
   /* Dashboard mobile styles */
