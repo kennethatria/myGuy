@@ -20,8 +20,12 @@ func (r *GormTaskRepository) Create(ctx context.Context, task *models.Task) erro
 
 func (r *GormTaskRepository) GetByID(ctx context.Context, id uint) (*models.Task, error) {
 	var task models.Task
-	// Preload applications to show interested parties
-	err := r.db.WithContext(ctx).First(&task, id).Error
+	// Preload applications and related user data to provide complete task information
+	err := r.db.WithContext(ctx).
+		Preload("Applications.Applicant").
+		Preload("Creator").
+		Preload("Assignee").
+		First(&task, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -37,8 +41,14 @@ func (r *GormTaskRepository) List(ctx context.Context, filters map[string]interf
 		query = query.Where(key, value)
 	}
 
-	// Order by most recent first
-	err := query.Order("created_at DESC").Find(&tasks).Error
+	// Order by most recent first and preload related data
+	err := query.
+		Preload("Applications.Applicant").
+		Preload("Creator").
+		Preload("Assignee").
+		Order("created_at DESC").
+		Find(&tasks).Error
+	
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +76,14 @@ func (r *GormTaskRepository) ListByUser(ctx context.Context, userID uint, role s
 		return nil, nil
 	}
 
-	err := query.Find(&tasks).Error
+	// Preload related data and order by most recent first
+	err := query.
+		Preload("Applications.Applicant").
+		Preload("Creator").
+		Preload("Assignee").
+		Order("created_at DESC").
+		Find(&tasks).Error
+	
 	if err != nil {
 		return nil, err
 	}

@@ -252,17 +252,14 @@ const fetchDashboardData = async () => {
   error.value = ''
   
   try {
-    // For development use sample data
-    // In production, uncomment these lines:
-    /*
+    // Fetch real data from API
     await Promise.all([
       tasksStore.fetchUserTasks(),
       tasksStore.fetchAssignedTasks()
     ])
-    */
     
-    // Use sample data for development
-    loadSampleData()
+    // If the backend is down or no data is available, uncomment this for testing:
+    // loadSampleData()
   } catch (err) {
     console.error('Failed to fetch dashboard data:', err)
     error.value = 'Failed to load dashboard data. Please try again later.'

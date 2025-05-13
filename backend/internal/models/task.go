@@ -15,6 +15,11 @@ type Task struct {
 	Deadline    time.Time `json:"deadline"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	
+	// Define relationships for preloading
+	Creator   User          `json:"creator" gorm:"foreignKey:CreatedBy"`
+	Assignee  *User         `json:"assignee" gorm:"foreignKey:AssignedTo"`
+	Applications []Application `json:"applications" gorm:"foreignKey:TaskID"`
 }
 
 type Application struct {
@@ -25,6 +30,9 @@ type Application struct {
 	Status      string    `json:"status" gorm:"default:'pending'"`
 	Message     string    `json:"message" gorm:"type:text"`
 	CreatedAt   time.Time `json:"created_at"`
+	
+	// Define relationship for preloading
+	Applicant User `json:"applicant" gorm:"foreignKey:ApplicantID"`
 }
 
 type Message struct {

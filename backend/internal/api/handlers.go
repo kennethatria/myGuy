@@ -206,8 +206,17 @@ func (h *Handler) ListTasks(c *gin.Context) {
 		filters["status"] = status
 	}
 	
-	// Add created_by filter if provided
-	if createdBy := c.Query("created_by"); createdBy != "" {
+	// Check for specific filters
+	userID := c.GetUint("userID")
+	
+	// Filter for user's created tasks
+	if created := c.Query("created"); created == "true" {
+		filters["created_by"] = userID
+	} else if assigned := c.Query("assigned"); assigned == "true" {
+		// Filter for tasks assigned to the user
+		filters["assigned_to"] = userID
+	} else if createdBy := c.Query("created_by"); createdBy != "" {
+		// Add created_by filter if explicitly provided
 		userID, err := strconv.ParseUint(createdBy, 10, 64)
 		if err == nil {
 			filters["created_by"] = uint(userID)
@@ -218,6 +227,32 @@ func (h *Handler) ListTasks(c *gin.Context) {
 	tasks, err := h.taskService.ListTasks(c.Request.Context(), filters)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve tasks"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, tasks)
+}
+
+// GetUserTasks returns tasks created by the current user
+func (h *Handler) GetUserTasks(c *gin.Context) {
+	userID := c.GetUint("userID")
+	
+	tasks, err := h.taskService.ListUserTasks(c.Request.Context(), userID, "creator")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user tasks"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, tasks)
+}
+
+// GetAssignedTasks returns tasks assigned to the current user
+func (h *Handler) GetAssignedTasks(c *gin.Context) {
+	userID := c.GetUint("userID")
+	
+	tasks, err := h.taskService.ListUserTasks(c.Request.Context(), userID, "assigned")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve assigned tasks"})
 		return
 	}
 	

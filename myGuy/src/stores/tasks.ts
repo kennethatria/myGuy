@@ -13,6 +13,19 @@ interface Task {
   deadline: string
   fee?: number
   created_at: string
+  
+  // Related data from database preloading
+  creator?: {
+    id: number
+    username: string
+    fullName?: string
+  }
+  assignee?: {
+    id: number
+    username: string
+    fullName?: string
+  }
+  applications?: Application[]
 }
 
 interface Application {
@@ -55,8 +68,23 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   const getTaskApplications = async (taskId: number): Promise<Application[]> => {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
     try {
-      const response = await fetch(`/api/tasks/${taskId}/applications`)
+      // Since the applications data is now included in the task itself from the backend
+      const task = await getTask(taskId)
+      if (task.applications && Array.isArray(task.applications)) {
+        return task.applications
+      }
+      
+      // Fallback to legacy endpoint if task doesn't include applications
+      const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}/applications`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
       if (!response.ok) throw new Error('Failed to fetch task applications')
       return await response.json()
     } catch (error) {
@@ -85,8 +113,16 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   const fetchUserTasks = async () => {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
     try {
-      const response = await fetch('/api/users/me/tasks')
+      const response = await fetch(config.ENDPOINTS.USER_TASKS, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
       if (!response.ok) throw new Error('Failed to fetch user tasks')
       userTasks.value = await response.json()
     } catch (error) {
@@ -96,8 +132,16 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   const fetchAssignedTasks = async () => {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
     try {
-      const response = await fetch('/api/users/me/assigned-tasks')
+      const response = await fetch(config.ENDPOINTS.ASSIGNED_TASKS, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
       if (!response.ok) throw new Error('Failed to fetch assigned tasks')
       assignedTasks.value = await response.json()
     } catch (error) {
@@ -185,10 +229,16 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   const respondToApplication = async (taskId: number, applicationId: number, status: 'accepted' | 'declined') => {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
     try {
-      const response = await fetch(`/api/tasks/${taskId}/applications/${applicationId}`, {
+      const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}/applications/${applicationId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json' 
+        },
         body: JSON.stringify({ status })
       })
       if (!response.ok) throw new Error('Failed to respond to application')

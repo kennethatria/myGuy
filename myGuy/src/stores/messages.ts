@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import config from '@/config'
+import { useAuthStore } from './auth'
 
 interface Message {
   id: number
@@ -16,8 +18,16 @@ export const useMessagesStore = defineStore('messages', () => {
   const messages = ref<Message[]>([])
 
   const fetchTaskMessages = async (taskId: number): Promise<Message[]> => {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
     try {
-      const response = await fetch(`/api/tasks/${taskId}/messages`)
+      const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}/messages`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }
+      })
       if (!response.ok) throw new Error('Failed to fetch messages')
       const data = await response.json()
       messages.value = data
@@ -29,10 +39,14 @@ export const useMessagesStore = defineStore('messages', () => {
   }
 
   const sendMessage = async (taskId: number, recipientId: number, content: string): Promise<Message> => {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
     try {
-      const response = await fetch(`/api/tasks/${taskId}/messages`, {
+      const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}/messages`, {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ recipientId, content }),

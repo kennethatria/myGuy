@@ -96,6 +96,10 @@ func main() {
 		auth.DELETE("/tasks/:id", handler.DeleteTask)
 		auth.POST("/tasks/:id/apply", handler.ApplyForTask)
 
+		// User-specific task routes
+		auth.GET("/user/tasks", handler.GetUserTasks)
+		auth.GET("/user/tasks/assigned", handler.GetAssignedTasks)
+
 		// Message routes
 		auth.POST("/tasks/:id/messages", handler.CreateMessage)
 		auth.GET("/tasks/:id/messages", handler.GetTaskMessages)
