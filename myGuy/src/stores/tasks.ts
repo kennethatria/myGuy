@@ -241,7 +241,28 @@ export const useTasksStore = defineStore('tasks', () => {
         throw new Error('Failed to fetch assigned tasks')
       }
       
-      assignedTasks.value = await response.json()
+      const assignedTasksData = await response.json();
+      console.log('DEBUG - Assigned tasks from API:', assignedTasksData);
+      
+      // Add extra safety check: only include tasks that actually have assignedTo matching user ID
+      const userId = authStore.user?.id;
+      if (userId) {
+        assignedTasks.value = assignedTasksData.filter(task => {
+          const isActuallyAssigned = task.assigned_to === userId || 
+                                     (typeof task.assigned_to === 'string' && task.assigned_to === String(userId));
+          
+          if (!isActuallyAssigned) {
+            console.warn(`Task ${task.id} was returned by assigned_to API but doesn't have matching assigned_to value:`, 
+                          {taskAssignedTo: task.assigned_to, userId, task});
+          }
+          
+          return isActuallyAssigned;
+        });
+        
+        console.log(`DEBUG - After filtering, ${assignedTasks.value.length} of ${assignedTasksData.length} tasks remain`);
+      } else {
+        assignedTasks.value = assignedTasksData;
+      }
     } catch (error) {
       console.error('Error fetching assigned tasks:', error)
       throw error

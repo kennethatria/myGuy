@@ -114,6 +114,10 @@
           <div v-if="assignedTasks.length === 0" class="p-4 text-center">
             <p>No gigs assigned yet.</p>
           </div>
+          <div v-else-if="debug" class="p-4 bg-blue-50">
+            <h4 class="font-semibold">Debug Info (admin only)</h4>
+            <pre class="text-xs overflow-auto mt-2 p-2 bg-gray-100 rounded">{{ JSON.stringify(assignedTasks, null, 2) }}</pre>
+          </div>
           <ul v-else class="divide-y">
             <li v-for="task in assignedTasks" :key="task.id">
               <router-link :to="{ name: 'task-details', params: { id: task.id }}" class="block p-4 hover-card">
@@ -170,6 +174,7 @@ const tasksStore = useTasksStore()
 const router = useRouter()
 const isLoading = ref(false)
 const error = ref('')
+const debug = ref(false) // Set to false to hide debug info
 
 const redirectToLogin = () => {
   const authStore = useAuthStore()

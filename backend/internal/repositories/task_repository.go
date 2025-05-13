@@ -71,7 +71,9 @@ func (r *GormTaskRepository) ListByUser(ctx context.Context, userID uint, role s
 	case "creator":
 		query = query.Where("created_by = ?", userID)
 	case "assigned":
-		query = query.Where("assigned_to = ?", userID)
+		// Make sure assigned_to is not NULL and equals the user ID
+		// The IS NOT NULL check is important to avoid returning tasks where assigned_to is NULL
+		query = query.Where("assigned_to IS NOT NULL AND assigned_to = ?", userID)
 	default:
 		return nil, nil
 	}
