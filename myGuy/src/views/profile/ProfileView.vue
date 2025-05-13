@@ -36,10 +36,9 @@
                 id="username"
                 v-model="profile.username"
                 class="form-input"
-                :class="{ 'is-invalid': formErrors.username }"
-                required
+                disabled
+                title="Username cannot be changed"
               />
-              <div v-if="formErrors.username" class="invalid-feedback">{{ formErrors.username }}</div>
             </div>
 
             <div class="form-group">
@@ -85,7 +84,7 @@
             </div>
 
             <div class="form-group" v-if="formError">
-              <div class="invalid-feedback">{{ formError }}</div>
+              <div class="invalid-feedback d-block">{{ formError }}</div>
             </div>
 
             <div class="flex justify-end mt-4">
@@ -209,6 +208,9 @@ const fetchUserReviews = async (userId: number) => {
   const token = authStore.token
   
   try {
+    // Set empty reviews array initially
+    reviews.value = []
+    
     const response = await fetch(`${config.API_URL}/users/${userId}/reviews`, {
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -217,24 +219,44 @@ const fetchUserReviews = async (userId: number) => {
     })
     
     if (!response.ok) {
+      // If we get a 404, it might mean no reviews yet, which is ok
+      if (response.status === 404) {
+        reviews.value = []
+        return
+      }
       throw new Error('Failed to fetch reviews')
     }
     
-    const reviewsData = await response.json()
-    reviews.value = reviewsData
-    
-    // Update total reviews count in profile
-    if (reviews.value && Array.isArray(reviews.value)) {
+    try {
+      const reviewsData = await response.json()
+      
+      // Ensure reviewsData is actually an array
+      if (Array.isArray(reviewsData)) {
+        reviews.value = reviewsData
+      } else if (reviewsData && typeof reviewsData === 'object') {
+        // If it's an object with data property that is an array
+        reviews.value = Array.isArray(reviewsData.data) ? reviewsData.data : []
+      } else {
+        reviews.value = []
+      }
+      
+      // Update total reviews count in profile
       profile.value.totalReviews = reviews.value.length
       
       // Calculate average rating if there are reviews
       if (reviews.value.length > 0) {
         const totalRating = reviews.value.reduce((sum, review) => sum + review.rating, 0)
         profile.value.averageRating = totalRating / reviews.value.length
+      } else {
+        profile.value.averageRating = 0
       }
+    } catch (parseError) {
+      console.error('Error parsing reviews response:', parseError)
+      reviews.value = []
     }
   } catch (error) {
     console.error('Error fetching user reviews:', error)
+    reviews.value = []
   }
 }
 
@@ -260,21 +282,18 @@ const validateForm = (): boolean => {
   }
   formError.value = ''
   
-  // Validate username
-  if (!profile.value.username.trim()) {
-    formErrors.value.username = 'Username is required'
-    isValid = false
-  } else if (profile.value.username.length < 3) {
-    formErrors.value.username = 'Username must be at least 3 characters'
-    isValid = false
-  }
-  
   // Validate email
   if (!profile.value.email.trim()) {
     formErrors.value.email = 'Email is required'
     isValid = false
   } else if (!/^\S+@\S+\.\S+$/.test(profile.value.email)) {
     formErrors.value.email = 'Please enter a valid email address'
+    isValid = false
+  }
+  
+  // Validate fullName
+  if (!profile.value.fullName.trim()) {
+    formErrors.value.fullName = 'Full Name is required'
     isValid = false
   }
   
@@ -315,8 +334,14 @@ const handleSubmit = async () => {
     })
     
     if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || 'Failed to update profile')
+      // Safely try to parse error response as JSON
+      try {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to update profile')
+      } catch (parseError) {
+        // If JSON parsing fails, use status text
+        throw new Error(`Failed to update profile: ${response.statusText}`)
+      }
     }
     
     // Update the user data in auth store
@@ -326,9 +351,21 @@ const handleSubmit = async () => {
     alert('Profile updated successfully!')
   } catch (error) {
     console.error('Failed to update profile:', error)
-    formError.value = error.message || 'Failed to update profile. Please try again.'
+    // Make sure we handle error properly whether it's an Error object or something else
+    formError.value = error instanceof Error 
+      ? error.message 
+      : 'Failed to update profile. Please try again.'
   } finally {
     isSubmitting.value = false
   }
 }
 </script>
+
+<style scoped>
+.invalid-feedback.d-block {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  color: #dc3545;
+}
+</style>
