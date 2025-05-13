@@ -11,7 +11,7 @@ import (
 var (
 	ErrTaskNotFound    = errors.New("task not found")
 	ErrUnauthorized    = errors.New("unauthorized")
-	ErrInvalidDeadline = errors.New("deadline must be at least 5 minutes in the future")
+	ErrInvalidDeadline = errors.New("deadline must be at least one day in the future")
 	ErrTaskNotOpen     = errors.New("task is not open for applications")
 )
 
@@ -47,7 +47,7 @@ type UpdateTaskInput struct {
 func (s *TaskService) CreateTask(ctx context.Context, input CreateTaskInput) (*models.Task, error) {
 	// Compare dates in UTC
 	now := time.Now().UTC()
-	minDeadline := now.Add(5 * time.Minute)
+	minDeadline := now.AddDate(0, 0, 1) // Add 1 day to current time
 	deadline := input.Deadline.UTC()
 
 	if deadline.Before(minDeadline) {
@@ -80,7 +80,9 @@ func (s *TaskService) UpdateTask(ctx context.Context, input UpdateTaskInput) (*m
 		return nil, ErrUnauthorized
 	}
 
-	if input.Deadline.Before(time.Now()) {
+	// Require deadline to be at least one day in the future
+	minDeadline := time.Now().UTC().AddDate(0, 0, 1)
+	if input.Deadline.UTC().Before(minDeadline) {
 		return nil, ErrInvalidDeadline
 	}
 
