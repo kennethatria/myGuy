@@ -14,6 +14,7 @@ var (
 	ErrUnauthorized    = errors.New("unauthorized")
 	ErrInvalidDeadline = errors.New("deadline must be at least one day (24 hours) in the future")
 	ErrTaskNotOpen     = errors.New("task is not open for applications")
+	ErrInvalidStatus   = errors.New("invalid status transition")
 )
 
 type TaskService struct {
@@ -202,4 +203,56 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID uint, userID uint
 
 	task.Status = "completed"
 	return s.taskRepo.Update(ctx, task)
+}
+
+// UpdateTaskStatus updates the status of a task
+// Only the task creator can update the status
+func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID uint, status string, userID uint) (*models.Task, error) {
+	task, err := s.taskRepo.GetByID(ctx, taskID)
+	if err != nil {
+		return nil, ErrTaskNotFound
+	}
+
+	// Only task creator can update status
+	if task.CreatedBy != userID {
+		return nil, ErrUnauthorized
+	}
+
+	// Validate status transitions
+	// This enforces a simple workflow where tasks generally move forward
+	// open -> in_progress -> completed
+	// But creator can also cancel a task or reopen it
+	validTransition := false
+	switch task.Status {
+	case "open":
+		// From open: can move to in_progress or cancelled
+		validTransition = status == "in_progress" || status == "cancelled"
+	case "in_progress":
+		// From in_progress: can move to completed or cancelled
+		validTransition = status == "completed" || status == "cancelled"
+	case "completed":
+		// From completed: can move to cancelled
+		validTransition = status == "cancelled"
+	case "cancelled":
+		// From cancelled: can move to open (reopen)
+		validTransition = status == "open"
+	}
+
+	if !validTransition {
+		return nil, ErrInvalidStatus
+	}
+
+	// Update the status
+	task.Status = status
+
+	// If moving back to open, clear any assignments
+	if status == "open" {
+		task.AssignedTo = nil
+	}
+
+	if err := s.taskRepo.Update(ctx, task); err != nil {
+		return nil, err
+	}
+
+	return task, nil
 }

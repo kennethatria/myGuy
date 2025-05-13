@@ -182,3 +182,41 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Task deleted successfully"})
 }
+
+// UpdateTaskStatusRequest contains the data for updating a task's status
+type UpdateTaskStatusRequest struct {
+	Status string `json:"status" binding:"required,oneof=open in_progress completed cancelled"`
+}
+
+// UpdateTaskStatus updates the status of a task
+func (h *TaskHandler) UpdateTaskStatus(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+		return
+	}
+
+	var req UpdateTaskStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID := c.GetUint("userID")
+	task, err := h.taskService.UpdateTaskStatus(c.Request.Context(), uint(id), req.Status, userID)
+	if err != nil {
+		switch err {
+		case services.ErrTaskNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
+		case services.ErrUnauthorized:
+			c.JSON(http.StatusForbidden, gin.H{"error": "Not authorized to update this task's status"})
+		case services.ErrInvalidStatus:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status transition"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update task status"})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, task)
+}

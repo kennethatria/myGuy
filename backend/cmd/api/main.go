@@ -91,6 +91,9 @@ func main() {
 		auth.POST("/tasks", handler.CreateTask)
 		auth.GET("/tasks", handler.ListTasks)
 		auth.GET("/tasks/:id", handler.GetTask)
+		auth.PUT("/tasks/:id", handler.UpdateTask)
+		auth.PATCH("/tasks/:id/status", handler.UpdateTaskStatus)
+		auth.DELETE("/tasks/:id", handler.DeleteTask)
 		auth.POST("/tasks/:id/apply", handler.ApplyForTask)
 
 		// Message routes
