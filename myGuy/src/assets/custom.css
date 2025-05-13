@@ -325,6 +325,14 @@ a:hover {
   color: #fff;
 }
 
+.text-danger {
+  color: #EF4444;
+}
+
+.text-success {
+  color: #10B981;
+}
+
 .bg-primary {
   background-color: var(--color-primary);
 }

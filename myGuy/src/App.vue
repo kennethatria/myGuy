@@ -12,10 +12,23 @@ const showLayout = computed(() => {
 </script>
 
 <template>
-  <app-layout v-if="showLayout" />
-  <router-view v-else />
+  <div class="app-container">
+    <app-layout v-if="showLayout" />
+    <router-view v-else />
+  </div>
 </template>
 
 <style>
 /* Custom styles are imported in main.ts */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  height: 100%;
+}
+
+/* Error handling styles */
+.text-red-500 {
+  color: #ef4444;
+}
 </style>
