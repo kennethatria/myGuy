@@ -118,10 +118,24 @@ const fetchTasks = async () => {
     // Filter out tasks created by the current user
     // Only show gigs from others that are still open
     const currentUserId = authStore.user?.id
-    tasks.value = tasksStore.tasks.filter(task => 
-      task.createdBy !== currentUserId && 
-      task.status === 'open'
-    )
+    
+    console.log('Current user ID:', currentUserId)
+    console.log('All tasks:', tasksStore.tasks)
+    
+    tasks.value = tasksStore.tasks.filter(task => {
+      // Convert IDs to strings for comparison to avoid type issues
+      const taskCreatorId = String(task.createdBy)
+      const userId = currentUserId ? String(currentUserId) : ''
+      
+      console.log(`Task ${task.id} - Created by: ${taskCreatorId}, User: ${userId}, Match: ${taskCreatorId === userId}`)
+      
+      // Only show tasks that are:
+      // 1. Not created by the current user (show other users' tasks)
+      // 2. Have an 'open' status (not in progress or completed)
+      return userId && taskCreatorId !== userId && task.status === 'open'
+    })
+    
+    console.log('Filtered tasks:', tasks.value)
     
   } catch (err: any) {
     console.error('Failed to fetch tasks:', err)
@@ -132,6 +146,10 @@ const fetchTasks = async () => {
 }
 
 onMounted(async () => {
+  const isAuthenticated = await authStore.checkAuth()
+  console.log("Is authenticated:", isAuthenticated)
+  console.log("User after auth check:", authStore.user)
+  
   await fetchTasks()
 })
 </script>
