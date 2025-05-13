@@ -107,20 +107,23 @@
     <div class="mt-4">
       <h2 class="mb-3">Reviews</h2>
       <div class="card">
-        <div v-if="reviews.length === 0" class="p-4 text-center">
-          <p class="text-gray">No reviews yet.</p>
+        <div v-if="isLoading" class="p-4 text-center">
+          <p class="text-gray">Loading reviews...</p>
+        </div>
+        <div v-else-if="reviews.length === 0" class="p-4 text-center">
+          <p class="text-gray">No reviews exist at this time.</p>
         </div>
         <ul v-else class="divide-y">
           <li v-for="review in reviews" :key="review.id" class="p-4">
             <div class="flex justify-between items-center mb-2">
-              <h4 class="font-semibold">{{ review.reviewer }}</h4>
+              <h4 class="font-semibold">{{ review.reviewer?.fullName || review.reviewer?.username }}</h4>
               <div class="flex items-center">
                 <span class="rating-star mr-1">★</span>
                 <span class="text-sm font-semibold">{{ review.rating }}/5</span>
               </div>
             </div>
             <p class="text-sm">{{ review.comment }}</p>
-            <p class="text-sm text-gray mt-2 text-right">{{ formatDate(review.createdAt) }}</p>
+            <p class="text-sm text-gray mt-2 text-right">{{ formatDate(review.created_at) }}</p>
           </li>
         </ul>
       </div>
@@ -131,6 +134,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { format } from 'date-fns'
+import config from '@/config'
+import { useAuthStore } from '@/stores/auth'
 
 interface Profile {
   username: string
@@ -143,10 +148,14 @@ interface Profile {
 
 interface Review {
   id: number
-  reviewer: string
+  reviewer: {
+    id: number
+    username: string
+    fullName?: string
+  }
   rating: number
   comment: string
-  createdAt: string
+  created_at: string
 }
 
 const profile = ref<Profile>({
@@ -161,6 +170,7 @@ const profile = ref<Profile>({
 const reviews = ref<Review[]>([])
 const isSubmitting = ref(false)
 const formError = ref('')
+const isLoading = ref(true)
 const formErrors = ref({
   username: '',
   email: '',
@@ -172,50 +182,71 @@ const formatDate = (date: string) => {
   return format(new Date(date), 'MMM dd, yyyy')
 }
 
-// Load some sample data for development
-const loadSampleData = () => {
-  profile.value = {
-    username: 'johndoe',
-    email: 'john.doe@example.com',
-    fullName: 'John Doe',
-    bio: 'Experienced web developer with expertise in Vue.js and Node.js. Always looking for interesting projects.',
-    averageRating: 4.7,
-    totalReviews: 12
+const fetchProfileData = async () => {
+  const authStore = useAuthStore()
+  if (!authStore.user) {
+    await authStore.checkAuth()
   }
   
-  reviews.value = [
-    {
-      id: 1,
-      reviewer: 'Jane Smith',
-      rating: 5,
-      comment: 'John did an excellent job on my website! Very professional and delivered on time.',
-      createdAt: '2023-05-15T12:00:00Z'
-    },
-    {
-      id: 2,
-      reviewer: 'Michael Johnson',
-      rating: 4,
-      comment: 'Great work on the logo design. Would hire again for future projects.',
-      createdAt: '2023-04-22T15:30:00Z'
-    },
-    {
-      id: 3,
-      reviewer: 'Sarah Williams',
-      rating: 5,
-      comment: 'Very responsive and talented. Completed the task ahead of schedule!',
-      createdAt: '2023-03-10T09:45:00Z'
+  if (authStore.user) {
+    // Set profile data from auth user
+    profile.value = {
+      username: authStore.user.username,
+      email: authStore.user.email,
+      fullName: authStore.user.fullName,
+      bio: authStore.user.bio || '',
+      averageRating: authStore.user.averageRating || 0,
+      totalReviews: 0  // Will be updated from reviews count
     }
-  ]
+    
+    // Fetch user reviews
+    await fetchUserReviews(authStore.user.id)
+  }
+}
+
+const fetchUserReviews = async (userId: number) => {
+  const authStore = useAuthStore()
+  const token = authStore.token
+  
+  try {
+    const response = await fetch(`${config.API_URL}/users/${userId}/reviews`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    })
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch reviews')
+    }
+    
+    const reviewsData = await response.json()
+    reviews.value = reviewsData
+    
+    // Update total reviews count in profile
+    if (reviews.value && Array.isArray(reviews.value)) {
+      profile.value.totalReviews = reviews.value.length
+      
+      // Calculate average rating if there are reviews
+      if (reviews.value.length > 0) {
+        const totalRating = reviews.value.reduce((sum, review) => sum + review.rating, 0)
+        profile.value.averageRating = totalRating / reviews.value.length
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching user reviews:', error)
+  }
 }
 
 onMounted(async () => {
+  isLoading.value = true
   try {
-    // TODO: Implement fetch profile data logic from API
-    // For now, using sample data
-    loadSampleData()
+    await fetchProfileData()
   } catch (error) {
     console.error('Failed to fetch profile data:', error)
     formError.value = 'Failed to load profile data. Please try refreshing the page.'
+  } finally {
+    isLoading.value = false
   }
 })
 
@@ -265,11 +296,33 @@ const handleSubmit = async () => {
     isSubmitting.value = true
     formError.value = ''
     
-    // TODO: Implement update profile logic with API
-    // For now, simulating API delay
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    const authStore = useAuthStore()
+    if (!authStore.user) {
+      throw new Error('User not authenticated')
+    }
     
-    // Show success message (this would normally come from API)
+    const response = await fetch(config.ENDPOINTS.PROFILE, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${authStore.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        full_name: profile.value.fullName,
+        email: profile.value.email,
+        bio: profile.value.bio
+      })
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Failed to update profile')
+    }
+    
+    // Update the user data in auth store
+    await authStore.checkAuth()
+    
+    // Show success message
     alert('Profile updated successfully!')
   } catch (error) {
     console.error('Failed to update profile:', error)
