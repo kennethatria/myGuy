@@ -18,10 +18,8 @@ import (
 )
 
 func main() {
-	// Load environment variables
-	if err := godotenv.Load(); err != nil {
-		log.Fatal("Error loading .env file")
-	}
+	// Load environment variables from .env file if it exists
+	godotenv.Load() // Ignore error if .env doesn't exist
 
 	// Initialize database
 	db, err := gorm.Open(postgres.Open(os.Getenv("DB_CONNECTION")), &gorm.Config{})
