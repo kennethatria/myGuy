@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"myguy/internal/models"
 	"myguy/internal/repositories"
 	"time"
@@ -11,7 +12,7 @@ import (
 var (
 	ErrTaskNotFound    = errors.New("task not found")
 	ErrUnauthorized    = errors.New("unauthorized")
-	ErrInvalidDeadline = errors.New("deadline must be at least one day in the future")
+	ErrInvalidDeadline = errors.New("deadline must be at least one day (24 hours) in the future")
 	ErrTaskNotOpen     = errors.New("task is not open for applications")
 )
 
@@ -50,7 +51,12 @@ func (s *TaskService) CreateTask(ctx context.Context, input CreateTaskInput) (*m
 	minDeadline := now.AddDate(0, 0, 1) // Add 1 day to current time
 	deadline := input.Deadline.UTC()
 
+	fmt.Printf("CreateTask: Now=%v, MinDeadline=%v, ProvidedDeadline=%v\n", 
+		now, minDeadline, deadline)
+
 	if deadline.Before(minDeadline) {
+		fmt.Printf("Validation error: Deadline (%v) is before minimum deadline (%v)\n", 
+			deadline, minDeadline)
 		return nil, ErrInvalidDeadline
 	}
 
@@ -81,8 +87,12 @@ func (s *TaskService) UpdateTask(ctx context.Context, input UpdateTaskInput) (*m
 	}
 
 	// Require deadline to be at least one day in the future
-	minDeadline := time.Now().UTC().AddDate(0, 0, 1)
+	now := time.Now().UTC()
+	minDeadline := now.AddDate(0, 0, 1)
+	
 	if input.Deadline.UTC().Before(minDeadline) {
+		fmt.Printf("Validation error: Deadline (%v) is before minimum deadline (%v)\n", 
+			input.Deadline.UTC(), minDeadline)
 		return nil, ErrInvalidDeadline
 	}
 

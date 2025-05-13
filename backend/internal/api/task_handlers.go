@@ -57,7 +57,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	if err != nil {
 		switch err {
 		case services.ErrInvalidDeadline:
-			c.JSON(http.StatusBadRequest, gin.H{"error": "deadline must be in the future"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Deadline must be at least one day (24 hours) in the future"})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create task"})
 		}
@@ -149,7 +149,7 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 		case services.ErrUnauthorized:
 			c.JSON(http.StatusForbidden, gin.H{"error": "Not authorized to update this task"})
 		case services.ErrInvalidDeadline:
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Deadline must be in the future"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Deadline must be at least one day (24 hours) in the future"})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update task"})
 		}
