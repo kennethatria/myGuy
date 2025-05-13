@@ -86,6 +86,10 @@
             <div class="form-group" v-if="formError">
               <div class="alert alert-danger">{{ formError }}</div>
             </div>
+            
+            <div class="form-group" v-if="successMessage">
+              <div class="alert alert-success">{{ successMessage }}</div>
+            </div>
 
             <div class="flex justify-end mt-4">
               <button
@@ -169,6 +173,7 @@ const profile = ref<Profile>({
 const reviews = ref<Review[]>([])
 const isSubmitting = ref(false)
 const formError = ref('')
+const successMessage = ref('')
 const isLoading = ref(true)
 const formErrors = ref({
   username: '',
@@ -281,6 +286,7 @@ const validateForm = (): boolean => {
     bio: ''
   }
   formError.value = ''
+  successMessage.value = ''
   
   // Validate email
   if (!profile.value.email.trim()) {
@@ -314,6 +320,7 @@ const handleSubmit = async () => {
   try {
     isSubmitting.value = true
     formError.value = ''
+    successMessage.value = ''
     
     const authStore = useAuthStore()
     if (!authStore.user) {
@@ -363,8 +370,14 @@ const handleSubmit = async () => {
       await authStore.checkAuth()
     }
     
-    // Show success message
-    alert('Profile updated successfully!')
+    // Show success message below the form
+    formError.value = ''
+    successMessage.value = 'Profile updated successfully!'
+    
+    // Auto-hide success message after 5 seconds
+    setTimeout(() => {
+      successMessage.value = ''
+    }, 5000)
   } catch (error) {
     console.error('Failed to update profile:', error)
     // Make sure we handle error properly whether it's an Error object or something else
@@ -390,6 +403,12 @@ const handleSubmit = async () => {
   color: #721c24;
   background-color: #f8d7da;
   border-color: #f5c6cb;
+}
+
+.alert-success {
+  color: #155724;
+  background-color: #d4edda;
+  border-color: #c3e6cb;
 }
 
 .invalid-feedback {
