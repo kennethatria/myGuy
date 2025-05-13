@@ -92,24 +92,39 @@ export const useTasksStore = defineStore('tasks', () => {
     const token = authStore.token;
     
     try {
+      console.log(`Fetching applications for task ID: ${taskId}`);
+      
       // Since the applications data is now included in the task itself from the backend
-      const task = await getTask(taskId)
+      const task = await getTask(taskId);
       if (task.applications && Array.isArray(task.applications)) {
-        return task.applications
+        console.log(`Using ${task.applications.length} applications from task data`);
+        return task.applications;
       }
       
       // Fallback to legacy endpoint if task doesn't include applications
-      const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}/applications`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+      try {
+        const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}/applications`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!response.ok) {
+          console.warn(`Failed to fetch applications, status: ${response.status}`);
+          return []; // Return empty array instead of throwing
         }
-      })
-      if (!response.ok) throw new Error('Failed to fetch task applications')
-      return await response.json()
+        
+        const applications = await response.json();
+        console.log(`Fetched ${applications.length} applications via API`);
+        return applications;
+      } catch (innerError) {
+        console.error('Error in API fetch for applications:', innerError);
+        return []; // Return empty array to prevent UI breakage
+      }
     } catch (error) {
-      console.error('Error fetching task applications:', error)
-      throw error
+      console.error('Error fetching task applications:', error);
+      return []; // Return empty array to prevent UI breakage
     }
   }
 

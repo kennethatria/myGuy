@@ -111,10 +111,10 @@
             <div v-for="message in messages" :key="message.id" class="card p-3">
               <div class="flex-1">
                 <div class="flex items-center justify-between mb-1">
-                  <span class="font-medium">{{ message.sender.username }}</span>
-                  <span class="text-sm text-gray">{{ formatDate(message.createdAt) }}</span>
+                  <span class="font-medium">{{ message.sender?.username || 'Unknown User' }}</span>
+                  <span class="text-sm text-gray">{{ formatDate(message.createdAt || new Date()) }}</span>
                 </div>
-                <p>{{ message.content }}</p>
+                <p>{{ message.content || 'No message content' }}</p>
               </div>
             </div>
           </div>
@@ -255,36 +255,53 @@ const loadTaskData = async () => {
   error.value = ''
   
   try {
-    // Load task data first
-    const taskData = await tasksStore.getTask(taskId)
-    task.value = taskData
+    console.log(`Loading task data for ID: ${taskId}`);
     
-    // If task loaded successfully, load applications (if not already included in task)
-    let applicationsData = taskData.applications || []
+    // Load task data first
+    const taskData = await tasksStore.getTask(taskId);
+    
+    // Validate we have a proper task object
+    if (!taskData || typeof taskData !== 'object') {
+      console.error('Invalid task data received:', taskData);
+      error.value = 'Could not load gig details. Please try again.';
+      isLoading.value = false;
+      return;
+    }
+    
+    task.value = taskData;
+    console.log('Task data loaded successfully:', task.value);
+    
+    // Load applications (if not already included in task)
+    let applicationsData = taskData.applications || [];
     if (!taskData.applications) {
+      console.log('Applications not included in task data, fetching separately');
       try {
-        applicationsData = await tasksStore.getTaskApplications(taskId)
+        applicationsData = await tasksStore.getTaskApplications(taskId);
       } catch (appErr) {
-        console.error('Failed to fetch applications:', appErr)
+        console.error('Failed to fetch applications:', appErr);
         // Non-critical error, don't show to user but log it
+        applicationsData = []; // Ensure we have an empty array at minimum
       }
     }
-    applications.value = applicationsData
+    applications.value = applicationsData || [];
+    console.log(`Loaded ${applications.value.length} applications`);
     
     // Load messages separately since they're not included in the task data
     try {
-      const messagesData = await messagesStore.fetchTaskMessages(taskId)
-      messages.value = messagesData
+      const messagesData = await messagesStore.fetchTaskMessages(taskId);
+      messages.value = messagesData || [];
+      console.log(`Loaded ${messages.value.length} messages`);
     } catch (msgErr) {
-      console.error('Failed to fetch messages:', msgErr)
+      console.error('Failed to fetch messages:', msgErr);
       // Non-critical error, don't show to user but log it
+      messages.value = []; // Ensure we have an empty array
     }
     
   } catch (err) {
-    console.error('Failed to fetch task details:', err)
-    error.value = 'Failed to load gig details. Please try again.'
+    console.error('Failed to fetch task details:', err);
+    error.value = 'Failed to load gig details. Please try again.';
   } finally {
-    isLoading.value = false
+    isLoading.value = false;
   }
 }
 

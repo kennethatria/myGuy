@@ -22,19 +22,40 @@ export const useMessagesStore = defineStore('messages', () => {
     const token = authStore.token;
     
     try {
+      console.log(`Fetching messages for task ID: ${taskId}`);
       const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}/messages`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         }
-      })
-      if (!response.ok) throw new Error('Failed to fetch messages')
-      const data = await response.json()
-      messages.value = data
-      return data
+      });
+      
+      if (!response.ok) {
+        console.warn(`Failed to fetch messages, status: ${response.status}`);
+        // Return empty array instead of throwing to prevent UI breakage
+        messages.value = [];
+        return [];
+      }
+      
+      const data = await response.json();
+      console.log(`Fetched ${data.length} messages for task ${taskId}`);
+      
+      // Ensure all messages have the required properties
+      const validatedData = data.map((msg: any) => ({
+        ...msg,
+        id: msg.id || Math.random(), // Ensure ID exists
+        sender: msg.sender || { id: 0, username: 'Unknown User' }, // Ensure sender exists
+        content: msg.content || '',
+        createdAt: msg.createdAt || new Date().toISOString()
+      }));
+      
+      messages.value = validatedData;
+      return validatedData;
     } catch (error) {
-      console.error('Error fetching messages:', error)
-      throw error
+      console.error('Error fetching messages:', error);
+      // Return empty array instead of throwing to prevent UI breakage
+      messages.value = [];
+      return [];
     }
   }
 
