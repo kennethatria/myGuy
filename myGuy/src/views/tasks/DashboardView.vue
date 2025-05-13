@@ -182,14 +182,9 @@ const createdTasks = computed(() => {
 })
 
 const assignedTasks = computed(() => {
-  const authStore = useAuthStore()
-  const currentUserId = authStore.user?.id
-  
-  // Filter out tasks that were created by the current user
-  // Only show tasks assigned to me by OTHER users
-  return (tasksStore.assignedTasks || []).filter(task => {
-    return task.createdBy !== currentUserId
-  })
+  // Server-side filtering now handles excluding self-assigned tasks
+  // We just return the filtered data from the API
+  return tasksStore.assignedTasks || []
 })
 
 const stats = computed<Stats>(() => {

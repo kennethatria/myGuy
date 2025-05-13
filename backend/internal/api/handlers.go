@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"myguy/internal/middleware"
+	"myguy/internal/models"
 	"myguy/internal/services"
 )
 
@@ -247,13 +248,27 @@ func (h *Handler) GetUserTasks(c *gin.Context) {
 }
 
 // GetAssignedTasks returns tasks assigned to the current user
+// Excludes tasks the user created themselves (only shows tasks from other users)
 func (h *Handler) GetAssignedTasks(c *gin.Context) {
 	userID := c.GetUint("userID")
 	
+	// Get all tasks assigned to the user
 	tasks, err := h.taskService.ListUserTasks(c.Request.Context(), userID, "assigned")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve assigned tasks"})
 		return
+	}
+	
+	// Check if we should exclude self-assigned tasks (tasks the user both created and is assigned to)
+	if excludeSelf := c.Query("exclude_self_assigned"); excludeSelf == "true" {
+		// Filter out tasks where createdBy == current user
+		filteredTasks := make([]models.Task, 0, len(tasks))
+		for _, task := range tasks {
+			if task.CreatedBy != userID {
+				filteredTasks = append(filteredTasks, task)
+			}
+		}
+		tasks = filteredTasks
 	}
 	
 	c.JSON(http.StatusOK, tasks)
