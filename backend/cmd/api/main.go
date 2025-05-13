@@ -107,6 +107,8 @@ func main() {
 		// Review routes
 		auth.POST("/tasks/:id/reviews", handler.CreateReview)
 		auth.GET("/users/:id/reviews", handler.GetUserReviews)
+		// User routes
+		auth.GET("/users/:id", handler.GetUserByID)
 
 		// Profile routes
 		auth.GET("/profile", handler.GetProfile)

@@ -387,6 +387,27 @@ func (h *Handler) GetUserReviews(c *gin.Context) {
 	c.JSON(http.StatusOK, reviews)
 }
 
+// GetUserByID handles retrieving a user by their ID
+func (h *Handler) GetUserByID(c *gin.Context) {
+	userID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	user, err := h.userService.GetUser(c.Request.Context(), uint(userID))
+	if err != nil {
+		if err == services.ErrUserNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user"})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, user)
+}
+
 type updateProfileRequest struct {
 	FullName    string `json:"full_name"`
 	Email       string `json:"email" binding:"email"`

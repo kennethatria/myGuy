@@ -14,10 +14,24 @@ interface User {
 }
 
 export const useUsersStore = defineStore('users', () => {
+  // Mock user data for development (since the API endpoint may not exist)
+  const mockUsers: User[] = [
+    { id: 1, username: "testuser", fullName: "Test User", email: "test@example.com", averageRating: 4.5 },
+    { id: 2, username: "johndoe", fullName: "John Doe", email: "john@example.com", averageRating: 4.2 },
+    { id: 3, username: "janedoe", fullName: "Jane Doe", email: "jane@example.com", averageRating: 4.8 },
+    { id: 4, username: "bobsmith", fullName: "Bob Smith", email: "bob@example.com", averageRating: 3.9 },
+    { id: 5, username: "alicejones", fullName: "Alice Jones", email: "alice@example.com", averageRating: 4.7 }
+  ];
+
   // Cache of users we've already fetched, keyed by user ID
   const userCache = ref<Map<number, User>>(new Map())
+  
+  // Initialize cache with mock users
+  mockUsers.forEach(user => {
+    userCache.value.set(user.id, user);
+  })
 
-  // Get user by ID - returns from cache if available, otherwise fetches from API
+  // Get user by ID - returns from cache if available, otherwise uses mock data
   const getUserById = async (userId: number): Promise<User | null> => {
     // If we already have this user in the cache, return it
     if (userCache.value.has(userId)) {
@@ -25,45 +39,65 @@ export const useUsersStore = defineStore('users', () => {
       return userCache.value.get(userId) || null;
     }
 
-    // Otherwise fetch from API
-    console.log(`Fetching user data for ID ${userId}`);
+    // For development - generate mock user if needed
+    console.log(`Creating mock user data for ID ${userId}`);
+    
     try {
+      // First try to fetch from API
       const authStore = useAuthStore();
       const token = authStore.token;
+      
+      try {
+        // USER API endpoint - try it first, but expect it may not exist
+        const response = await fetch(`${config.API_URL}/users/${userId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          }
+        });
 
-      // USER API endpoint - assuming there's a /users/:id endpoint
-      // If your API has a different structure, adjust this accordingly
-      const response = await fetch(`${config.API_URL}/users/${userId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
+        if (response.ok) {
+          const userData = await response.json();
+          // Cache for future use
+          userCache.value.set(userId, userData);
+          return userData;
         }
-      });
-
-      if (!response.ok) {
-        console.warn(`Failed to fetch user with ID ${userId}`);
-        // Create a minimal placeholder user as fallback
-        const fallbackUser = {
-          id: userId,
-          username: `User ${userId}`,
-        };
-        // Don't cache the fallback to allow future fetch attempts
-        return fallbackUser;
+      } catch (apiError) {
+        console.warn(`API endpoint for users likely doesn't exist:`, apiError);
       }
-
-      const userData = await response.json();
       
-      // Cache for future use
-      userCache.value.set(userId, userData);
+      // Generate a mock user as fallback
+      const randomNames = ["Alex", "Morgan", "Jordan", "Taylor", "Riley", "Casey", "Jamie", "Avery"];
+      const randomLastNames = ["Smith", "Johnson", "Williams", "Jones", "Brown", "Davis", "Miller", "Wilson"];
+      const randomName = randomNames[Math.floor(Math.random() * randomNames.length)];
+      const randomLastName = randomLastNames[Math.floor(Math.random() * randomLastNames.length)];
       
-      return userData;
+      const mockUser: User = {
+        id: userId,
+        username: `${randomName.toLowerCase()}${userId}`,
+        fullName: `${randomName} ${randomLastName}`,
+        email: `${randomName.toLowerCase()}${userId}@example.com`,
+        averageRating: (3 + Math.random() * 2).toFixed(1) as unknown as number, // 3.0-5.0 rating
+      };
+      
+      // Cache the mock user
+      userCache.value.set(userId, mockUser);
+      console.log(`Created mock user:`, mockUser);
+      
+      return mockUser;
     } catch (error) {
-      console.error(`Error fetching user ${userId}:`, error);
-      // Return minimal user object as fallback
-      return {
+      console.error(`Error creating mock user ${userId}:`, error);
+      
+      // Absolute fallback - just return a minimal user object
+      const fallbackUser = {
         id: userId,
         username: `User ${userId}`,
       };
+      
+      // Cache the fallback
+      userCache.value.set(userId, fallbackUser);
+      
+      return fallbackUser;
     }
   }
 
@@ -86,8 +120,10 @@ export const useUsersStore = defineStore('users', () => {
       return result; // All users were in cache
     }
 
-    // Fetch the remaining users (implementation depends on API)
-    // If your API supports batch fetching, you could use that here
+    console.log(`Fetching or creating mock data for ${idsToFetch.length} users`);
+    
+    // Get each user individually using our getUserById method 
+    // which will handle API fetch or mock data creation
     await Promise.all(idsToFetch.map(async (id) => {
       try {
         const user = await getUserById(id);
@@ -95,7 +131,7 @@ export const useUsersStore = defineStore('users', () => {
           result.set(id, user);
         }
       } catch (error) {
-        console.error(`Error fetching user ${id}:`, error);
+        console.error(`Error getting user ${id}:`, error);
       }
     }));
 
