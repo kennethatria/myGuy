@@ -89,6 +89,7 @@ func main() {
 	{
 		// Task routes
 		auth.POST("/tasks", handler.CreateTask)
+		auth.GET("/tasks", handler.ListTasks)
 		auth.GET("/tasks/:id", handler.GetTask)
 		auth.POST("/tasks/:id/apply", handler.ApplyForTask)
 

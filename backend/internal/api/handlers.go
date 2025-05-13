@@ -147,6 +147,34 @@ func (h *Handler) GetTask(c *gin.Context) {
 	c.JSON(http.StatusOK, task)
 }
 
+// ListTasks returns all tasks with optional filtering
+func (h *Handler) ListTasks(c *gin.Context) {
+	// Create filters from query parameters
+	filters := make(map[string]interface{})
+	
+	// Add status filter if provided
+	if status := c.Query("status"); status != "" {
+		filters["status"] = status
+	}
+	
+	// Add created_by filter if provided
+	if createdBy := c.Query("created_by"); createdBy != "" {
+		userID, err := strconv.ParseUint(createdBy, 10, 64)
+		if err == nil {
+			filters["created_by"] = uint(userID)
+		}
+	}
+	
+	// Get tasks with the provided filters
+	tasks, err := h.taskService.ListTasks(c.Request.Context(), filters)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve tasks"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, tasks)
+}
+
 type applyForTaskRequest struct {
 	ProposedFee float64 `json:"proposed_fee" binding:"required"`
 	Message     string  `json:"message" binding:"required"`
