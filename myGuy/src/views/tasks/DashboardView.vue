@@ -10,7 +10,16 @@
 
     <div v-else-if="error" class="card p-4 mb-4 bg-red-100 text-danger">
       <p>{{ error }}</p>
-      <button @click="fetchDashboardData" class="btn btn-outline mt-2">Retry</button>
+      <div class="mt-2">
+        <button 
+          v-if="error.includes('log in')" 
+          @click="redirectToLogin" 
+          class="btn btn-primary mr-2"
+        >
+          Log In
+        </button>
+        <button @click="fetchDashboardData" class="btn btn-outline">Retry</button>
+      </div>
     </div>
 
     <div v-else>
@@ -139,7 +148,9 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { format } from 'date-fns'
+import { useRouter } from 'vue-router'
 import { useTasksStore } from '@/stores/tasks'
+import { useAuthStore } from '@/stores/auth'
 
 interface Task {
   id: number
@@ -156,8 +167,15 @@ interface Stats {
 }
 
 const tasksStore = useTasksStore()
+const router = useRouter()
 const isLoading = ref(false)
 const error = ref('')
+
+const redirectToLogin = () => {
+  const authStore = useAuthStore()
+  authStore.logout() // Clear any existing auth state
+  router.push({ name: 'login' })
+}
 
 const createdTasks = computed(() => {
   return tasksStore.userTasks || []
@@ -252,6 +270,22 @@ const fetchDashboardData = async () => {
   error.value = ''
   
   try {
+    // Make sure we have a valid token before trying to fetch data
+    const authStore = useAuthStore()
+    if (!authStore.token) {
+      error.value = 'Please log in to view your dashboard.'
+      isLoading.value = false
+      return
+    }
+    
+    // Check authentication status
+    const isAuthenticated = await authStore.checkAuth()
+    if (!isAuthenticated) {
+      error.value = 'Your session has expired. Please log in again.'
+      isLoading.value = false
+      return
+    }
+    
     // Fetch real data from API
     await Promise.all([
       tasksStore.fetchUserTasks(),
@@ -260,9 +294,15 @@ const fetchDashboardData = async () => {
     
     // If the backend is down or no data is available, uncomment this for testing:
     // loadSampleData()
-  } catch (err) {
+  } catch (err: any) {
     console.error('Failed to fetch dashboard data:', err)
-    error.value = 'Failed to load dashboard data. Please try again later.'
+    
+    // Check if it's an authentication error
+    if (err.message && err.message.includes('log in again')) {
+      error.value = err.message
+    } else {
+      error.value = 'Failed to load dashboard data. Please try again later.'
+    }
   } finally {
     isLoading.value = false
   }

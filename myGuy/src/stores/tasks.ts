@@ -117,13 +117,29 @@ export const useTasksStore = defineStore('tasks', () => {
     const token = authStore.token;
     
     try {
-      const response = await fetch(config.ENDPOINTS.USER_TASKS, {
+      // Get the current user ID
+      const userId = authStore.user?.id;
+      if (!userId) {
+        // If we don't have the user ID yet, try to get the profile
+        await authStore.checkAuth();
+      }
+      
+      const response = await fetch(`${config.ENDPOINTS.TASKS}?created_by=${userId || authStore.user?.id}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       })
-      if (!response.ok) throw new Error('Failed to fetch user tasks')
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Token expired or invalid, trigger a relogin
+          authStore.logout();
+          throw new Error('Please log in again to continue')
+        }
+        throw new Error('Failed to fetch user tasks')
+      }
+      
       userTasks.value = await response.json()
     } catch (error) {
       console.error('Error fetching user tasks:', error)
@@ -136,13 +152,29 @@ export const useTasksStore = defineStore('tasks', () => {
     const token = authStore.token;
     
     try {
-      const response = await fetch(config.ENDPOINTS.ASSIGNED_TASKS, {
+      // Get the current user ID
+      const userId = authStore.user?.id;
+      if (!userId) {
+        // If we don't have the user ID yet, try to get the profile
+        await authStore.checkAuth();
+      }
+      
+      const response = await fetch(`${config.ENDPOINTS.TASKS}?assigned_to=${userId || authStore.user?.id}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       })
-      if (!response.ok) throw new Error('Failed to fetch assigned tasks')
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Token expired or invalid, trigger a relogin
+          authStore.logout();
+          throw new Error('Please log in again to continue')
+        }
+        throw new Error('Failed to fetch assigned tasks')
+      }
+      
       assignedTasks.value = await response.json()
     } catch (error) {
       console.error('Error fetching assigned tasks:', error)
