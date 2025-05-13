@@ -1,7 +1,10 @@
 <template>
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <div class="flex justify-between items-center mb-6">
-      <h1 class="text-2xl font-semibold text-gray-900">Available Gigs</h1>
+      <div>
+        <h1 class="text-2xl font-semibold text-gray-900">Available Gigs</h1>
+        <p class="text-gray-500 mt-1">Gigs created by other users that you can apply for</p>
+      </div>
       <router-link
         :to="{ name: 'create-task' }"
         class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
@@ -25,10 +28,15 @@
     <!-- Empty state -->
     <div v-else-if="tasks.length === 0" class="card p-8 text-center">
       <p class="text-lg mb-4">No available gigs found</p>
-      <p class="text-gray mb-4">There are currently no open gigs from other users.</p>
-      <router-link :to="{ name: 'create-task' }" class="btn btn-primary">
-        Create Your First Gig
-      </router-link>
+      <p class="text-gray mb-4">There are currently no open gigs created by other users.</p>
+      <div class="flex flex-col sm:flex-row justify-center gap-3 mt-4">
+        <router-link :to="{ name: 'create-task' }" class="btn btn-primary">
+          Create Your Own Gig
+        </router-link>
+        <button @click="fetchTasks" class="btn btn-outline">
+          Refresh List
+        </button>
+      </div>
     </div>
 
     <!-- Task list -->
@@ -123,16 +131,25 @@ const fetchTasks = async () => {
     console.log('All tasks:', tasksStore.tasks)
     
     tasks.value = tasksStore.tasks.filter(task => {
-      // Convert IDs to strings for comparison to avoid type issues
-      const taskCreatorId = String(task.createdBy)
-      const userId = currentUserId ? String(currentUserId) : ''
+      // Only include tasks that meet both conditions:
+      // 1. Not created by the current user (i.e., created by someone else)
+      // 2. Have an 'open' status (available for applications)
       
-      console.log(`Task ${task.id} - Created by: ${taskCreatorId}, User: ${userId}, Match: ${taskCreatorId === userId}`)
+      // First check if we have a valid current user ID
+      if (!currentUserId) {
+        return false; // If no user is logged in, don't show any tasks
+      }
       
-      // Only show tasks that are:
-      // 1. Not created by the current user (show other users' tasks)
-      // 2. Have an 'open' status (not in progress or completed)
-      return userId && taskCreatorId !== userId && task.status === 'open'
+      // Always compare numbers with numbers to avoid type coercion issues
+      const isCreatedByCurrentUser = task.createdBy === currentUserId;
+      const isOpenTask = task.status === 'open';
+      
+      // Debug logging
+      console.log(`Task ${task.id} - Title: ${task.title} - Created by: ${task.createdBy}, Current user: ${currentUserId}`);
+      console.log(`- Created by current user: ${isCreatedByCurrentUser}, Status: ${task.status}`);
+      
+      // Only include tasks NOT created by the current user AND that are open
+      return !isCreatedByCurrentUser && isOpenTask;
     })
     
     console.log('Filtered tasks:', tasks.value)
@@ -146,10 +163,26 @@ const fetchTasks = async () => {
 }
 
 onMounted(async () => {
-  const isAuthenticated = await authStore.checkAuth()
-  console.log("Is authenticated:", isAuthenticated)
-  console.log("User after auth check:", authStore.user)
+  isLoading.value = true
   
-  await fetchTasks()
+  try {
+    // Make sure we have the latest user data
+    const isAuthenticated = await authStore.checkAuth()
+    console.log("Is authenticated:", isAuthenticated)
+    console.log("User after auth check:", authStore.user)
+    
+    if (!isAuthenticated) {
+      error.value = "You must be logged in to view available gigs"
+      return
+    }
+    
+    // Load the tasks after we've confirmed authentication
+    await fetchTasks()
+  } catch (err) {
+    console.error("Error during initialization:", err)
+    error.value = "Failed to load your profile data. Please refresh the page."
+  } finally {
+    isLoading.value = false
+  }
 })
 </script>
