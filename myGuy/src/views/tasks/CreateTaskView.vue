@@ -1,81 +1,97 @@
 <template>
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    <div class="md:grid md:grid-cols-3 md:gap-6">
-      <div class="md:col-span-1">
-        <div class="px-4 sm:px-0">
-          <h3 class="text-lg font-medium leading-6 text-gray-900">Post a New Gig</h3>
-          <p class="mt-1 text-sm text-gray-600">
+  <div class="container py-4">
+    <h1 class="mb-4">Post a New Gig</h1>
+    
+    <div class="row">
+      <!-- Form description -->
+      <div class="col">
+        <div class="card mb-4">
+          <h3>Guidelines</h3>
+          <p class="mt-2 text-gray">
             Provide the details for your gig. Be specific about your requirements and deadline.
+            Clear descriptions help potential applicants understand what you need.
           </p>
+          <ul class="mt-3">
+            <li class="mb-1">Set a clear title that describes the gig</li>
+            <li class="mb-1">Explain all requirements in detail</li>
+            <li class="mb-1">Set a realistic deadline (at least one day from now)</li>
+          </ul>
         </div>
       </div>
 
-      <div class="mt-5 md:mt-0 md:col-span-2">
-        <form @submit.prevent="handleSubmit">
-          <div class="shadow sm:rounded-md sm:overflow-hidden">
-            <div class="px-4 py-5 bg-white space-y-6 sm:p-6">
-              <div>
-                <label for="title" class="block text-sm font-medium text-gray-700">Title</label>
-                <div class="mt-1">
-                  <input
-                    type="text"
-                    name="title"
-                    id="title"
-                    v-model="task.title"
-                    class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label for="description" class="block text-sm font-medium text-gray-700">Description</label>
-                <div class="mt-1">
-                  <textarea
-                    id="description"
-                    name="description"
-                    rows="3"
-                    v-model="task.description"
-                    class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border border-gray-300 rounded-md"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label for="deadline" class="block text-sm font-medium text-gray-700">Deadline</label>
-                <div class="mt-1">
-                  <input
-                    type="datetime-local"
-                    name="deadline"
-                    id="deadline"
-                    v-model="task.deadline"
-                    :min="minDeadlineString"
-                    class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                    required
-                  />
-                  <p class="mt-1 text-sm text-gray-500">Deadline must be at least one day in the future</p>
-                </div>
-              </div>
+      <!-- Gig creation form -->
+      <div class="col">
+        <div class="card">
+          <form @submit.prevent="handleSubmit">
+            <div class="form-group">
+              <label for="title" class="form-label">Gig Title</label>
+              <input
+                type="text"
+                name="title"
+                id="title"
+                v-model="task.title"
+                class="form-input"
+                :class="{ 'is-invalid': formErrors.title }"
+                placeholder="E.g., Website Development, Logo Design, Data Entry"
+                required
+              />
+              <div v-if="formErrors.title" class="invalid-feedback">{{ formErrors.title }}</div>
             </div>
 
-            <div class="px-4 py-3 bg-gray-50 text-right sm:px-6">
+            <div class="form-group">
+              <label for="description" class="form-label">Description</label>
+              <textarea
+                id="description"
+                name="description"
+                rows="5"
+                v-model="task.description"
+                class="form-input"
+                :class="{ 'is-invalid': formErrors.description }"
+                placeholder="Describe your requirements in detail..."
+                required
+              ></textarea>
+              <div v-if="formErrors.description" class="invalid-feedback">{{ formErrors.description }}</div>
+            </div>
+
+            <div class="form-group">
+              <label for="deadline" class="form-label">Deadline</label>
+              <input
+                type="datetime-local"
+                name="deadline"
+                id="deadline"
+                v-model="task.deadline"
+                :min="minDeadlineString"
+                class="form-input"
+                :class="{ 'is-invalid': formErrors.deadline }"
+                required
+              />
+              <p class="form-helper">Deadline must be at least one day in the future</p>
+              <div v-if="formErrors.deadline" class="invalid-feedback">{{ formErrors.deadline }}</div>
+            </div>
+
+            <div class="form-group" v-if="formError">
+              <div class="invalid-feedback">{{ formError }}</div>
+            </div>
+
+            <div class="flex justify-end mt-4">
               <button
                 type="button"
                 @click="$router.back()"
-                class="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 mr-3"
+                class="btn btn-outline mr-2"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                class="btn btn-primary"
+                :disabled="isSubmitting"
               >
-                Post Gig
+                <span v-if="isSubmitting">Posting...</span>
+                <span v-else>Post Gig</span>
               </button>
             </div>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
     </div>
   </div>
@@ -87,6 +103,13 @@ import { useRouter } from 'vue-router'
 import { useTasksStore } from '@/stores/tasks'
 
 const router = useRouter()
+const isSubmitting = ref(false)
+const formError = ref('')
+const formErrors = ref({
+  title: '',
+  description: '',
+  deadline: ''
+})
 
 // Helper to format datetime-local string
 const formatDatetimeLocal = (date: Date): string => {
@@ -124,13 +147,53 @@ const validateDeadline = (deadlineStr: string): boolean => {
   return deadlineDate >= minDeadline
 }
 
+const validateForm = (): boolean => {
+  let isValid = true
+  formErrors.value = {
+    title: '',
+    description: '',
+    deadline: ''
+  }
+  formError.value = ''
+  
+  // Validate title
+  if (!task.value.title.trim()) {
+    formErrors.value.title = 'Title is required'
+    isValid = false
+  } else if (task.value.title.length < 5) {
+    formErrors.value.title = 'Title must be at least 5 characters'
+    isValid = false
+  }
+  
+  // Validate description
+  if (!task.value.description.trim()) {
+    formErrors.value.description = 'Description is required'
+    isValid = false
+  } else if (task.value.description.length < 20) {
+    formErrors.value.description = 'Description must be at least 20 characters'
+    isValid = false
+  }
+  
+  // Validate deadline
+  if (!task.value.deadline) {
+    formErrors.value.deadline = 'Deadline is required'
+    isValid = false
+  } else if (!validateDeadline(task.value.deadline)) {
+    formErrors.value.deadline = 'Deadline must be at least one day in the future'
+    isValid = false
+  }
+  
+  return isValid
+}
+
 const handleSubmit = async () => {
+  if (!validateForm()) {
+    return
+  }
+  
   try {
-    // Validate the deadline is at least one day in the future
-    if (!validateDeadline(task.value.deadline)) {
-      alert('Deadline must be at least one day in the future')
-      return
-    }
+    isSubmitting.value = true
+    formError.value = ''
     
     // Format the deadline to RFC3339 format with timezone
     const deadlineDate = new Date(task.value.deadline)
@@ -151,7 +214,9 @@ const handleSubmit = async () => {
     await router.push({ name: 'tasks' })
   } catch (error) {
     console.error('Failed to create task:', error)
-    alert('Error: ' + (error.message || 'Failed to create task. Make sure deadline is at least one day in the future.'))
+    formError.value = error.message || 'Failed to create gig. Please try again.'
+  } finally {
+    isSubmitting.value = false
   }
 }
 </script>

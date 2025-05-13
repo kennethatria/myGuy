@@ -115,19 +115,20 @@ a:hover {
 
 /* Forms */
 .form-group {
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
 }
 
 .form-label {
   display: block;
   margin-bottom: 0.5rem;
-  font-weight: 500;
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .form-input {
   display: block;
   width: 100%;
-  padding: 0.5rem 0.75rem;
+  padding: 0.625rem 0.75rem;
   font-size: 1rem;
   line-height: 1.5;
   color: var(--color-text);
@@ -135,13 +136,78 @@ a:hover {
   background-clip: padding-box;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  transition: all 0.2s ease-in-out;
 }
 
 .form-input:focus {
   border-color: var(--color-primary);
   outline: 0;
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+}
+
+.form-input::placeholder {
+  color: var(--color-text-light);
+  opacity: 0.7;
+}
+
+/* Specific input types */
+textarea.form-input {
+  min-height: 100px;
+  resize: vertical;
+}
+
+input[type="datetime-local"].form-input {
+  padding: 0.5rem;
+}
+
+/* Form helper text */
+.form-helper {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--color-text-light);
+}
+
+/* Form validation */
+.form-input.is-invalid {
+  border-color: var(--color-danger, #EF4444);
+}
+
+.form-input.is-invalid:focus {
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+.invalid-feedback {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--color-danger, #EF4444);
+}
+
+/* Form layout */
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  margin-right: -0.5rem;
+  margin-left: -0.5rem;
+}
+
+.form-col {
+  flex: 1 0 0%;
+  padding-right: 0.5rem;
+  padding-left: 0.5rem;
+}
+
+/* Responsive form adjustments */
+@media (max-width: 768px) {
+  .form-row {
+    flex-direction: column;
+  }
+  
+  .form-col + .form-col {
+    margin-top: 1rem;
+  }
 }
 
 /* Buttons */
@@ -616,13 +682,24 @@ a:hover {
 .nav {
   background-color: #fff;
   box-shadow: var(--shadow);
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 
 .nav-container {
+  padding: 0.75rem 1rem;
+}
+
+.nav-wrapper {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
+}
+
+.nav-start {
+  display: flex;
+  align-items: center;
 }
 
 .nav-logo {
@@ -633,24 +710,185 @@ a:hover {
   color: var(--color-primary);
 }
 
-.nav-logo img {
-  height: 32px;
-  margin-right: 0.5rem;
+.logo-image {
+  height: 2rem;
+  width: auto;
+}
+
+.logo-text {
+  margin-left: 0.5rem;
 }
 
 .nav-links {
   display: flex;
-  gap: 1.5rem;
+  margin-left: 2rem;
 }
 
 .nav-link {
   color: var(--color-text);
   font-weight: 500;
-  transition: color 0.2s;
+  transition: color 0.2s, border-color 0.2s;
+  padding: 0.5rem 0.75rem;
+  margin: 0 0.25rem;
+  border-bottom: 2px solid transparent;
 }
 
 .nav-link:hover, .nav-link.active {
   color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+/* User Profile and Mobile Menu */
+.user-profile {
+  display: flex;
+  align-items: center;
+}
+
+.profile-dropdown {
+  position: relative;
+}
+
+.user-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 9999px;
+  background-color: var(--color-primary);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.user-avatar:hover {
+  background-color: var(--color-primary-dark);
+  transform: scale(1.05);
+}
+
+.user-menu {
+  position: absolute;
+  right: 0;
+  margin-top: 0.5rem;
+  width: 12rem;
+  background: white;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  z-index: 10;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+.menu-item {
+  display: block;
+  padding: 0.75rem 1rem;
+  color: var(--color-text);
+  transition: background-color 0.2s, color 0.2s;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.menu-item:last-child {
+  border-bottom: none;
+}
+
+.menu-item:hover {
+  background-color: var(--color-background);
+  color: var(--color-primary);
+}
+
+.mobile-menu-button {
+  display: none;
+  margin-left: 1rem;
+}
+
+.mobile-menu-button button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 9999px;
+  background-color: var(--color-background);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.mobile-menu-button button:hover {
+  background-color: var(--color-border);
+}
+
+.menu-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+/* Mobile menu */
+.mobile-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background-color: white;
+  box-shadow: var(--shadow-lg);
+  z-index: 40;
+  border-top: 1px solid var(--color-border);
+}
+
+.mobile-nav-section {
+  padding: 0.5rem 0;
+}
+
+.mobile-profile-section {
+  border-top: 1px solid var(--color-border);
+  padding: 0.5rem 0;
+}
+
+.mobile-nav-link, .mobile-menu-link {
+  display: block;
+  padding: 0.75rem 1.5rem;
+  color: var(--color-text);
+  font-weight: 500;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.mobile-nav-link:hover, .mobile-menu-link:hover, .mobile-nav-link.active {
+  background-color: var(--color-background);
+  color: var(--color-primary);
+}
+
+.mobile-user-info {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+}
+
+.mobile-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 9999px;
+  background-color: var(--color-primary);
+  color: white;
+  font-weight: 600;
+}
+
+.mobile-user-details {
+  margin-left: 0.75rem;
+}
+
+.user-name {
+  font-weight: 600;
+}
+
+.user-email {
+  font-size: 0.875rem;
+  color: var(--color-text-light);
 }
 
 /* Responsive */
@@ -669,8 +907,18 @@ a:hover {
     margin-bottom: 1rem;
   }
   
+  /* Navigation responsive styles */
   .nav-links {
     display: none;
+  }
+  
+  .mobile-menu-button {
+    display: flex;
+    align-items: center;
+  }
+  
+  .nav-wrapper {
+    position: relative;
   }
   
   /* Dashboard mobile styles */
@@ -701,6 +949,17 @@ a:hover {
   /* Better spacing for stats cards on mobile */
   .row:first-of-type .card {
     margin-bottom: 0;
+  }
+  
+  /* Mobile menu animation */
+  .slide-down-enter-active, .slide-down-leave-active {
+    transition: transform 0.3s ease, opacity 0.3s ease;
+    transform-origin: top;
+  }
+  
+  .slide-down-enter-from, .slide-down-leave-to {
+    transform: translateY(-10px);
+    opacity: 0;
   }
 }
 

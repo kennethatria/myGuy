@@ -3,13 +3,13 @@
     <!-- Navigation -->
     <nav class="nav">
       <div class="container nav-container">
-        <div class="flex justify-between items-center">
-          <div class="flex items-center">
+        <div class="nav-wrapper">
+          <div class="nav-start">
             <router-link :to="{ name: 'home' }" class="nav-logo">
-              <img class="h-8 w-auto" src="../assets/myguy-icon.svg" alt="MyGuy" />
-              <span class="ml-2">MyGuy</span>
+              <img class="logo-image" src="../assets/myguy-icon.svg" alt="MyGuy" />
+              <span class="logo-text">MyGuy</span>
             </router-link>
-            <div class="nav-links ml-4">
+            <div class="nav-links">
               <router-link
                 v-for="item in navigation"
                 :key="item.name"
@@ -22,63 +22,69 @@
             </div>
           </div>
 
-          <div class="flex items-center">
+          <div class="user-profile">
             <!-- Profile dropdown -->
-            <div class="relative">
-              <div>
-                <button
-                  @click="isProfileMenuOpen = !isProfileMenuOpen"
-                  type="button"
-                  class="user-avatar"
-                  id="user-menu-button"
-                  aria-expanded="false"
-                  aria-haspopup="true"
-                >
-                  {{ userInitials }}
-                </button>
-              </div>
-
-              <div
-                v-if="isProfileMenuOpen"
-                class="user-menu"
-                role="menu"
-                aria-orientation="vertical"
-                aria-labelledby="user-menu-button"
+            <div class="profile-dropdown">
+              <button
+                @click="isProfileMenuOpen = !isProfileMenuOpen"
+                type="button"
+                class="user-avatar"
+                id="user-menu-button"
+                aria-expanded="false"
+                aria-haspopup="true"
               >
-                <router-link
-                  v-for="item in profileMenu"
-                  :key="item.name"
-                  :to="item.to"
-                  @click="isProfileMenuOpen = false"
+                <span v-if="user?.fullName">{{ userInitials }}</span>
+                <span v-else class="user-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </span>
+              </button>
+
+              <transition name="fade">
+                <div
+                  v-if="isProfileMenuOpen"
+                  class="user-menu"
+                  role="menu"
+                  aria-orientation="vertical"
+                  aria-labelledby="user-menu-button"
                 >
-                  {{ item.text }}
-                </router-link>
-                <a
-                  href="#"
-                  @click="handleSignOut"
-                >
-                  Sign out
-                </a>
-              </div>
+                  <router-link
+                    v-for="item in profileMenu"
+                    :key="item.name"
+                    :to="item.to"
+                    class="menu-item"
+                    @click="isProfileMenuOpen = false"
+                  >
+                    {{ item.text }}
+                  </router-link>
+                  <a
+                    href="#"
+                    class="menu-item"
+                    @click="handleSignOut"
+                  >
+                    Sign out
+                  </a>
+                </div>
+              </transition>
             </div>
           </div>
 
           <!-- Mobile menu button -->
-          <div class="flex items-center sm:hidden ml-4">
+          <div class="mobile-menu-button">
             <button
               @click="isMobileMenuOpen = !isMobileMenuOpen"
               type="button"
-              class="p-2"
               aria-controls="mobile-menu"
               aria-expanded="false"
             >
-              <span class="sr-only">Open main menu</span>
+              <span class="sr-only">Toggle menu</span>
               <svg
-                class="h-6 w-6"
+                class="menu-icon"
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
-                stroke="var(--color-text)"
+                stroke="currentColor"
                 aria-hidden="true"
               >
                 <path v-if="!isMobileMenuOpen" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
@@ -90,49 +96,51 @@
       </div>
 
       <!-- Mobile menu -->
-      <div v-if="isMobileMenuOpen" class="sm:hidden shadow-lg" id="mobile-menu">
-        <div class="py-2">
-          <router-link
-            v-for="item in navigation"
-            :key="item.name"
-            :to="item.to"
-            class="block px-4 py-2"
-            :class="{ 'bg-primary text-white': $route.name === item.name }"
-            @click="isMobileMenuOpen = false"
-          >
-            {{ item.text }}
-          </router-link>
-        </div>
-        <div class="py-2 border-t border-gray-200">
-          <div class="flex items-center px-4 py-2">
-            <div class="user-avatar">
-              {{ userInitials }}
-            </div>
-            <div class="ml-3">
-              <div class="font-medium">{{ user?.fullName || 'User' }}</div>
-              <div class="text-sm text-gray-500">{{ user?.email || 'user@example.com' }}</div>
-            </div>
-          </div>
-          <div class="mt-2">
+      <transition name="slide-down">
+        <div v-if="isMobileMenuOpen" class="mobile-menu" id="mobile-menu">
+          <div class="mobile-nav-section">
             <router-link
-              v-for="item in profileMenu"
+              v-for="item in navigation"
               :key="item.name"
               :to="item.to"
-              class="block px-4 py-2"
+              class="mobile-nav-link"
+              :class="{ 'active': $route.name === item.name }"
               @click="isMobileMenuOpen = false"
             >
               {{ item.text }}
             </router-link>
-            <a
-              href="#"
-              class="block px-4 py-2"
-              @click="handleSignOut"
-            >
-              Sign out
-            </a>
+          </div>
+          <div class="mobile-profile-section">
+            <div class="mobile-user-info">
+              <div class="mobile-avatar">
+                {{ userInitials }}
+              </div>
+              <div class="mobile-user-details">
+                <div class="user-name">{{ user?.fullName || 'User' }}</div>
+                <div class="user-email">{{ user?.email || 'user@example.com' }}</div>
+              </div>
+            </div>
+            <div class="mobile-menu-items">
+              <router-link
+                v-for="item in profileMenu"
+                :key="item.name"
+                :to="item.to"
+                class="mobile-menu-link"
+                @click="isMobileMenuOpen = false"
+              >
+                {{ item.text }}
+              </router-link>
+              <a
+                href="#"
+                class="mobile-menu-link"
+                @click="handleSignOut"
+              >
+                Sign out
+              </a>
+            </div>
           </div>
         </div>
-      </div>
+      </transition>
     </nav>
 
     <!-- Main content -->
@@ -142,42 +150,7 @@
   </div>
 </template>
 
-<style>
-/* Component-specific styles */
-.user-menu {
-  position: absolute;
-  right: 0;
-  margin-top: 0.5rem;
-  width: 12rem;
-  background: white;
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-lg);
-  z-index: 10;
-}
-
-.user-menu a {
-  display: block;
-  padding: 0.5rem 1rem;
-  color: var(--color-text);
-}
-
-.user-menu a:hover {
-  background-color: var(--color-background);
-}
-
-.user-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 9999px;
-  background-color: var(--color-primary);
-  color: white;
-  font-weight: 600;
-  cursor: pointer;
-}
-</style>
+<!-- Component-specific styles moved to custom.css -->
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
