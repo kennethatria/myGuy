@@ -79,6 +79,14 @@
                         {{ task.creator.username }}
                       </router-link>
                     </span>
+                    <span v-else-if="taskCreators.get(Number(task.createdBy))">
+                      <router-link 
+                        :to="{ name: 'profile', params: { id: taskCreators.get(Number(task.createdBy)).id } }" 
+                        class="text-primary hover:underline"
+                      >
+                        {{ taskCreators.get(Number(task.createdBy)).username }}
+                      </router-link>
+                    </span>
                     <span v-else>{{ task.createdBy ? `User ${task.createdBy}` : 'Unknown User' }}</span>
                     <br/>
                     Deadline: {{ formatDate(task.deadline) }}
@@ -98,6 +106,7 @@ import { ref, onMounted, computed } from 'vue'
 import { format } from 'date-fns'
 import { useTasksStore } from '@/stores/tasks'
 import { useAuthStore } from '@/stores/auth'
+import { useUsersStore } from '@/stores/users'
 
 interface Task {
   id: number
@@ -120,7 +129,9 @@ const statusClasses = {
 
 const tasksStore = useTasksStore()
 const authStore = useAuthStore()
+const usersStore = useUsersStore()
 const tasks = ref<Task[]>([])
+const taskCreators = ref<Map<number, any>>(new Map())
 const isLoading = ref(true)
 const error = ref('')
 
@@ -208,6 +219,38 @@ const fetchTasks = async () => {
         console.log('After final filter:', tasks.value);
       } else {
         console.log('Filtering validated: No user tasks in the list');
+      }
+    }
+    
+    // Fetch creator info for all tasks that don't have it
+    const userIdsToFetch: number[] = [];
+    
+    tasks.value.forEach(task => {
+      if (task.createdBy && (!task.creator || !task.creator.username)) {
+        const userId = Number(task.createdBy);
+        if (!isNaN(userId) && userId > 0) {
+          userIdsToFetch.push(userId);
+        }
+      }
+    });
+    
+    if (userIdsToFetch.length > 0) {
+      console.log(`Fetching info for ${userIdsToFetch.length} task creators`);
+      try {
+        const users = await usersStore.getUsersByIds(userIdsToFetch);
+        taskCreators.value = users;
+        
+        // Update task creator references
+        tasks.value.forEach(task => {
+          const creatorId = Number(task.createdBy);
+          if (users.has(creatorId) && (!task.creator || !task.creator.username)) {
+            task.creator = users.get(creatorId);
+          }
+        });
+        
+        console.log('Updated task creators with user info');
+      } catch (error) {
+        console.error('Failed to fetch task creators:', error);
       }
     }
     

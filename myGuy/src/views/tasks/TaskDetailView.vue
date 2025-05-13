@@ -38,13 +38,21 @@
                 {{ task.creator.username }}
               </router-link>
             </p>
+            <p v-else-if="creator && creator.username">
+              <router-link 
+                :to="{ name: 'profile', params: { id: creator.id } }" 
+                class="text-primary hover:underline"
+              >
+                {{ creator.username }}
+              </router-link>
+            </p>
             <p v-else>{{ task.createdBy ? 'User ' + task.createdBy : 'Unknown User' }}</p>
           </div>
           <div>
             <h4 class="font-medium text-sm text-gray">Deadline</h4>
             <p>{{ formatDate(task.deadline) }}</p>
           </div>
-          <div v-if="task.assignedTo || task.assignee">
+          <div v-if="task.assignedTo || task.assignee || assignee">
             <h4 class="font-medium text-sm text-gray">Assigned to</h4>
             <p v-if="task.assignee && task.assignee.username">
               <router-link 
@@ -52,6 +60,14 @@
                 class="text-primary hover:underline"
               >
                 {{ task.assignee.username }}
+              </router-link>
+            </p>
+            <p v-else-if="assignee && assignee.username">
+              <router-link 
+                :to="{ name: 'profile', params: { id: assignee.id } }" 
+                class="text-primary hover:underline"
+              >
+                {{ assignee.username }}
               </router-link>
             </p>
             <p v-else>{{ task.assignedTo ? 'User ' + task.assignedTo : 'Not assigned' }}</p>
@@ -161,18 +177,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/stores/auth'
 import { useTasksStore } from '@/stores/tasks'
 import { useMessagesStore } from '@/stores/messages'
+import { useUsersStore } from '@/stores/users'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const tasksStore = useTasksStore()
 const messagesStore = useMessagesStore()
+const usersStore = useUsersStore()
 
 interface Task {
   id: number
@@ -226,6 +244,8 @@ const messages = ref<Message[]>([])
 const newMessage = ref('')
 const isLoading = ref(true)
 const error = ref('')
+const creator = ref<any>(null)
+const assignee = ref<any>(null)
 
 const statusClasses = {
   open: 'badge-open',
@@ -286,6 +306,39 @@ const loadTaskData = async () => {
     
     task.value = taskData;
     console.log('Task data loaded successfully:', task.value);
+    
+    // Try to load user info for task creator and assignee
+    if (task.value.createdBy && (!task.value.creator || !task.value.creator.username)) {
+      try {
+        console.log(`Fetching creator info for user ID ${task.value.createdBy}`);
+        const creatorData = await usersStore.getUserById(Number(task.value.createdBy));
+        if (creatorData) {
+          creator.value = creatorData;
+          // Also update the task creator for consistency
+          if (!task.value.creator) {
+            task.value.creator = creatorData;
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch creator info:', error);
+      }
+    }
+    
+    if (task.value.assignedTo && (!task.value.assignee || !task.value.assignee.username)) {
+      try {
+        console.log(`Fetching assignee info for user ID ${task.value.assignedTo}`);
+        const assigneeData = await usersStore.getUserById(Number(task.value.assignedTo));
+        if (assigneeData) {
+          assignee.value = assigneeData;
+          // Also update the task assignee for consistency
+          if (!task.value.assignee) {
+            task.value.assignee = assigneeData;
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch assignee info:', error);
+      }
+    }
     
     // Load applications (if not already included in task)
     let applicationsData = taskData.applications || [];
