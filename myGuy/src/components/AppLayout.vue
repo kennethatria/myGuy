@@ -5,7 +5,7 @@
       <div class="container nav-container">
         <div class="nav-wrapper">
           <div class="nav-start">
-            <router-link :to="{ name: 'home' }" class="nav-logo">
+            <router-link :to="{ name: 'dashboard' }" class="nav-logo">
               <img class="logo-image" src="../assets/myguy-icon.svg" alt="MyGuy" />
               <span class="logo-text">MyGuy</span>
             </router-link>
@@ -147,8 +147,9 @@
 <!-- Component-specific styles moved to custom.css -->
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 interface User {
   username: string
@@ -157,10 +158,11 @@ interface User {
 }
 
 const router = useRouter()
+const authStore = useAuthStore()
 const isProfileMenuOpen = ref(false)
 const isMobileMenuOpen = ref(false)
 
-const user = ref<User | null>(null)
+const user = computed(() => authStore.user)
 
 const navigation = [
   { name: 'dashboard', to: { name: 'dashboard' }, text: 'Dashboard' },
@@ -183,10 +185,19 @@ const userInitials = computed(() => {
 
 const handleSignOut = async () => {
   try {
-    // TODO: Implement sign out logic
-    await router.push({ name: 'login' })
+    isProfileMenuOpen.value = false // Close the menu
+    authStore.logout() // Clear the auth state
+    await router.push({ name: 'login' }) // Redirect to login page
   } catch (error) {
     console.error('Sign out failed:', error)
   }
 }
+
+// Initialize user data
+onMounted(async () => {
+  // Try to check authentication status on component mount
+  if (authStore.token) {
+    await authStore.checkAuth()
+  }
+})
 </script>
