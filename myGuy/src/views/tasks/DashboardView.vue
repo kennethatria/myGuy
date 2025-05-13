@@ -2,51 +2,64 @@
   <div class="container py-4">
     <h1 class="mb-4">My Dashboard</h1>
 
-    <!-- Stats overview -->
-    <div class="row mb-4">
-      <div class="col">
-        <div class="card">
-          <div class="flex items-center">
-            <div class="mr-3">
-              <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="var(--color-primary)">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-            </div>
-            <div>
-              <h3 class="text-sm mb-1">Gigs Posted</h3>
-              <div class="text-xl font-bold">{{ stats.createdTasks }}</div>
+    <!-- Loading and error states -->
+    <div v-if="isLoading" class="card p-4 mb-4 text-center">
+      <div class="loading-spinner mb-2"></div>
+      <p>Loading dashboard data...</p>
+    </div>
+
+    <div v-else-if="error" class="card p-4 mb-4 bg-red-100 text-danger">
+      <p>{{ error }}</p>
+      <button @click="fetchDashboardData" class="btn btn-outline mt-2">Retry</button>
+    </div>
+
+    <div v-else>
+      <!-- Stats overview -->
+      <div class="row mb-4">
+        <div class="col">
+          <div class="card">
+            <div class="flex items-center">
+              <div class="mr-3">
+                <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="var(--color-primary)">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              </div>
+              <div>
+                <h3 class="text-sm mb-1">Gigs Posted</h3>
+                <div class="text-xl font-bold">{{ stats.createdTasks }}</div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <div class="col">
-        <div class="card">
-          <div class="flex items-center">
-            <div class="mr-3">
-              <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="var(--color-primary)">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
-              </svg>
-            </div>
-            <div>
-              <h3 class="text-sm mb-1">Gigs Assigned</h3>
-              <div class="text-xl font-bold">{{ stats.assignedTasks }}</div>
+        <div class="col">
+          <div class="card">
+            <div class="flex items-center">
+              <div class="mr-3">
+                <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="var(--color-primary)">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+                </svg>
+              </div>
+              <div>
+                <h3 class="text-sm mb-1">Gigs Assigned</h3>
+                <div class="text-xl font-bold">{{ stats.assignedTasks }}</div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <div class="col">
-        <div class="card">
-          <div class="flex items-center">
-            <div class="mr-3">
-              <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="var(--color-primary)">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-              </svg>
-            </div>
-            <div>
-              <h3 class="text-sm mb-1">Completed Gigs</h3>
-              <div class="text-xl font-bold">{{ stats.completedTasks }}</div>
+        <div class="col">
+          <div class="card">
+            <div class="flex items-center">
+              <div class="mr-3">
+                <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="var(--color-primary)">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                </svg>
+              </div>
+              <div>
+                <h3 class="text-sm mb-1">Completed Gigs</h3>
+                <div class="text-xl font-bold">{{ stats.completedTasks }}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -54,7 +67,7 @@
     </div>
 
     <!-- Gig lists -->
-    <div class="row">
+    <div v-if="!isLoading && !error" class="row">
       <!-- Posted Gigs -->
       <div class="col">
         <h2 class="mb-3">Gigs Posted by Me</h2>
@@ -124,8 +137,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { format } from 'date-fns'
+import { useTasksStore } from '@/stores/tasks'
 
 interface Task {
   id: number
@@ -141,30 +155,123 @@ interface Stats {
   completedTasks: number
 }
 
-const statusClasses = {
-  open: 'bg-green-100 text-green-800',
-  in_progress: 'bg-yellow-100 text-yellow-800',
-  completed: 'bg-gray-100 text-gray-800'
-}
+const tasksStore = useTasksStore()
+const isLoading = ref(false)
+const error = ref('')
 
-const stats = ref<Stats>({
-  createdTasks: 0,
-  assignedTasks: 0,
-  completedTasks: 0
+const createdTasks = computed(() => {
+  return tasksStore.userTasks || []
 })
 
-const createdTasks = ref<Task[]>([])
-const assignedTasks = ref<Task[]>([])
+const assignedTasks = computed(() => {
+  return tasksStore.assignedTasks || []
+})
+
+const stats = computed<Stats>(() => {
+  const created = createdTasks.value.length
+  const assigned = assignedTasks.value.length
+  const completed = createdTasks.value.filter(task => task.status === 'completed').length +
+                   assignedTasks.value.filter(task => task.status === 'completed').length
+  
+  return {
+    createdTasks: created,
+    assignedTasks: assigned,
+    completedTasks: completed
+  }
+})
 
 const formatDate = (date: string) => {
   return format(new Date(date), 'MMM dd, yyyy')
 }
 
-onMounted(async () => {
+// Load sample data for development
+const loadSampleData = () => {
+  // Generated sample data
+  const sampleTasks = [
+    {
+      id: 1,
+      title: "Website Redesign",
+      description: "Looking for a skilled web designer to refresh our company site with modern UI elements and improved user flow.",
+      status: "open",
+      createdBy: 1,
+      deadline: "2023-12-31T00:00:00Z",
+      created_at: "2023-09-15T10:30:00Z"
+    },
+    {
+      id: 2,
+      title: "Mobile App Bug Fixes",
+      description: "Need developer to fix several critical bugs in our iOS application. Familiarity with Swift required.",
+      status: "in_progress",
+      createdBy: 1,
+      assignedTo: 2,
+      deadline: "2023-11-15T00:00:00Z",
+      created_at: "2023-09-10T14:20:00Z"
+    },
+    {
+      id: 3,
+      title: "Content Writing for Blog",
+      description: "Create five SEO-optimized blog posts about digital marketing trends.",
+      status: "completed",
+      createdBy: 1,
+      assignedTo: 3,
+      deadline: "2023-10-01T00:00:00Z",
+      created_at: "2023-08-25T09:15:00Z"
+    }
+  ]
+  
+  // Replace store data with sample data
+  tasksStore.userTasks = sampleTasks
+  
+  // Sample assigned tasks
+  tasksStore.assignedTasks = [
+    {
+      id: 4,
+      title: "Logo Design for Startup",
+      description: "Create a modern logo for a tech startup focusing on AI solutions.",
+      status: "open",
+      createdBy: 2,
+      assignedTo: 1,
+      deadline: "2023-11-30T00:00:00Z",
+      created_at: "2023-09-18T11:45:00Z"
+    },
+    {
+      id: 5,
+      title: "Data Analysis Project",
+      description: "Analyze customer data and create visualization dashboard using Python and Tableau.",
+      status: "in_progress",
+      createdBy: 3,
+      assignedTo: 1,
+      deadline: "2023-12-15T00:00:00Z",
+      created_at: "2023-09-05T16:30:00Z"
+    }
+  ]
+}
+
+const fetchDashboardData = async () => {
+  isLoading.value = true
+  error.value = ''
+  
   try {
-    // TODO: Implement fetch dashboard data logic
-  } catch (error) {
-    console.error('Failed to fetch dashboard data:', error)
+    // For development use sample data
+    // In production, uncomment these lines:
+    /*
+    await Promise.all([
+      tasksStore.fetchUserTasks(),
+      tasksStore.fetchAssignedTasks()
+    ])
+    */
+    
+    // Use sample data for development
+    loadSampleData()
+  } catch (err) {
+    console.error('Failed to fetch dashboard data:', err)
+    error.value = 'Failed to load dashboard data. Please try again later.'
+  } finally {
+    isLoading.value = false
   }
+}
+
+onMounted(async () => {
+  await fetchDashboardData()
 })
 </script>

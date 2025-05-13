@@ -1028,3 +1028,20 @@ input[type="datetime-local"].form-input {
 .fade-enter-from, .fade-leave-to {
   opacity: 0;
 }
+
+/* Loading Spinner */
+.loading-spinner {
+  display: inline-block;
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(79, 70, 229, 0.2);
+  border-radius: 50%;
+  border-top-color: var(--color-primary);
+  animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
