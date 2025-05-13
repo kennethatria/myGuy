@@ -245,15 +245,15 @@ export const useTasksStore = defineStore('tasks', () => {
       console.log('DEBUG - Assigned tasks from API:', assignedTasksData);
       
       // Add extra safety check: only include tasks that actually have assignedTo matching user ID
-      const userId = authStore.user?.id;
-      if (userId) {
+      const currentUserId = authStore.user?.id;
+      if (currentUserId) {
         assignedTasks.value = assignedTasksData.filter(task => {
-          const isActuallyAssigned = task.assigned_to === userId || 
-                                     (typeof task.assigned_to === 'string' && task.assigned_to === String(userId));
+          const isActuallyAssigned = task.assigned_to === currentUserId || 
+                                     (typeof task.assigned_to === 'string' && task.assigned_to === String(currentUserId));
           
           if (!isActuallyAssigned) {
             console.warn(`Task ${task.id} was returned by assigned_to API but doesn't have matching assigned_to value:`, 
-                          {taskAssignedTo: task.assigned_to, userId, task});
+                          {taskAssignedTo: task.assigned_to, currentUserId, task});
           }
           
           return isActuallyAssigned;
