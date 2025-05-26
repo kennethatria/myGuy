@@ -78,7 +78,7 @@ export const useMessagesStore = defineStore('messages', () => {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ recipientId, content }),
+        body: JSON.stringify({ recipient_id: recipientId, content }),
       })
       if (!response.ok) throw new Error('Failed to send message')
       const newMessage = await response.json()
