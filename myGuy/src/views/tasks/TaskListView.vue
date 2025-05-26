@@ -5,30 +5,41 @@
         <h1 class="text-2xl font-semibold">Browse Available Gigs</h1>
         <p class="text-muted mt-1">Find and apply for gigs posted by other users</p>
       </div>
-      <router-link
-        :to="{ name: 'create-task' }"
-        class="btn btn-primary"
-      >
-        Create Gig
-      </router-link>
+      <div class="d-flex gap-2">
+        <button
+          @click="showFilters = !showFilters"
+          class="btn btn-outline-secondary"
+        >
+          <i class="bi" :class="showFilters ? 'bi-funnel-fill' : 'bi-funnel'"></i>
+          Filters
+          <span v-if="hasActiveFilters" class="badge bg-primary ms-1">{{ activeFilterCount }}</span>
+        </button>
+        <router-link
+          :to="{ name: 'create-task' }"
+          class="btn btn-primary"
+        >
+          Create Gig
+        </router-link>
+      </div>
     </div>
 
-    <!-- Search and Filters -->
-    <div class="card mb-4">
-      <div class="card-body">
-        <!-- Search Bar -->
-        <div class="mb-4">
-          <input
-            v-model="searchQuery"
-            type="text"
-            class="form-control"
-            placeholder="Search gigs by title or description..."
-            @input="debouncedSearch"
-          />
-        </div>
+    <!-- Search Bar (Always Visible) -->
+    <div class="mb-4">
+      <input
+        v-model="searchQuery"
+        type="text"
+        class="form-control"
+        placeholder="Search gigs by title or description..."
+        @input="debouncedSearch"
+      />
+    </div>
 
-        <!-- Filter Controls -->
-        <div class="row g-3">
+    <!-- Collapsible Filters Section -->
+    <transition name="slide-fade">
+      <div v-if="showFilters" class="card mb-4">
+        <div class="card-body">
+          <!-- Filter Controls -->
+          <div class="row g-3">
           <!-- Status Filter -->
           <div class="col-md-3">
             <label class="form-label">Status</label>
@@ -73,16 +84,17 @@
           </div>
         </div>
 
-        <div class="mt-3 flex gap-2">
-          <button @click="applyFilters" class="btn btn-primary btn-sm">
-            Apply Filters
-          </button>
-          <button @click="resetFilters" class="btn btn-secondary btn-sm">
-            Reset
-          </button>
+          <div class="mt-3 flex gap-2">
+            <button @click="applyFilters" class="btn btn-primary btn-sm">
+              Apply Filters
+            </button>
+            <button @click="resetFilters" class="btn btn-secondary btn-sm">
+              Reset
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </transition>
 
     <!-- Loading State -->
     <div v-if="loading" class="text-center py-5">
@@ -247,6 +259,7 @@ const currentPage = ref(1)
 const perPage = ref(10)
 const sortBy = ref('created_at')
 const sortOrder = ref('desc')
+const showFilters = ref(false)
 
 // Filters
 const filters = ref({
@@ -257,8 +270,16 @@ const filters = ref({
 
 // Computed
 const hasActiveFilters = computed(() => {
-  return searchQuery.value || filters.value.status || 
+  return filters.value.status || 
          filters.value.minFee !== null || filters.value.maxFee !== null
+})
+
+const activeFilterCount = computed(() => {
+  let count = 0
+  if (filters.value.status) count++
+  if (filters.value.minFee !== null) count++
+  if (filters.value.maxFee !== null) count++
+  return count
 })
 
 const visiblePages = computed(() => {
@@ -464,6 +485,37 @@ onMounted(() => {
   color: #fff;
   background-color: #0d6efd;
   border-color: #0d6efd;
+}
+
+.btn-outline-secondary {
+  color: #6c757d;
+  border-color: #6c757d;
+  background-color: transparent;
+}
+
+.btn-outline-secondary:hover {
+  color: #fff;
+  background-color: #6c757d;
+  border-color: #6c757d;
+}
+
+/* Transition for filter dropdown */
+.slide-fade-enter-active {
+  transition: all 0.3s ease-out;
+}
+
+.slide-fade-leave-active {
+  transition: all 0.3s ease-in;
+}
+
+.slide-fade-enter-from {
+  transform: translateY(-10px);
+  opacity: 0;
+}
+
+.slide-fade-leave-to {
+  transform: translateY(-10px);
+  opacity: 0;
 }
 
 .btn-primary:hover {
