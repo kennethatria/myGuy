@@ -207,8 +207,8 @@ interface Task {
   title: string
   description: string
   status: 'open' | 'in_progress' | 'completed'
-  createdBy: number
-  assignedTo?: number
+  created_by: number  // Changed from createdBy to match API
+  assigned_to?: number  // Changed from assignedTo to match API
   deadline: string
   fee?: number
   created_at: string
@@ -270,14 +270,14 @@ const formatDate = (date: string) => {
 
 const isOwner = computed(() => {
   if (!task.value) return false
-  return task.value.createdBy === authStore.user?.id
+  return task.value.created_by === authStore.user?.id
 })
 
 const canApply = computed(() => {
   if (!task.value || !authStore.user) return false
   return (
     task.value.status === 'open' &&
-    task.value.createdBy !== authStore.user.id &&
+    task.value.created_by !== authStore.user.id &&
     !applications.value.some(app => app.applicant.id === authStore.user?.id)
   )
 })
@@ -289,7 +289,7 @@ const canSendMessage = computed(() => {
   if (!isOwner.value) return true
   
   // Owners can only send messages if task is assigned
-  return task.value.assignedTo !== null && task.value.assignedTo !== undefined
+  return task.value.assigned_to !== null && task.value.assigned_to !== undefined
 })
 
 const canComplete = computed(() => {
@@ -297,7 +297,7 @@ const canComplete = computed(() => {
   const userId = authStore.user.id
   return (
     task.value.status === 'in_progress' &&
-    (task.value.createdBy === userId || task.value.assignedTo === userId)
+    (task.value.created_by === userId || task.value.assigned_to === userId)
   )
 })
 
@@ -355,10 +355,10 @@ const loadTaskData = async () => {
     console.log('Task data loaded successfully:', task.value);
     
     // Try to load user info for task creator and assignee
-    if (task.value.createdBy && (!task.value.creator || !task.value.creator.username)) {
+    if (task.value.created_by && (!task.value.creator || !task.value.creator.username)) {
       try {
-        console.log(`Fetching creator info for user ID ${task.value.createdBy}`);
-        const creatorData = await usersStore.getUserById(Number(task.value.createdBy));
+        console.log(`Fetching creator info for user ID ${task.value.created_by}`);
+        const creatorData = await usersStore.getUserById(Number(task.value.created_by));
         if (creatorData) {
           creator.value = creatorData;
           // Also update the task creator for consistency
@@ -371,10 +371,10 @@ const loadTaskData = async () => {
       }
     }
     
-    if (task.value.assignedTo && (!task.value.assignee || !task.value.assignee.username)) {
+    if (task.value.assigned_to && (!task.value.assignee || !task.value.assignee.username)) {
       try {
-        console.log(`Fetching assignee info for user ID ${task.value.assignedTo}`);
-        const assigneeData = await usersStore.getUserById(Number(task.value.assignedTo));
+        console.log(`Fetching assignee info for user ID ${task.value.assigned_to}`);
+        const assigneeData = await usersStore.getUserById(Number(task.value.assigned_to));
         if (assigneeData) {
           assignee.value = assigneeData;
           // Also update the task assignee for consistency
@@ -520,11 +520,19 @@ const handleSendMessage = async () => {
   try {
     let recipientId: number | undefined
     
+    console.log('Sending message - Debug info:', {
+      isOwner: isOwner.value,
+      taskCreatedBy: task.value.created_by,
+      taskAssignedTo: task.value.assigned_to,
+      currentUserId: authStore.user.id,
+      taskCreator: task.value.creator
+    })
+    
     if (isOwner.value) {
       // Task owner sending message
-      if (task.value.assignedTo) {
+      if (task.value.assigned_to) {
         // If task is assigned, send to assignee
-        recipientId = task.value.assignedTo
+        recipientId = task.value.assigned_to
       } else {
         // For open tasks, owner can't send messages to themselves
         alert('This task is not assigned yet. Messages will be available once someone is assigned.')
@@ -532,10 +540,11 @@ const handleSendMessage = async () => {
       }
     } else {
       // Non-owner sending message to task creator
-      recipientId = task.value.createdBy
+      recipientId = task.value.created_by || task.value.creator?.id
     }
 
     if (!recipientId) {
+      console.error('Recipient ID not found. Task data:', task.value)
       throw new Error('No recipient found for message')
     }
 
