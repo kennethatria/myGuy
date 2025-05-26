@@ -225,7 +225,7 @@ export const useTasksStore = defineStore('tasks', () => {
       }
       
       // Add exclude_self_assigned=true parameter to exclude tasks the user created themselves
-      const response = await fetch(`${config.ENDPOINTS.TASKS}?assigned_to=${userId || authStore.user?.id}&exclude_self_assigned=true`, {
+      const response = await fetch(`${config.API_URL}/user/tasks/assigned?exclude_self_assigned=true`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
