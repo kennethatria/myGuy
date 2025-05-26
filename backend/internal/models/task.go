@@ -30,18 +30,29 @@ type Application struct {
 	Status      string    `json:"status" gorm:"default:'pending'"`
 	Message     string    `json:"message" gorm:"type:text"`
 	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 	
-	// Define relationship for preloading
-	Applicant User `json:"applicant" gorm:"foreignKey:ApplicantID"`
+	// Define relationships for preloading
+	Applicant User      `json:"applicant" gorm:"foreignKey:ApplicantID"`
+	Task      Task      `json:"task" gorm:"foreignKey:TaskID"`
+	Messages  []Message `json:"messages,omitempty" gorm:"foreignKey:ApplicationID"`
 }
 
 type Message struct {
-	ID          uint      `json:"id" gorm:"primaryKey"`
-	TaskID      uint      `json:"task_id" gorm:"not null"`
-	SenderID    uint      `json:"sender_id" gorm:"not null"`
-	RecipientID uint      `json:"recipient_id" gorm:"not null"`
-	Content     string    `json:"content" gorm:"type:text;not null"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID            uint      `json:"id" gorm:"primaryKey"`
+	TaskID        uint      `json:"task_id" gorm:"not null"`
+	ApplicationID *uint     `json:"application_id"` // Optional: links message to specific application
+	SenderID      uint      `json:"sender_id" gorm:"not null"`
+	RecipientID   uint      `json:"recipient_id" gorm:"not null"`
+	Content       string    `json:"content" gorm:"type:text;not null"`
+	IsRead        bool      `json:"is_read" gorm:"default:false"`
+	CreatedAt     time.Time `json:"created_at"`
+	
+	// Define relationships for preloading
+	Sender    User         `json:"sender" gorm:"foreignKey:SenderID"`
+	Recipient User         `json:"recipient" gorm:"foreignKey:RecipientID"`
+	Task      Task         `json:"task,omitempty" gorm:"foreignKey:TaskID"`
+	Application *Application `json:"application,omitempty" gorm:"foreignKey:ApplicationID"`
 }
 
 type Review struct {
@@ -52,4 +63,9 @@ type Review struct {
 	Rating         int       `json:"rating" gorm:"not null;check:rating >= 1 AND rating <= 5"`
 	Comment        string    `json:"comment" gorm:"type:text"`
 	CreatedAt      time.Time `json:"created_at"`
+	
+	// Define relationships for preloading
+	Task         Task `json:"task" gorm:"foreignKey:TaskID"`
+	Reviewer     User `json:"reviewer" gorm:"foreignKey:ReviewerID"`
+	ReviewedUser User `json:"reviewed_user" gorm:"foreignKey:ReviewedUserID"`
 }

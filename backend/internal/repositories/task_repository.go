@@ -2,6 +2,8 @@ package repositories
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"myguy/internal/models"
 	"gorm.io/gorm"
 )
@@ -34,12 +36,7 @@ func (r *GormTaskRepository) GetByID(ctx context.Context, id uint) (*models.Task
 
 func (r *GormTaskRepository) List(ctx context.Context, filters map[string]interface{}) ([]models.Task, error) {
 	var tasks []models.Task
-	query := r.db.WithContext(ctx)
-
-	// Apply filters
-	for key, value := range filters {
-		query = query.Where(key, value)
-	}
+	query := r.buildTaskQuery(ctx, filters)
 
 	// Order by most recent first and preload related data
 	err := query.
@@ -53,6 +50,90 @@ func (r *GormTaskRepository) List(ctx context.Context, filters map[string]interf
 		return nil, err
 	}
 	return tasks, nil
+}
+
+func (r *GormTaskRepository) ListWithPagination(ctx context.Context, filters map[string]interface{}) ([]models.Task, error) {
+	var tasks []models.Task
+	query := r.buildTaskQuery(ctx, filters)
+	
+	// Extract pagination
+	page := 1
+	perPage := 20
+	if p, ok := filters["page"].(int); ok {
+		page = p
+	}
+	if pp, ok := filters["per_page"].(int); ok {
+		perPage = pp
+	}
+	
+	// Apply sorting
+	sortBy := "created_at"
+	sortOrder := "DESC"
+	if sb, ok := filters["sort_by"].(string); ok {
+		switch sb {
+		case "fee", "deadline", "created_at":
+			sortBy = sb
+		}
+	}
+	if so, ok := filters["sort_order"].(string); ok && (so == "asc" || so == "desc") {
+		sortOrder = strings.ToUpper(so)
+	}
+	
+	offset := (page - 1) * perPage
+	err := query.
+		Preload("Applications.Applicant").
+		Preload("Creator").
+		Preload("Assignee").
+		Order(fmt.Sprintf("%s %s", sortBy, sortOrder)).
+		Offset(offset).
+		Limit(perPage).
+		Find(&tasks).Error
+	
+	if err != nil {
+		return nil, err
+	}
+	return tasks, nil
+}
+
+func (r *GormTaskRepository) Count(ctx context.Context, filters map[string]interface{}) (int64, error) {
+	var count int64
+	query := r.buildTaskQuery(ctx, filters)
+	err := query.Model(&models.Task{}).Count(&count).Error
+	return count, err
+}
+
+func (r *GormTaskRepository) buildTaskQuery(ctx context.Context, filters map[string]interface{}) *gorm.DB {
+	query := r.db.WithContext(ctx)
+	
+	// Apply filters
+	for key, value := range filters {
+		switch key {
+		case "search":
+			// Search in title and description
+			searchTerm := fmt.Sprintf("%%%s%%", value)
+			query = query.Where("(title ILIKE ? OR description ILIKE ?)", searchTerm, searchTerm)
+		case "min_fee":
+			query = query.Where("fee >= ?", value)
+		case "max_fee":
+			query = query.Where("fee <= ?", value)
+		case "deadline_before":
+			query = query.Where("deadline <= ?", value)
+		case "exclude_created_by":
+			query = query.Where("created_by != ?", value)
+		case "status", "created_by", "assigned_to":
+			query = query.Where(fmt.Sprintf("%s = ?", key), value)
+		// Skip pagination and sorting params
+		case "page", "per_page", "sort_by", "sort_order":
+			// These are handled separately
+		default:
+			// For any other filters, apply them directly
+			if key != "" {
+				query = query.Where(fmt.Sprintf("%s = ?", key), value)
+			}
+		}
+	}
+	
+	return query
 }
 
 func (r *GormTaskRepository) Update(ctx context.Context, task *models.Task) error {

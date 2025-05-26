@@ -6,12 +6,20 @@ import { useAuthStore } from './auth'
 interface Message {
   id: number
   taskId: number
-  sender: {
+  applicationId?: number
+  senderId: number
+  recipientId: number
+  content: string
+  createdAt: string
+  isRead: boolean
+  sender?: {
     id: number
     username: string
   }
-  content: string
-  createdAt: string
+  recipient?: {
+    id: number
+    username: string
+  }
 }
 
 export const useMessagesStore = defineStore('messages', () => {
@@ -82,9 +90,64 @@ export const useMessagesStore = defineStore('messages', () => {
     }
   }
 
+  const fetchApplicationMessages = async (applicationId: number): Promise<Message[]> => {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
+    try {
+      console.log(`Fetching messages for application ID: ${applicationId}`);
+      const response = await fetch(`${config.ENDPOINTS.APPLICATIONS}/${applicationId}/messages`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch application messages')
+      }
+      
+      const messagesData = await response.json()
+      console.log(`Fetched ${messagesData.length} messages for application`);
+      return messagesData
+    } catch (error) {
+      console.error('Error fetching application messages:', error)
+      throw error
+    }
+  }
+
+  const sendApplicationMessage = async (applicationId: number, content: string): Promise<Message> => {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
+    try {
+      const response = await fetch(`${config.ENDPOINTS.APPLICATIONS}/${applicationId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content }),
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to send message')
+      }
+      
+      const newMessage = await response.json()
+      return newMessage
+    } catch (error) {
+      console.error('Error sending application message:', error)
+      throw error
+    }
+  }
+
   return {
     messages,
     fetchTaskMessages,
     sendMessage,
+    fetchApplicationMessages,
+    sendApplicationMessage,
   }
 })

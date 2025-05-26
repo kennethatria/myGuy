@@ -20,7 +20,13 @@ func (r *GormApplicationRepository) Create(ctx context.Context, application *mod
 
 func (r *GormApplicationRepository) GetByID(ctx context.Context, id uint) (*models.Application, error) {
 	var application models.Application
-	err := r.db.WithContext(ctx).First(&application, id).Error
+	err := r.db.WithContext(ctx).
+		Preload("Applicant").
+		Preload("Task").
+		Preload("Messages").
+		Preload("Messages.Sender").
+		Preload("Messages.Recipient").
+		First(&application, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +35,11 @@ func (r *GormApplicationRepository) GetByID(ctx context.Context, id uint) (*mode
 
 func (r *GormApplicationRepository) ListByTask(ctx context.Context, taskID uint) ([]models.Application, error) {
 	var applications []models.Application
-	err := r.db.WithContext(ctx).Where("task_id = ?", taskID).Find(&applications).Error
+	err := r.db.WithContext(ctx).
+		Preload("Applicant").
+		Where("task_id = ?", taskID).
+		Order("created_at DESC").
+		Find(&applications).Error
 	if err != nil {
 		return nil, err
 	}

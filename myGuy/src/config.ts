@@ -8,5 +8,7 @@ export default {
     REGISTER: `${API_URL}/register`,
     PROFILE: `${API_URL}/profile`,
     TASKS: `${API_URL}/tasks`,
+    APPLICATIONS: `${API_URL}/applications`,
+    USERS: `${API_URL}/users`,
   }
 };

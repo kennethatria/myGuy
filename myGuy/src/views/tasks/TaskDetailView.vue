@@ -32,7 +32,7 @@
             <h4 class="font-medium text-sm text-gray">Created by</h4>
             <p v-if="task.creator && task.creator.username">
               <router-link 
-                :to="{ name: 'profile', params: { id: task.creator.id } }" 
+                :to="{ name: 'user-profile', params: { id: task.creator.id } }" 
                 class="text-primary hover:underline"
               >
                 {{ task.creator.username }}
@@ -40,7 +40,7 @@
             </p>
             <p v-else-if="creator && creator.username">
               <router-link 
-                :to="{ name: 'profile', params: { id: creator.id } }" 
+                :to="{ name: 'user-profile', params: { id: creator.id } }" 
                 class="text-primary hover:underline"
               >
                 {{ creator.username }}
@@ -56,7 +56,7 @@
             <h4 class="font-medium text-sm text-gray">Assigned to</h4>
             <p v-if="task.assignee && task.assignee.username">
               <router-link 
-                :to="{ name: 'profile', params: { id: task.assignee.id } }" 
+                :to="{ name: 'user-profile', params: { id: task.assignee.id } }" 
                 class="text-primary hover:underline"
               >
                 {{ task.assignee.username }}
@@ -64,7 +64,7 @@
             </p>
             <p v-else-if="assignee && assignee.username">
               <router-link 
-                :to="{ name: 'profile', params: { id: assignee.id } }" 
+                :to="{ name: 'user-profile', params: { id: assignee.id } }" 
                 class="text-primary hover:underline"
               >
                 {{ assignee.username }}
@@ -96,37 +96,31 @@
           >
             Mark as Complete
           </button>
+          <button
+            v-if="canReview"
+            @click="() => router.push(`/reviews/create/${task.id}`)"
+            class="btn btn-primary"
+          >
+            Leave Review
+          </button>
         </div>
       </div>
 
-      <!-- Applications section for task owner -->
-      <div v-if="isOwner && applications.length > 0" class="border-t border-gray-200">
+      <!-- Applications section -->
+      <div v-if="(isOwner || hasApplied) && applications.length > 0" class="border-t border-gray-200">
         <div class="p-4">
           <h3 class="mb-3">Applications</h3>
-          <ul class="divide-y">
-            <li v-for="application in applications" :key="application.id" class="py-3">
-              <div class="flex items-center justify-between">
-                <div>
-                  <p class="font-medium">{{ application.applicant.username }}</p>
-                  <p class="text-sm text-gray">Proposed fee: ${{ application.proposedFee }}</p>
-                </div>
-                <div v-if="application.status === 'pending'" class="flex space-x-2">
-                  <button
-                    @click="handleAcceptApplication(application.id)"
-                    class="btn btn-sm btn-primary"
-                  >
-                    Accept
-                  </button>
-                  <button
-                    @click="handleDeclineApplication(application.id)"
-                    class="btn btn-sm btn-outline"
-                  >
-                    Decline
-                  </button>
-                </div>
-              </div>
-            </li>
-          </ul>
+          <div class="space-y-3">
+            <ApplicationDetail
+              v-for="application in visibleApplications"
+              :key="application.id"
+              :application="application"
+              :task-owner-id="task.createdBy"
+              @accept="handleAcceptApplication"
+              @decline="handleDeclineApplication"
+              @message-sent="handleApplicationMessageSent"
+            />
+          </div>
         </div>
       </div>
 
@@ -173,6 +167,15 @@
         </div>
       </div>
     </div>
+    
+    <!-- Application Modal -->
+    <ApplicationModal 
+      v-if="task"
+      :is-open="showApplicationModal"
+      :task="task"
+      @close="showApplicationModal = false"
+      @submit="handleApplicationSubmit"
+    />
   </div>
 </template>
 
@@ -184,6 +187,9 @@ import { useAuthStore } from '@/stores/auth'
 import { useTasksStore } from '@/stores/tasks'
 import { useMessagesStore } from '@/stores/messages'
 import { useUsersStore } from '@/stores/users'
+import { useReviewsStore } from '@/stores/reviews'
+import ApplicationDetail from '@/components/ApplicationDetail.vue'
+import ApplicationModal from '@/components/ApplicationModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -191,6 +197,7 @@ const authStore = useAuthStore()
 const tasksStore = useTasksStore()
 const messagesStore = useMessagesStore()
 const usersStore = useUsersStore()
+const reviewsStore = useReviewsStore()
 
 interface Task {
   id: number
@@ -240,6 +247,7 @@ interface Message {
 
 const task = ref<Task | null>(null)
 const applications = ref<Application[]>([])
+const hasReviewed = ref(false)
 const messages = ref<Message[]>([])
 const newMessage = ref('')
 const isLoading = ref(true)
@@ -278,6 +286,32 @@ const canComplete = computed(() => {
     task.value.status === 'in_progress' &&
     (task.value.createdBy === userId || task.value.assignedTo === userId)
   )
+})
+
+const canReview = computed(() => {
+  if (!task.value || !authStore.user || hasReviewed.value) return false
+  const userId = authStore.user.id
+  return (
+    task.value.status === 'completed' &&
+    (task.value.createdBy === userId || task.value.assignedTo === userId)
+  )
+})
+
+const hasApplied = computed(() => {
+  if (!authStore.user || !applications.value) return false
+  return applications.value.some(app => app.applicant.id === authStore.user?.id)
+})
+
+const visibleApplications = computed(() => {
+  if (!authStore.user || !applications.value) return []
+  
+  // Task owner sees all applications
+  if (isOwner.value) {
+    return applications.value
+  }
+  
+  // Applicants only see their own application
+  return applications.value.filter(app => app.applicant.id === authStore.user?.id)
 })
 
 const loadTaskData = async () => {
@@ -366,6 +400,16 @@ const loadTaskData = async () => {
       messages.value = []; // Ensure we have an empty array
     }
     
+    // Check if the current user has already reviewed this task
+    if (task.value.status === 'completed' && authStore.user) {
+      try {
+        hasReviewed.value = await reviewsStore.hasReviewedTask(taskId);
+      } catch (err) {
+        console.error('Failed to check review status:', err);
+        hasReviewed.value = false;
+      }
+    }
+    
   } catch (err) {
     console.error('Failed to fetch task details:', err);
     error.value = 'Failed to load gig details. Please try again.';
@@ -378,21 +422,24 @@ onMounted(async () => {
   await loadTaskData()
 })
 
-const handleApply = async () => {
+const showApplicationModal = ref(false)
+
+const handleApply = () => {
+  showApplicationModal.value = true
+}
+
+const handleApplicationSubmit = async (data: { proposedFee: number; message: string }) => {
   if (!task.value) return
 
   try {
-    const fee = parseFloat(prompt('Enter your proposed fee:') || '0')
-    if (isNaN(fee) || fee < 0) {
-      alert('Please enter a valid fee amount')
-      return
-    }
-
-    const message = prompt('Add a message with your application:') || ''
-    await tasksStore.applyForTask(task.value.id, { proposedFee: fee, message })
+    await tasksStore.applyForTask(task.value.id, data)
+    showApplicationModal.value = false
     
     // Refresh applications list
     applications.value = await tasksStore.getTaskApplications(task.value.id)
+    
+    // Show success message
+    alert('Application submitted successfully!')
   } catch (error) {
     console.error('Failed to apply for task:', error)
     alert('Failed to apply for task. Please try again.')
@@ -447,6 +494,11 @@ const handleDeclineApplication = async (applicationId: number) => {
     console.error('Failed to decline application:', error)
     alert('Failed to decline application. Please try again.')
   }
+}
+
+const handleApplicationMessageSent = () => {
+  // Optionally refresh applications or show a notification
+  console.log('Application message sent successfully')
 }
 
 const handleSendMessage = async () => {

@@ -18,6 +18,8 @@ type TaskRepository interface {
 	Create(ctx context.Context, task *models.Task) error
 	GetByID(ctx context.Context, id uint) (*models.Task, error)
 	List(ctx context.Context, filters map[string]interface{}) ([]models.Task, error)
+	ListWithPagination(ctx context.Context, filters map[string]interface{}) ([]models.Task, error)
+	Count(ctx context.Context, filters map[string]interface{}) (int64, error)
 	Update(ctx context.Context, task *models.Task) error
 	Delete(ctx context.Context, id uint) error
 	ListByUser(ctx context.Context, userID uint, role string) ([]models.Task, error)
@@ -35,6 +37,9 @@ type MessageRepository interface {
 	Create(ctx context.Context, message *models.Message) error
 	ListByTask(ctx context.Context, taskID uint) ([]models.Message, error)
 	ListByUser(ctx context.Context, userID uint) ([]models.Message, error)
+	ListByApplication(ctx context.Context, applicationID uint) ([]models.Message, error)
+	GetApplication(ctx context.Context, applicationID uint) (*models.Application, error)
+	GetTask(ctx context.Context, taskID uint) (*models.Task, error)
 }
 
 type ReviewRepository interface {

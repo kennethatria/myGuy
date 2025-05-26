@@ -95,6 +95,8 @@ func main() {
 		auth.PATCH("/tasks/:id/status", handler.UpdateTaskStatus)
 		auth.DELETE("/tasks/:id", handler.DeleteTask)
 		auth.POST("/tasks/:id/apply", handler.ApplyForTask)
+		auth.GET("/tasks/:id/applications", handler.GetTaskApplications)
+		auth.PATCH("/tasks/:id/applications/:applicationId", handler.RespondToApplication)
 
 		// User-specific task routes
 		auth.GET("/user/tasks", handler.GetUserTasks)
@@ -103,6 +105,10 @@ func main() {
 		// Message routes
 		auth.POST("/tasks/:id/messages", handler.CreateMessage)
 		auth.GET("/tasks/:id/messages", handler.GetTaskMessages)
+		
+		// Application message routes
+		auth.POST("/applications/:applicationId/messages", handler.CreateApplicationMessage)
+		auth.GET("/applications/:applicationId/messages", handler.GetApplicationMessages)
 
 		// Review routes
 		auth.POST("/tasks/:id/reviews", handler.CreateReview)

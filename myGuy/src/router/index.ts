@@ -50,6 +50,18 @@ const router = createRouter({
       name: 'profile',
       component: () => import('@/views/profile/ProfileView.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/profile/:id',
+      name: 'user-profile',
+      component: () => import('@/views/profile/UserProfileView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/reviews/create/:taskId',
+      name: 'create-review',
+      component: () => import('@/views/reviews/CreateReviewView.vue'),
+      meta: { requiresAuth: true }
     }
   ]
 })

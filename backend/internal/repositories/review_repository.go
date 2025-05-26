@@ -36,12 +36,24 @@ func (r *GormReviewRepository) Create(ctx context.Context, review *models.Review
 			Update("average_rating", avgRating).Error
 	})
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Reload the review with related data
+	return r.db.WithContext(ctx).
+		Preload("Task").
+		Preload("Reviewer").
+		Preload("ReviewedUser").
+		First(review, review.ID).Error
 }
 
 func (r *GormReviewRepository) ListByUser(ctx context.Context, userID uint) ([]models.Review, error) {
 	var reviews []models.Review
 	err := r.db.WithContext(ctx).
+		Preload("Task").
+		Preload("Reviewer").
+		Preload("ReviewedUser").
 		Where("reviewed_user_id = ?", userID).
 		Order("created_at DESC").
 		Find(&reviews).Error
@@ -54,6 +66,9 @@ func (r *GormReviewRepository) ListByUser(ctx context.Context, userID uint) ([]m
 func (r *GormReviewRepository) GetTaskReview(ctx context.Context, taskID uint, reviewerID uint) (*models.Review, error) {
 	var review models.Review
 	err := r.db.WithContext(ctx).
+		Preload("Task").
+		Preload("Reviewer").
+		Preload("ReviewedUser").
 		Where("task_id = ? AND reviewer_id = ?", taskID, reviewerID).
 		First(&review).Error
 	if err != nil {

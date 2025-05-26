@@ -197,7 +197,7 @@ func (h *Handler) UpdateTask(c *gin.Context) {
 	c.JSON(http.StatusOK, task)
 }
 
-// ListTasks returns all tasks with optional filtering
+// ListTasks returns all tasks with optional filtering, search, sorting, and pagination
 func (h *Handler) ListTasks(c *gin.Context) {
 	// Create filters from query parameters
 	filters := make(map[string]interface{})
@@ -206,6 +206,52 @@ func (h *Handler) ListTasks(c *gin.Context) {
 	if status := c.Query("status"); status != "" {
 		filters["status"] = status
 	}
+	
+	// Add search query if provided
+	if search := c.Query("search"); search != "" {
+		filters["search"] = search
+	}
+	
+	// Add price range filters
+	if minFee := c.Query("min_fee"); minFee != "" {
+		if fee, err := strconv.ParseFloat(minFee, 64); err == nil {
+			filters["min_fee"] = fee
+		}
+	}
+	if maxFee := c.Query("max_fee"); maxFee != "" {
+		if fee, err := strconv.ParseFloat(maxFee, 64); err == nil {
+			filters["max_fee"] = fee
+		}
+	}
+	
+	// Add deadline filter (tasks due before a certain date)
+	if deadline := c.Query("deadline_before"); deadline != "" {
+		filters["deadline_before"] = deadline
+	}
+	
+	// Sorting
+	if sortBy := c.Query("sort_by"); sortBy != "" {
+		filters["sort_by"] = sortBy // fee, deadline, created_at
+	}
+	if sortOrder := c.Query("sort_order"); sortOrder != "" {
+		filters["sort_order"] = sortOrder // asc, desc
+	}
+	
+	// Pagination
+	page := 1
+	perPage := 20
+	if p := c.Query("page"); p != "" {
+		if pageNum, err := strconv.Atoi(p); err == nil && pageNum > 0 {
+			page = pageNum
+		}
+	}
+	if pp := c.Query("per_page"); pp != "" {
+		if perPageNum, err := strconv.Atoi(pp); err == nil && perPageNum > 0 && perPageNum <= 100 {
+			perPage = perPageNum
+		}
+	}
+	filters["page"] = page
+	filters["per_page"] = perPage
 	
 	// Check for specific filters
 	userID := c.GetUint("userID")
@@ -222,16 +268,22 @@ func (h *Handler) ListTasks(c *gin.Context) {
 		if err == nil {
 			filters["created_by"] = uint(userID)
 		}
+	} else if excludeCreatedBy := c.Query("exclude_created_by"); excludeCreatedBy != "" {
+		// Exclude tasks created by a specific user (useful for browsing)
+		userID, err := strconv.ParseUint(excludeCreatedBy, 10, 64)
+		if err == nil {
+			filters["exclude_created_by"] = uint(userID)
+		}
 	}
 	
 	// Get tasks with the provided filters
-	tasks, err := h.taskService.ListTasks(c.Request.Context(), filters)
+	result, err := h.taskService.ListTasksWithPagination(c.Request.Context(), filters)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve tasks"})
 		return
 	}
 	
-	c.JSON(http.StatusOK, tasks)
+	c.JSON(http.StatusOK, result)
 }
 
 // GetUserTasks returns tasks created by the current user
@@ -302,6 +354,64 @@ func (h *Handler) ApplyForTask(c *gin.Context) {
 	c.Status(http.StatusCreated)
 }
 
+type respondToApplicationRequest struct {
+	Status string `json:"status" binding:"required,oneof=accepted declined"`
+}
+
+func (h *Handler) RespondToApplication(c *gin.Context) {
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task ID"})
+		return
+	}
+
+	applicationID, err := strconv.ParseUint(c.Param("applicationId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid application ID"})
+		return
+	}
+
+	var req respondToApplicationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID := c.GetUint("userID")
+	
+	// Verify the user is the task creator
+	task, err := h.taskService.GetTaskByID(c.Request.Context(), uint(taskID))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return
+	}
+	
+	if task.CreatedBy != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only task creator can respond to applications"})
+		return
+	}
+
+	// Update application status
+	var updatedTask *models.Task
+	if req.Status == "accepted" {
+		updatedTask, err = h.taskService.AssignTask(c.Request.Context(), uint(taskID), uint(applicationID))
+	} else {
+		// For declined, just update the application status
+		err = h.taskService.DeclineApplication(c.Request.Context(), uint(applicationID))
+	}
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if updatedTask != nil {
+		c.JSON(http.StatusOK, updatedTask)
+	} else {
+		c.JSON(http.StatusOK, gin.H{"message": "Application declined"})
+	}
+}
+
 type createMessageRequest struct {
 	Content     string `json:"content" binding:"required"`
 	RecipientID uint   `json:"recipient_id" binding:"required"`
@@ -352,6 +462,52 @@ func (h *Handler) GetTaskMessages(c *gin.Context) {
 	c.JSON(http.StatusOK, messages)
 }
 
+// Application Message Handlers
+
+type createApplicationMessageRequest struct {
+	Content string `json:"content" binding:"required"`
+}
+
+func (h *Handler) CreateApplicationMessage(c *gin.Context) {
+	applicationID, err := strconv.ParseUint(c.Param("applicationId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid application ID"})
+		return
+	}
+
+	var req createApplicationMessageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	senderID := c.GetUint("userID")
+	message, err := h.messageService.CreateApplicationMessage(c.Request.Context(), uint(applicationID), senderID, req.Content)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, message)
+}
+
+func (h *Handler) GetApplicationMessages(c *gin.Context) {
+	applicationID, err := strconv.ParseUint(c.Param("applicationId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid application ID"})
+		return
+	}
+
+	userID := c.GetUint("userID")
+	messages, err := h.messageService.GetApplicationMessages(c.Request.Context(), uint(applicationID), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, messages)
+}
+
 type createReviewRequest struct {
 	Rating   int    `json:"rating" binding:"required,min=1,max=5"`
 	Comment  string `json:"comment"`
@@ -371,11 +527,37 @@ func (h *Handler) CreateReview(c *gin.Context) {
 	}
 
 	reviewerID := c.GetUint("userID")
+	
+	// Fetch the task to determine who should be reviewed
+	task, err := h.taskService.GetTaskByID(c.Request.Context(), uint(taskID))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return
+	}
+	
+	// Determine who is being reviewed based on the reviewer's role
+	var reviewedUserID uint
+	if task.CreatedBy == reviewerID {
+		// Task creator is reviewing the assignee
+		if task.AssignedTo == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "task has no assignee to review"})
+			return
+		}
+		reviewedUserID = *task.AssignedTo
+	} else if task.AssignedTo != nil && *task.AssignedTo == reviewerID {
+		// Assignee is reviewing the task creator
+		reviewedUserID = task.CreatedBy
+	} else {
+		c.JSON(http.StatusForbidden, gin.H{"error": "you are not a participant in this task"})
+		return
+	}
+	
 	review, err := h.reviewService.CreateReview(c.Request.Context(), services.CreateReviewInput{
-		TaskID:     uint(taskID),
-		ReviewerID: reviewerID,
-		Rating:     req.Rating,
-		Comment:    req.Comment,
+		TaskID:         uint(taskID),
+		ReviewerID:     reviewerID,
+		ReviewedUserID: reviewedUserID,
+		Rating:         req.Rating,
+		Comment:        req.Comment,
 	})
 
 	if err != nil {
@@ -544,4 +726,21 @@ func (h *Handler) GetServerTime(c *gin.Context) {
 	}
 	
 	c.JSON(http.StatusOK, response)
+}
+
+// GetTaskApplications retrieves all applications for a specific task
+func (h *Handler) GetTaskApplications(c *gin.Context) {
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task ID"})
+		return
+	}
+
+	applications, err := h.taskService.GetTaskApplications(c.Request.Context(), uint(taskID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve applications"})
+		return
+	}
+
+	c.JSON(http.StatusOK, applications)
 }

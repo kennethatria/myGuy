@@ -108,28 +108,11 @@
 
     <!-- Reviews Section -->
     <div class="mt-4">
-      <h2 class="mb-3">Reviews</h2>
-      <div class="card">
-        <div v-if="isLoading" class="p-4 text-center">
-          <p class="text-gray">Loading reviews...</p>
-        </div>
-        <div v-else-if="reviews.length === 0" class="p-4 text-center">
-          <p class="text-gray">No reviews exist at this time.</p>
-        </div>
-        <ul v-else class="divide-y">
-          <li v-for="review in reviews" :key="review.id" class="p-4">
-            <div class="flex justify-between items-center mb-2">
-              <h4 class="font-semibold">{{ review.reviewer?.fullName || review.reviewer?.username }}</h4>
-              <div class="flex items-center">
-                <span class="rating-star mr-1">★</span>
-                <span class="text-sm font-semibold">{{ review.rating }}/5</span>
-              </div>
-            </div>
-            <p class="text-sm">{{ review.comment }}</p>
-            <p class="text-sm text-gray mt-2 text-right">{{ formatDate(review.created_at) }}</p>
-          </li>
-        </ul>
-      </div>
+      <ReviewList 
+        :reviews="reviews" 
+        :loading="isLoadingReviews"
+        :error="reviewsError"
+      />
     </div>
   </div>
 </template>
@@ -139,6 +122,8 @@ import { ref, onMounted } from 'vue'
 import { format } from 'date-fns'
 import config from '@/config'
 import { useAuthStore } from '@/stores/auth'
+import { useReviewsStore } from '@/stores/reviews'
+import ReviewList from '@/components/ReviewList.vue'
 
 interface Profile {
   username: string
@@ -175,6 +160,8 @@ const isSubmitting = ref(false)
 const formError = ref('')
 const successMessage = ref('')
 const isLoading = ref(true)
+const isLoadingReviews = ref(false)
+const reviewsError = ref<string | null>(null)
 const formErrors = ref({
   username: '',
   email: '',
@@ -209,59 +196,26 @@ const fetchProfileData = async () => {
 }
 
 const fetchUserReviews = async (userId: number) => {
-  const authStore = useAuthStore()
-  const token = authStore.token
+  const reviewsStore = useReviewsStore()
+  
+  isLoadingReviews.value = true
+  reviewsError.value = null
   
   try {
-    // Set empty reviews array initially
-    reviews.value = []
+    const userReviews = await reviewsStore.fetchUserReviews(userId)
+    reviews.value = userReviews
     
-    const response = await fetch(`${config.API_URL}/users/${userId}/reviews`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    })
+    // Update total reviews count in profile
+    profile.value.totalReviews = reviews.value.length
     
-    if (!response.ok) {
-      // If we get a 404, it might mean no reviews yet, which is ok
-      if (response.status === 404) {
-        reviews.value = []
-        return
-      }
-      throw new Error('Failed to fetch reviews')
-    }
-    
-    try {
-      const reviewsData = await response.json()
-      
-      // Ensure reviewsData is actually an array
-      if (Array.isArray(reviewsData)) {
-        reviews.value = reviewsData
-      } else if (reviewsData && typeof reviewsData === 'object') {
-        // If it's an object with data property that is an array
-        reviews.value = Array.isArray(reviewsData.data) ? reviewsData.data : []
-      } else {
-        reviews.value = []
-      }
-      
-      // Update total reviews count in profile
-      profile.value.totalReviews = reviews.value.length
-      
-      // Calculate average rating if there are reviews
-      if (reviews.value.length > 0) {
-        const totalRating = reviews.value.reduce((sum, review) => sum + review.rating, 0)
-        profile.value.averageRating = totalRating / reviews.value.length
-      } else {
-        profile.value.averageRating = 0
-      }
-    } catch (parseError) {
-      console.error('Error parsing reviews response:', parseError)
-      reviews.value = []
-    }
+    // Calculate average rating using the store's helper
+    profile.value.averageRating = reviewsStore.calculateAverageRating(reviews.value)
   } catch (error) {
     console.error('Error fetching user reviews:', error)
+    reviewsError.value = error instanceof Error ? error.message : 'Failed to load reviews'
     reviews.value = []
+  } finally {
+    isLoadingReviews.value = false
   }
 }
 
