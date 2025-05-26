@@ -189,7 +189,7 @@ export const useTasksStore = defineStore('tasks', () => {
         await authStore.checkAuth();
       }
       
-      const response = await fetch(`${config.ENDPOINTS.TASKS}?created_by=${userId || authStore.user?.id}`, {
+      const response = await fetch(`${config.API_URL}/user/tasks`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
