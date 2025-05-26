@@ -342,11 +342,29 @@ export const useTasksStore = defineStore('tasks', () => {
       })
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to apply for task');
+        const errorText = await response.text();
+        console.error('Application failed:', response.status, errorText);
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(errorData.error || 'Failed to apply for task');
+        } catch (e) {
+          throw new Error(`Failed to apply for task: ${response.status} ${response.statusText}`);
+        }
       }
       
-      return await response.json()
+      // Check if response has content
+      const responseText = await response.text();
+      if (!responseText) {
+        // API returned empty response but it was successful
+        return { success: true };
+      }
+      
+      try {
+        return JSON.parse(responseText);
+      } catch (e) {
+        console.warn('Could not parse response as JSON:', responseText);
+        return { success: true };
+      }
     } catch (error) {
       console.error('Error applying for task:', error)
       throw error

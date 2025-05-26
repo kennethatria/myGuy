@@ -445,7 +445,9 @@ const handleApplicationSubmit = async (data: { proposedFee: number; message: str
   if (!task.value) return
 
   try {
-    await tasksStore.applyForTask(task.value.id, data)
+    const result = await tasksStore.applyForTask(task.value.id, data)
+    console.log('Application result:', result)
+    
     showApplicationModal.value = false
     
     // Refresh applications list
