@@ -12,11 +12,11 @@
           </router-link>
         </h3>
         <div class="application-meta">
-          <span class="proposed-fee">${{ application.proposedFee }}</span>
+          <span class="proposed-fee">${{ application.proposed_fee || application.proposedFee }}</span>
           <span class="status-badge" :class="`status-${application.status}`">
             {{ application.status }}
           </span>
-          <span class="date">{{ formatDate(application.createdAt) }}</span>
+          <span class="date">{{ formatDate(application.created_at || application.createdAt) }}</span>
         </div>
       </div>
       
@@ -102,12 +102,13 @@ import { useMessagesStore } from '@/stores/messages'
 
 interface Application {
   id: number
-  taskId: number
-  applicantId: number
-  proposedFee: number
+  task_id: number
+  applicant_id: number
+  proposed_fee: number
   status: string
   message?: string
-  createdAt: string
+  created_at?: string
+  createdAt?: string  // For backward compatibility
   applicant: {
     id: number
     username: string
@@ -155,25 +156,37 @@ const sendingMessage = ref(false)
 
 const currentUserId = computed(() => authStore.user?.id)
 const isTaskOwner = computed(() => currentUserId.value === props.taskOwnerId)
-const isApplicant = computed(() => currentUserId.value === props.application.applicantId)
+const isApplicant = computed(() => currentUserId.value === (props.application.applicant_id || props.application.applicantId))
 
 const canSendMessage = computed(() => {
   return (isTaskOwner.value || isApplicant.value) && props.application.status === 'pending'
 })
 
-const formatDate = (date: string) => {
-  return format(new Date(date), 'MMM d, yyyy')
+const formatDate = (date: string | undefined) => {
+  if (!date) return 'Unknown date'
+  try {
+    return format(new Date(date), 'MMM d, yyyy')
+  } catch (error) {
+    console.error('Invalid date:', date)
+    return 'Invalid date'
+  }
 }
 
-const formatTime = (date: string) => {
-  const messageDate = new Date(date)
-  const now = new Date()
-  const diffInHours = (now.getTime() - messageDate.getTime()) / (1000 * 60 * 60)
-  
-  if (diffInHours < 24) {
-    return formatDistanceToNow(messageDate, { addSuffix: true })
+const formatTime = (date: string | undefined) => {
+  if (!date) return 'Unknown time'
+  try {
+    const messageDate = new Date(date)
+    const now = new Date()
+    const diffInHours = (now.getTime() - messageDate.getTime()) / (1000 * 60 * 60)
+    
+    if (diffInHours < 24) {
+      return formatDistanceToNow(messageDate, { addSuffix: true })
+    }
+    return format(messageDate, 'MMM d, h:mm a')
+  } catch (error) {
+    console.error('Invalid date for time:', date)
+    return 'Invalid time'
   }
-  return format(messageDate, 'MMM d, h:mm a')
 }
 
 const loadMessages = async () => {

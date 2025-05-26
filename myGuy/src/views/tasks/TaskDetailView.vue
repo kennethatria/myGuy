@@ -115,7 +115,7 @@
               v-for="application in visibleApplications"
               :key="application.id"
               :application="application"
-              :task-owner-id="task.createdBy"
+              :task-owner-id="task.created_by"
               @accept="handleAcceptApplication"
               @decline="handleDeclineApplication"
               @message-sent="handleApplicationMessageSent"
