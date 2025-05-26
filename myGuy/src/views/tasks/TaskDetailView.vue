@@ -146,7 +146,7 @@
           </div>
           
           <!-- New message form -->
-          <div class="mt-4">
+          <div v-if="canSendMessage" class="mt-4">
             <form @submit.prevent="handleSendMessage" class="flex space-x-2">
               <div class="flex-1">
                 <input
@@ -163,6 +163,9 @@
                 Send
               </button>
             </form>
+          </div>
+          <div v-else-if="isOwner && task?.status === 'open'" class="mt-4 p-3 bg-gray-100 rounded text-gray-600">
+            <p>Messages will be available once you assign this task to someone.</p>
           </div>
         </div>
       </div>
@@ -277,6 +280,16 @@ const canApply = computed(() => {
     task.value.createdBy !== authStore.user.id &&
     !applications.value.some(app => app.applicant.id === authStore.user?.id)
   )
+})
+
+const canSendMessage = computed(() => {
+  if (!task.value || !authStore.user) return false
+  
+  // Non-owners can always send messages to task creators
+  if (!isOwner.value) return true
+  
+  // Owners can only send messages if task is assigned
+  return task.value.assignedTo !== null && task.value.assignedTo !== undefined
 })
 
 const canComplete = computed(() => {
@@ -505,9 +518,22 @@ const handleSendMessage = async () => {
   if (!task.value || !newMessage.value.trim() || !authStore.user) return
 
   try {
-    const recipientId = isOwner.value 
-      ? task.value.assignedTo || messages.value[0]?.sender.id
-      : task.value.createdBy
+    let recipientId: number | undefined
+    
+    if (isOwner.value) {
+      // Task owner sending message
+      if (task.value.assignedTo) {
+        // If task is assigned, send to assignee
+        recipientId = task.value.assignedTo
+      } else {
+        // For open tasks, owner can't send messages to themselves
+        alert('This task is not assigned yet. Messages will be available once someone is assigned.')
+        return
+      }
+    } else {
+      // Non-owner sending message to task creator
+      recipientId = task.value.createdBy
+    }
 
     if (!recipientId) {
       throw new Error('No recipient found for message')
