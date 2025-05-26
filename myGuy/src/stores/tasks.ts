@@ -326,13 +326,19 @@ export const useTasksStore = defineStore('tasks', () => {
     const token = authStore.token;
     
     try {
+      // Convert camelCase to snake_case for API
+      const apiPayload = {
+        proposed_fee: application.proposedFee,
+        message: application.message
+      }
+      
       const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}/apply`, {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json' 
         },
-        body: JSON.stringify(application)
+        body: JSON.stringify(apiPayload)
       })
       
       if (!response.ok) {
