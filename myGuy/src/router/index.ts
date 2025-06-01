@@ -62,6 +62,12 @@ const router = createRouter({
       name: 'create-review',
       component: () => import('@/views/reviews/CreateReviewView.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/messages',
+      name: 'messages',
+      component: () => import('@/views/messages/MessageCenter.vue'),
+      meta: { requiresAuth: true }
     }
   ]
 })

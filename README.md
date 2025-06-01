@@ -10,8 +10,17 @@ A modern task marketplace application where users can create tasks (gigs) for ot
 - **Advanced Search & Filtering**: Search tasks by title/description with filters for status, price range, and deadline
 - **Fee Negotiation**: Applicants can propose their fees when applying for tasks
 - **Real-time Communication**: 
+  - WebSocket-based instant messaging with Socket.IO
   - Task-level messaging between creators and assignees
   - Application-specific messaging for pre-assignment communication
+  - Message editing and soft deletion
+  - Read receipts and typing indicators
+  - Automatic content filtering (removes URLs, emails, phone numbers)
+  - Message lifecycle management with automatic deletion
+- **Store Marketplace**: 
+  - List items for sale with fixed prices or bidding
+  - Auction system with starting bids and increments
+  - Item categories and condition tracking
 - **Review System**: Both parties can review each other after task completion with 1-5 star ratings
 - **User Profiles**: View user profiles with ratings and review history
 
@@ -62,6 +71,14 @@ MyGuy/
 │   │   ├── services/   # Business logic
 │   │   └── repositories/ # Data access layer
 │   └── Dockerfile      # Backend container definition
+├── store-service/       # Store microservice (Go)
+│   ├── cmd/            # Application entrypoint
+│   ├── internal/       # Service implementation
+│   └── Dockerfile      # Service container
+├── chat-websocket-service/ # Real-time chat service (Node.js)
+│   ├── src/            # Service implementation
+│   ├── migrations/     # Database migrations
+│   └── Dockerfile      # Service container
 ├── myGuy/              # Vue.js frontend
 │   ├── src/
 │   │   ├── components/ # Reusable components
@@ -127,6 +144,8 @@ docker-compose up --build
 The application will be available at:
 - Frontend: http://localhost:5173
 - Backend API: http://localhost:8080
+- Store Service: http://localhost:8081
+- Chat WebSocket Service: http://localhost:8082
 
 ### Local Development
 
@@ -195,6 +214,41 @@ npm run test:unit    # Unit tests
 npm run test:e2e     # End-to-end tests
 ```
 
+## Microservices
+
+### Quick Start
+```bash
+# Start all services
+docker-compose up -d
+
+# Stop all services  
+docker-compose down
+
+# Start specific service
+docker-compose up -d chat-websocket-service
+docker-compose up -d store-service
+
+# View logs
+docker-compose logs -f chat-websocket-service
+```
+
+### Available Microservices
+
+1. **Main Backend Service** (Port 8080)
+   - Core task management
+   - User authentication
+   - Application handling
+
+2. **Store Service** (Port 8081)
+   - Item marketplace
+   - Bidding system
+   - Purchase management
+
+3. **Chat WebSocket Service** (Port 8082)
+   - Real-time messaging
+   - WebSocket connections
+   - Message lifecycle management
+
 ## Docker Commands
 
 Build and start all services:
@@ -215,6 +269,11 @@ docker-compose down
 View logs:
 ```bash
 docker-compose logs -f
+```
+
+Scale a service:
+```bash
+docker-compose up -d --scale chat-websocket-service=3
 ```
 
 ## Contributing

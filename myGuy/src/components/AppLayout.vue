@@ -18,6 +18,9 @@
                 :class="{ 'active': $route.name === item.name }"
               >
                 {{ item.text }}
+                <span v-if="item.name === 'messages' && totalUnreadCount > 0" class="nav-badge">
+                  {{ totalUnreadCount }}
+                </span>
               </router-link>
             </div>
           </div>
@@ -151,6 +154,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useChatStore } from '@/stores/chat'
 
 interface User {
   username: string
@@ -160,15 +164,18 @@ interface User {
 
 const router = useRouter()
 const authStore = useAuthStore()
+const chatStore = useChatStore()
 const isProfileMenuOpen = ref(false)
 const isMobileMenuOpen = ref(false)
 
 const user = computed(() => authStore.user)
+const totalUnreadCount = computed(() => chatStore.totalUnreadCount)
 
 const navigation = [
   { name: 'dashboard', to: { name: 'dashboard' }, text: 'Dashboard' },
   { name: 'tasks', to: { name: 'tasks' }, text: 'Browse Gigs' },
-  { name: 'create-task', to: { name: 'create-task' }, text: 'Post a Gig' }
+  { name: 'create-task', to: { name: 'create-task' }, text: 'Post a Gig' },
+  { name: 'messages', to: { name: 'messages' }, text: 'Messages' }
 ]
 
 const profileMenu = [
@@ -199,6 +206,8 @@ onMounted(async () => {
   // Try to check authentication status on component mount
   if (authStore.token) {
     await authStore.checkAuth()
+    // Connect to chat if authenticated
+    chatStore.connectSocket()
   }
 })
 </script>

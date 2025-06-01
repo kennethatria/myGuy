@@ -3,23 +3,41 @@ import { ref } from 'vue'
 import config from '@/config'
 import { useAuthStore } from './auth'
 
-interface Message {
+export interface Message {
   id: number
-  taskId: number
-  applicationId?: number
-  senderId: number
-  recipientId: number
+  task_id: number
+  application_id?: number
+  sender_id: number
+  recipient_id: number
   content: string
-  createdAt: string
-  isRead: boolean
-  sender?: {
+  is_read: boolean
+  read_at?: string
+  is_edited: boolean
+  edited_at?: string
+  is_deleted: boolean
+  deleted_at?: string
+  created_at: string
+  has_removed_content?: boolean
+  sender: {
     id: number
     username: string
   }
-  recipient?: {
+  recipient: {
     id: number
     username: string
   }
+}
+
+export interface ConversationSummary {
+  task_id: number
+  task_title: string
+  task_description: string
+  task_status: string
+  last_message: string
+  last_message_time: string
+  other_user_id: number
+  other_user_name: string
+  unread_count: number
 }
 
 export const useMessagesStore = defineStore('messages', () => {
@@ -54,7 +72,7 @@ export const useMessagesStore = defineStore('messages', () => {
         id: msg.id || Math.random(), // Ensure ID exists
         sender: msg.sender || { id: 0, username: 'Unknown User' }, // Ensure sender exists
         content: msg.content || '',
-        createdAt: msg.createdAt || new Date().toISOString()
+        created_at: msg.created_at || new Date().toISOString()
       }));
       
       messages.value = validatedData;

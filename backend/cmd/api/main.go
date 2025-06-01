@@ -109,6 +109,12 @@ func main() {
 		// Application message routes
 		auth.POST("/applications/:applicationId/messages", handler.CreateApplicationMessage)
 		auth.GET("/applications/:applicationId/messages", handler.GetApplicationMessages)
+		
+		// New message endpoints
+		auth.PATCH("/messages/:id", handler.EditMessage)
+		auth.DELETE("/messages/:id", handler.DeleteMessage)
+		auth.POST("/messages/:id/read", handler.MarkMessageAsRead)
+		auth.GET("/messages/conversations", handler.GetUserConversations)
 
 		// Review routes
 		auth.POST("/tasks/:id/reviews", handler.CreateReview)
