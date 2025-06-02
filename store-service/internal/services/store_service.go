@@ -47,11 +47,18 @@ func (s *StoreService) CreateItem(userID uint, req models.CreateStoreItemRequest
 		MinBidIncrement: req.MinBidIncrement,
 		BidDeadline:     req.BidDeadline,
 		Category:        req.Category,
-		Images:          req.Images,
 		Condition:       req.Condition,
 		Location:        req.Location,
 		ShippingInfo:    req.ShippingInfo,
 		Status:          "active",
+	}
+	
+	// Create image records
+	for i, imageURL := range req.Images {
+		item.Images = append(item.Images, models.ItemImage{
+			URL:   imageURL,
+			Order: i,
+		})
 	}
 
 	err := s.itemRepo.Create(item)

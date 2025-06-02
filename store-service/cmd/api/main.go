@@ -34,7 +34,7 @@ func main() {
 	}
 
 	// Auto migrate database
-	if err := db.AutoMigrate(&models.StoreItem{}, &models.Bid{}); err != nil {
+	if err := db.AutoMigrate(&models.StoreItem{}, &models.ItemImage{}, &models.Bid{}, &models.User{}); err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
@@ -57,6 +57,9 @@ func main() {
 
 	// Setup routes
 	router := gin.Default()
+	
+	// Serve static files for uploaded images
+	router.Static("/uploads", "./uploads")
 
 	// CORS middleware
 	router.Use(func(c *gin.Context) {

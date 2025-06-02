@@ -15,7 +15,23 @@
       
       <div class="item-content">
         <div class="item-image-section">
-          <img :src="item.image_url || '/placeholder.png'" :alt="item.title" />
+          <div v-if="item.images && item.images.length > 0" class="image-gallery">
+            <div class="main-image">
+              <img :src="'http://localhost:8081' + (selectedImage || item.images[0].url)" :alt="item.title" />
+            </div>
+            <div v-if="item.images.length > 1" class="image-thumbnails">
+              <div 
+                v-for="(image, index) in item.images" 
+                :key="image.id || index"
+                class="thumbnail"
+                :class="{ active: selectedImage === image.url || (!selectedImage && index === 0) }"
+                @click="selectedImage = image.url"
+              >
+                <img :src="'http://localhost:8081' + image.url" :alt="`${item.title} ${index + 1}`" />
+              </div>
+            </div>
+          </div>
+          <img v-else :src="'/placeholder.png'" :alt="item.title" />
         </div>
         
         <div class="item-info-section">
@@ -113,6 +129,7 @@ const bids = ref([]);
 const loading = ref(true);
 const error = ref('');
 const bidAmount = ref('');
+const selectedImage = ref('');
 
 const userId = computed(() => authStore.user?.id);
 const itemId = computed(() => route.params.id);
@@ -291,12 +308,65 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 2rem;
 }
 
-.item-image-section img {
+.item-image-section > img {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+
+.image-gallery {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.main-image {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+}
+
+.main-image img {
+  max-width: 100%;
+  max-height: 400px;
+  object-fit: contain;
+}
+
+.image-thumbnails {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.thumbnail {
+  width: 80px;
+  height: 80px;
+  border: 2px solid transparent;
+  border-radius: 0.375rem;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.thumbnail:hover {
+  border-color: #e5e7eb;
+}
+
+.thumbnail.active {
+  border-color: #4F46E5;
+}
+
+.thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .item-info-section {

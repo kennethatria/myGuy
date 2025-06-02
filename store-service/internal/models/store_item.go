@@ -11,6 +11,7 @@ type StoreItem struct {
 	Title           string         `json:"title" gorm:"not null"`
 	Description     string         `json:"description"`
 	SellerID        uint           `json:"seller_id" gorm:"not null"`
+	Seller          *User          `json:"seller,omitempty" gorm:"foreignKey:SellerID"`
 	PriceType       string         `json:"price_type" gorm:"not null"` // "fixed" or "bidding"
 	FixedPrice      float64        `json:"fixed_price,omitempty"`
 	StartingBid     float64        `json:"starting_bid,omitempty"`
@@ -19,16 +20,28 @@ type StoreItem struct {
 	BidDeadline     *time.Time     `json:"bid_deadline,omitempty"`
 	Status          string         `json:"status" gorm:"default:'active'"` // active, sold, expired, cancelled
 	Category        string         `json:"category"`
-	Images          []string       `json:"images" gorm:"type:text[]"`
+	Images          []ItemImage    `json:"images" gorm:"foreignKey:ItemID"`
 	Condition       string         `json:"condition"` // new, like-new, good, fair, poor
 	Location        string         `json:"location"`
 	ShippingInfo    string         `json:"shipping_info"`
 	BuyerID         *uint          `json:"buyer_id,omitempty"`
 	SoldAt          *time.Time     `json:"sold_at,omitempty"`
 	Bids            []Bid          `json:"bids,omitempty" gorm:"foreignKey:ItemID"`
+	BidCount        int            `json:"bid_count" gorm:"-"`
+	IsAuction       bool           `json:"is_auction" gorm:"-"`
+	Price           float64        `json:"price" gorm:"-"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
 	DeletedAt       gorm.DeletedAt `json:"-" gorm:"index"`
+}
+
+type ItemImage struct {
+	ID        uint           `json:"id" gorm:"primaryKey"`
+	ItemID    uint           `json:"item_id" gorm:"not null"`
+	URL       string         `json:"url" gorm:"not null"`
+	Order     int            `json:"order" gorm:"default:0"`
+	CreatedAt time.Time      `json:"created_at"`
+	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 type Bid struct {
@@ -88,4 +101,22 @@ type StoreItemFilter struct {
 	SortOrder   string
 	Page        int
 	PerPage     int
+}
+
+// AfterFind hook to populate computed fields
+func (s *StoreItem) AfterFind(tx *gorm.DB) error {
+	s.IsAuction = s.PriceType == "bidding"
+	if s.IsAuction {
+		s.Price = s.CurrentBid
+		if s.Price == 0 {
+			s.Price = s.StartingBid
+		}
+	} else {
+		s.Price = s.FixedPrice
+	}
+	
+	// Count bids
+	tx.Model(&Bid{}).Where("item_id = ?", s.ID).Count(&s.BidCount)
+	
+	return nil
 }

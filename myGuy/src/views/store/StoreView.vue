@@ -40,7 +40,7 @@
     <div class="items-grid">
       <div v-for="item in filteredItems" :key="item.id" class="item-card">
         <div class="item-image">
-          <img :src="item.image_url || '/placeholder.png'" :alt="item.title" />
+          <img :src="item.images && item.images.length > 0 ? 'http://localhost:8081' + item.images[0].url : '/placeholder.png'" :alt="item.title" />
         </div>
         <div class="item-content">
           <h3>{{ item.title }}</h3>
@@ -76,6 +76,33 @@
           <div class="form-group">
             <label>Description</label>
             <textarea v-model="newItem.description" rows="4" required></textarea>
+          </div>
+          <div class="form-group">
+            <label>Images (up to 3)</label>
+            <div class="image-upload-section">
+              <div class="image-previews">
+                <div v-for="(image, index) in selectedImages" :key="index" class="image-preview">
+                  <img :src="image.preview" :alt="`Preview ${index + 1}`" />
+                  <button type="button" @click="removeImage(index)" class="remove-image">×</button>
+                </div>
+                <div v-if="selectedImages.length < 3" class="image-upload-box">
+                  <input
+                    type="file"
+                    id="image-upload"
+                    accept="image/*"
+                    multiple
+                    @change="handleImageSelect"
+                    :disabled="selectedImages.length >= 3"
+                    style="display: none;"
+                  />
+                  <label for="image-upload" class="upload-label">
+                    <span class="upload-icon">+</span>
+                    <span>Add Photo</span>
+                  </label>
+                </div>
+              </div>
+              <p class="image-help">You can upload up to 3 photos. Supported formats: JPG, PNG, GIF</p>
+            </div>
           </div>
           <div class="form-group">
             <label>Category</label>
@@ -144,6 +171,7 @@ const searchQuery = ref('');
 const categoryFilter = ref('');
 const conditionFilter = ref('');
 const showCreateModal = ref(false);
+const selectedImages = ref([]);
 const newItem = ref({
   title: '',
   description: '',
@@ -185,13 +213,34 @@ async function loadItems() {
 
 async function createItem() {
   try {
+    // Create FormData to handle file uploads
+    const formData = new FormData();
+    
+    // Add item data
+    formData.append('title', newItem.value.title);
+    formData.append('description', newItem.value.description);
+    formData.append('category', newItem.value.category);
+    formData.append('condition', newItem.value.condition);
+    formData.append('is_auction', newItem.value.is_auction.toString());
+    
+    if (newItem.value.is_auction) {
+      formData.append('starting_bid', newItem.value.starting_bid.toString());
+      formData.append('bid_increment', newItem.value.bid_increment.toString());
+    } else {
+      formData.append('price', newItem.value.price.toString());
+    }
+    
+    // Add images
+    selectedImages.value.forEach((image, index) => {
+      formData.append(`images`, image.file);
+    });
+    
     const response = await fetch('http://localhost:8081/api/v1/store/items', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
         'Authorization': `Bearer ${localStorage.getItem('token')}`
       },
-      body: JSON.stringify(newItem.value)
+      body: formData
     });
     
     if (response.ok) {
@@ -208,10 +257,41 @@ async function createItem() {
         starting_bid: 0,
         bid_increment: 0.01
       };
+      selectedImages.value = [];
+    } else {
+      const error = await response.json();
+      alert(error.error || 'Failed to create item');
     }
   } catch (error) {
     console.error('Error creating item:', error);
+    alert('Error creating item');
   }
+}
+
+function handleImageSelect(event) {
+  const files = Array.from(event.target.files);
+  const remainingSlots = 3 - selectedImages.value.length;
+  const filesToAdd = files.slice(0, remainingSlots);
+  
+  filesToAdd.forEach(file => {
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        selectedImages.value.push({
+          file: file,
+          preview: e.target.result
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+  
+  // Reset input
+  event.target.value = '';
+}
+
+function removeImage(index) {
+  selectedImages.value.splice(index, 1);
 }
 
 function viewItem(item) {
@@ -435,5 +515,91 @@ onMounted(() => {
 
 .btn-outline:hover {
   background: #f9fafb;
+}
+
+/* Image Upload Styles */
+.image-upload-section {
+  margin-top: 0.5rem;
+}
+
+.image-previews {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.image-preview {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  border-radius: 0.375rem;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.image-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.remove-image {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remove-image:hover {
+  background: rgba(0, 0, 0, 0.9);
+}
+
+.image-upload-box {
+  width: 100px;
+  height: 100px;
+  border: 2px dashed #e5e7eb;
+  border-radius: 0.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.image-upload-box:hover {
+  border-color: #4F46E5;
+  background: #f9fafb;
+}
+
+.upload-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+  color: #6b7280;
+}
+
+.upload-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.image-help {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0;
 }
 </style>

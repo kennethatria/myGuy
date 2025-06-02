@@ -1,8 +1,14 @@
 package handlers
 
 import (
+	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 	"store-service/internal/models"
 	"store-service/internal/services"
 
@@ -21,10 +27,99 @@ func NewStoreHandler(service *services.StoreService) *StoreHandler {
 func (h *StoreHandler) CreateItem(c *gin.Context) {
 	userID := c.GetUint("userID")
 	
-	var req models.CreateStoreItemRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	// Parse form data
+	title := c.PostForm("title")
+	description := c.PostForm("description")
+	category := c.PostForm("category")
+	condition := c.PostForm("condition")
+	isAuction := c.PostForm("is_auction") == "true"
+	
+	if title == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "title is required"})
 		return
+	}
+	
+	req := models.CreateStoreItemRequest{
+		Title:       title,
+		Description: description,
+		Category:    category,
+		Condition:   condition,
+	}
+	
+	if isAuction {
+		req.PriceType = "bidding"
+		if startingBid, err := strconv.ParseFloat(c.PostForm("starting_bid"), 64); err == nil {
+			req.StartingBid = startingBid
+		}
+		if bidIncrement, err := strconv.ParseFloat(c.PostForm("bid_increment"), 64); err == nil {
+			req.MinBidIncrement = bidIncrement
+		}
+	} else {
+		req.PriceType = "fixed"
+		if price, err := strconv.ParseFloat(c.PostForm("price"), 64); err == nil {
+			req.FixedPrice = price
+		}
+	}
+	
+	// Handle image uploads
+	form, err := c.MultipartForm()
+	if err == nil && form != nil && form.File["images"] != nil {
+		var imageURLs []string
+		
+		// Create uploads directory structure
+		uploadsDir := "./uploads/store"
+		userDir := filepath.Join(uploadsDir, strconv.FormatUint(uint64(userID), 10))
+		if err := os.MkdirAll(userDir, 0755); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create upload directory"})
+			return
+		}
+		
+		for i, fileHeader := range form.File["images"] {
+			if i >= 3 { // Limit to 3 images
+				break
+			}
+			
+			// Validate file size (5MB limit)
+			if fileHeader.Size > 5*1024*1024 {
+				continue
+			}
+			
+			// Check file extension
+			ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+			if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".gif" {
+				continue
+			}
+			
+			// Open uploaded file
+			file, err := fileHeader.Open()
+			if err != nil {
+				continue
+			}
+			defer file.Close()
+			
+			// Generate unique filename
+			timestamp := time.Now().Unix()
+			filename := fmt.Sprintf("%d_%d%s", timestamp, i, ext)
+			filePath := filepath.Join(userDir, filename)
+			
+			// Create destination file
+			dst, err := os.Create(filePath)
+			if err != nil {
+				continue
+			}
+			defer dst.Close()
+			
+			// Copy file content
+			if _, err := io.Copy(dst, file); err != nil {
+				continue
+			}
+			
+			// Create URL for the uploaded file
+			imageURL := fmt.Sprintf("/uploads/store/%d/%s", userID, filename)
+			imageURLs = append(imageURLs, imageURL)
+		}
+		
+		req.Images = imageURLs
 	}
 
 	item, err := h.service.CreateItem(userID, req)

@@ -22,7 +22,9 @@ func (r *storeItemRepository) Create(item *models.StoreItem) error {
 
 func (r *storeItemRepository) GetByID(id uint) (*models.StoreItem, error) {
 	var item models.StoreItem
-	err := r.db.Preload("Bids", "status = ?", "active").First(&item, id).Error
+	err := r.db.Preload("Seller").Preload("Images", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
+	}).Preload("Bids", "status = ?", "active").First(&item, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -111,8 +113,10 @@ func (r *storeItemRepository) GetAll(filter models.StoreItemFilter) ([]models.St
 	offset := (filter.Page - 1) * filter.PerPage
 	query = query.Offset(offset).Limit(filter.PerPage)
 
-	// Execute query
-	err := query.Find(&items).Error
+	// Execute query with preloads
+	err := query.Preload("Images", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
+	}).Preload("Seller").Find(&items).Error
 	if err != nil {
 		return nil, 0, err
 	}
