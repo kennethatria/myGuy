@@ -143,7 +143,7 @@ const minBidAmount = computed(() => {
 async function loadItem() {
   try {
     loading.value = true;
-    const response = await fetch(`http://localhost:8081/api/v1/store/items/${itemId.value}`, {
+    const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}`, {
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`
       }
@@ -167,7 +167,7 @@ async function loadItem() {
 
 async function loadBids() {
   try {
-    const response = await fetch(`http://localhost:8081/api/v1/store/items/${itemId.value}/bids`, {
+    const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/bids`, {
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`
       }
@@ -188,7 +188,7 @@ async function placeBid() {
   }
   
   try {
-    const response = await fetch(`http://localhost:8081/api/v1/store/items/${itemId.value}/bids`, {
+    const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/bids`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -213,7 +213,7 @@ async function placeBid() {
 async function purchaseItem() {
   if (confirm(`Are you sure you want to purchase this item for $${item.value.price}?`)) {
     try {
-      const response = await fetch(`http://localhost:8081/api/v1/store/items/${itemId.value}/purchase`, {
+      const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/purchase`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`

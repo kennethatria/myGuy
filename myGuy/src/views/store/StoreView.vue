@@ -198,7 +198,7 @@ const filteredItems = computed(() => {
 
 async function loadItems() {
   try {
-    const response = await fetch('http://localhost:8081/api/v1/store/items', {
+    const response = await fetch('http://localhost:8081/api/v1/items', {
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`
       }
@@ -235,7 +235,7 @@ async function createItem() {
       formData.append(`images`, image.file);
     });
     
-    const response = await fetch('http://localhost:8081/api/v1/store/items', {
+    const response = await fetch('http://localhost:8081/api/v1/items', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`
