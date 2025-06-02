@@ -33,12 +33,14 @@ export const useChatStore = defineStore('chat', () => {
   
   const activeMessages = computed(() => {
     if (!activeConversation.value) return [];
-    return messages.value.get(activeConversation.value.task_id) || [];
+    const conversationId = activeConversation.value.task_id || activeConversation.value.application_id;
+    return messages.value.get(conversationId!) || [];
   });
   
   const activeTypingUsers = computed(() => {
     if (!activeConversation.value) return [];
-    return typingUsers.value.get(activeConversation.value.task_id) || [];
+    const conversationId = activeConversation.value.task_id || activeConversation.value.application_id;
+    return typingUsers.value.get(conversationId!) || [];
   });
   
   // Socket connection
@@ -187,7 +189,10 @@ export const useChatStore = defineStore('chat', () => {
     
     // Update unread counts
     convs.forEach(conv => {
-      unreadCounts.value.set(conv.task_id, conv.unread_count);
+      const conversationId = conv.task_id || conv.application_id;
+      if (conversationId) {
+        unreadCounts.value.set(conversationId, conv.unread_count);
+      }
     });
   }
   
@@ -207,7 +212,7 @@ export const useChatStore = defineStore('chat', () => {
   
   function handleConversationMarkedRead({ taskId, count }: { taskId: number; count: number }) {
     unreadCounts.value.set(taskId, 0);
-    const conv = conversations.value.find(c => c.task_id === taskId);
+    const conv = conversations.value.find(c => c.task_id === taskId || c.application_id === taskId);
     if (conv) {
       conv.unread_count = 0;
     }
@@ -242,30 +247,39 @@ export const useChatStore = defineStore('chat', () => {
   }
   
   // Actions
-  function joinConversation(taskId: number) {
+  function joinConversation(conversationId: number) {
     if (!socket.value) return;
     
-    const conv = conversations.value.find(c => c.task_id === taskId);
+    const conv = conversations.value.find(c => c.task_id === conversationId || c.application_id === conversationId);
     if (conv) {
       activeConversation.value = conv;
       
       // Leave previous conversation
       if (activeConversation.value) {
-        socket.value.emit('leave:conversation', { taskId: activeConversation.value.task_id });
+        const prevId = activeConversation.value.task_id || activeConversation.value.application_id;
+        if (conv.task_id) {
+          socket.value.emit('leave:conversation', { taskId: prevId });
+        } else {
+          socket.value.emit('leave:conversation', { applicationId: prevId });
+        }
       }
       
       // Join new conversation
-      socket.value.emit('join:conversation', { taskId });
+      if (conv.task_id) {
+        socket.value.emit('join:conversation', { taskId: conversationId });
+      } else {
+        socket.value.emit('join:conversation', { applicationId: conversationId });
+      }
       
       // Load messages if not already loaded
-      if (!messages.value.has(taskId)) {
+      if (!messages.value.has(conversationId)) {
         isLoadingMessages.value = true;
-        socket.value.emit('messages:get', { taskId, limit: 5, offset: 0 });
+        socket.value.emit('messages:get', { taskId: conversationId, limit: 5, offset: 0 });
       }
       
       // Mark as read
       if (conv.unread_count > 0) {
-        socket.value.emit('conversation:read', { taskId });
+        socket.value.emit('conversation:read', { taskId: conversationId });
       }
     }
   }
@@ -273,11 +287,19 @@ export const useChatStore = defineStore('chat', () => {
   function sendMessage(content: string, recipientId: number) {
     if (!socket.value || !activeConversation.value) return;
     
-    socket.value.emit('message:send', {
-      taskId: activeConversation.value.task_id,
-      recipientId,
-      content
-    });
+    if (activeConversation.value.task_id) {
+      socket.value.emit('message:send', {
+        taskId: activeConversation.value.task_id,
+        recipientId,
+        content
+      });
+    } else if (activeConversation.value.application_id) {
+      socket.value.emit('message:send', {
+        applicationId: activeConversation.value.application_id,
+        recipientId,
+        content
+      });
+    }
   }
   
   function editMessage(messageId: number, content: string) {

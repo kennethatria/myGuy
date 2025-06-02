@@ -29,15 +29,18 @@ export interface Message {
 }
 
 export interface ConversationSummary {
-  task_id: number
-  task_title: string
-  task_description: string
-  task_status: string
+  task_id?: number
+  application_id?: number
+  task_title?: string
+  application_title?: string
+  task_description?: string
+  task_status?: string
   last_message: string
   last_message_time: string
   other_user_id: number
   other_user_name: string
   unread_count: number
+  conversation_type: 'task' | 'application'
 }
 
 export const useMessagesStore = defineStore('messages', () => {

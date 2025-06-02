@@ -68,6 +68,18 @@ const router = createRouter({
       name: 'messages',
       component: () => import('@/views/messages/MessageCenter.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/store',
+      name: 'store',
+      component: () => import('@/views/store/StoreView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/store/:id',
+      name: 'store-item',
+      component: () => import('@/views/store/StoreItemView.vue'),
+      meta: { requiresAuth: true }
     }
   ]
 })

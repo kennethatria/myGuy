@@ -5,7 +5,7 @@
     @click="$emit('click')"
   >
     <div class="conversation-header">
-      <h3 class="task-title">{{ conversation.task_title }}</h3>
+      <h3 class="task-title">{{ conversation.task_title || conversation.application_title || 'Application' }}</h3>
       <span class="timestamp">{{ formatTime(conversation.last_message_time) }}</span>
     </div>
     
