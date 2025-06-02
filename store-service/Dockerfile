@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install dependencies
 COPY go.mod ./
-RUN go mod download
+RUN go mod download && go mod tidy
 
 # Copy source code
 COPY . .
