@@ -47,14 +47,20 @@ export const useChatStore = defineStore('chat', () => {
   function connectSocket() {
     if (socket.value?.connected) return;
     
-    socket.value = io('http://localhost:8082', {
-      auth: {
-        token: authStore.token
-      },
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionAttempts: 5
-    });
+    try {
+      socket.value = io('http://localhost:8082', {
+        auth: {
+          token: authStore.token
+        },
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionAttempts: 3,
+        timeout: 5000
+      });
+    } catch (error) {
+      console.error('Failed to initialize WebSocket connection:', error);
+      return;
+    }
     
     // Connection events
     socket.value.on('connect', () => {
@@ -72,6 +78,10 @@ export const useChatStore = defineStore('chat', () => {
     
     socket.value.on('error', (error: any) => {
       console.error('WebSocket error:', error);
+      // Don't break the app on WebSocket errors
+      if (error?.message) {
+        console.warn('Chat service unavailable:', error.message);
+      }
     });
     
     // Message events

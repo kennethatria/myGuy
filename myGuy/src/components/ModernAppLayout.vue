@@ -121,7 +121,14 @@ const searchQuery = ref('')
 const unreadNotifications = ref(0)
 
 const user = computed(() => authStore.user)
-const totalUnreadCount = computed(() => chatStore.totalUnreadCount)
+const totalUnreadCount = computed(() => {
+  try {
+    return chatStore.totalUnreadCount || 0
+  } catch (error) {
+    console.warn('Chat store unavailable:', error)
+    return 0
+  }
+})
 
 const mainNavigation = computed(() => [
   { 
@@ -210,7 +217,8 @@ const isActiveRoute = (item: any) => {
 onMounted(async () => {
   if (authStore.token) {
     await authStore.checkAuth()
-    chatStore.connectSocket()
+    // Temporarily disable chat connection until SQL issues are fixed
+    // chatStore.connectSocket()
   }
 })
 </script>
