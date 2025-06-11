@@ -393,12 +393,19 @@ const fetchDashboardData = async () => {
       })
       
       // Split tasks for recommended and popular sections
-      if (allTasks.data) {
+      if (allTasks && allTasks.data && Array.isArray(allTasks.data)) {
         recommendedTasks.value = allTasks.data.slice(0, 4)
         popularTasks.value = allTasks.data.slice(4, 8)
+      } else if (allTasks && Array.isArray(allTasks)) {
+        // Handle case where allTasks is directly an array
+        recommendedTasks.value = allTasks.slice(0, 4)
+        popularTasks.value = allTasks.slice(4, 8)
       }
     } catch (err) {
       console.error('Failed to fetch recommended tasks:', err)
+      // Set empty arrays on error
+      recommendedTasks.value = []
+      popularTasks.value = []
     }
     
     // If the backend is down or no data is available, uncomment this for testing:
