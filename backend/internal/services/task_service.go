@@ -313,6 +313,7 @@ func (s *TaskService) DeclineApplication(ctx context.Context, applicationID uint
 	}
 
 	application.Status = "declined"
+	application.UpdatedAt = time.Now()
 	return s.applicationRepo.Update(ctx, application)
 }
 

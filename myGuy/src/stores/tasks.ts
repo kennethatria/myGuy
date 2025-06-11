@@ -384,7 +384,13 @@ export const useTasksStore = defineStore('tasks', () => {
         },
         body: JSON.stringify({ status })
       })
-      if (!response.ok) throw new Error('Failed to respond to application')
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        console.error('Server error response:', errorData)
+        throw new Error(errorData.error || 'Failed to respond to application')
+      }
+      
       return await response.json()
     } catch (error) {
       console.error('Error responding to application:', error)

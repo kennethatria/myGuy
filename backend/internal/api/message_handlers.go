@@ -81,3 +81,4 @@ func (h *Handler) GetUserConversations(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, conversations)
+}

@@ -395,14 +395,25 @@ func (h *Handler) RespondToApplication(c *gin.Context) {
 	var updatedTask *models.Task
 	if req.Status == "accepted" {
 		updatedTask, err = h.taskService.AssignTask(c.Request.Context(), uint(taskID), uint(applicationID))
+		if err != nil {
+			if err == services.ErrApplicationNotFound {
+				c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+				return
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 	} else {
 		// For declined, just update the application status
 		err = h.taskService.DeclineApplication(c.Request.Context(), uint(applicationID))
-	}
-
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+		if err != nil {
+			if err == services.ErrApplicationNotFound {
+				c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+				return
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	if updatedTask != nil {
