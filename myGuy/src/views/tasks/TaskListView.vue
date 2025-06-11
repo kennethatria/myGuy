@@ -132,7 +132,7 @@
             <div class="flex-grow-1">
               <h3 class="h5 mb-2">
                 <router-link
-                  :to="{ name: 'task-details', params: { id: task.id } }"
+                  :to="{ name: 'task-detail', params: { id: task.id } }"
                   class="text-decoration-none"
                 >
                   {{ task.title }}

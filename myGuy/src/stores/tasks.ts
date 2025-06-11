@@ -154,23 +154,36 @@ export const useTasksStore = defineStore('tasks', () => {
       if (!response.ok) throw new Error('Failed to fetch tasks')
       
       // Get tasks from API
-      const allTasks = await response.json();
+      const result = await response.json();
+      
+      // Handle different response formats
+      let allTasks;
+      if (result.data && Array.isArray(result.data)) {
+        allTasks = result.data;
+      } else if (Array.isArray(result)) {
+        allTasks = result;
+      } else {
+        console.error('Unexpected response format:', result);
+        allTasks = [];
+      }
       
       // Additional client-side filtering as backup
-      if (userId) {
+      if (userId && Array.isArray(allTasks)) {
         console.log('User ID for filtering:', userId);
         console.log('All tasks before filtering:', allTasks.length);
         
         // Apply client-side filter to exclude user's own tasks
         tasks.value = allTasks.filter(task => 
-          String(task.createdBy) !== String(userId) && 
+          String(task.createdBy || task.created_by) !== String(userId) && 
           task.status === 'open'
         );
         
         console.log('Tasks after filtering:', tasks.value.length);
       } else {
-        tasks.value = allTasks;
+        tasks.value = Array.isArray(allTasks) ? allTasks : [];
       }
+      
+      return { data: tasks.value };
     } catch (error) {
       console.error('Error fetching tasks:', error)
       throw error

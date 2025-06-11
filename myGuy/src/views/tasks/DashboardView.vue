@@ -61,7 +61,7 @@
     <div v-if="!isLoading && !error">
       <section class="tasks-section">
         <h2 class="section-title">Recommended for you</h2>
-        <div class="tasks-grid">
+        <div v-if="recommendedTasks.length > 0" class="tasks-grid">
           <div 
             v-for="task in recommendedTasks" 
             :key="task.id"
@@ -88,12 +88,16 @@
             </div>
           </div>
         </div>
+        <div v-else class="empty-state">
+          <p>No recommended tasks available at the moment.</p>
+          <router-link :to="{ name: 'tasks' }" class="btn btn-primary">Browse All Gigs</router-link>
+        </div>
       </section>
 
       <!-- Popular Tasks -->
       <section class="tasks-section">
         <h2 class="section-title">Popular tasks</h2>
-        <div class="tasks-grid">
+        <div v-if="popularTasks.length > 0" class="tasks-grid">
           <div 
             v-for="task in popularTasks" 
             :key="task.id"
@@ -120,6 +124,10 @@
             </div>
           </div>
         </div>
+        <div v-else class="empty-state">
+          <p>No popular tasks available at the moment.</p>
+          <router-link :to="{ name: 'tasks' }" class="btn btn-primary">Browse All Gigs</router-link>
+        </div>
       </section>
     </div>
 
@@ -134,7 +142,7 @@
           </div>
           <ul v-else class="divide-y">
             <li v-for="task in createdTasks" :key="task.id">
-              <router-link :to="{ name: 'task-details', params: { id: task.id }}" class="block p-4 hover-card">
+              <router-link :to="{ name: 'task-detail', params: { id: task.id }}" class="block p-4 hover-card">
                 <div class="flex justify-between items-center mb-2">
                   <h4 class="font-semibold text-primary">{{ task.title }}</h4>
                   <span class="badge" :class="'badge-' + task.status">
@@ -168,7 +176,7 @@
           </div>
           <ul v-else class="divide-y">
             <li v-for="task in assignedTasks" :key="task.id">
-              <router-link :to="{ name: 'task-details', params: { id: task.id }}" class="block p-4 hover-card">
+              <router-link :to="{ name: 'task-detail', params: { id: task.id }}" class="block p-4 hover-card">
                 <div class="flex justify-between items-center mb-2">
                   <h4 class="font-semibold text-primary">{{ task.title }}</h4>
                   <span class="badge" :class="'badge-' + task.status">
@@ -628,6 +636,39 @@ onMounted(async () => {
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 3rem 2rem;
+  color: #6c757d;
+}
+
+.empty-state p {
+  margin-bottom: 1rem;
+  font-size: 1rem;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background-color: #1976d2;
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: #1565c0;
+  color: white;
+  text-decoration: none;
 }
 
 /* Responsive */
