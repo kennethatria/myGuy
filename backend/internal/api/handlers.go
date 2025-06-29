@@ -14,7 +14,6 @@ import (
 type Handler struct {
 	userService    *services.UserService
 	taskService    *services.TaskService
-	messageService *services.MessageService
 	reviewService  *services.ReviewService
 	authMiddleware *middleware.JWTAuthMiddleware
 }
@@ -22,14 +21,12 @@ type Handler struct {
 func NewHandler(
 	userService *services.UserService,
 	taskService *services.TaskService,
-	messageService *services.MessageService,
 	reviewService *services.ReviewService,
 	authMiddleware *middleware.JWTAuthMiddleware,
 ) *Handler {
 	return &Handler{
 		userService:    userService,
 		taskService:    taskService,
-		messageService: messageService,
 		reviewService:  reviewService,
 		authMiddleware: authMiddleware,
 	}
@@ -423,101 +420,6 @@ func (h *Handler) RespondToApplication(c *gin.Context) {
 	}
 }
 
-type createMessageRequest struct {
-	Content     string `json:"content" binding:"required"`
-	RecipientID uint   `json:"recipient_id" binding:"required"`
-}
-
-func (h *Handler) CreateMessage(c *gin.Context) {
-	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task ID"})
-		return
-	}
-
-	var req createMessageRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	senderID := c.GetUint("userID")
-	message, err := h.messageService.CreateMessage(c.Request.Context(), services.CreateMessageInput{
-		TaskID:      uint(taskID),
-		SenderID:    senderID,
-		RecipientID: req.RecipientID,
-		Content:     req.Content,
-	})
-
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusCreated, message)
-}
-
-func (h *Handler) GetTaskMessages(c *gin.Context) {
-	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task ID"})
-		return
-	}
-
-	messages, err := h.messageService.GetTaskMessages(c.Request.Context(), uint(taskID))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, messages)
-}
-
-// Application Message Handlers
-
-type createApplicationMessageRequest struct {
-	Content string `json:"content" binding:"required"`
-}
-
-func (h *Handler) CreateApplicationMessage(c *gin.Context) {
-	applicationID, err := strconv.ParseUint(c.Param("applicationId"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid application ID"})
-		return
-	}
-
-	var req createApplicationMessageRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	senderID := c.GetUint("userID")
-	message, err := h.messageService.CreateApplicationMessage(c.Request.Context(), uint(applicationID), senderID, req.Content)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusCreated, message)
-}
-
-func (h *Handler) GetApplicationMessages(c *gin.Context) {
-	applicationID, err := strconv.ParseUint(c.Param("applicationId"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid application ID"})
-		return
-	}
-
-	userID := c.GetUint("userID")
-	messages, err := h.messageService.GetApplicationMessages(c.Request.Context(), uint(applicationID), userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, messages)
-}
 
 type createReviewRequest struct {
 	Rating   int    `json:"rating" binding:"required,min=1,max=5"`

@@ -2,6 +2,20 @@
 
 A modern task marketplace application where users can create tasks (gigs) for others to complete, negotiate fees, communicate about requirements, and leave reviews.
 
+## Current Status
+
+### Architecture
+- **Microservices-based** with clean separation of concerns
+- **Main Backend**: Task management, user authentication, reviews
+- **Chat Service**: Real-time messaging via WebSocket 
+- **Store Service**: Item marketplace with bidding system
+
+### Recent Updates
+- ✅ Messaging functionality separated to dedicated chat microservice
+- ✅ Clean backend architecture with no messaging dependencies
+- ⚠️ **Testing Required**: Backend has zero test coverage (see `improvements/`)
+- 📋 **Roadmap Available**: See `improvements/` folder for enhancement plans
+
 ## Features
 
 ### Core Functionality
@@ -9,7 +23,7 @@ A modern task marketplace application where users can create tasks (gigs) for ot
 - **Task Management**: Create, browse, and manage tasks through their complete lifecycle
 - **Advanced Search & Filtering**: Search tasks by title/description with filters for status, price range, and deadline
 - **Fee Negotiation**: Applicants can propose their fees when applying for tasks
-- **Real-time Communication**: 
+- **Real-time Communication** (Chat Microservice): 
   - WebSocket-based instant messaging with Socket.IO
   - Task-level messaging between creators and assignees
   - Application-specific messaging for pre-assignment communication
@@ -17,7 +31,7 @@ A modern task marketplace application where users can create tasks (gigs) for ot
   - Read receipts and typing indicators
   - Automatic content filtering (removes URLs, emails, phone numbers)
   - Message lifecycle management with automatic deletion
-- **Store Marketplace**: 
+- **Store Marketplace** (Store Microservice): 
   - List items for sale with fixed prices or bidding
   - Auction system with starting bids and increments
   - Item categories and condition tracking
@@ -29,16 +43,15 @@ A modern task marketplace application where users can create tasks (gigs) for ot
 #### As a Task Creator
 - Post tasks with title, description, deadline, and budget
 - View and manage applications with proposed fees
-- Communicate with applicants before accepting
 - Accept or decline applications
-- Message with assignees during task execution
+- Message with assignees during task execution (via Chat Service)
 - Mark tasks as complete and review assignees
 
 #### As a Task Applicant/Assignee
 - Browse available tasks with advanced filtering
 - Search tasks by keywords
 - Apply for tasks with custom fee proposals
-- Communicate with task creators about requirements
+- Communicate with task creators about requirements (via Chat Service)
 - Update task progress
 - Complete tasks and review creators
 
@@ -63,11 +76,11 @@ A modern task marketplace application where users can create tasks (gigs) for ot
 
 ```
 MyGuy/
-├── backend/              # Go backend server
+├── backend/              # Go backend server (Task management, Auth, Reviews)
 │   ├── cmd/             # Application entrypoints
 │   ├── internal/        # Private application code
 │   │   ├── api/        # HTTP handlers
-│   │   ├── models/     # Database models
+│   │   ├── models/     # Database models (User, Task, Application, Review)
 │   │   ├── services/   # Business logic
 │   │   └── repositories/ # Data access layer
 │   └── Dockerfile      # Backend container definition
@@ -86,16 +99,23 @@ MyGuy/
 │   │   ├── stores/    # Pinia stores
 │   │   └── router/    # Route definitions
 │   └── package.json
+├── improvements/        # Enhancement roadmaps and recommendations
+│   ├── improvements.md  # General backend improvements
+│   ├── improvements-user-management.md # Auth microservice plan
+│   └── improvements-tests.md # Critical testing requirements
+├── current_state.md     # Current backend functionality documentation
 └── docker-compose.yml  # Container orchestration
 ```
 
 ## API Endpoints
 
-### Authentication
+### Main Backend (Port 8080)
+
+#### Authentication
 - `POST /api/v1/register` - Register new user
 - `POST /api/v1/login` - Login user
 
-### Tasks
+#### Tasks
 - `GET /api/v1/tasks` - List tasks with pagination, search, and filters
   - Query params: `search`, `status`, `min_fee`, `max_fee`, `deadline_before`, `sort_by`, `sort_order`, `page`, `per_page`
 - `POST /api/v1/tasks` - Create a new task
@@ -104,26 +124,37 @@ MyGuy/
 - `PATCH /api/v1/tasks/:id/status` - Update task status
 - `DELETE /api/v1/tasks/:id` - Delete a task
 - `POST /api/v1/tasks/:id/apply` - Apply for a task
+- `GET /api/v1/tasks/:id/applications` - Get task applications
 - `PATCH /api/v1/tasks/:id/applications/:applicationId` - Accept/decline application
 
-### User Tasks
+#### User Tasks
 - `GET /api/v1/user/tasks` - Get tasks created by current user
 - `GET /api/v1/user/tasks/assigned` - Get tasks assigned to current user
 
-### Messages
-- `POST /api/v1/tasks/:id/messages` - Send task message
-- `GET /api/v1/tasks/:id/messages` - Get task messages
-- `POST /api/v1/applications/:id/messages` - Send application message
-- `GET /api/v1/applications/:id/messages` - Get application messages
-
-### Reviews
+#### Reviews
 - `POST /api/v1/tasks/:id/reviews` - Create a review
 - `GET /api/v1/users/:id/reviews` - Get user reviews
 
-### Users & Profile
+#### Users & Profile
 - `GET /api/v1/users/:id` - Get user details
 - `GET /api/v1/profile` - Get current user profile
 - `PUT /api/v1/profile` - Update current user profile
+
+#### Utility
+- `GET /api/v1/server-time` - Get server time and deadline examples
+
+### Chat WebSocket Service (Port 8082)
+**All messaging functionality handled by dedicated chat microservice**
+- Real-time WebSocket connections
+- Task-level messaging
+- Application-specific messaging
+- Message editing, deletion, read receipts
+
+### Store Service (Port 8081)
+**Item marketplace functionality**
+- Item listings and management
+- Bidding system
+- Purchase transactions
 
 ## Quick Start
 
@@ -192,20 +223,23 @@ npm run dev
 
 ## Database Schema
 
-### Core Tables
+### Main Backend Database
 - `users` - User accounts with authentication and profile data
 - `tasks` - Task/gig listings with status tracking
 - `applications` - Task applications with proposed fees
-- `messages` - Communication between users (task and application scoped)
 - `reviews` - User reviews and ratings
+
+### Microservice Databases
+- `messages` - Real-time communication (Chat WebSocket Service)
+- `store_items` - Marketplace items and bids (Store Service)
 
 ## Testing
 
-### Backend Tests
-```bash
-cd backend
-go test ./...
-```
+### ⚠️ Critical Issue: Backend Testing
+**Current Status**: Backend has **ZERO test coverage**
+
+**Required Action**: Implement comprehensive testing before production deployment.
+See `improvements/improvements-tests.md` for detailed testing requirements and implementation plan.
 
 ### Frontend Tests
 ```bash
@@ -236,8 +270,10 @@ docker-compose logs -f chat-websocket-service
 
 1. **Main Backend Service** (Port 8080)
    - Core task management
-   - User authentication
+   - User authentication and profiles
    - Application handling
+   - Review system
+   - **Clean architecture**: No messaging dependencies
 
 2. **Store Service** (Port 8081)
    - Item marketplace
@@ -248,6 +284,7 @@ docker-compose logs -f chat-websocket-service
    - Real-time messaging
    - WebSocket connections
    - Message lifecycle management
+   - Content filtering and moderation
 
 ## Docker Commands
 
@@ -276,13 +313,36 @@ Scale a service:
 docker-compose up -d --scale chat-websocket-service=3
 ```
 
+## Development Roadmap
+
+### Immediate Priorities
+1. **Testing Implementation** - See `improvements/improvements-tests.md`
+   - Critical: Backend has zero test coverage
+   - Implement unit, integration, and security tests
+
+2. **Security Enhancements** - See `improvements/improvements.md`
+   - Rate limiting, CORS configuration
+   - Input validation improvements
+   - Database indexing for performance
+
+3. **Authentication Microservice** - See `improvements/improvements-user-management.md`
+   - Extract auth to dedicated service
+   - Enable token validation across all services
+
+### Documentation
+- `current_state.md` - Complete backend functionality overview
+- `improvements/` - Detailed enhancement roadmaps
+- Each improvement file contains implementation checklists
+
 ## Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Create a new Pull Request
+2. Review `improvements/` folder for current priorities
+3. Create your feature branch (`git checkout -b feature/amazing-feature`)
+4. **Add tests** for new functionality (required)
+5. Commit your changes (`git commit -m 'Add some amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Create a new Pull Request
 
 ## License
 

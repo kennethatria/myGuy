@@ -32,7 +32,6 @@ func main() {
 		&models.User{},
 		&models.Task{},
 		&models.Application{},
-		&models.Message{},
 		&models.Review{},
 	)
 	if err != nil {
@@ -42,19 +41,17 @@ func main() {
 	userRepo := repositories.NewGormUserRepository(db)
 	taskRepo := repositories.NewGormTaskRepository(db)
 	applicationRepo := repositories.NewGormApplicationRepository(db)
-	messageRepo := repositories.NewGormMessageRepository(db)
 	reviewRepo := repositories.NewGormReviewRepository(db)
 
 	// Initialize services
 	userService := services.NewUserService(userRepo)
 	taskService := services.NewTaskService(taskRepo, applicationRepo)
-	messageService := services.NewMessageService(messageRepo)
 	reviewService := services.NewReviewService(reviewRepo, taskRepo, userRepo)
 
 	// Initialize JWT middleware
 	jwtMiddleware := middleware.NewJWTAuthMiddleware(os.Getenv("JWT_SECRET"))
 	// Initialize handlers
-	handler := api.NewHandler(userService, taskService, messageService, reviewService, jwtMiddleware)
+	handler := api.NewHandler(userService, taskService, reviewService, jwtMiddleware)
 
 	// Setup router
 	r := gin.Default()
@@ -102,19 +99,6 @@ func main() {
 		auth.GET("/user/tasks", handler.GetUserTasks)
 		auth.GET("/user/tasks/assigned", handler.GetAssignedTasks)
 
-		// Message routes
-		auth.POST("/tasks/:id/messages", handler.CreateMessage)
-		auth.GET("/tasks/:id/messages", handler.GetTaskMessages)
-		
-		// Application message routes
-		auth.POST("/applications/:applicationId/messages", handler.CreateApplicationMessage)
-		auth.GET("/applications/:applicationId/messages", handler.GetApplicationMessages)
-		
-		// New message endpoints
-		auth.PATCH("/messages/:id", handler.EditMessage)
-		auth.DELETE("/messages/:id", handler.DeleteMessage)
-		auth.POST("/messages/:id/read", handler.MarkMessageAsRead)
-		auth.GET("/messages/conversations", handler.GetUserConversations)
 
 		// Review routes
 		auth.POST("/tasks/:id/reviews", handler.CreateReview)
