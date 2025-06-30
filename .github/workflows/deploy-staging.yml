@@ -98,7 +98,7 @@ jobs:
   terraform-deploy:
     name: 'Deploy Infrastructure'
     runs-on: ubuntu-latest
-    if: github.event.action != 'closed' && (github.event.inputs.deploy_infrastructure == 'true' || contains(github.event.pull_request.changed_files, 'terraform/'))
+    if: github.event.action != 'closed' && (github.event.inputs.deploy_infrastructure == 'true' || contains(github.event.pull_request.changed_files, 'infra/'))
     
     defaults:
       run:
@@ -186,7 +186,7 @@ jobs:
           echo "app_instance_ip=${{ needs.terraform-deploy.outputs.app_instance_ip }}" >> $GITHUB_OUTPUT
         else
           # Get outputs from existing state
-          cd terraform
+          cd infra
           terraform init -backend-config="bucket=myguy-terraform-state" \
                         -backend-config="key=${{ env.ENVIRONMENT }}/terraform.tfstate" \
                         -backend-config="region=us-east-1" \
@@ -248,7 +248,7 @@ jobs:
         tar -czf deployment.tar.gz \
           --exclude='.git' \
           --exclude='node_modules' \
-          --exclude='terraform' \
+          --exclude='infra' \
           --exclude='.github' \
           .
         

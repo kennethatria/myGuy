@@ -153,7 +153,7 @@ jobs:
         tar -czf deployment.tar.gz \
           --exclude='.git' \
           --exclude='node_modules' \
-          --exclude='terraform' \
+          --exclude='infra' \
           --exclude='.github' \
           .
         
