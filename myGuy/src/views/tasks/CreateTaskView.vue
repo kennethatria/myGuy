@@ -54,6 +54,24 @@
             </div>
 
             <div class="form-group">
+              <label for="fee" class="form-label">Budget/Fee ($)</label>
+              <input
+                type="number"
+                name="fee"
+                id="fee"
+                v-model.number="task.fee"
+                class="form-input"
+                :class="{ 'is-invalid': formErrors.fee }"
+                placeholder="Enter your budget (e.g., 50.00)"
+                min="0.01"
+                step="0.01"
+                required
+              />
+              <p class="form-helper">Enter the amount you're willing to pay for this gig</p>
+              <div v-if="formErrors.fee" class="invalid-feedback">{{ formErrors.fee }}</div>
+            </div>
+
+            <div class="form-group">
               <label for="deadline" class="form-label">Deadline</label>
               <input
                 type="datetime-local"
@@ -108,6 +126,7 @@ const formError = ref('')
 const formErrors = ref({
   title: '',
   description: '',
+  fee: '',
   deadline: ''
 })
 
@@ -133,6 +152,7 @@ const minDeadlineString = computed(() => {
 const task = ref({
   title: '',
   description: '',
+  fee: null as number | null,
   deadline: minDeadlineString.value // Initialize with the minimum valid date
 })
 
@@ -152,6 +172,7 @@ const validateForm = (): boolean => {
   formErrors.value = {
     title: '',
     description: '',
+    fee: '',
     deadline: ''
   }
   formError.value = ''
@@ -171,6 +192,18 @@ const validateForm = (): boolean => {
     isValid = false
   } else if (task.value.description.length < 20) {
     formErrors.value.description = 'Description must be at least 20 characters'
+    isValid = false
+  }
+  
+  // Validate fee
+  if (task.value.fee === null || task.value.fee === undefined) {
+    formErrors.value.fee = 'Budget/Fee is required'
+    isValid = false
+  } else if (task.value.fee <= 0) {
+    formErrors.value.fee = 'Budget/Fee must be greater than $0'
+    isValid = false
+  } else if (task.value.fee > 100000) {
+    formErrors.value.fee = 'Budget/Fee cannot exceed $100,000'
     isValid = false
   }
   
@@ -204,7 +237,7 @@ const handleSubmit = async () => {
       title: task.value.title,
       description: task.value.description,
       deadline: formattedDeadline,
-      fee: 0 // Default fee required by backend
+      fee: task.value.fee! // Use the actual fee from the form
     }
     
     // Import and use the tasks store
