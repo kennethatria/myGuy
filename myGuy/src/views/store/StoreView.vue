@@ -80,92 +80,262 @@
     <!-- Create Item Modal -->
     <div v-if="showCreateModal" class="modal-overlay" @click="cancelCreateItem">
       <div class="modal-content" @click.stop>
-        <h2>List New Item</h2>
-        <form @submit.prevent="createItem">
-          <div class="form-group">
-            <label>Title</label>
-            <input v-model="newItem.title" type="text" required />
+        <div class="modal-header">
+          <h2>List New Item</h2>
+          <button type="button" @click="cancelCreateItem" class="close-btn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="form-progress">
+          <div class="progress-steps">
+            <div class="step" :class="{ active: currentStep >= 1, completed: currentStep > 1 }">
+              <span class="step-number">1</span>
+              <span class="step-label">Basic Info</span>
+            </div>
+            <div class="step" :class="{ active: currentStep >= 2, completed: currentStep > 2 }">
+              <span class="step-number">2</span>
+              <span class="step-label">Details</span>
+            </div>
+            <div class="step" :class="{ active: currentStep >= 3 }">
+              <span class="step-number">3</span>
+              <span class="step-label">Pricing</span>
+            </div>
           </div>
-          <div class="form-group">
-            <label>Description</label>
-            <textarea v-model="newItem.description" rows="4" required></textarea>
-          </div>
-          <div class="form-group">
-            <label>Images (up to 3)</label>
-            <div class="image-upload-section">
-              <div class="image-previews">
-                <div v-for="(image, index) in selectedImages" :key="index" class="image-preview">
-                  <img :src="image.preview" :alt="`Preview ${index + 1}`" />
-                  <button type="button" @click="removeImage(index)" class="remove-image">×</button>
+        </div>
+
+        <form @submit.prevent="createItem" class="improved-form">
+          <!-- Step 1: Basic Information -->
+          <div v-if="currentStep === 1" class="form-step">
+            <h3>Tell us about your item</h3>
+            
+            <div class="form-group">
+              <label for="item-title" class="form-label">
+                <span class="label-text">Item Title</span>
+                <span class="required">*</span>
+              </label>
+              <input 
+                id="item-title"
+                v-model="newItem.title" 
+                type="text" 
+                class="form-input"
+                :class="{ 'error': formErrors.title }"
+                placeholder="e.g., iPhone 13 Pro Max 256GB"
+                required 
+                maxlength="100"
+              />
+              <div v-if="formErrors.title" class="error-message">{{ formErrors.title }}</div>
+              <div class="character-count">{{ newItem.title.length }}/100</div>
+            </div>
+
+            <div class="form-group">
+              <label for="item-description" class="form-label">
+                <span class="label-text">Description</span>
+                <span class="required">*</span>
+              </label>
+              <textarea 
+                id="item-description"
+                v-model="newItem.description" 
+                class="form-input"
+                :class="{ 'error': formErrors.description }"
+                rows="4" 
+                placeholder="Describe your item's condition, features, and any important details..."
+                required
+                maxlength="500"
+              ></textarea>
+              <div v-if="formErrors.description" class="error-message">{{ formErrors.description }}</div>
+              <div class="character-count">{{ newItem.description.length }}/500</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">
+                <span class="label-text">Photos</span>
+                <span class="optional">(Recommended)</span>
+              </label>
+              <div class="image-upload-section">
+                <div class="image-previews">
+                  <div v-for="(image, index) in selectedImages" :key="index" class="image-preview">
+                    <img :src="image.preview" :alt="`Preview ${index + 1}`" />
+                    <button type="button" @click="removeImage(index)" class="remove-image" title="Remove photo">×</button>
+                  </div>
+                  <div v-if="selectedImages.length < 3" class="image-upload-box">
+                    <input
+                      type="file"
+                      id="image-upload"
+                      accept="image/*"
+                      multiple
+                      @change="handleImageSelect"
+                      :disabled="selectedImages.length >= 3"
+                      style="display: none;"
+                    />
+                    <label for="image-upload" class="upload-label">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12h14"/>
+                      </svg>
+                      <span>Add Photo</span>
+                    </label>
+                  </div>
                 </div>
-                <div v-if="selectedImages.length < 3" class="image-upload-box">
-                  <input
-                    type="file"
-                    id="image-upload"
-                    accept="image/*"
-                    multiple
-                    @change="handleImageSelect"
-                    :disabled="selectedImages.length >= 3"
-                    style="display: none;"
-                  />
-                  <label for="image-upload" class="upload-label">
-                    <span class="upload-icon">+</span>
-                    <span>Add Photo</span>
-                  </label>
+                <p class="help-text">Add up to 3 photos. Good photos help your item sell faster! (JPG, PNG, GIF)</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 2: Item Details -->
+          <div v-if="currentStep === 2" class="form-step">
+            <h3>Item details</h3>
+            
+            <div class="form-row">
+              <div class="form-group">
+                <label for="item-category" class="form-label">
+                  <span class="label-text">Category</span>
+                  <span class="required">*</span>
+                </label>
+                <select id="item-category" v-model="newItem.category" class="form-input" required>
+                  <option value="">Choose a category</option>
+                  <option value="electronics">📱 Electronics</option>
+                  <option value="furniture">🪑 Furniture</option>
+                  <option value="clothing">👕 Clothing</option>
+                  <option value="books">📚 Books</option>
+                  <option value="tools">🔧 Tools</option>
+                  <option value="sports">⚽ Sports & Recreation</option>
+                  <option value="other">📦 Other</option>
+                </select>
+                <p class="help-text">Choose the category that best fits your item</p>
+              </div>
+
+              <div class="form-group">
+                <label for="item-condition" class="form-label">
+                  <span class="label-text">Condition</span>
+                  <span class="required">*</span>
+                </label>
+                <select id="item-condition" v-model="newItem.condition" class="form-input" required>
+                  <option value="">Select condition</option>
+                  <option value="new">🆕 New - Never used</option>
+                  <option value="like_new">✨ Like New - Barely used</option>
+                  <option value="good">👍 Good - Some wear</option>
+                  <option value="fair">👌 Fair - Well used</option>
+                  <option value="poor">🔧 Poor - Needs repair</option>
+                </select>
+                <p class="help-text">Be honest about the condition to build trust</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3: Pricing -->
+          <div v-if="currentStep === 3" class="form-step">
+            <h3>Set your price</h3>
+            
+            <div class="pricing-type-selector">
+              <div class="pricing-option" :class="{ active: !newItem.is_auction }" @click="newItem.is_auction = false">
+                <div class="option-icon">💰</div>
+                <div class="option-content">
+                  <h4>Fixed Price</h4>
+                  <p>Sell at a set price</p>
                 </div>
               </div>
-              <p class="image-help">You can upload up to 3 photos. Supported formats: JPG, PNG, GIF</p>
+              <div class="pricing-option" :class="{ active: newItem.is_auction }" @click="newItem.is_auction = true">
+                <div class="option-icon">🏆</div>
+                <div class="option-content">
+                  <h4>Auction</h4>
+                  <p>Let buyers compete</p>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="!newItem.is_auction" class="form-group">
+              <label for="item-price" class="form-label">
+                <span class="label-text">Price (UGX)</span>
+                <span class="required">*</span>
+              </label>
+              <div class="currency-input">
+                <span class="currency-symbol">UGX</span>
+                <input 
+                  id="item-price"
+                  v-model="newItem.price" 
+                  type="number" 
+                  class="form-input"
+                  :class="{ 'error': formErrors.price }"
+                  step="1000" 
+                  min="0" 
+                  placeholder="50000"
+                  required 
+                />
+              </div>
+              <div v-if="formErrors.price" class="error-message">{{ formErrors.price }}</div>
+              <p class="help-text">Research similar items to price competitively</p>
+            </div>
+
+            <div v-else class="auction-fields">
+              <div class="form-group">
+                <label for="starting-bid" class="form-label">
+                  <span class="label-text">Starting Bid (UGX)</span>
+                  <span class="required">*</span>
+                </label>
+                <div class="currency-input">
+                  <span class="currency-symbol">UGX</span>
+                  <input 
+                    id="starting-bid"
+                    v-model="newItem.starting_bid" 
+                    type="number" 
+                    class="form-input"
+                    :class="{ 'error': formErrors.starting_bid }"
+                    step="1000" 
+                    min="0" 
+                    placeholder="10000"
+                    required 
+                  />
+                </div>
+                <div v-if="formErrors.starting_bid" class="error-message">{{ formErrors.starting_bid }}</div>
+              </div>
+
+              <div class="form-group">
+                <label for="bid-increment" class="form-label">
+                  <span class="label-text">Minimum Bid Increment (UGX)</span>
+                  <span class="required">*</span>
+                </label>
+                <div class="currency-input">
+                  <span class="currency-symbol">UGX</span>
+                  <input 
+                    id="bid-increment"
+                    v-model="newItem.bid_increment" 
+                    type="number" 
+                    class="form-input"
+                    :class="{ 'error': formErrors.bid_increment }"
+                    step="500" 
+                    min="500" 
+                    placeholder="1000"
+                    required 
+                  />
+                </div>
+                <div v-if="formErrors.bid_increment" class="error-message">{{ formErrors.bid_increment }}</div>
+                <p class="help-text">Amount each new bid must exceed the current bid</p>
+              </div>
             </div>
           </div>
-          <div class="form-group">
-            <label>Category</label>
-            <select v-model="newItem.category" required>
-              <option value="">Select Category</option>
-              <option value="electronics">Electronics</option>
-              <option value="furniture">Furniture</option>
-              <option value="clothing">Clothing</option>
-              <option value="books">Books</option>
-              <option value="tools">Tools</option>
-              <option value="sports">Sports</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Condition</label>
-            <select v-model="newItem.condition" required>
-              <option value="">Select Condition</option>
-              <option value="new">New</option>
-              <option value="like_new">Like New</option>
-              <option value="good">Good</option>
-              <option value="fair">Fair</option>
-              <option value="poor">Poor</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>
-              <input type="checkbox" v-model="newItem.is_auction" />
-              List as Auction
-            </label>
-          </div>
-          <div v-if="!newItem.is_auction" class="form-group">
-            <label>Price</label>
-            <input v-model="newItem.price" type="number" step="0.01" min="0" required />
-          </div>
-          <div v-else>
-            <div class="form-group">
-              <label>Starting Bid</label>
-              <input v-model="newItem.starting_bid" type="number" step="0.01" min="0" required />
-            </div>
-            <div class="form-group">
-              <label>Bid Increment</label>
-              <input v-model="newItem.bid_increment" type="number" step="0.01" min="0.01" required />
-            </div>
-          </div>
+
+          <!-- Navigation and Action Buttons -->
           <div class="modal-actions">
-            <button type="button" @click="cancelCreateItem" class="btn btn-secondary">
-              Cancel
-            </button>
-            <button type="submit" class="btn btn-primary">List Item</button>
+            <div class="action-left">
+              <button v-if="currentStep > 1" type="button" @click="previousStep" class="btn btn-outline">
+                ← Previous
+              </button>
+            </div>
+            
+            <div class="action-right">
+              <button type="button" @click="cancelCreateItem" class="btn btn-secondary">
+                Cancel
+              </button>
+              <button v-if="currentStep < 3" type="button" @click="nextStep" class="btn btn-primary">
+                Next →
+              </button>
+              <button v-else type="submit" class="btn btn-primary" :disabled="isSubmitting">
+                <span v-if="isSubmitting">Creating...</span>
+                <span v-else>List Item</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>
@@ -185,6 +355,16 @@ const categoryFilter = ref('');
 const conditionFilter = ref('');
 const showCreateModal = ref(false);
 const selectedImages = ref([]);
+const currentStep = ref(1);
+const isSubmitting = ref(false);
+const formErrors = ref({
+  title: '',
+  description: '',
+  price: '',
+  starting_bid: '',
+  bid_increment: ''
+});
+
 const newItem = ref({
   title: '',
   description: '',
@@ -193,7 +373,7 @@ const newItem = ref({
   price: 0,
   is_auction: false,
   starting_bid: 0,
-  bid_increment: 0.01
+  bid_increment: 1000
 });
 
 const filteredItems = computed(() => {
@@ -236,13 +416,20 @@ async function loadItems() {
 }
 
 async function createItem() {
+  // Final validation
+  if (!validateCurrentStep()) {
+    return;
+  }
+  
+  isSubmitting.value = true;
+  
   try {
     // Create FormData to handle file uploads
     const formData = new FormData();
     
     // Add item data
-    formData.append('title', newItem.value.title);
-    formData.append('description', newItem.value.description);
+    formData.append('title', newItem.value.title.trim());
+    formData.append('description', newItem.value.description.trim());
     formData.append('category', newItem.value.category);
     formData.append('condition', newItem.value.condition);
     formData.append('is_auction', newItem.value.is_auction.toString());
@@ -270,15 +457,17 @@ async function createItem() {
     if (response.ok) {
       showCreateModal.value = false;
       await loadItems();
-      // Reset form
       resetForm();
+      // Success message could be added here
     } else {
       const errorData = await response.json().catch(() => ({ error: 'Failed to create item' }));
-      alert(errorData.error || 'Failed to create item');
+      alert(errorData.error || 'Failed to create item listing');
     }
   } catch (error) {
     console.error('Error creating item:', error);
-    alert('Error creating item');
+    alert('Error creating item listing. Please try again.');
+  } finally {
+    isSubmitting.value = false;
   }
 }
 
@@ -308,6 +497,82 @@ function removeImage(index) {
   selectedImages.value.splice(index, 1);
 }
 
+// Step navigation functions
+function nextStep() {
+  if (validateCurrentStep()) {
+    currentStep.value++;
+  }
+}
+
+function previousStep() {
+  currentStep.value--;
+  clearErrors();
+}
+
+function validateCurrentStep() {
+  clearErrors();
+  
+  if (currentStep.value === 1) {
+    let isValid = true;
+    
+    if (!newItem.value.title.trim()) {
+      formErrors.value.title = 'Item title is required';
+      isValid = false;
+    } else if (newItem.value.title.length < 3) {
+      formErrors.value.title = 'Title must be at least 3 characters';
+      isValid = false;
+    }
+    
+    if (!newItem.value.description.trim()) {
+      formErrors.value.description = 'Description is required';
+      isValid = false;
+    } else if (newItem.value.description.length < 10) {
+      formErrors.value.description = 'Description must be at least 10 characters';
+      isValid = false;
+    }
+    
+    return isValid;
+  }
+  
+  if (currentStep.value === 2) {
+    return newItem.value.category && newItem.value.condition;
+  }
+  
+  if (currentStep.value === 3) {
+    let isValid = true;
+    
+    if (!newItem.value.is_auction) {
+      if (!newItem.value.price || newItem.value.price <= 0) {
+        formErrors.value.price = 'Price must be greater than 0';
+        isValid = false;
+      }
+    } else {
+      if (!newItem.value.starting_bid || newItem.value.starting_bid <= 0) {
+        formErrors.value.starting_bid = 'Starting bid must be greater than 0';
+        isValid = false;
+      }
+      if (!newItem.value.bid_increment || newItem.value.bid_increment < 500) {
+        formErrors.value.bid_increment = 'Bid increment must be at least 500 UGX';
+        isValid = false;
+      }
+    }
+    
+    return isValid;
+  }
+  
+  return true;
+}
+
+function clearErrors() {
+  formErrors.value = {
+    title: '',
+    description: '',
+    price: '',
+    starting_bid: '',
+    bid_increment: ''
+  };
+}
+
 function resetForm() {
   newItem.value = {
     title: '',
@@ -317,9 +582,12 @@ function resetForm() {
     price: 0,
     is_auction: false,
     starting_bid: 0,
-    bid_increment: 0.01
+    bid_increment: 1000
   };
   selectedImages.value = [];
+  currentStep.value = 1;
+  isSubmitting.value = false;
+  clearErrors();
 }
 
 function cancelCreateItem() {
@@ -666,5 +934,323 @@ onMounted(() => {
   margin-bottom: 2rem;
   font-size: 1rem;
   line-height: 1.5;
+}
+
+/* Improved Form Styles */
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 1.5rem 0 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 1rem;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  padding: 0.5rem;
+  cursor: pointer;
+  color: #6b7280;
+  border-radius: 0.375rem;
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.form-progress {
+  padding: 0 1.5rem 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.progress-steps {
+  display: flex;
+  justify-content: space-between;
+  position: relative;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  position: relative;
+}
+
+.step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 15px;
+  left: 60%;
+  right: -40%;
+  height: 2px;
+  background-color: #e5e7eb;
+  z-index: 1;
+}
+
+.step.completed:not(:last-child)::after {
+  background-color: #4f46e5;
+}
+
+.step-number {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background-color: #e5e7eb;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-bottom: 0.5rem;
+  position: relative;
+  z-index: 2;
+  transition: all 0.2s;
+}
+
+.step.active .step-number,
+.step.completed .step-number {
+  background-color: #4f46e5;
+  color: white;
+}
+
+.step-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.step.active .step-label,
+.step.completed .step-label {
+  color: #4f46e5;
+}
+
+.improved-form {
+  padding: 1.5rem;
+}
+
+.form-step {
+  min-height: 400px;
+}
+
+.form-step h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 1.5rem;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.form-label {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.label-text {
+  font-size: 0.875rem;
+}
+
+.required {
+  color: #ef4444;
+  font-size: 0.875rem;
+}
+
+.optional {
+  color: #6b7280;
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.form-input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.form-input.error {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+.error-message {
+  color: #ef4444;
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+.character-count {
+  color: #6b7280;
+  font-size: 0.75rem;
+  text-align: right;
+  margin-top: 0.25rem;
+}
+
+.help-text {
+  color: #6b7280;
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+  line-height: 1.4;
+}
+
+.upload-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  color: #6b7280;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.pricing-type-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.pricing-option {
+  padding: 1.5rem;
+  border: 2px solid #e5e7eb;
+  border-radius: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.pricing-option:hover {
+  border-color: #d1d5db;
+  background-color: #f9fafb;
+}
+
+.pricing-option.active {
+  border-color: #4f46e5;
+  background-color: #eef2ff;
+}
+
+.option-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.option-content h4 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 0.25rem;
+}
+
+.option-content p {
+  color: #6b7280;
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.currency-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.currency-symbol {
+  position: absolute;
+  left: 0.75rem;
+  color: #6b7280;
+  font-weight: 500;
+  z-index: 1;
+}
+
+.currency-input .form-input {
+  padding-left: 3rem;
+}
+
+.auction-fields {
+  display: grid;
+  gap: 1rem;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 1.5rem;
+  border-top: 1px solid #e5e7eb;
+  margin-top: 2rem;
+}
+
+.action-left, .action-right {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.btn-outline {
+  background: white;
+  border: 1px solid #d1d5db;
+  color: #374151;
+}
+
+.btn-outline:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+  
+  .pricing-type-selector {
+    grid-template-columns: 1fr;
+  }
+  
+  .modal-actions {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .action-left, .action-right {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .progress-steps {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .step:not(:last-child)::after {
+    display: none;
+  }
 }
 </style>

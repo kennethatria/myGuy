@@ -98,10 +98,6 @@
             </svg>
             <span v-if="unreadNotifications > 0" class="notification-badge">{{ unreadNotifications }}</span>
           </button>
-          
-          <div class="user-avatar-small" @click="toggleUserMenu">
-            <span>{{ userInitials }}</span>
-          </div>
         </div>
       </header>
       
