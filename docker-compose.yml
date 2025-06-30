@@ -30,6 +30,8 @@ services:
       - PORT=8081
       - JWT_SECRET=your-secret-key-here
       - DB_CONNECTION=host=postgres-db user=postgres password=mysecretpassword dbname=my_guy port=5432 sslmode=disable
+    volumes:
+      - store-uploads:/app/uploads
     depends_on:
       postgres-db:
         condition: service_healthy
@@ -74,6 +76,7 @@ services:
 
 volumes:
   postgres-data:
+  store-uploads:
 
 networks:
   myguy-network:
