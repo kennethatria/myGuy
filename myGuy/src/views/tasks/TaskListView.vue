@@ -53,7 +53,7 @@
 
           <!-- Price Range -->
           <div class="col-md-3">
-            <label class="form-label">Min Fee ($)</label>
+            <label class="form-label">Min Fee (UGX)</label>
             <input
               v-model.number="filters.minFee"
               type="number"
@@ -63,7 +63,7 @@
             />
           </div>
           <div class="col-md-3">
-            <label class="form-label">Max Fee ($)</label>
+            <label class="form-label">Max Fee (UGX)</label>
             <input
               v-model.number="filters.maxFee"
               type="number"
@@ -151,7 +151,7 @@
                 </span>
                 <span v-if="task.fee" class="text-success fw-bold">
                   <i class="bi bi-currency-dollar"></i>
-                  ${{ task.fee }}
+                  UGX {{ formatCurrency(task.fee) }}
                 </span>
               </div>
             </div>
@@ -316,6 +316,13 @@ const visiblePages = computed(() => {
 // Methods
 const formatDate = (date: string) => {
   return format(new Date(date), 'MMM d, yyyy')
+}
+
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('en-UG', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)
 }
 
 const formatStatus = (status: string) => {

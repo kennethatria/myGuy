@@ -37,7 +37,20 @@
       </select>
     </div>
 
-    <div class="items-grid">
+    <div v-if="filteredItems.length === 0" class="empty-state">
+      <div class="empty-icon">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none">
+          <path d="M3 9V21H21V9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M3 9H21L19 3H5L3 9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 3V9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <h3>No items found</h3>
+      <p>{{ searchQuery || categoryFilter || conditionFilter ? 'Try adjusting your filters to see more items.' : 'Be the first to list an item in the marketplace!' }}</p>
+      <button @click="showCreateModal = true" class="btn btn-primary">List Your First Item</button>
+    </div>
+
+    <div v-else class="items-grid">
       <div v-for="item in filteredItems" :key="item.id" class="item-card">
         <div class="item-image">
           <img :src="item.images && item.images.length > 0 ? 'http://localhost:8081' + item.images[0].url : '/placeholder.png'" :alt="item.title" />
@@ -51,9 +64,9 @@
           </div>
           <div class="item-price">
             <span v-if="item.is_auction" class="auction-label">
-              Current Bid: ${{ item.current_bid || item.starting_bid }}
+              Current Bid: UGX {{ formatCurrency(item.current_bid || item.starting_bid) }}
             </span>
-            <span v-else>${{ item.price }}</span>
+            <span v-else>UGX {{ formatCurrency(item.price) }}</span>
           </div>
           <div class="item-actions">
             <button @click="viewItem(item)" class="btn btn-sm btn-outline">
@@ -65,7 +78,7 @@
     </div>
 
     <!-- Create Item Modal -->
-    <div v-if="showCreateModal" class="modal-overlay" @click="showCreateModal = false">
+    <div v-if="showCreateModal" class="modal-overlay" @click="cancelCreateItem">
       <div class="modal-content" @click.stop>
         <h2>List New Item</h2>
         <form @submit.prevent="createItem">
@@ -149,7 +162,7 @@
             </div>
           </div>
           <div class="modal-actions">
-            <button type="button" @click="showCreateModal = false" class="btn btn-secondary">
+            <button type="button" @click="cancelCreateItem" class="btn btn-secondary">
               Cancel
             </button>
             <button type="submit" class="btn btn-primary">List Item</button>
@@ -184,6 +197,11 @@ const newItem = ref({
 });
 
 const filteredItems = computed(() => {
+  // Ensure items.value is always an array before filtering
+  if (!Array.isArray(items.value)) {
+    return [];
+  }
+  
   return items.value.filter(item => {
     const matchesSearch = !searchQuery.value || 
       item.title.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
@@ -204,10 +222,16 @@ async function loadItems() {
       }
     });
     if (response.ok) {
-      items.value = await response.json();
+      const data = await response.json();
+      // Ensure we always set an array
+      items.value = Array.isArray(data) ? data : [];
+    } else {
+      console.error('Failed to load items:', response.status, response.statusText);
+      items.value = []; // Set to empty array on error
     }
   } catch (error) {
     console.error('Error loading items:', error);
+    items.value = []; // Set to empty array on error
   }
 }
 
@@ -247,20 +271,10 @@ async function createItem() {
       showCreateModal.value = false;
       await loadItems();
       // Reset form
-      newItem.value = {
-        title: '',
-        description: '',
-        category: '',
-        condition: '',
-        price: 0,
-        is_auction: false,
-        starting_bid: 0,
-        bid_increment: 0.01
-      };
-      selectedImages.value = [];
+      resetForm();
     } else {
-      const error = await response.json();
-      alert(error.error || 'Failed to create item');
+      const errorData = await response.json().catch(() => ({ error: 'Failed to create item' }));
+      alert(errorData.error || 'Failed to create item');
     }
   } catch (error) {
     console.error('Error creating item:', error);
@@ -292,6 +306,25 @@ function handleImageSelect(event) {
 
 function removeImage(index) {
   selectedImages.value.splice(index, 1);
+}
+
+function resetForm() {
+  newItem.value = {
+    title: '',
+    description: '',
+    category: '',
+    condition: '',
+    price: 0,
+    is_auction: false,
+    starting_bid: 0,
+    bid_increment: 0.01
+  };
+  selectedImages.value = [];
+}
+
+function cancelCreateItem() {
+  showCreateModal.value = false;
+  resetForm();
 }
 
 function viewItem(item) {
@@ -601,5 +634,37 @@ onMounted(() => {
   font-size: 0.875rem;
   color: #6b7280;
   margin: 0;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: #6b7280;
+}
+
+.empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #f3f4f6;
+  margin-bottom: 1.5rem;
+  color: #9ca3af;
+}
+
+.empty-state h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+  margin-bottom: 2rem;
+  font-size: 1rem;
+  line-height: 1.5;
 }
 </style>

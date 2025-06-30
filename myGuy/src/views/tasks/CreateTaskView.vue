@@ -54,7 +54,7 @@
             </div>
 
             <div class="form-group">
-              <label for="fee" class="form-label">Budget/Fee ($)</label>
+              <label for="fee" class="form-label">Budget/Fee (UGX)</label>
               <input
                 type="number"
                 name="fee"
@@ -62,7 +62,7 @@
                 v-model.number="task.fee"
                 class="form-input"
                 :class="{ 'is-invalid': formErrors.fee }"
-                placeholder="Enter your budget (e.g., 50.00)"
+                placeholder="Enter your budget (e.g., 50000)"
                 min="0.01"
                 step="0.01"
                 required
@@ -322,10 +322,10 @@ const validateForm = (): boolean => {
     formErrors.value.fee = 'Budget/Fee is required'
     isValid = false
   } else if (task.value.fee <= 0) {
-    formErrors.value.fee = 'Budget/Fee must be greater than $0'
+    formErrors.value.fee = 'Budget/Fee must be greater than UGX 0'
     isValid = false
-  } else if (task.value.fee > 100000) {
-    formErrors.value.fee = 'Budget/Fee cannot exceed $100,000'
+  } else if (task.value.fee > 50000000) {
+    formErrors.value.fee = 'Budget/Fee cannot exceed UGX 50,000,000'
     isValid = false
   }
   

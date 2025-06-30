@@ -12,7 +12,7 @@
           </router-link>
         </h3>
         <div class="application-meta">
-          <span class="proposed-fee">${{ application.proposed_fee || application.proposedFee }}</span>
+          <span class="proposed-fee">UGX {{ formatCurrency(application.proposed_fee || application.proposedFee) }}</span>
           <span class="status-badge" :class="`status-${application.status}`">
             {{ application.status }}
           </span>
@@ -161,6 +161,13 @@ const isApplicant = computed(() => currentUserId.value === (props.application.ap
 const canSendMessage = computed(() => {
   return (isTaskOwner.value || isApplicant.value) && props.application.status === 'pending'
 })
+
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('en-UG', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
 
 const formatDate = (date: string | undefined) => {
   if (!date) return 'Unknown date'

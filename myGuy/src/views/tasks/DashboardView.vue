@@ -116,7 +116,7 @@
                 <p class="task-description">{{ task.description }}</p>
                 <div class="task-footer">
                   <div class="task-meta">
-                    <span class="task-fee">${{ task.fee || 0 }}</span>
+                    <span class="task-fee">UGX {{ formatCurrency(task.fee || 0) }}</span>
                     <span class="task-deadline">Due: {{ formatDate(task.deadline) }}</span>
                   </div>
                   <div class="task-stats">
@@ -160,7 +160,7 @@
                 <p class="task-description">{{ task.description }}</p>
                 <div class="task-footer">
                   <div class="task-meta">
-                    <span class="task-fee">${{ task.fee || 0 }}</span>
+                    <span class="task-fee">UGX {{ formatCurrency(task.fee || 0) }}</span>
                     <span class="task-deadline">Due: {{ formatDate(task.deadline) }}</span>
                   </div>
                   <div class="task-creator">
@@ -243,6 +243,13 @@ const stats = computed<Stats>(() => {
 
 const formatDate = (date: string) => {
   return format(new Date(date), 'MMM dd, yyyy')
+}
+
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('en-UG', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)
 }
 
 const navigateToTask = (taskId: number) => {

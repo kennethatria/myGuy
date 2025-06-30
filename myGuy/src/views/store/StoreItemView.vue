@@ -64,8 +64,8 @@
           <div class="price-section">
             <div v-if="item.is_auction" class="auction-info">
               <h3>Auction Details</h3>
-              <p class="current-bid">Current Bid: ${{ item.current_bid || item.starting_bid }}</p>
-              <p class="bid-increment">Minimum Increment: ${{ item.bid_increment }}</p>
+              <p class="current-bid">Current Bid: UGX {{ formatCurrency(item.current_bid || item.starting_bid) }}</p>
+              <p class="bid-increment">Minimum Increment: UGX {{ formatCurrency(item.bid_increment) }}</p>
               <p class="bid-count">{{ item.bid_count || 0 }} bids</p>
               
               <div v-if="item.seller.id !== userId" class="bid-form">
@@ -82,7 +82,7 @@
             
             <div v-else class="fixed-price">
               <h3>Price</h3>
-              <p class="price">${{ item.price }}</p>
+              <p class="price">UGX {{ formatCurrency(item.price) }}</p>
               
               <button 
                 v-if="item.seller.id !== userId && item.status === 'available'"
@@ -106,7 +106,7 @@
         <div class="bid-list">
           <div v-for="bid in bids" :key="bid.id" class="bid-item">
             <span class="bidder">{{ bid.bidder.full_name }}</span>
-            <span class="bid-amount">${{ bid.amount }}</span>
+            <span class="bid-amount">UGX {{ formatCurrency(bid.amount) }}</span>
             <span class="bid-time">{{ formatDate(bid.created_at) }}</span>
           </div>
         </div>
@@ -183,7 +183,7 @@ async function loadBids() {
 
 async function placeBid() {
   if (!bidAmount.value || parseFloat(bidAmount.value) < minBidAmount.value) {
-    alert(`Minimum bid amount is $${minBidAmount.value}`);
+    alert(`Minimum bid amount is UGX ${formatCurrency(minBidAmount.value)}`);
     return;
   }
   
@@ -211,7 +211,7 @@ async function placeBid() {
 }
 
 async function purchaseItem() {
-  if (confirm(`Are you sure you want to purchase this item for $${item.value.price}?`)) {
+  if (confirm(`Are you sure you want to purchase this item for UGX ${formatCurrency(item.value.price)}?`)) {
     try {
       const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/purchase`, {
         method: 'POST',
@@ -231,6 +231,13 @@ async function purchaseItem() {
       alert('Error purchasing item');
     }
   }
+}
+
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('en-UG', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
 function formatDate(dateString: string): string {

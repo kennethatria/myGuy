@@ -74,7 +74,7 @@
           </div>
           <div v-if="task.fee">
             <h4 class="font-medium text-sm text-gray">Fee</h4>
-            <p>${{ task.fee }}</p>
+            <p>UGX {{ formatCurrency(task.fee) }}</p>
           </div>
         </div>
       </div>
@@ -266,6 +266,13 @@ const statusClasses = {
 
 const formatDate = (date: string) => {
   return format(new Date(date), 'MMM dd, yyyy h:mm a')
+}
+
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('en-UG', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)
 }
 
 const isOwner = computed(() => {

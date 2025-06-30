@@ -17,14 +17,14 @@
             <p class="task-meta">
               Posted by {{ task.creator?.username || 'Unknown' }}
               <span v-if="task.fee" class="separator">•</span>
-              <span v-if="task.fee" class="budget">Budget: ${{ task.fee }}</span>
+              <span v-if="task.fee" class="budget">Budget: UGX {{ formatCurrency(task.fee) }}</span>
             </p>
           </div>
 
           <form @submit.prevent="handleSubmit">
             <div class="form-group">
               <label for="proposedFee" class="form-label">
-                Proposed Fee ($)
+                Proposed Fee (UGX)
                 <span class="required">*</span>
               </label>
               <input
@@ -42,7 +42,7 @@
                 {{ errors.proposedFee }}
               </div>
               <p v-if="task.fee" class="form-helper">
-                Task budget is ${{ task.fee }}
+                Task budget is UGX {{ formatCurrency(task.fee) }}
               </p>
             </div>
 
@@ -173,6 +173,13 @@ const handleSubmit = () => {
 
 const close = () => {
   emit('close')
+}
+
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('en-UG', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)
 }
 
 const handleBackdropClick = (e: MouseEvent) => {
