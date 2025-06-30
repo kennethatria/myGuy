@@ -335,6 +335,102 @@ class MessageService {
     logger.info(`Deleted ${result.rows[0].count} messages for task ${taskId}`);
     return result.rows[0].count;
   }
+
+  /**
+   * Store-specific message methods
+   */
+
+  /**
+   * Get store messages for a specific item (only between involved parties)
+   */
+  async getStoreMessages(itemId, userId) {
+    const query = `
+      SELECT 
+        sm.*,
+        s.username as sender_username,
+        r.username as recipient_username
+      FROM store_messages sm
+      LEFT JOIN users s ON sm.sender_id = s.id
+      LEFT JOIN users r ON sm.recipient_id = r.id
+      WHERE sm.store_item_id = $1
+        AND (sm.sender_id = $2 OR sm.recipient_id = $2)
+      ORDER BY sm.created_at ASC
+    `;
+    
+    const result = await db.query(query, [itemId, userId]);
+    return result.rows;
+  }
+
+  /**
+   * Create a new store message
+   */
+  async createStoreMessage({ store_item_id, sender_id, recipient_id, content }) {
+    const client = await db.getClient();
+    
+    try {
+      await client.query('BEGIN');
+
+      // Filter content
+      const { filtered, hasRemovedContent } = filterContent(content);
+      
+      // Create store messages table if it doesn't exist
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS store_messages (
+          id SERIAL PRIMARY KEY,
+          store_item_id INTEGER NOT NULL,
+          sender_id INTEGER NOT NULL,
+          recipient_id INTEGER NOT NULL,
+          content TEXT NOT NULL,
+          original_content TEXT,
+          created_at TIMESTAMP DEFAULT NOW(),
+          is_read BOOLEAN DEFAULT FALSE,
+          read_at TIMESTAMP
+        )
+      `);
+      
+      // Store message
+      const messageQuery = `
+        INSERT INTO store_messages (store_item_id, sender_id, recipient_id, content, original_content, created_at)
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        RETURNING *
+      `;
+      
+      const messageResult = await client.query(messageQuery, [
+        store_item_id,
+        sender_id,
+        recipient_id,
+        filtered,
+        content // Store original for audit
+      ]);
+
+      await client.query('COMMIT');
+
+      const message = messageResult.rows[0];
+      message.hasRemovedContent = hasRemovedContent;
+      
+      return message;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error('Error creating store message:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Get user's message count for a specific store item (for 3-message limit)
+   */
+  async getUserStoreMessageCount(itemId, userId) {
+    const query = `
+      SELECT COUNT(*) as count
+      FROM store_messages
+      WHERE store_item_id = $1 AND sender_id = $2
+    `;
+    
+    const result = await db.query(query, [itemId, userId]);
+    return parseInt(result.rows[0].count);
+  }
 }
 
 module.exports = new MessageService();

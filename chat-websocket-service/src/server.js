@@ -75,6 +75,61 @@ app.post('/api/v1/deletion-warnings/:id/shown', authenticateHTTP, async (req, re
   }
 });
 
+// Store message endpoints
+
+// Get store messages for a specific item
+app.get('/api/v1/store-messages/:itemId', authenticateHTTP, async (req, res) => {
+  try {
+    const itemId = parseInt(req.params.itemId);
+    const userId = req.user.id;
+    
+    if (isNaN(itemId)) {
+      return res.status(400).json({ error: 'Invalid item ID' });
+    }
+    
+    const messages = await messageService.getStoreMessages(itemId, userId);
+    res.json(messages);
+  } catch (error) {
+    logger.error('Error getting store messages:', error);
+    res.status(500).json({ error: 'Failed to get store messages' });
+  }
+});
+
+// Send a store message
+app.post('/api/v1/store-messages', authenticateHTTP, async (req, res) => {
+  try {
+    const { store_item_id, recipient_id, content } = req.body;
+    const senderId = req.user.id;
+    
+    // Validate input
+    if (!store_item_id || !recipient_id || !content || !content.trim()) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    if (content.length > 500) {
+      return res.status(400).json({ error: 'Message too long (max 500 characters)' });
+    }
+    
+    // Check message limit (3 messages per user per item)
+    const messageCount = await messageService.getUserStoreMessageCount(store_item_id, senderId);
+    if (messageCount >= 3) {
+      return res.status(403).json({ error: 'Message limit reached (3 messages per item)' });
+    }
+    
+    const message = await messageService.createStoreMessage({
+      store_item_id: parseInt(store_item_id),
+      sender_id: senderId,
+      recipient_id: parseInt(recipient_id),
+      content: content.trim()
+    });
+    
+    res.status(201).json(message);
+  } catch (error) {
+    logger.error('Error creating store message:', error);
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
 // Get user's last seen
 app.get('/api/v1/users/:id/last-seen', authenticateHTTP, async (req, res) => {
   try {

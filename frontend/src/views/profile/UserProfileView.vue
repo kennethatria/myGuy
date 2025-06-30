@@ -113,8 +113,21 @@ const averageRating = computed(() => {
   return reviewsStore.calculateAverageRating(reviews.value)
 })
 
-const formatDate = (dateString: string): string => {
-  return format(new Date(dateString), 'MMMM yyyy')
+const formatDate = (dateString: string | null | undefined): string => {
+  if (!dateString) {
+    return 'Unknown'
+  }
+  
+  try {
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) {
+      return 'Unknown'
+    }
+    return format(date, 'MMMM yyyy')
+  } catch (error) {
+    console.warn('Invalid date format:', dateString)
+    return 'Unknown'
+  }
 }
 
 const loadUserData = async () => {
