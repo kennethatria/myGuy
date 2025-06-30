@@ -261,6 +261,7 @@
                   step="1000" 
                   min="0" 
                   placeholder="50000"
+                  @input="sanitizeNumberInput('price', $event)"
                   required 
                 />
               </div>
@@ -285,6 +286,7 @@
                     step="1000" 
                     min="0" 
                     placeholder="10000"
+                    @input="sanitizeNumberInput('starting_bid', $event)"
                     required 
                   />
                 </div>
@@ -307,6 +309,7 @@
                     step="500" 
                     min="500" 
                     placeholder="1000"
+                    @input="sanitizeNumberInput('bid_increment', $event)"
                     required 
                   />
                 </div>
@@ -421,6 +424,23 @@ async function createItem() {
     return;
   }
   
+  // Additional safety check for numeric fields
+  if (!newItem.value.is_auction) {
+    if (!newItem.value.price || newItem.value.price === '' || parseFloat(newItem.value.price) <= 0) {
+      alert('Please enter a valid price greater than 0');
+      return;
+    }
+  } else {
+    if (!newItem.value.starting_bid || newItem.value.starting_bid === '' || parseFloat(newItem.value.starting_bid) <= 0) {
+      alert('Please enter a valid starting bid greater than 0');
+      return;
+    }
+    if (!newItem.value.bid_increment || newItem.value.bid_increment === '' || parseFloat(newItem.value.bid_increment) < 500) {
+      alert('Please enter a valid bid increment of at least 500 UGX');
+      return;
+    }
+  }
+  
   isSubmitting.value = true;
   
   try {
@@ -428,11 +448,25 @@ async function createItem() {
     const formData = new FormData();
     
     // Add item data with proper validation
-    formData.append('title', newItem.value.title.trim());
-    formData.append('description', newItem.value.description.trim());
-    formData.append('category', newItem.value.category);
-    formData.append('condition', newItem.value.condition);
-    formData.append('is_auction', newItem.value.is_auction.toString());
+    const title = newItem.value.title.trim();
+    const description = newItem.value.description.trim();
+    const category = newItem.value.category;
+    const condition = newItem.value.condition;
+    const isAuction = newItem.value.is_auction;
+    
+    console.log('Basic form data:', {
+      title: JSON.stringify(title),
+      description: JSON.stringify(description), 
+      category: JSON.stringify(category),
+      condition: JSON.stringify(condition),
+      isAuction: isAuction
+    });
+    
+    formData.append('title', title);
+    formData.append('description', description);
+    formData.append('category', category);
+    formData.append('condition', condition);
+    formData.append('is_auction', isAuction.toString());
     
     console.log('Form data being sent:', {
       title: newItem.value.title.trim(),
@@ -446,21 +480,43 @@ async function createItem() {
     });
     
     if (newItem.value.is_auction) {
-      // Ensure numeric values are properly converted
-      const startingBid = Number(newItem.value.starting_bid) || 0;
-      const bidIncrement = Number(newItem.value.bid_increment) || 1000;
+      // Clean and validate starting bid
+      let startingBidStr = String(newItem.value.starting_bid || '0').replace(/[^0-9.]/g, '');
+      let bidIncrementStr = String(newItem.value.bid_increment || '1000').replace(/[^0-9.]/g, '');
       
-      console.log('Auction values:', { startingBid, bidIncrement });
+      let startingBid = parseFloat(startingBidStr) || 0;
+      let bidIncrement = parseFloat(bidIncrementStr) || 1000;
       
-      formData.append('starting_bid', startingBid.toString());
-      formData.append('bid_increment', bidIncrement.toString());
+      // Ensure positive values and round to integers
+      startingBid = Math.max(0, Math.round(startingBid));
+      bidIncrement = Math.max(500, Math.round(bidIncrement));
+      
+      console.log('Auction values:', { 
+        originalStartingBid: JSON.stringify(newItem.value.starting_bid),
+        originalBidIncrement: JSON.stringify(newItem.value.bid_increment),
+        cleanedStartingBid: startingBidStr,
+        cleanedBidIncrement: bidIncrementStr,
+        finalStartingBid: startingBid, 
+        finalBidIncrement: bidIncrement 
+      });
+      
+      formData.append('starting_bid', String(startingBid));
+      formData.append('bid_increment', String(bidIncrement));
     } else {
-      // Ensure price is properly converted
-      const price = Number(newItem.value.price) || 0;
+      // Clean and validate price
+      let priceStr = String(newItem.value.price || '0').replace(/[^0-9.]/g, '');
+      let price = parseFloat(priceStr) || 0;
       
-      console.log('Fixed price value:', { price });
+      // Ensure positive value and round to integer
+      price = Math.max(0, Math.round(price));
       
-      formData.append('price', price.toString());
+      console.log('Fixed price value:', { 
+        originalPrice: JSON.stringify(newItem.value.price),
+        cleanedPrice: priceStr,
+        finalPrice: price 
+      });
+      
+      formData.append('price', String(price));
     }
     
     // Add images
@@ -471,7 +527,14 @@ async function createItem() {
     // Debug FormData contents
     console.log('FormData contents:');
     for (let [key, value] of formData.entries()) {
-      console.log(key, ':', value);
+      console.log(key, ':', value, '(type:', typeof value, ')');
+      
+      // Special check for numeric fields
+      if (['price', 'starting_bid', 'bid_increment'].includes(key)) {
+        console.log(`  ${key} raw value:`, JSON.stringify(value));
+        console.log(`  ${key} parsed as number:`, parseFloat(value));
+        console.log(`  ${key} is valid number:`, !isNaN(parseFloat(value)));
+      }
     }
     
     console.log('Sending request to:', 'http://localhost:8081/api/v1/items');
@@ -620,6 +683,25 @@ function clearErrors() {
     starting_bid: '',
     bid_increment: ''
   };
+}
+
+function sanitizeNumberInput(field, event) {
+  const value = event.target.value;
+  
+  // Remove any non-numeric characters except decimal point
+  const sanitized = value.replace(/[^0-9.]/g, '');
+  
+  // Ensure only one decimal point
+  const parts = sanitized.split('.');
+  let finalValue = parts[0];
+  if (parts.length > 1) {
+    finalValue += '.' + parts[1];
+  }
+  
+  // Update the field value
+  newItem.value[field] = finalValue;
+  
+  console.log(`Sanitized ${field}: "${value}" -> "${finalValue}"`);
 }
 
 function resetForm() {
