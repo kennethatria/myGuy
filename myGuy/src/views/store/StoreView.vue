@@ -370,10 +370,10 @@ const newItem = ref({
   description: '',
   category: '',
   condition: '',
-  price: 0,
+  price: '',
   is_auction: false,
-  starting_bid: 0,
-  bid_increment: 1000
+  starting_bid: '',
+  bid_increment: '1000'
 });
 
 const filteredItems = computed(() => {
@@ -427,24 +427,54 @@ async function createItem() {
     // Create FormData to handle file uploads
     const formData = new FormData();
     
-    // Add item data
+    // Add item data with proper validation
     formData.append('title', newItem.value.title.trim());
     formData.append('description', newItem.value.description.trim());
     formData.append('category', newItem.value.category);
     formData.append('condition', newItem.value.condition);
     formData.append('is_auction', newItem.value.is_auction.toString());
     
+    console.log('Form data being sent:', {
+      title: newItem.value.title.trim(),
+      description: newItem.value.description.trim(),
+      category: newItem.value.category,
+      condition: newItem.value.condition,
+      is_auction: newItem.value.is_auction,
+      price: newItem.value.price,
+      starting_bid: newItem.value.starting_bid,
+      bid_increment: newItem.value.bid_increment
+    });
+    
     if (newItem.value.is_auction) {
-      formData.append('starting_bid', newItem.value.starting_bid.toString());
-      formData.append('bid_increment', newItem.value.bid_increment.toString());
+      // Ensure numeric values are properly converted
+      const startingBid = Number(newItem.value.starting_bid) || 0;
+      const bidIncrement = Number(newItem.value.bid_increment) || 1000;
+      
+      console.log('Auction values:', { startingBid, bidIncrement });
+      
+      formData.append('starting_bid', startingBid.toString());
+      formData.append('bid_increment', bidIncrement.toString());
     } else {
-      formData.append('price', newItem.value.price.toString());
+      // Ensure price is properly converted
+      const price = Number(newItem.value.price) || 0;
+      
+      console.log('Fixed price value:', { price });
+      
+      formData.append('price', price.toString());
     }
     
     // Add images
     selectedImages.value.forEach((image, index) => {
       formData.append(`images`, image.file);
     });
+    
+    // Debug FormData contents
+    console.log('FormData contents:');
+    for (let [key, value] of formData.entries()) {
+      console.log(key, ':', value);
+    }
+    
+    console.log('Sending request to:', 'http://localhost:8081/api/v1/items');
     
     const response = await fetch('http://localhost:8081/api/v1/items', {
       method: 'POST',
@@ -454,14 +484,29 @@ async function createItem() {
       body: formData
     });
     
+    console.log('Response status:', response.status);
+    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+    
     if (response.ok) {
+      const responseData = await response.json();
+      console.log('Success response:', responseData);
       showCreateModal.value = false;
       await loadItems();
       resetForm();
-      // Success message could be added here
+      alert('Item listed successfully!');
     } else {
-      const errorData = await response.json().catch(() => ({ error: 'Failed to create item' }));
-      alert(errorData.error || 'Failed to create item listing');
+      const errorText = await response.text();
+      console.error('Error response text:', errorText);
+      
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch (e) {
+        errorData = { error: errorText || 'Failed to create item listing' };
+      }
+      
+      console.error('Parsed error data:', errorData);
+      alert(errorData.error || errorData.message || 'Failed to create item listing');
     }
   } catch (error) {
     console.error('Error creating item:', error);
@@ -542,16 +587,20 @@ function validateCurrentStep() {
     let isValid = true;
     
     if (!newItem.value.is_auction) {
-      if (!newItem.value.price || newItem.value.price <= 0) {
+      const price = Number(newItem.value.price);
+      if (!newItem.value.price || isNaN(price) || price <= 0) {
         formErrors.value.price = 'Price must be greater than 0';
         isValid = false;
       }
     } else {
-      if (!newItem.value.starting_bid || newItem.value.starting_bid <= 0) {
+      const startingBid = Number(newItem.value.starting_bid);
+      const bidIncrement = Number(newItem.value.bid_increment);
+      
+      if (!newItem.value.starting_bid || isNaN(startingBid) || startingBid <= 0) {
         formErrors.value.starting_bid = 'Starting bid must be greater than 0';
         isValid = false;
       }
-      if (!newItem.value.bid_increment || newItem.value.bid_increment < 500) {
+      if (!newItem.value.bid_increment || isNaN(bidIncrement) || bidIncrement < 500) {
         formErrors.value.bid_increment = 'Bid increment must be at least 500 UGX';
         isValid = false;
       }
@@ -579,10 +628,10 @@ function resetForm() {
     description: '',
     category: '',
     condition: '',
-    price: 0,
+    price: '',
     is_auction: false,
-    starting_bid: 0,
-    bid_increment: 1000
+    starting_bid: '',
+    bid_increment: '1000'
   };
   selectedImages.value = [];
   currentStep.value = 1;
