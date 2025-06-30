@@ -93,8 +93,21 @@ app.get('/api/v1/store-messages/:itemId', authenticateHTTP, async (req, res) => 
     const messageLimit = await messageService.getMessageLimit(itemId, userId);
     const bookingStatus = await messageService.getBookingStatus(itemId, userId);
     
+    // Format messages to include proper sender/recipient objects
+    const formattedMessages = messages.map(msg => ({
+      ...msg,
+      sender: {
+        id: msg.sender_id,
+        username: msg.sender_username
+      },
+      recipient: {
+        id: msg.recipient_id,
+        username: msg.recipient_username
+      }
+    }));
+    
     res.json({
-      messages,
+      messages: formattedMessages,
       messageCount,
       messageLimit,
       bookingStatus
@@ -168,7 +181,28 @@ app.post('/api/v1/store-messages', authenticateHTTP, async (req, res) => {
       content: content.trim()
     });
     
-    res.status(201).json(message);
+    // Get user information to format the response
+    const senderQuery = 'SELECT username FROM users WHERE id = $1';
+    const recipientQuery = 'SELECT username FROM users WHERE id = $1';
+    
+    const db = require('./config/database');
+    const senderResult = await db.query(senderQuery, [senderId]);
+    const recipientResult = await db.query(recipientQuery, [parseInt(recipient_id)]);
+    
+    // Format message with sender/recipient info
+    const formattedMessage = {
+      ...message,
+      sender: {
+        id: senderId,
+        username: senderResult.rows[0]?.username || 'Unknown'
+      },
+      recipient: {
+        id: parseInt(recipient_id),
+        username: recipientResult.rows[0]?.username || 'Unknown'
+      }
+    };
+    
+    res.status(201).json(formattedMessage);
   } catch (error) {
     logger.error('Error creating store message:', error);
     res.status(500).json({ error: 'Failed to send message' });

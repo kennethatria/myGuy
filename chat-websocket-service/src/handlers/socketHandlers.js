@@ -132,16 +132,33 @@ class SocketHandlers {
         content
       });
 
+      // Get user information for formatting
+      const senderInfo = await this.getUserInfo(socket.userId);
+      const recipientInfo = await this.getUserInfo(recipientId);
+
+      // Format message with sender/recipient info
+      const formattedMessage = {
+        ...message,
+        sender: {
+          id: socket.userId,
+          username: senderInfo?.username || 'Unknown'
+        },
+        recipient: {
+          id: recipientId,
+          username: recipientInfo?.username || 'Unknown'
+        }
+      };
+
       // Emit to sender
-      socket.emit('message:sent', message);
+      socket.emit('message:sent', formattedMessage);
 
       // Emit to conversation room
       const roomName = taskId ? `task:${taskId}` : `application:${applicationId}`;
-      socket.to(roomName).emit('message:new', message);
+      socket.to(roomName).emit('message:new', formattedMessage);
 
       // Emit to recipient's personal room (for notifications)
       this.io.to(`user:${recipientId}`).emit('message:notification', {
-        message,
+        message: formattedMessage,
         conversationId: taskId || applicationId
       });
 
@@ -308,7 +325,21 @@ class SocketHandlers {
   async handleGetMessages(socket, { taskId, limit = 5, offset = 0 }) {
     try {
       const messages = await messageService.getMessages(taskId, socket.userId, limit, offset);
-      socket.emit('messages:list', { taskId, messages, offset });
+      
+      // Format messages to include proper sender/recipient objects
+      const formattedMessages = messages.map(msg => ({
+        ...msg,
+        sender: {
+          id: msg.sender_id,
+          username: msg.sender_name
+        },
+        recipient: {
+          id: msg.recipient_id,
+          username: msg.recipient_name
+        }
+      }));
+      
+      socket.emit('messages:list', { taskId, messages: formattedMessages, offset });
     } catch (error) {
       logger.error('Error getting messages:', error);
       socket.emit('error', { message: 'Failed to get messages' });
@@ -325,6 +356,21 @@ class SocketHandlers {
     } catch (error) {
       logger.error('Error getting last seen:', error);
       socket.emit('error', { message: 'Failed to get last seen' });
+    }
+  }
+
+  /**
+   * Get user information by ID
+   */
+  async getUserInfo(userId) {
+    try {
+      const db = require('../config/database');
+      const query = 'SELECT id, username FROM users WHERE id = $1';
+      const result = await db.query(query, [userId]);
+      return result.rows[0] || null;
+    } catch (error) {
+      logger.error('Error getting user info:', error);
+      return null;
     }
   }
 

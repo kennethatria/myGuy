@@ -160,8 +160,8 @@ class MessageService {
     const query = `
       SELECT 
         m.*,
-        s.name as sender_name,
-        r.name as recipient_name
+        s.username as sender_name,
+        r.username as recipient_name
       FROM messages m
       LEFT JOIN users s ON m.sender_id = s.id
       LEFT JOIN users r ON m.recipient_id = r.id
