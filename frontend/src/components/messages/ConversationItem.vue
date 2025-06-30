@@ -42,11 +42,16 @@ function formatTime(timestamp: string): string {
   // Check if date is valid
   if (isNaN(date.getTime())) {
     console.warn('Invalid timestamp:', timestamp);
-    return 'Invalid date';
+    return 'Unknown';
   }
   
   const now = new Date();
   const diff = now.getTime() - date.getTime();
+  
+  // Handle negative time differences (future dates)
+  if (diff < 0) {
+    return 'just now';
+  }
   
   // Less than 1 minute
   if (diff < 60000) {

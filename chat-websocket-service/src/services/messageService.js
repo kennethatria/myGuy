@@ -187,8 +187,8 @@ class MessageService {
           t.description as task_description,
           t.status as task_status,
           CASE 
-            WHEN m.sender_id = $1 THEN r.name
-            ELSE s.name
+            WHEN m.sender_id = $1 THEN r.username
+            ELSE s.username
           END as other_user_name,
           CASE 
             WHEN m.sender_id = $1 THEN m.recipient_id
