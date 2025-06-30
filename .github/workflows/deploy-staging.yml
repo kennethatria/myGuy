@@ -25,7 +25,7 @@ jobs:
     
     defaults:
       run:
-        working-directory: terraform
+        working-directory: infra
 
     steps:
     - name: Checkout
@@ -102,7 +102,7 @@ jobs:
     
     defaults:
       run:
-        working-directory: terraform
+        working-directory: infra
 
     outputs:
       app_instance_ip: ${{ steps.terraform-output.outputs.app_instance_ip }}
