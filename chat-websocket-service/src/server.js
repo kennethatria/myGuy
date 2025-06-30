@@ -88,10 +88,45 @@ app.get('/api/v1/store-messages/:itemId', authenticateHTTP, async (req, res) => 
     }
     
     const messages = await messageService.getStoreMessages(itemId, userId);
-    res.json(messages);
+    const messageCount = await messageService.getUserStoreMessageCount(itemId, userId);
+    const messageLimit = await messageService.getMessageLimit(itemId, userId);
+    const bookingStatus = await messageService.getBookingStatus(itemId, userId);
+    
+    res.json({
+      messages,
+      messageCount,
+      messageLimit,
+      bookingStatus
+    });
   } catch (error) {
     logger.error('Error getting store messages:', error);
     res.status(500).json({ error: 'Failed to get store messages' });
+  }
+});
+
+// Get message limits and status for a store item
+app.get('/api/v1/store-messages/:itemId/limits', authenticateHTTP, async (req, res) => {
+  try {
+    const itemId = parseInt(req.params.itemId);
+    const userId = req.user.id;
+    
+    if (isNaN(itemId)) {
+      return res.status(400).json({ error: 'Invalid item ID' });
+    }
+    
+    const messageCount = await messageService.getUserStoreMessageCount(itemId, userId);
+    const messageLimit = await messageService.getMessageLimit(itemId, userId);
+    const bookingStatus = await messageService.getBookingStatus(itemId, userId);
+    
+    res.json({
+      messageCount,
+      messageLimit,
+      bookingStatus,
+      canSendMore: messageCount < messageLimit
+    });
+  } catch (error) {
+    logger.error('Error getting message limits:', error);
+    res.status(500).json({ error: 'Failed to get message limits' });
   }
 });
 
@@ -110,10 +145,19 @@ app.post('/api/v1/store-messages', authenticateHTTP, async (req, res) => {
       return res.status(400).json({ error: 'Message too long (max 500 characters)' });
     }
     
-    // Check message limit (3 messages per user per item)
+    // Check dynamic message limit based on booking status
     const messageCount = await messageService.getUserStoreMessageCount(store_item_id, senderId);
-    if (messageCount >= 3) {
-      return res.status(403).json({ error: 'Message limit reached (3 messages per item)' });
+    const messageLimit = await messageService.getMessageLimit(store_item_id, senderId);
+    
+    if (messageCount >= messageLimit) {
+      const limitMessage = messageLimit === 10 ? 
+        'Message limit reached (10 messages per item)' : 
+        'Message limit reached (3 messages per item). Limit increases to 10 when booking is approved.';
+      return res.status(403).json({ 
+        error: limitMessage,
+        limit: messageLimit,
+        count: messageCount
+      });
     }
     
     const message = await messageService.createStoreMessage({

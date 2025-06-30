@@ -57,6 +57,19 @@ type Bid struct {
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
+type BookingRequest struct {
+	ID          uint           `json:"id" gorm:"primaryKey"`
+	ItemID      uint           `json:"item_id" gorm:"not null"`
+	Item        *StoreItem     `json:"item,omitempty" gorm:"foreignKey:ItemID"`
+	RequesterID uint           `json:"requester_id" gorm:"not null"`
+	Requester   *User          `json:"requester,omitempty" gorm:"foreignKey:RequesterID"`
+	Status      string         `json:"status" gorm:"default:'pending'"` // pending, approved, rejected
+	Message     string         `json:"message"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
+}
+
 // DTOs for API requests/responses
 type CreateStoreItemRequest struct {
 	Title           string    `json:"title" binding:"required"`
@@ -86,6 +99,10 @@ type UpdateStoreItemRequest struct {
 type CreateBidRequest struct {
 	Amount  float64 `json:"amount" binding:"required"`
 	Message string  `json:"message,omitempty"`
+}
+
+type CreateBookingRequestRequest struct {
+	Message string `json:"message,omitempty"`
 }
 
 type StoreItemFilter struct {

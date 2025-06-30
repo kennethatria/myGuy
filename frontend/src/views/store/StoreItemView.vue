@@ -93,19 +93,86 @@
               <h3>Price</h3>
               <p class="price">UGX {{ formatCurrency(item.price) }}</p>
               
-              <button 
-                v-if="item.seller.id !== userId && item.status === 'active'"
-                @click="purchaseItem" 
-                class="btn btn-primary btn-large"
-              >
-                Purchase Item
-              </button>
+              <!-- Booking Request Section -->
+              <div v-if="item.seller.id !== userId && item.status === 'active'" class="booking-section">
+                <div v-if="!hasBookingRequest" class="booking-request">
+                  <button 
+                    @click="sendBookingRequest" 
+                    :disabled="loadingBookingRequest"
+                    class="btn btn-primary btn-large"
+                  >
+                    {{ loadingBookingRequest ? 'Sending Request...' : 'Request Booking' }}
+                  </button>
+                  <p class="booking-info">Send a booking request to the item owner</p>
+                </div>
+                
+                <div v-else class="booking-status">
+                  <div v-if="bookingStatus === 'pending'" class="status-pending">
+                    <i class="fas fa-clock"></i>
+                    <div>
+                      <p><strong>Booking Request Sent</strong></p>
+                      <p>Waiting for the owner to respond</p>
+                    </div>
+                  </div>
+                  
+                  <div v-else-if="bookingStatus === 'approved'" class="status-approved">
+                    <i class="fas fa-check-circle"></i>
+                    <div>
+                      <p><strong>Booking Approved!</strong></p>
+                      <p>You can now message the owner to coordinate pickup/delivery</p>
+                      <p class="message-limit-info">Message limit increased to 10</p>
+                    </div>
+                  </div>
+                  
+                  <div v-else-if="bookingStatus === 'rejected'" class="status-rejected">
+                    <i class="fas fa-times-circle"></i>
+                    <div>
+                      <p><strong>Booking Request Declined</strong></p>
+                      <p>The owner has declined your booking request</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           
-          <div v-if="item.seller.id === userId" class="owner-status">
-            <p class="owner-message">This is your listing</p>
-            <p class="status-info">Status: {{ item.status }}</p>
+          <div v-if="item.seller.id === userId" class="owner-section">
+            <div class="owner-status">
+              <p class="owner-message">This is your listing</p>
+              <p class="status-info">Status: {{ item.status }}</p>
+            </div>
+            
+            <!-- Booking Request Management for Owner -->
+            <div v-if="bookingRequest && bookingRequest.status === 'pending'" class="booking-management">
+              <h4>Booking Request</h4>
+              <div class="booking-request-card">
+                <div class="requester-info">
+                  <p><strong>Request from:</strong> {{ bookingRequest.requester?.username || 'Unknown User' }}</p>
+                  <p class="request-time">{{ formatDate(bookingRequest.created_at) }}</p>
+                </div>
+                <div class="booking-actions">
+                  <button 
+                    @click="approveBookingRequest" 
+                    class="btn btn-success btn-sm"
+                    :disabled="loadingBookingRequest"
+                  >
+                    Approve
+                  </button>
+                  <button 
+                    @click="rejectBookingRequest" 
+                    class="btn btn-danger btn-sm"
+                    :disabled="loadingBookingRequest"
+                  >
+                    Decline
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <div v-else-if="bookingRequest && bookingRequest.status === 'approved'" class="booking-approved-owner">
+              <h4>Booking Approved</h4>
+              <p>You've approved the booking request from {{ bookingRequest.requester?.username }}. You can now coordinate the item exchange via messages.</p>
+            </div>
           </div>
           
           <div v-else-if="item.status !== 'active'" class="item-status">
@@ -161,7 +228,10 @@
                 @keydown.enter.ctrl="sendMessage"
               ></textarea>
               <div class="input-footer">
-                <span class="message-count">{{ userMessageCount }}/3 messages sent</span>
+                <span class="message-count">{{ userMessageCount }}/{{ currentMessageLimit }} messages sent</span>
+                <span v-if="bookingStatus !== 'approved'" class="limit-info">
+                  • Limit increases to 10 when booking is approved
+                </span>
                 <button 
                   @click="sendMessage" 
                   :disabled="!newMessage.trim() || sendingMessage"
@@ -173,8 +243,13 @@
             </div>
             
             <div v-else class="message-limit-reached">
-              <p><i class="fas fa-info-circle"></i> You've reached the 3-message limit for this item.</p>
-              <p class="suggestion">Consider exchanging contact details to continue the conversation.</p>
+              <p><i class="fas fa-info-circle"></i> You've reached the {{ currentMessageLimit }}-message limit for this item.</p>
+              <p v-if="bookingStatus !== 'approved'" class="suggestion">
+                Request a booking to increase the limit to 10 messages and coordinate pickup/delivery.
+              </p>
+              <p v-else class="suggestion">
+                Consider exchanging contact details to continue the conversation.
+              </p>
             </div>
           </div>
         </div>
@@ -207,6 +282,11 @@ const newMessage = ref('');
 const sendingMessage = ref(false);
 const loadingMessages = ref(false);
 
+// Booking-related variables
+const bookingRequest = ref(null);
+const hasBookingRequest = ref(false);
+const loadingBookingRequest = ref(false);
+
 const userId = computed(() => authStore.user?.id);
 const itemId = computed(() => route.params.id);
 
@@ -222,7 +302,21 @@ const userMessageCount = computed(() => {
 });
 
 const canSendMessage = computed(() => {
-  return userMessageCount.value < 3;
+  return userMessageCount.value < currentMessageLimit.value;
+});
+
+// Booking computed properties
+const currentMessageLimit = computed(() => {
+  // 3 messages before booking approval, 10 after approval
+  return bookingRequest.value?.status === 'approved' ? 10 : 3;
+});
+
+const canSendBookingMessage = computed(() => {
+  return userMessageCount.value < currentMessageLimit.value;
+});
+
+const bookingStatus = computed(() => {
+  return bookingRequest.value?.status || null;
 });
 
 async function loadItem() {
@@ -259,6 +353,9 @@ async function loadItem() {
     if (item.value.is_auction) {
       await loadBids();
     }
+    
+    // Load booking request if user is involved
+    await loadBookingRequest();
   } catch (err) {
     console.error('Error loading item:', err);
     error.value = err.message;
@@ -285,6 +382,33 @@ async function loadBids() {
     }
   } catch (err) {
     console.error('Error loading bids:', err);
+  }
+}
+
+async function loadBookingRequest() {
+  if (!item.value || !userId.value) return;
+  
+  try {
+    const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/booking-request`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (response.ok) {
+      const request = await response.json();
+      bookingRequest.value = request;
+      hasBookingRequest.value = true;
+    } else if (response.status === 404) {
+      // No booking request exists
+      bookingRequest.value = null;
+      hasBookingRequest.value = false;
+    } else {
+      console.error('Failed to load booking request, status:', response.status);
+    }
+  } catch (err) {
+    console.error('Error loading booking request:', err);
   }
 }
 
@@ -317,26 +441,92 @@ async function placeBid() {
   }
 }
 
-async function purchaseItem() {
-  if (confirm(`Are you sure you want to purchase this item for UGX ${formatCurrency(item.value.price)}?`)) {
-    try {
-      const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/purchase`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      
-      if (response.ok) {
-        alert('Item purchased successfully!');
-        await loadItem();
-      } else {
-        const error = await response.json();
-        alert(error.error || 'Failed to purchase item');
+// Booking request functions
+async function sendBookingRequest() {
+  if (!item.value || loadingBookingRequest.value) return;
+  
+  loadingBookingRequest.value = true;
+  try {
+    const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/booking-request`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
       }
-    } catch (err) {
-      alert('Error purchasing item');
+    });
+    
+    if (response.ok) {
+      const request = await response.json();
+      bookingRequest.value = request;
+      hasBookingRequest.value = true;
+      alert('Booking request sent successfully!');
+    } else {
+      const error = await response.json();
+      alert(error.error || 'Failed to send booking request');
     }
+  } catch (err) {
+    console.error('Error sending booking request:', err);
+    alert('Error sending booking request');
+  } finally {
+    loadingBookingRequest.value = false;
+  }
+}
+
+async function approveBookingRequest() {
+  if (!bookingRequest.value || loadingBookingRequest.value) return;
+  
+  loadingBookingRequest.value = true;
+  try {
+    const response = await fetch(`http://localhost:8081/api/v1/booking-requests/${bookingRequest.value.id}/approve`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    });
+    
+    if (response.ok) {
+      bookingRequest.value.status = 'approved';
+      alert('Booking request approved! The requester can now message you with up to 10 messages.');
+    } else {
+      const error = await response.json();
+      alert(error.error || 'Failed to approve booking request');
+    }
+  } catch (err) {
+    console.error('Error approving booking request:', err);
+    alert('Error approving booking request');
+  } finally {
+    loadingBookingRequest.value = false;
+  }
+}
+
+async function rejectBookingRequest() {
+  if (!bookingRequest.value || loadingBookingRequest.value) return;
+  
+  if (!confirm('Are you sure you want to decline this booking request?')) {
+    return;
+  }
+  
+  loadingBookingRequest.value = true;
+  try {
+    const response = await fetch(`http://localhost:8081/api/v1/booking-requests/${bookingRequest.value.id}/reject`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    });
+    
+    if (response.ok) {
+      bookingRequest.value.status = 'rejected';
+      alert('Booking request declined.');
+    } else {
+      const error = await response.json();
+      alert(error.error || 'Failed to decline booking request');
+    }
+  } catch (err) {
+    console.error('Error declining booking request:', err);
+    alert('Error declining booking request');
+  } finally {
+    loadingBookingRequest.value = false;
   }
 }
 
@@ -1024,6 +1214,164 @@ onMounted(() => {
   .view-profile,
   .message-btn {
     text-align: center;
+    justify-content: center;
+  }
+}
+
+/* Booking Functionality Styles */
+.booking-section {
+  margin-top: 1rem;
+}
+
+.booking-request {
+  text-align: center;
+}
+
+.booking-info {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-top: 0.5rem;
+}
+
+.booking-status {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid;
+}
+
+.status-pending {
+  background: #fef3c7;
+  border-color: #fbbf24;
+  color: #92400e;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.status-approved {
+  background: #d1fae5;
+  border-color: #10b981;
+  color: #065f46;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.status-rejected {
+  background: #fee2e2;
+  border-color: #f87171;
+  color: #991b1b;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.status-pending i,
+.status-approved i,
+.status-rejected i {
+  font-size: 1.25rem;
+  margin-top: 0.125rem;
+}
+
+.message-limit-info {
+  font-size: 0.75rem;
+  color: #065f46;
+  font-weight: 500;
+  margin-top: 0.25rem;
+}
+
+.owner-section {
+  background: #e0f2fe;
+  padding: 1rem;
+  border-radius: 0.375rem;
+  border: 1px solid #b3e5fc;
+}
+
+.booking-management {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #b3e5fc;
+}
+
+.booking-management h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #0277bd;
+}
+
+.booking-request-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.375rem;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.requester-info p {
+  margin: 0 0 0.25rem 0;
+}
+
+.request-time {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.booking-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn-success {
+  background: #10b981;
+  color: white;
+  border: none;
+}
+
+.btn-success:hover {
+  background: #059669;
+}
+
+.btn-danger {
+  background: #ef4444;
+  color: white;
+  border: none;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+}
+
+.booking-approved-owner {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #d1fae5;
+  border: 1px solid #10b981;
+  border-radius: 0.375rem;
+  color: #065f46;
+}
+
+.booking-approved-owner h4 {
+  margin: 0 0 0.5rem 0;
+  color: #065f46;
+}
+
+.limit-info {
+  font-size: 0.75rem;
+  color: #059669;
+}
+
+@media (max-width: 768px) {
+  .booking-request-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .booking-actions {
     justify-content: center;
   }
 }

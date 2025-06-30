@@ -9,14 +9,16 @@ import (
 )
 
 type StoreService struct {
-	itemRepo repositories.StoreItemRepository
-	bidRepo  repositories.BidRepository
+	itemRepo        repositories.StoreItemRepository
+	bidRepo         repositories.BidRepository
+	bookingRepo     repositories.BookingRequestRepository
 }
 
-func NewStoreService(itemRepo repositories.StoreItemRepository, bidRepo repositories.BidRepository) *StoreService {
+func NewStoreService(itemRepo repositories.StoreItemRepository, bidRepo repositories.BidRepository, bookingRepo repositories.BookingRequestRepository) *StoreService {
 	return &StoreService{
-		itemRepo: itemRepo,
-		bidRepo:  bidRepo,
+		itemRepo:    itemRepo,
+		bidRepo:     bidRepo,
+		bookingRepo: bookingRepo,
 	}
 }
 
@@ -287,6 +289,110 @@ func (s *StoreService) GetUserPurchases(userID uint) ([]models.StoreItem, error)
 
 func (s *StoreService) GetUserBids(userID uint) ([]models.Bid, error) {
 	return s.bidRepo.GetByBidderID(userID)
+}
+
+// Booking Request methods
+func (s *StoreService) CreateBookingRequest(itemID uint, requesterID uint, message string) (*models.BookingRequest, error) {
+	// Check if item exists and is active
+	item, err := s.itemRepo.GetByID(itemID)
+	if err != nil {
+		return nil, err
+	}
+	if item.Status != "active" {
+		return nil, errors.New("item is not available for booking")
+	}
+	if item.SellerID == requesterID {
+		return nil, errors.New("cannot book your own item")
+	}
+
+	// Check if user already has a booking request for this item
+	existing, err := s.bookingRepo.GetByItemAndRequester(itemID, requesterID)
+	if err == nil && existing != nil {
+		return nil, errors.New("you already have a booking request for this item")
+	}
+
+	bookingRequest := &models.BookingRequest{
+		ItemID:      itemID,
+		RequesterID: requesterID,
+		Status:      "pending",
+		Message:     message,
+	}
+
+	err = s.bookingRepo.Create(bookingRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return with preloaded data
+	return s.bookingRepo.GetByID(bookingRequest.ID)
+}
+
+func (s *StoreService) GetBookingRequestByItem(itemID uint, userID uint) (*models.BookingRequest, error) {
+	// First check if user is the item owner or requester
+	item, err := s.itemRepo.GetByID(itemID)
+	if err != nil {
+		return nil, err
+	}
+
+	var bookingRequest *models.BookingRequest
+
+	if item.SellerID == userID {
+		// User is the owner, get any booking request for this item
+		bookingRequest, err = s.bookingRepo.GetByItemID(itemID)
+	} else {
+		// User is potentially a requester, get their specific request
+		bookingRequest, err = s.bookingRepo.GetByItemAndRequester(itemID, userID)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return bookingRequest, nil
+}
+
+func (s *StoreService) ApproveBookingRequest(requestID uint, ownerID uint) error {
+	// Get the booking request
+	request, err := s.bookingRepo.GetByID(requestID)
+	if err != nil {
+		return err
+	}
+
+	// Verify the owner is actually the item owner
+	if request.Item.SellerID != ownerID {
+		return errors.New("unauthorized: you are not the owner of this item")
+	}
+
+	if request.Status != "pending" {
+		return errors.New("booking request is not pending")
+	}
+
+	// Update status to approved
+	return s.bookingRepo.UpdateStatus(requestID, "approved")
+}
+
+func (s *StoreService) RejectBookingRequest(requestID uint, ownerID uint) error {
+	// Get the booking request
+	request, err := s.bookingRepo.GetByID(requestID)
+	if err != nil {
+		return err
+	}
+
+	// Verify the owner is actually the item owner
+	if request.Item.SellerID != ownerID {
+		return errors.New("unauthorized: you are not the owner of this item")
+	}
+
+	if request.Status != "pending" {
+		return errors.New("booking request is not pending")
+	}
+
+	// Update status to rejected
+	return s.bookingRepo.UpdateStatus(requestID, "rejected")
+}
+
+func (s *StoreService) GetUserBookingRequests(userID uint) ([]models.BookingRequest, error) {
+	return s.bookingRepo.GetByRequesterID(userID)
 }
 
 // Helper function to format price

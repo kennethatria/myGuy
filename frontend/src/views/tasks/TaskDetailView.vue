@@ -127,45 +127,104 @@
       <!-- Messages section -->
       <div class="border-t border-gray-200">
         <div class="p-4">
-          <h3 class="mb-3">Messages</h3>
-          
-          <div v-if="messages.length === 0" class="p-4 text-center text-gray">
-            <p>No messages yet</p>
+          <div class="gig-chat-header">
+            <h3 class="chat-title">Communication</h3>
+            <div class="chat-status">
+              <span v-if="task?.status === 'open'" class="status-badge status-open">Open for Applications</span>
+              <span v-else-if="task?.status === 'assigned'" class="status-badge status-assigned">Task Assigned</span>
+              <span v-else-if="task?.status === 'completed'" class="status-badge status-completed">Completed</span>
+            </div>
           </div>
           
-          <div v-else class="mb-4 space-y-4">
-            <div v-for="message in messages" :key="message.id" class="card p-3">
-              <div class="flex-1">
-                <div class="flex items-center justify-between mb-1">
-                  <span class="font-medium">{{ message.sender?.username || 'Unknown User' }}</span>
-                  <span class="text-sm text-gray">{{ formatDate(message.createdAt || new Date()) }}</span>
+          <div class="chat-content">
+            <div v-if="messages.length === 0" class="no-messages">
+              <div class="no-messages-icon">
+                <i class="fas fa-comments"></i>
+              </div>
+              <p>No messages yet</p>
+              <p class="no-messages-subtitle" v-if="task?.status === 'open'">
+                Apply for this gig to start messaging
+              </p>
+              <p class="no-messages-subtitle" v-else-if="task?.status === 'assigned'">
+                Start the conversation about this task
+              </p>
+            </div>
+            
+            <div v-else class="chat-messages">
+              <div v-for="message in messages" :key="message.id" class="message" :class="{ 'own-message': message.sender?.id === authStore.user?.id }">
+                <div class="message-header">
+                  <span class="sender">{{ message.sender?.id === authStore.user?.id ? 'You' : (message.sender?.username || 'Unknown User') }}</span>
+                  <span class="timestamp">{{ formatMessageTime(message.createdAt || new Date()) }}</span>
                 </div>
-                <p>{{ message.content || 'No message content' }}</p>
+                <div class="message-content">{{ message.content || 'No message content' }}</div>
               </div>
             </div>
           </div>
           
-          <!-- New message form -->
-          <div v-if="canSendMessage" class="mt-4">
-            <form @submit.prevent="handleSendMessage" class="flex space-x-2">
-              <div class="flex-1">
-                <input
-                  type="text"
+          <!-- Message input section -->
+          <div class="chat-input-section">
+            <div v-if="canSendMessage && userCanSendMore" class="chat-input">
+              <form @submit.prevent="handleSendMessage">
+                <textarea 
                   v-model="newMessage"
-                  placeholder="Type your message..."
-                  class="form-input"
-                />
+                  placeholder="Type your message about this gig..."
+                  :maxlength="500"
+                  rows="3"
+                  @keydown.enter.ctrl="handleSendMessage"
+                  class="message-textarea"
+                ></textarea>
+                <div class="input-footer">
+                  <div class="message-info">
+                    <span class="message-count">{{ userMessageCount }}/{{ currentMessageLimit }} messages sent</span>
+                    <span v-if="!isTaskAssigned && !isOwner" class="limit-info">
+                      • Limit increases to 15 when task is assigned
+                    </span>
+                  </div>
+                  <button 
+                    type="submit"
+                    :disabled="!newMessage.trim()"
+                    class="btn btn-primary btn-sm"
+                  >
+                    Send
+                  </button>
+                </div>
+              </form>
+            </div>
+            
+            <div v-else-if="canSendMessage && !userCanSendMore" class="message-limit-reached">
+              <div class="limit-reached-content">
+                <i class="fas fa-info-circle"></i>
+                <div>
+                  <p><strong>Message limit reached</strong></p>
+                  <p v-if="!isTaskAssigned && !isOwner" class="suggestion">
+                    The task owner can assign this task to you to unlock more messages (up to 15 total).
+                  </p>
+                  <p v-else class="suggestion">
+                    You've reached the maximum number of messages for this conversation.
+                  </p>
+                </div>
               </div>
-              <button
-                type="submit"
-                class="btn btn-primary"
-              >
-                Send
-              </button>
-            </form>
-          </div>
-          <div v-else-if="isOwner && task?.status === 'open'" class="mt-4 p-3 bg-gray-100 rounded text-gray-600">
-            <p>Messages will be available once you assign this task to someone.</p>
+            </div>
+            
+            <div v-else-if="isOwner && task?.status === 'open'" class="assignment-required">
+              <div class="assignment-content">
+                <i class="fas fa-user-plus"></i>
+                <div>
+                  <p><strong>Assign this task to enable messaging</strong></p>
+                  <p>Messages will be available once you assign this task to an applicant.</p>
+                </div>
+              </div>
+            </div>
+            
+            <div v-else-if="!isOwner && task?.status === 'open'" class="application-required">
+              <div class="application-content">
+                <i class="fas fa-paper-plane"></i>
+                <div>
+                  <p><strong>Apply for this gig to start messaging</strong></p>
+                  <p>Submit an application to communicate with the task owner.</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -268,6 +327,15 @@ const formatDate = (date: string) => {
   return format(new Date(date), 'MMM dd, yyyy h:mm a')
 }
 
+const formatMessageTime = (dateString: string | Date): string => {
+  try {
+    const date = new Date(dateString)
+    return format(date, 'MMM d, h:mm a')
+  } catch (error) {
+    return 'Unknown time'
+  }
+}
+
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-UG', {
     minimumFractionDigits: 0,
@@ -332,6 +400,25 @@ const visibleApplications = computed(() => {
   
   // Applicants only see their own application
   return applications.value.filter(app => app.applicant.id === authStore.user?.id)
+})
+
+// Message limit computed properties
+const isTaskAssigned = computed(() => {
+  return task.value?.status === 'assigned' || task.value?.assigned_to !== null
+})
+
+const currentMessageLimit = computed(() => {
+  // 3 messages before assignment, 15 after assignment
+  return isTaskAssigned.value || isOwner.value ? 15 : 3
+})
+
+const userMessageCount = computed(() => {
+  if (!authStore.user || !messages.value) return 0
+  return messages.value.filter(msg => msg.sender?.id === authStore.user?.id).length
+})
+
+const userCanSendMore = computed(() => {
+  return userMessageCount.value < currentMessageLimit.value
 })
 
 const loadTaskData = async () => {
@@ -526,6 +613,12 @@ const handleApplicationMessageSent = () => {
 const handleSendMessage = async () => {
   if (!task.value || !newMessage.value.trim() || !authStore.user) return
 
+  // Check message limit
+  if (!userCanSendMore.value) {
+    alert(`You've reached the message limit (${currentMessageLimit.value} messages). ${isTaskAssigned.value ? '' : 'The limit will increase to 15 once the task is assigned.'}`)
+    return
+  }
+
   try {
     let recipientId: number | undefined
     
@@ -568,3 +661,240 @@ const handleSendMessage = async () => {
   }
 }
 </script>
+
+<style scoped>
+/* Gig Chat Interface Styles */
+.gig-chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.chat-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.chat-status {
+  display: flex;
+  align-items: center;
+}
+
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.status-open {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.status-assigned {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-completed {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.chat-content {
+  margin-bottom: 1.5rem;
+}
+
+.no-messages {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: #6b7280;
+}
+
+.no-messages-icon {
+  font-size: 3rem;
+  color: #d1d5db;
+  margin-bottom: 1rem;
+}
+
+.no-messages-subtitle {
+  font-size: 0.875rem;
+  color: #9ca3af;
+  margin-top: 0.5rem;
+}
+
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.message {
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+}
+
+.message.own-message {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  margin-left: 2rem;
+}
+
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.sender {
+  font-weight: 600;
+  color: #374151;
+  font-size: 0.875rem;
+}
+
+.timestamp {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.message-content {
+  color: #111827;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.chat-input-section {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 1rem;
+}
+
+.chat-input form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.message-textarea {
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  padding: 0.75rem;
+  font-size: 0.875rem;
+  resize: vertical;
+  min-height: 80px;
+  font-family: inherit;
+  width: 100%;
+}
+
+.message-textarea:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.input-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.message-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.message-count {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.limit-info {
+  font-size: 0.75rem;
+  color: #059669;
+}
+
+.btn-sm {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+
+.message-limit-reached,
+.assignment-required,
+.application-required {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+
+.limit-reached-content,
+.assignment-content,
+.application-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.limit-reached-content i,
+.assignment-content i,
+.application-content i {
+  color: #6b7280;
+  font-size: 1.25rem;
+  margin-top: 0.125rem;
+}
+
+.limit-reached-content div p:first-child,
+.assignment-content div p:first-child,
+.application-content div p:first-child {
+  margin: 0 0 0.5rem 0;
+  color: #374151;
+}
+
+.suggestion {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .gig-chat-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  
+  .message.own-message {
+    margin-left: 1rem;
+  }
+
+  .input-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .message-info {
+    align-self: stretch;
+  }
+
+  .btn-sm {
+    align-self: flex-end;
+  }
+}
+</style>

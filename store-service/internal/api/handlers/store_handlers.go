@@ -411,3 +411,132 @@ func (h *StoreHandler) GetUserBids(c *gin.Context) {
 
 	c.JSON(http.StatusOK, bids)
 }
+
+// Booking Request Handlers
+
+// CreateBookingRequest creates a new booking request for an item
+func (h *StoreHandler) CreateBookingRequest(c *gin.Context) {
+	userID := c.GetUint("userID")
+	
+	itemIDStr := c.Param("id")
+	itemID, err := strconv.Atoi(itemIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item ID"})
+		return
+	}
+
+	var req models.CreateBookingRequestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	bookingRequest, err := h.service.CreateBookingRequest(uint(itemID), userID, req.Message)
+	if err != nil {
+		if err.Error() == "you already have a booking request for this item" {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "cannot book your own item" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "item is not available for booking" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create booking request"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, bookingRequest)
+}
+
+// GetBookingRequest retrieves a booking request for an item
+func (h *StoreHandler) GetBookingRequest(c *gin.Context) {
+	userID := c.GetUint("userID")
+	
+	itemIDStr := c.Param("id")
+	itemID, err := strconv.Atoi(itemIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item ID"})
+		return
+	}
+
+	bookingRequest, err := h.service.GetBookingRequestByItem(uint(itemID), userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no booking request found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, bookingRequest)
+}
+
+// ApproveBookingRequest approves a booking request
+func (h *StoreHandler) ApproveBookingRequest(c *gin.Context) {
+	userID := c.GetUint("userID")
+	
+	requestIDStr := c.Param("requestId")
+	requestID, err := strconv.Atoi(requestIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request ID"})
+		return
+	}
+
+	err = h.service.ApproveBookingRequest(uint(requestID), userID)
+	if err != nil {
+		if err.Error() == "unauthorized: you are not the owner of this item" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "booking request is not pending" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to approve booking request"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "booking request approved successfully"})
+}
+
+// RejectBookingRequest rejects a booking request
+func (h *StoreHandler) RejectBookingRequest(c *gin.Context) {
+	userID := c.GetUint("userID")
+	
+	requestIDStr := c.Param("requestId")
+	requestID, err := strconv.Atoi(requestIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request ID"})
+		return
+	}
+
+	err = h.service.RejectBookingRequest(uint(requestID), userID)
+	if err != nil {
+		if err.Error() == "unauthorized: you are not the owner of this item" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "booking request is not pending" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reject booking request"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "booking request rejected successfully"})
+}
+
+// GetUserBookingRequests retrieves all booking requests by a user
+func (h *StoreHandler) GetUserBookingRequests(c *gin.Context) {
+	userID := c.GetUint("userID")
+	
+	requests, err := h.service.GetUserBookingRequests(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve booking requests"})
+		return
+	}
+
+	c.JSON(http.StatusOK, requests)
+}

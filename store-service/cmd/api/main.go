@@ -34,16 +34,17 @@ func main() {
 	}
 
 	// Auto migrate database
-	if err := db.AutoMigrate(&models.StoreItem{}, &models.ItemImage{}, &models.Bid{}, &models.User{}); err != nil {
+	if err := db.AutoMigrate(&models.StoreItem{}, &models.ItemImage{}, &models.Bid{}, &models.BookingRequest{}, &models.User{}); err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
 	// Initialize repositories
 	itemRepo := repositories.NewStoreItemRepository(db)
 	bidRepo := repositories.NewBidRepository(db)
+	bookingRepo := repositories.NewBookingRequestRepository(db)
 
 	// Initialize services
-	storeService := services.NewStoreService(itemRepo, bidRepo)
+	storeService := services.NewStoreService(itemRepo, bidRepo, bookingRepo)
 
 	// Initialize handlers
 	storeHandler := handlers.NewStoreHandler(storeService)
@@ -97,10 +98,17 @@ func main() {
 			auth.POST("/items/:id/bids", storeHandler.PlaceBid)
 			auth.POST("/items/:id/bids/:bidId/accept", storeHandler.AcceptBid)
 
+			// Booking requests
+			auth.POST("/items/:id/booking-request", storeHandler.CreateBookingRequest)
+			auth.GET("/items/:id/booking-request", storeHandler.GetBookingRequest)
+			auth.POST("/booking-requests/:requestId/approve", storeHandler.ApproveBookingRequest)
+			auth.POST("/booking-requests/:requestId/reject", storeHandler.RejectBookingRequest)
+
 			// User specific endpoints
 			auth.GET("/user/listings", storeHandler.GetUserListings)
 			auth.GET("/user/purchases", storeHandler.GetUserPurchases)
 			auth.GET("/user/bids", storeHandler.GetUserBids)
+			auth.GET("/user/booking-requests", storeHandler.GetUserBookingRequests)
 		}
 	}
 

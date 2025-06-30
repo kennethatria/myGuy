@@ -419,7 +419,7 @@ class MessageService {
   }
 
   /**
-   * Get user's message count for a specific store item (for 3-message limit)
+   * Get user's message count for a specific store item
    */
   async getUserStoreMessageCount(itemId, userId) {
     const query = `
@@ -430,6 +430,46 @@ class MessageService {
     
     const result = await db.query(query, [itemId, userId]);
     return parseInt(result.rows[0].count);
+  }
+
+  /**
+   * Check booking status for dynamic message limits
+   */
+  async getBookingStatus(itemId, userId) {
+    try {
+      // Check if there's an approved booking request for this item involving this user
+      const query = `
+        SELECT status
+        FROM booking_requests
+        WHERE item_id = $1 
+        AND (requester_id = $2 OR item_id IN (
+          SELECT id FROM store_items WHERE seller_id = $2
+        ))
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      
+      const result = await db.query(query, [itemId, userId]);
+      
+      if (result.rows.length > 0) {
+        return result.rows[0].status;
+      }
+      
+      return null;
+    } catch (error) {
+      logger.error('Error checking booking status:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get dynamic message limit based on booking status
+   */
+  async getMessageLimit(itemId, userId) {
+    const bookingStatus = await this.getBookingStatus(itemId, userId);
+    
+    // 3 messages before booking approval, 10 messages after approval
+    return bookingStatus === 'approved' ? 10 : 3;
   }
 }
 

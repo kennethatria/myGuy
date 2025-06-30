@@ -33,18 +33,6 @@ type ApplicationRepository interface {
 	Update(ctx context.Context, application *models.Application) error
 }
 
-type MessageRepository interface {
-	Create(ctx context.Context, message *models.Message) error
-	GetByID(ctx context.Context, messageID uint) (*models.Message, error)
-	Update(ctx context.Context, message *models.Message) error
-	ListByTask(ctx context.Context, taskID uint) ([]models.Message, error)
-	ListByUser(ctx context.Context, userID uint) ([]models.Message, error)
-	ListByApplication(ctx context.Context, applicationID uint) ([]models.Message, error)
-	GetApplication(ctx context.Context, applicationID uint) (*models.Application, error)
-	GetTask(ctx context.Context, taskID uint) (*models.Task, error)
-	GetUserConversations(ctx context.Context, userID uint) ([]models.ConversationSummary, error)
-}
-
 type ReviewRepository interface {
 	Create(ctx context.Context, review *models.Review) error
 	ListByUser(ctx context.Context, userID uint) ([]models.Review, error)

@@ -10,17 +10,18 @@ interface User {
   fullName?: string
   bio?: string
   averageRating?: number
-  createdAt?: string
+  created_at?: string
+  createdAt?: string // Keep both for compatibility
 }
 
 export const useUsersStore = defineStore('users', () => {
-  // Mock user data for development (since the API endpoint may not exist)
+  // Mock user data for development (using real database user data)
   const mockUsers: User[] = [
-    { id: 1, username: "testuser", fullName: "Test User", email: "test@example.com", averageRating: 4.5 },
-    { id: 2, username: "johndoe", fullName: "John Doe", email: "john@example.com", averageRating: 4.2 },
-    { id: 3, username: "janedoe", fullName: "Jane Doe", email: "jane@example.com", averageRating: 4.8 },
-    { id: 4, username: "bobsmith", fullName: "Bob Smith", email: "bob@example.com", averageRating: 3.9 },
-    { id: 5, username: "alicejones", fullName: "Alice Jones", email: "alice@example.com", averageRating: 4.7 }
+    { id: 1, username: "test_user", fullName: "Test User", email: "testuser@example.com", averageRating: 4.5, created_at: "2025-05-26T18:00:41.084585Z" },
+    { id: 2, username: "alice_dev", fullName: "Alice Developer", email: "alice@example.com", averageRating: 4.2, created_at: "2025-05-26T18:37:57.166095Z" },
+    { id: 3, username: "bob_designer", fullName: "Bob Designer", email: "bob@example.com", averageRating: 4.8, created_at: "2025-05-26T18:37:57.228835Z" },
+    { id: 4, username: "charlie_writer", fullName: "Charlie Writer", email: "charlie@example.com", averageRating: 3.9, created_at: "2025-05-26T18:37:57.287916Z" },
+    { id: 5, username: "diana_coder", fullName: "Diana Coder", email: "diana@example.com", averageRating: 4.7, created_at: "2025-05-26T18:37:57.342056Z" }
   ];
 
   // Cache of users we've already fetched, keyed by user ID
@@ -72,12 +73,18 @@ export const useUsersStore = defineStore('users', () => {
       const randomName = randomNames[Math.floor(Math.random() * randomNames.length)];
       const randomLastName = randomLastNames[Math.floor(Math.random() * randomLastNames.length)];
       
+      // Generate a random join date between 1-18 months ago
+      const monthsAgo = Math.floor(Math.random() * 18) + 1;
+      const joinDate = new Date();
+      joinDate.setMonth(joinDate.getMonth() - monthsAgo);
+      
       const mockUser: User = {
         id: userId,
         username: `${randomName.toLowerCase()}${userId}`,
         fullName: `${randomName} ${randomLastName}`,
         email: `${randomName.toLowerCase()}${userId}@example.com`,
         averageRating: (3 + Math.random() * 2).toFixed(1) as unknown as number, // 3.0-5.0 rating
+        created_at: joinDate.toISOString(),
       };
       
       // Cache the mock user
