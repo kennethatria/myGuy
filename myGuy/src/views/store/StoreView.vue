@@ -496,7 +496,8 @@ async function createItem() {
       description: description,
       category: category,
       condition: condition,
-      is_auction: isAuction
+      is_auction: isAuction,
+      price_type: isAuction ? "auction" : "fixed"
     };
     
     if (newItem.value.is_auction) {
