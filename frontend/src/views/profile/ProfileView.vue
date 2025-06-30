@@ -169,8 +169,21 @@ const formErrors = ref({
   bio: ''
 })
 
-const formatDate = (date: string) => {
-  return format(new Date(date), 'MMM dd, yyyy')
+const formatDate = (date: string | null | undefined) => {
+  if (!date) {
+    return 'Unknown'
+  }
+  
+  try {
+    const dateObj = new Date(date)
+    if (isNaN(dateObj.getTime())) {
+      return 'Unknown'
+    }
+    return format(dateObj, 'MMM dd, yyyy')
+  } catch (error) {
+    console.warn('Invalid date format:', date)
+    return 'Unknown'
+  }
 }
 
 const fetchProfileData = async () => {

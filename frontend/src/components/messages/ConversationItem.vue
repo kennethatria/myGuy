@@ -5,13 +5,13 @@
     @click="$emit('click')"
   >
     <div class="conversation-header">
-      <h3 class="task-title">{{ conversation.task_title || conversation.application_title || 'Application' }}</h3>
+      <h3 class="task-title" :class="{ 'unread': conversation.unread_count > 0 }">{{ conversation.task_title || conversation.application_title || 'Application' }}</h3>
       <span class="timestamp">{{ formatTime(conversation.last_message_time) }}</span>
     </div>
     
     <div class="conversation-body">
       <p class="other-user">{{ conversation.other_user_name }}</p>
-      <p class="last-message">{{ conversation.last_message }}</p>
+      <p class="last-message" :class="{ 'unread': conversation.unread_count > 0 }">{{ conversation.last_message }}</p>
     </div>
     
     <div v-if="conversation.unread_count > 0" class="unread-badge">
@@ -33,7 +33,18 @@ defineEmits<{
 }>();
 
 function formatTime(timestamp: string): string {
+  if (!timestamp) {
+    return 'No messages';
+  }
+  
   const date = new Date(timestamp);
+  
+  // Check if date is valid
+  if (isNaN(date.getTime())) {
+    console.warn('Invalid timestamp:', timestamp);
+    return 'Invalid date';
+  }
+  
   const now = new Date();
   const diff = now.getTime() - date.getTime();
   
@@ -101,6 +112,11 @@ function formatTime(timestamp: string): string {
   padding-right: 0.5rem;
 }
 
+.task-title.unread {
+  font-weight: 700;
+  color: #4F46E5;
+}
+
 .timestamp {
   font-size: 0.75rem;
   color: #6b7280;
@@ -123,6 +139,11 @@ function formatTime(timestamp: string): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.last-message.unread {
+  font-weight: 600;
+  color: #111827;
 }
 
 .unread-badge {

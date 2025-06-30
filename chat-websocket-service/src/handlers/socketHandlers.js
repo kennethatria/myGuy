@@ -279,7 +279,23 @@ class SocketHandlers {
   async handleGetConversations(socket) {
     try {
       const conversations = await messageService.getUserConversations(socket.userId);
-      socket.emit('conversations:list', conversations);
+      
+      // Format conversations to ensure proper timestamp and structure
+      const formattedConversations = conversations.map(conv => ({
+        task_id: conv.task_id,
+        application_id: conv.application_id,
+        task_title: conv.task_title,
+        task_description: conv.task_description,
+        task_status: conv.task_status,
+        last_message: conv.content || '',
+        last_message_time: conv.created_at, // Use created_at as the timestamp
+        other_user_id: conv.other_user_id,
+        other_user_name: conv.other_user_name,
+        unread_count: conv.unread_count || 0,
+        conversation_type: conv.task_id ? 'task' : 'application'
+      }));
+      
+      socket.emit('conversations:list', formattedConversations);
     } catch (error) {
       logger.error('Error getting conversations:', error);
       socket.emit('error', { message: 'Failed to get conversations' });
