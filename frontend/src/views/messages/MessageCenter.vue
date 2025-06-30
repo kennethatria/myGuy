@@ -22,7 +22,7 @@
             v-for="conversation in chatStore.conversations"
             :key="conversation.task_id || conversation.application_id"
             :conversation="conversation"
-            :active="chatStore.activeConversation && ((chatStore.activeConversation.task_id === conversation.task_id) || (chatStore.activeConversation.application_id === conversation.application_id))"
+            :active="chatStore.activeConversation ? ((chatStore.activeConversation.task_id === conversation.task_id) || (chatStore.activeConversation.application_id === conversation.application_id)) : false"
             @click="selectConversation(conversation)"
           />
         </div>
