@@ -18,11 +18,11 @@ export interface Message {
   deleted_at?: string
   created_at: string
   has_removed_content?: boolean
-  sender: {
+  sender?: {
     id: number
     username: string
   }
-  recipient: {
+  recipient?: {
     id: number
     username: string
   }

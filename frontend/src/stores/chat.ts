@@ -371,6 +371,11 @@ export const useChatStore = defineStore('chat', () => {
   
   async function loadDeletionWarnings() {
     try {
+      if (!authStore.token) {
+        console.warn('No auth token available, skipping deletion warnings');
+        return;
+      }
+      
       const response = await fetch('http://localhost:8082/api/v1/deletion-warnings', {
         headers: {
           'Authorization': `Bearer ${authStore.token}`
@@ -379,6 +384,10 @@ export const useChatStore = defineStore('chat', () => {
       
       if (response.ok) {
         deletionWarnings.value = await response.json();
+      } else if (response.status === 401) {
+        console.warn('Unauthorized to access deletion warnings');
+      } else {
+        console.error('Failed to load deletion warnings:', response.status, response.statusText);
       }
     } catch (error) {
       console.error('Failed to load deletion warnings:', error);

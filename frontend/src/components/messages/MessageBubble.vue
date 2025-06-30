@@ -2,7 +2,7 @@
   <div class="message-bubble" :class="{ 'own-message': isOwnMessage }">
     <div class="message-content">
       <div class="message-header">
-        <span class="sender-name">{{ message.sender.username }}</span>
+        <span class="sender-name">{{ message.sender?.username || 'Unknown User' }}</span>
         <span class="message-time">{{ formatTime(message.created_at) }}</span>
       </div>
       

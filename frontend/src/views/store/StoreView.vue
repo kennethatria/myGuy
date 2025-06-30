@@ -58,7 +58,20 @@
     <div v-else class="items-grid">
       <div v-for="item in filteredItems" :key="item.id || item.title || Math.random()" class="item-card">
         <div class="item-image">
-          <img :src="item.images && item.images.length > 0 ? 'http://localhost:8081' + item.images[0].url : '/placeholder.png'" :alt="item.title || 'Item image'" />
+          <img 
+            v-if="item.images && item.images.length > 0" 
+            :src="'http://localhost:8081' + item.images[0].url" 
+            :alt="item.title || 'Item image'"
+            @error="handleImageError"
+          />
+          <div v-else class="image-placeholder">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21,15 16,10 5,21"/>
+            </svg>
+            <span>No Image</span>
+          </div>
         </div>
         <div class="item-content">
           <h3>{{ item.title || 'Untitled Item' }}</h3>
@@ -591,13 +604,43 @@ async function createItem() {
     // Send as JSON (backend now supports JSON)
     console.log('🚀 Sending JSON request to:', 'http://localhost:8081/api/v1/items');
     
+    // If images are selected, use FormData to include them
+    let requestBody;
+    let requestHeaders = {
+      'Authorization': `Bearer ${localStorage.getItem('token')}`
+    };
+    
+    if (selectedImages.value.length > 0) {
+      // Use FormData for requests with images
+      console.log('🖼️ Images selected, using FormData format');
+      const formData = new FormData();
+      
+      // Add all JSON fields to FormData
+      Object.keys(jsonPayload).forEach(key => {
+        if (jsonPayload[key] !== undefined && jsonPayload[key] !== null) {
+          formData.append(key, String(jsonPayload[key]));
+        }
+      });
+      
+      // Add images to FormData
+      selectedImages.value.forEach((image, index) => {
+        formData.append('images', image.file);
+        console.log(`Added image ${index + 1}:`, image.file.name);
+      });
+      
+      requestBody = formData;
+      // Don't set Content-Type for FormData - browser will set it with boundary
+    } else {
+      // Use JSON for requests without images
+      console.log('📄 No images, using JSON format');
+      requestHeaders['Content-Type'] = 'application/json';
+      requestBody = JSON.stringify(jsonPayload);
+    }
+    
     const response = await fetch('http://localhost:8081/api/v1/items', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(jsonPayload)
+      headers: requestHeaders,
+      body: requestBody
     });
     
     console.log('Response status:', response.status);
@@ -804,6 +847,16 @@ function formatCurrency(amount) {
   }).format(safeAmount);
 }
 
+function handleImageError(event) {
+  console.warn('Failed to load image:', event.target.src);
+  // Hide the broken image and show placeholder
+  event.target.style.display = 'none';
+  const placeholder = event.target.parentElement.querySelector('.image-placeholder');
+  if (placeholder) {
+    placeholder.style.display = 'flex';
+  }
+}
+
 onMounted(() => {
   loadItems();
 });
@@ -879,6 +932,28 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.image-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #f9fafb;
+  color: #9ca3af;
+  border: 2px dashed #e5e7eb;
+  border-radius: 0.5rem;
+}
+
+.image-placeholder svg {
+  margin-bottom: 0.5rem;
+}
+
+.image-placeholder span {
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 .item-content {

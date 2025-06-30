@@ -63,19 +63,38 @@ func (h *StoreHandler) CreateItem(c *gin.Context) {
 			if startingBid, err := strconv.ParseFloat(c.PostForm("starting_bid"), 64); err == nil {
 				req.StartingBid = startingBid
 			}
-			if bidIncrement, err := strconv.ParseFloat(c.PostForm("bid_increment"), 64); err == nil {
+			// Try both field names for backward compatibility
+			if bidIncrement, err := strconv.ParseFloat(c.PostForm("min_bid_increment"), 64); err == nil {
+				req.MinBidIncrement = bidIncrement
+			} else if bidIncrement, err := strconv.ParseFloat(c.PostForm("bid_increment"), 64); err == nil {
 				req.MinBidIncrement = bidIncrement
 			}
 		} else {
 			req.PriceType = "fixed"
-			if price, err := strconv.ParseFloat(c.PostForm("price"), 64); err == nil {
+			// Try both field names for backward compatibility
+			if price, err := strconv.ParseFloat(c.PostForm("fixed_price"), 64); err == nil {
+				req.FixedPrice = price
+			} else if price, err := strconv.ParseFloat(c.PostForm("price"), 64); err == nil {
 				req.FixedPrice = price
 			}
 		}
 	}
 	
-	// Handle image uploads
+	// Handle image uploads - add debug logging
+	fmt.Printf("DEBUG: Processing image uploads for user %d\n", userID)
+	fmt.Printf("DEBUG: Content-Type: %s\n", contentType)
+	
 	form, err := c.MultipartForm()
+	if err != nil {
+		fmt.Printf("DEBUG: MultipartForm() error: %v\n", err)
+	} else if form == nil {
+		fmt.Printf("DEBUG: MultipartForm() returned nil form\n")
+	} else if form.File["images"] == nil {
+		fmt.Printf("DEBUG: No 'images' field in form, available fields: %v\n", form.File)
+	} else {
+		fmt.Printf("DEBUG: Found %d images in form\n", len(form.File["images"]))
+	}
+	
 	if err == nil && form != nil && form.File["images"] != nil {
 		var imageURLs []string
 		
@@ -130,11 +149,16 @@ func (h *StoreHandler) CreateItem(c *gin.Context) {
 			// Create URL for the uploaded file
 			imageURL := fmt.Sprintf("/uploads/store/%d/%s", userID, filename)
 			imageURLs = append(imageURLs, imageURL)
+			fmt.Printf("DEBUG: Successfully saved image: %s -> %s\n", fileHeader.Filename, imageURL)
 		}
 		
 		req.Images = imageURLs
+		fmt.Printf("DEBUG: Final request has %d images: %v\n", len(imageURLs), imageURLs)
+	} else {
+		fmt.Printf("DEBUG: No images to process, proceeding with text-only item\n")
 	}
 
+	fmt.Printf("DEBUG: Final CreateStoreItemRequest: %+v\n", req)
 	item, err := h.service.CreateItem(userID, req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
