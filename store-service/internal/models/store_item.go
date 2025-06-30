@@ -116,7 +116,9 @@ func (s *StoreItem) AfterFind(tx *gorm.DB) error {
 	}
 	
 	// Count bids
-	tx.Model(&Bid{}).Where("item_id = ?", s.ID).Count(&s.BidCount)
+	var bidCount int64
+	tx.Model(&Bid{}).Where("item_id = ?", s.ID).Count(&bidCount)
+	s.BidCount = int(bidCount)
 	
 	return nil
 }

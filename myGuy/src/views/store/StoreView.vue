@@ -494,13 +494,13 @@ async function createItem() {
       isAuction: isAuction
     });
     
-    // Prepare JSON payload - match backend expectations
+    // Prepare JSON payload - match CreateStoreItemRequest model
     const jsonPayload = {
       title: title,
       description: description,
       category: category,
       condition: condition === "like_new" ? "like-new" : condition, // Fix condition format
-      price_type: isAuction ? "bidding" : "fixed" // Backend expects "bidding", not "auction"
+      price_type: isAuction ? "bidding" : "fixed" // Use model field names
     };
     
     if (newItem.value.is_auction) {
@@ -512,7 +512,7 @@ async function createItem() {
       let bidIncrement = parseFloat(bidIncrementStr) || 1000;
       
       // Ensure positive values and round to integers
-      startingBid = Math.max(0, Math.round(startingBid));
+      startingBid = Math.max(1, Math.round(startingBid));
       bidIncrement = Math.max(500, Math.round(bidIncrement));
       
       console.log('Auction values:', { 
@@ -521,14 +521,14 @@ async function createItem() {
       });
       
       jsonPayload.starting_bid = startingBid;
-      jsonPayload.min_bid_increment = bidIncrement; // Backend expects "min_bid_increment", not "bid_increment"
+      jsonPayload.min_bid_increment = bidIncrement; // Use correct model field name
     } else {
       // Clean and validate price
       let priceStr = String(newItem.value.price || '0').replace(/[^0-9.]/g, '');
       let price = parseFloat(priceStr) || 0;
       
       // Ensure positive value and round to integer
-      price = Math.max(1, Math.round(price)); // Changed from Math.max(0, ...) to Math.max(1, ...)
+      price = Math.max(1, Math.round(price));
       
       console.log('Fixed price value:', { 
         originalValue: newItem.value.price,
@@ -537,36 +537,21 @@ async function createItem() {
         priceType: typeof price
       });
       
-      jsonPayload.fixed_price = price; // Backend expects "fixed_price", not "price"
+      jsonPayload.fixed_price = price; // Use correct model field name
     }
     
     console.log('📦 JSON Payload to send:', JSON.stringify(jsonPayload, null, 2));
     
-    // Convert JSON to FormData since backend expects form data
-    const formData = new FormData();
-    
-    // Add all fields as form data
-    Object.keys(jsonPayload).forEach(key => {
-      if (jsonPayload[key] !== undefined && jsonPayload[key] !== null) {
-        formData.append(key, String(jsonPayload[key]));
-      }
-    });
-    
-    // Debug FormData
-    console.log('📦 FormData entries:');
-    for (let [key, value] of formData.entries()) {
-      console.log(`${key}: ${value} (${typeof value})`);
-    }
-    
-    console.log('🚀 Sending FormData request to:', 'http://localhost:8081/api/v1/items');
+    // Send as JSON (backend now supports JSON)
+    console.log('🚀 Sending JSON request to:', 'http://localhost:8081/api/v1/items');
     
     const response = await fetch('http://localhost:8081/api/v1/items', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-        // Don't set Content-Type for FormData - browser will set it automatically
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
       },
-      body: formData
+      body: JSON.stringify(jsonPayload)
     });
     
     console.log('Response status:', response.status);

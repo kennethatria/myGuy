@@ -105,7 +105,14 @@ func (s *StoreService) UpdateItem(id uint, userID uint, req models.UpdateStoreIt
 		item.Category = req.Category
 	}
 	if len(req.Images) > 0 {
-		item.Images = req.Images
+		var images []models.ItemImage
+		for i, url := range req.Images {
+			images = append(images, models.ItemImage{
+				URL:   url,
+				Order: i,
+			})
+		}
+		item.Images = images
 	}
 	if req.Condition != "" {
 		item.Condition = req.Condition

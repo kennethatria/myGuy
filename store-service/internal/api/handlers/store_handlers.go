@@ -27,37 +27,50 @@ func NewStoreHandler(service *services.StoreService) *StoreHandler {
 func (h *StoreHandler) CreateItem(c *gin.Context) {
 	userID := c.GetUint("userID")
 	
-	// Parse form data
-	title := c.PostForm("title")
-	description := c.PostForm("description")
-	category := c.PostForm("category")
-	condition := c.PostForm("condition")
-	isAuction := c.PostForm("is_auction") == "true"
+	var req models.CreateStoreItemRequest
 	
-	if title == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "title is required"})
-		return
-	}
+	// Check Content-Type and parse accordingly
+	contentType := c.GetHeader("Content-Type")
 	
-	req := models.CreateStoreItemRequest{
-		Title:       title,
-		Description: description,
-		Category:    category,
-		Condition:   condition,
-	}
-	
-	if isAuction {
-		req.PriceType = "bidding"
-		if startingBid, err := strconv.ParseFloat(c.PostForm("starting_bid"), 64); err == nil {
-			req.StartingBid = startingBid
-		}
-		if bidIncrement, err := strconv.ParseFloat(c.PostForm("bid_increment"), 64); err == nil {
-			req.MinBidIncrement = bidIncrement
+	if strings.Contains(contentType, "application/json") {
+		// Handle JSON request
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON: " + err.Error()})
+			return
 		}
 	} else {
-		req.PriceType = "fixed"
-		if price, err := strconv.ParseFloat(c.PostForm("price"), 64); err == nil {
-			req.FixedPrice = price
+		// Handle form data (legacy support)
+		title := c.PostForm("title")
+		description := c.PostForm("description")
+		category := c.PostForm("category")
+		condition := c.PostForm("condition")
+		isAuction := c.PostForm("is_auction") == "true"
+		
+		if title == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "title is required"})
+			return
+		}
+		
+		req = models.CreateStoreItemRequest{
+			Title:       title,
+			Description: description,
+			Category:    category,
+			Condition:   condition,
+		}
+		
+		if isAuction {
+			req.PriceType = "bidding"
+			if startingBid, err := strconv.ParseFloat(c.PostForm("starting_bid"), 64); err == nil {
+				req.StartingBid = startingBid
+			}
+			if bidIncrement, err := strconv.ParseFloat(c.PostForm("bid_increment"), 64); err == nil {
+				req.MinBidIncrement = bidIncrement
+			}
+		} else {
+			req.PriceType = "fixed"
+			if price, err := strconv.ParseFloat(c.PostForm("price"), 64); err == nil {
+				req.FixedPrice = price
+			}
 		}
 	}
 	
