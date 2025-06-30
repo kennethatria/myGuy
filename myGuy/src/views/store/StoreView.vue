@@ -418,9 +418,40 @@ async function loadItems() {
   }
 }
 
+// Debug function to analyze all form data
+function debugFormData(data) {
+  console.log('=== COMPREHENSIVE FORM DEBUG ===');
+  
+  for (const [key, value] of Object.entries(data)) {
+    console.log(`Field: ${key}`);
+    console.log(`  Raw value:`, value);
+    console.log(`  Type:`, typeof value);
+    console.log(`  JSON:`, JSON.stringify(value));
+    console.log(`  Length:`, String(value).length);
+    console.log(`  Contains dash:`, String(value).includes('-'));
+    console.log(`  Char codes:`, String(value).split('').map(c => `${c}(${c.charCodeAt(0)})`).join(' '));
+    console.log('---');
+  }
+}
+
 async function createItem() {
+  console.log('🚀 Starting item creation...');
+  
+  // Debug current form state
+  debugFormData({
+    title: newItem.value.title,
+    description: newItem.value.description,
+    category: newItem.value.category,
+    condition: newItem.value.condition,
+    price: newItem.value.price,
+    is_auction: newItem.value.is_auction,
+    starting_bid: newItem.value.starting_bid,
+    bid_increment: newItem.value.bid_increment
+  });
+  
   // Final validation
   if (!validateCurrentStep()) {
+    console.log('❌ Validation failed');
     return;
   }
   
