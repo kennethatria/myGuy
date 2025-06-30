@@ -13,6 +13,9 @@ A modern task marketplace application where users can create tasks (gigs) for ot
 ### Recent Updates
 - ✅ Messaging functionality separated to dedicated chat microservice
 - ✅ Clean backend architecture with no messaging dependencies
+- ✅ **Store Functionality Fixed**: Listing visibility and access control implemented
+- ✅ **Currency Conversion**: Complete migration from USD to UGX (Uganda Shillings)
+- ✅ **JSON API Support**: Store service now supports both JSON and form data requests
 - ⚠️ **Testing Required**: Backend has zero test coverage (see `improvements/`)
 - 📋 **Roadmap Available**: See `improvements/` folder for enhancement plans
 
@@ -35,6 +38,10 @@ A modern task marketplace application where users can create tasks (gigs) for ot
   - List items for sale with fixed prices or bidding
   - Auction system with starting bids and increments
   - Item categories and condition tracking
+  - **Access Control**: Users can view their own listings but cannot bid/purchase their own items
+  - **Listing Visibility**: All active listings are visible to users, with proper status filtering
+  - **Owner Indicators**: Clear visual indicators when viewing own listings
+  - **UGX Currency**: All prices displayed in Uganda Shillings (UGX)
 - **Review System**: Both parties can review each other after task completion with 1-5 star ratings
 - **User Profiles**: View user profiles with ratings and review history
 
@@ -151,10 +158,39 @@ MyGuy/
 - Message editing, deletion, read receipts
 
 ### Store Service (Port 8081)
-**Item marketplace functionality**
-- Item listings and management
-- Bidding system
-- Purchase transactions
+**Item marketplace functionality with JSON API support**
+
+#### Store Items
+- `GET /api/v1/items` - List all active items (public endpoint)
+  - Query params: `search`, `category`, `price_type`, `condition`, `status`, `seller_id`, `min_price`, `max_price`, `sort_by`, `sort_order`, `page`, `per_page`
+  - Returns: `{items: [...], total: X, page: Y, per_page: Z}`
+- `POST /api/v1/items` - Create new item listing (requires auth)
+  - Supports both JSON and form data requests
+  - JSON format: `{title, description, price_type: "fixed|bidding", fixed_price?, starting_bid?, min_bid_increment?, category, condition, images[]}`
+- `GET /api/v1/items/:id` - Get item details
+- `PUT /api/v1/items/:id` - Update item (owner only)
+- `DELETE /api/v1/items/:id` - Delete item (owner only)
+
+#### Bidding System
+- `POST /api/v1/items/:id/bids` - Place bid on auction item
+  - Validation: Cannot bid on own items, minimum bid requirements
+- `GET /api/v1/items/:id/bids` - Get bid history for item
+- `POST /api/v1/items/:id/bids/:bidId/accept` - Accept winning bid (seller only)
+
+#### Purchase System
+- `POST /api/v1/items/:id/purchase` - Purchase fixed-price item
+  - Validation: Cannot purchase own items, item must be active
+
+#### User Management
+- `GET /api/v1/user/listings` - Get current user's listings
+- `GET /api/v1/user/purchases` - Get current user's purchases
+- `GET /api/v1/user/bids` - Get current user's bids
+
+#### Access Control Features
+- **Frontend**: Bid/purchase buttons hidden for own items
+- **Backend**: Server-side validation prevents bidding/purchasing own items
+- **Status Filtering**: Only active items shown by default
+- **Owner Identification**: Clear visual indicators for own listings
 
 ## Quick Start
 
@@ -333,6 +369,55 @@ docker-compose up -d --scale chat-websocket-service=3
 - `current_state.md` - Complete backend functionality overview
 - `improvements/` - Detailed enhancement roadmaps
 - Each improvement file contains implementation checklists
+
+## Troubleshooting
+
+### Store Service Issues
+
+#### Listings Not Visible
+If store listings are not appearing:
+
+1. **Check Services**: Ensure all Docker containers are running:
+   ```bash
+   docker ps
+   docker-compose up -d  # If containers are stopped
+   ```
+
+2. **Verify Database Connection**: Check store service logs:
+   ```bash
+   docker logs myguy-store-service-1
+   ```
+
+3. **Test API Directly**: 
+   ```bash
+   curl "http://localhost:8081/api/v1/items"
+   ```
+
+4. **Check Response Format**: Frontend expects `{items: [...]}` format from backend
+
+#### Common Solutions Applied
+- **Fixed Response Parsing**: Frontend now correctly extracts `data.items` from API response
+- **Added Status Filtering**: Backend defaults to showing only `active` items
+- **JSON API Support**: Store service now supports both JSON and form data requests
+- **Access Control**: Proper validation prevents users from bidding/purchasing own items
+
+### General Issues
+
+#### Docker Container Problems
+```bash
+# Rebuild and restart all services
+docker-compose down
+docker-compose up --build
+
+# Check specific service logs
+docker-compose logs -f store-service
+```
+
+#### Database Connection Issues
+Ensure PostgreSQL container is healthy before other services start:
+```bash
+docker-compose logs postgres-db
+```
 
 ## Contributing
 

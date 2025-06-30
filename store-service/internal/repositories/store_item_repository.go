@@ -57,6 +57,9 @@ func (r *storeItemRepository) GetAll(filter models.StoreItemFilter) ([]models.St
 
 	if filter.Status != "" {
 		query = query.Where("status = ?", filter.Status)
+	} else {
+		// Default to showing only active items unless a specific status is requested
+		query = query.Where("status = ?", "active")
 	}
 
 	if filter.SellerID > 0 {

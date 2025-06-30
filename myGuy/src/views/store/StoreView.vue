@@ -406,8 +406,9 @@ async function loadItems() {
     });
     if (response.ok) {
       const data = await response.json();
-      // Ensure we always set an array
-      items.value = Array.isArray(data) ? data : [];
+      // Backend returns {items: [...], total: X, page: Y, per_page: Z}
+      // Extract the items array from the response
+      items.value = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
     } else {
       console.error('Failed to load items:', response.status, response.statusText);
       items.value = []; // Set to empty array on error

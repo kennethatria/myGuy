@@ -85,7 +85,7 @@
               <p class="price">UGX {{ formatCurrency(item.price) }}</p>
               
               <button 
-                v-if="item.seller.id !== userId && item.status === 'available'"
+                v-if="item.seller.id !== userId && item.status === 'active'"
                 @click="purchaseItem" 
                 class="btn btn-primary btn-large"
               >
@@ -94,7 +94,12 @@
             </div>
           </div>
           
-          <div v-if="item.status !== 'available'" class="item-status">
+          <div v-if="item.seller.id === userId" class="owner-status">
+            <p class="owner-message">This is your listing</p>
+            <p class="status-info">Status: {{ item.status }}</p>
+          </div>
+          
+          <div v-else-if="item.status !== 'active'" class="item-status">
             <p class="status-message">This item is {{ item.status }}</p>
           </div>
         </div>
@@ -538,6 +543,26 @@ onMounted(() => {
 .status-message {
   color: #92400e;
   font-weight: 500;
+}
+
+.owner-status {
+  background: #e0f2fe;
+  padding: 1rem;
+  border-radius: 0.375rem;
+  text-align: center;
+  border: 1px solid #b3e5fc;
+}
+
+.owner-message {
+  color: #0277bd;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.status-info {
+  color: #0288d1;
+  font-size: 0.875rem;
+  margin: 0;
 }
 
 .bid-history {
