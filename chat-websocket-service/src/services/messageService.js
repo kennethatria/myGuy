@@ -298,7 +298,7 @@ class MessageService {
         t.title as task_title
       FROM message_deletion_warnings mdw
       INNER JOIN tasks t ON mdw.task_id = t.id
-      WHERE (t.creator_id = $1 OR t.assignee_id = $1)
+      WHERE (t.created_by = $1 OR t.assigned_to = $1)
         AND mdw.deletion_scheduled_at > NOW()
         AND mdw.deletion_scheduled_at < NOW() + INTERVAL '1 month'
         AND mdw.warning_shown = false
