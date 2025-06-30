@@ -36,6 +36,7 @@
           :messages="chatStore.activeMessages"
           :typing-users="chatStore.activeTypingUsers"
           :loading="chatStore.isLoadingMessages"
+          :has-more="chatStore.activeHasMoreMessages"
           @send-message="sendMessage"
           @edit-message="chatStore.editMessage"
           @delete-message="chatStore.deleteMessage"

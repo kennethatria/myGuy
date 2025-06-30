@@ -176,6 +176,21 @@ class MessageService {
   }
 
   /**
+   * Get total message count for a conversation
+   */
+  async getTotalMessageCount(taskId, userId) {
+    const query = `
+      SELECT COUNT(*) as total
+      FROM messages m
+      WHERE m.task_id = $1
+        AND (m.sender_id = $2 OR m.recipient_id = $2)
+    `;
+    
+    const result = await db.query(query, [taskId, userId]);
+    return parseInt(result.rows[0].total);
+  }
+
+  /**
    * Get user conversations list
    */
   async getUserConversations(userId) {

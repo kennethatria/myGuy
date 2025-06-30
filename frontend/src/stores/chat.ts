@@ -22,6 +22,7 @@ export const useChatStore = defineStore('chat', () => {
   const unreadCounts = ref<Map<number, number>>(new Map());
   const isLoadingMessages = ref(false);
   const hasMoreMessages = ref<Map<number, boolean>>(new Map());
+  const totalMessageCounts = ref<Map<number, number>>(new Map());
   const deletionWarnings = ref<any[]>([]);
   
   // Computed
@@ -41,6 +42,19 @@ export const useChatStore = defineStore('chat', () => {
     if (!activeConversation.value) return [];
     const conversationId = activeConversation.value.task_id || activeConversation.value.application_id;
     return typingUsers.value.get(conversationId!) || [];
+  });
+  
+  const activeHasMoreMessages = computed(() => {
+    if (!activeConversation.value) return false;
+    const conversationId = activeConversation.value.task_id || activeConversation.value.application_id;
+    
+    // Get total message count for this conversation
+    const totalCount = totalMessageCounts.value.get(conversationId!) || 0;
+    
+    // Only show "Load more" if there are more than 20 messages AND there are more pages to load
+    const hasMorePages = hasMoreMessages.value.get(conversationId!) || false;
+    
+    return totalCount > 20 && hasMorePages;
   });
   
   // Socket connection
@@ -119,6 +133,10 @@ export const useChatStore = defineStore('chat', () => {
     const taskId = message.task_id;
     const taskMessages = messages.value.get(taskId) || [];
     messages.value.set(taskId, [...taskMessages, message]);
+    
+    // Update total message count
+    const currentCount = totalMessageCounts.value.get(taskId) || 0;
+    totalMessageCounts.value.set(taskId, currentCount + 1);
     
     // Update conversation last message
     const conv = conversations.value.find(c => c.task_id === taskId);
@@ -206,13 +224,18 @@ export const useChatStore = defineStore('chat', () => {
     });
   }
   
-  function handleMessagesList({ taskId, messages: msgs, offset }: { taskId: number; messages: Message[]; offset: number }) {
+  function handleMessagesList({ taskId, messages: msgs, offset, totalCount }: { taskId: number; messages: Message[]; offset: number; totalCount?: number }) {
     if (offset === 0) {
       messages.value.set(taskId, msgs);
     } else {
       // Prepend older messages
       const existing = messages.value.get(taskId) || [];
       messages.value.set(taskId, [...msgs, ...existing]);
+    }
+    
+    // Store total count if provided
+    if (totalCount !== undefined) {
+      totalMessageCounts.value.set(taskId, totalCount);
     }
     
     // If we got less than requested, there are no more messages
@@ -426,6 +449,7 @@ export const useChatStore = defineStore('chat', () => {
     totalUnreadCount,
     activeMessages,
     activeTypingUsers,
+    activeHasMoreMessages,
     
     // Actions
     connectSocket,

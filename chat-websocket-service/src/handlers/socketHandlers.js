@@ -325,6 +325,7 @@ class SocketHandlers {
   async handleGetMessages(socket, { taskId, limit = 5, offset = 0 }) {
     try {
       const messages = await messageService.getMessages(taskId, socket.userId, limit, offset);
+      const totalCount = await messageService.getTotalMessageCount(taskId, socket.userId);
       
       // Format messages to include proper sender/recipient objects
       const formattedMessages = messages.map(msg => ({
@@ -339,7 +340,12 @@ class SocketHandlers {
         }
       }));
       
-      socket.emit('messages:list', { taskId, messages: formattedMessages, offset });
+      socket.emit('messages:list', { 
+        taskId, 
+        messages: formattedMessages, 
+        offset,
+        totalCount
+      });
     } catch (error) {
       logger.error('Error getting messages:', error);
       socket.emit('error', { message: 'Failed to get messages' });

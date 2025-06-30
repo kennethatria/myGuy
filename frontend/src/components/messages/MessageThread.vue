@@ -17,7 +17,7 @@
     <!-- Messages Container -->
     <div class="messages-container" ref="messagesContainer" @scroll="handleScroll">
       <!-- Load More Button -->
-      <div v-if="hasMore" class="load-more">
+      <div v-if="props.hasMore" class="load-more">
         <button @click="$emit('load-more')" :disabled="loading">
           {{ loading ? 'Loading...' : 'Load earlier messages' }}
         </button>
@@ -76,6 +76,7 @@ const props = defineProps<{
   messages: Message[];
   typingUsers: Array<{ userId: number; userName: string }>;
   loading: boolean;
+  hasMore: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -92,7 +93,6 @@ const messagesContainer = ref<HTMLElement>();
 const messageText = ref('');
 const isTyping = ref(false);
 const typingTimeout = ref<NodeJS.Timeout>();
-const hasMore = ref(true);
 
 const typingText = computed(() => {
   if (props.typingUsers.length === 0) return '';
@@ -146,7 +146,7 @@ function handleScroll() {
   if (!messagesContainer.value) return;
   
   // Check if scrolled to top
-  if (messagesContainer.value.scrollTop === 0 && hasMore.value && !props.loading) {
+  if (messagesContainer.value.scrollTop === 0 && props.hasMore && !props.loading) {
     emit('load-more');
   }
 }
