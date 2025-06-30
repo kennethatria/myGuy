@@ -457,16 +457,20 @@ async function createItem() {
   
   // Additional safety check for numeric fields
   if (!newItem.value.is_auction) {
-    if (!newItem.value.price || newItem.value.price === '' || parseFloat(newItem.value.price) <= 0) {
-      alert('Please enter a valid price greater than 0');
+    const priceValue = parseFloat(newItem.value.price);
+    if (!newItem.value.price || newItem.value.price === '' || isNaN(priceValue) || priceValue < 1) {
+      alert('Please enter a valid price greater than or equal to 1 UGX');
       return;
     }
   } else {
-    if (!newItem.value.starting_bid || newItem.value.starting_bid === '' || parseFloat(newItem.value.starting_bid) <= 0) {
-      alert('Please enter a valid starting bid greater than 0');
+    const startingBidValue = parseFloat(newItem.value.starting_bid);
+    const bidIncrementValue = parseFloat(newItem.value.bid_increment);
+    
+    if (!newItem.value.starting_bid || newItem.value.starting_bid === '' || isNaN(startingBidValue) || startingBidValue < 1) {
+      alert('Please enter a valid starting bid greater than or equal to 1 UGX');
       return;
     }
-    if (!newItem.value.bid_increment || newItem.value.bid_increment === '' || parseFloat(newItem.value.bid_increment) < 500) {
+    if (!newItem.value.bid_increment || newItem.value.bid_increment === '' || isNaN(bidIncrementValue) || bidIncrementValue < 500) {
       alert('Please enter a valid bid increment of at least 500 UGX');
       return;
     }
@@ -490,14 +494,13 @@ async function createItem() {
       isAuction: isAuction
     });
     
-    // Prepare JSON payload
+    // Prepare JSON payload - match backend expectations
     const jsonPayload = {
       title: title,
       description: description,
       category: category,
-      condition: condition,
-      is_auction: isAuction,
-      price_type: isAuction ? "auction" : "fixed"
+      condition: condition === "like_new" ? "like-new" : condition, // Fix condition format
+      price_type: isAuction ? "bidding" : "fixed" // Backend expects "bidding", not "auction"
     };
     
     if (newItem.value.is_auction) {
@@ -518,34 +521,52 @@ async function createItem() {
       });
       
       jsonPayload.starting_bid = startingBid;
-      jsonPayload.bid_increment = bidIncrement;
+      jsonPayload.min_bid_increment = bidIncrement; // Backend expects "min_bid_increment", not "bid_increment"
     } else {
       // Clean and validate price
       let priceStr = String(newItem.value.price || '0').replace(/[^0-9.]/g, '');
       let price = parseFloat(priceStr) || 0;
       
       // Ensure positive value and round to integer
-      price = Math.max(0, Math.round(price));
+      price = Math.max(1, Math.round(price)); // Changed from Math.max(0, ...) to Math.max(1, ...)
       
       console.log('Fixed price value:', { 
-        finalPrice: price 
+        originalValue: newItem.value.price,
+        cleanedString: priceStr,
+        finalPrice: price,
+        priceType: typeof price
       });
       
-      jsonPayload.price = price;
+      jsonPayload.fixed_price = price; // Backend expects "fixed_price", not "price"
     }
     
     console.log('📦 JSON Payload to send:', JSON.stringify(jsonPayload, null, 2));
     
-    // Try sending as JSON first (without images)
-    console.log('🚀 Sending JSON request to:', 'http://localhost:8081/api/v1/items');
+    // Convert JSON to FormData since backend expects form data
+    const formData = new FormData();
+    
+    // Add all fields as form data
+    Object.keys(jsonPayload).forEach(key => {
+      if (jsonPayload[key] !== undefined && jsonPayload[key] !== null) {
+        formData.append(key, String(jsonPayload[key]));
+      }
+    });
+    
+    // Debug FormData
+    console.log('📦 FormData entries:');
+    for (let [key, value] of formData.entries()) {
+      console.log(`${key}: ${value} (${typeof value})`);
+    }
+    
+    console.log('🚀 Sending FormData request to:', 'http://localhost:8081/api/v1/items');
     
     const response = await fetch('http://localhost:8081/api/v1/items', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Content-Type': 'application/json'
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+        // Don't set Content-Type for FormData - browser will set it automatically
       },
-      body: JSON.stringify(jsonPayload)
+      body: formData
     });
     
     console.log('Response status:', response.status);
