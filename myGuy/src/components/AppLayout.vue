@@ -25,52 +25,14 @@
             </div>
           </div>
 
-          <div class="user-profile">
-            <!-- Profile dropdown -->
-            <div class="profile-dropdown">
-              <button
-                @click="isProfileMenuOpen = !isProfileMenuOpen"
-                type="button"
-                class="user-avatar"
-                id="user-menu-button"
-                aria-expanded="false"
-                aria-haspopup="true"
-              >
-                <span v-if="user?.fullName">{{ userInitials }}</span>
-                <span v-else class="user-icon">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="w-4 h-4">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                </span>
-              </button>
-
-              <transition name="fade">
-                <div
-                  v-if="isProfileMenuOpen"
-                  class="user-menu"
-                  role="menu"
-                  aria-orientation="vertical"
-                  aria-labelledby="user-menu-button"
-                >
-                  <router-link
-                    v-for="item in profileMenu"
-                    :key="item.name"
-                    :to="item.to"
-                    class="menu-item"
-                    @click="isProfileMenuOpen = false"
-                  >
-                    {{ item.text }}
-                  </router-link>
-                  <a
-                    href="#"
-                    class="menu-item"
-                    @click="handleSignOut"
-                  >
-                    Sign out
-                  </a>
-                </div>
-              </transition>
-            </div>
+          <div class="nav-end">
+            <!-- Logout button -->
+            <button
+              @click="handleSignOut"
+              class="logout-btn"
+            >
+              Sign out
+            </button>
           </div>
 
           <!-- Mobile menu button -->
@@ -110,24 +72,12 @@
           </div>
           <div class="mobile-profile-section">
             <div class="mobile-user-info">
-              <div class="mobile-avatar">
-                {{ userInitials }}
-              </div>
               <div class="mobile-user-details">
                 <div class="user-name">{{ user?.fullName || 'User' }}</div>
                 <div class="user-email">{{ user?.email || 'user@example.com' }}</div>
               </div>
             </div>
             <div class="mobile-menu-items">
-              <router-link
-                v-for="item in profileMenu"
-                :key="item.name"
-                :to="item.to"
-                class="mobile-menu-link"
-                @click="isMobileMenuOpen = false"
-              >
-                {{ item.text }}
-              </router-link>
               <a
                 href="#"
                 class="mobile-menu-link"
@@ -165,7 +115,6 @@ interface User {
 const router = useRouter()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
-const isProfileMenuOpen = ref(false)
 const isMobileMenuOpen = ref(false)
 
 const user = computed(() => authStore.user)
@@ -179,22 +128,9 @@ const navigation = [
   { name: 'messages', to: { name: 'messages' }, text: 'Messages' }
 ]
 
-const profileMenu = [
-  { name: 'profile', to: { name: 'profile' }, text: 'Your Profile' }
-]
-
-const userInitials = computed(() => {
-  if (!user.value?.fullName) return '?'
-  return user.value.fullName
-    .split(' ')
-    .map(n => n[0])
-    .join('')
-    .toUpperCase()
-})
-
 const handleSignOut = async () => {
   try {
-    isProfileMenuOpen.value = false // Close the menu
+    isMobileMenuOpen.value = false // Close the mobile menu
     authStore.logout() // Clear the auth state
     await router.push({ name: 'login' }) // Redirect to login page
   } catch (error) {

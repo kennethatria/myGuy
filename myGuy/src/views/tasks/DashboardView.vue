@@ -1,5 +1,12 @@
 <template>
   <div class="dashboard-container">
+    <!-- Page Header -->
+    <div class="page-header">
+      <h1 class="page-title">My Dashboard</h1>
+      <router-link :to="{ name: 'create-task' }" class="btn btn-primary">
+        + Post New Gig
+      </router-link>
+    </div>
 
     <!-- Loading and error states -->
     <div v-if="isLoading" class="card p-4 mb-4 text-center">
@@ -24,6 +31,27 @@
     <div v-else>
       <!-- Stats Cards -->
       <div class="stats-section">
+        <div class="stat-card created">
+          <div class="stat-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L2 7V12C2 16.5 4.5 20.5 12 22C19.5 20.5 22 16.5 22 12V7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="stat-value">{{ stats.createdTasks }}</div>
+          <div class="stat-label">Created Gigs</div>
+        </div>
+        
+        <div class="stat-card assigned">
+          <div class="stat-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path d="M16 21V19C16 17.9391 15.5786 16.9217 14.8284 16.1716C14.0783 15.4214 13.0609 15 12 15H5C3.93913 15 2.92172 15.4214 2.17157 16.1716C1.42143 16.9217 1 17.9391 1 19V21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="8.5" cy="7" r="4" stroke="currentColor" stroke-width="2"/>
+            </svg>
+          </div>
+          <div class="stat-value">{{ stats.assignedTasks }}</div>
+          <div class="stat-label">Assigned to Me</div>
+        </div>
+        
         <div class="stat-card completed">
           <div class="stat-icon">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -33,174 +61,117 @@
           <div class="stat-value">{{ stats.completedTasks }}</div>
           <div class="stat-label">Completed</div>
         </div>
-        
-        <div class="stat-card certificates">
-          <div class="stat-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <path d="M12 2L2 7V12C2 16.5 4.5 20.5 12 22C19.5 20.5 22 16.5 22 12V7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </div>
-          <div class="stat-value">{{ stats.assignedTasks }}</div>
-          <div class="stat-label">Certificates</div>
-        </div>
-        
-        <div class="stat-card achievements">
-          <div class="stat-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <path d="M12 15L9.5 17.5L10.5 20.5L12 19L13.5 20.5L14.5 17.5L12 15Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              <circle cx="12" cy="8" r="6" stroke="currentColor" stroke-width="2"/>
-            </svg>
-          </div>
-          <div class="stat-value">{{ stats.createdTasks }}</div>
-          <div class="stat-label">Achievements</div>
-        </div>
       </div>
-    </div>
 
-    <!-- Recommended Tasks -->
-    <div v-if="!isLoading && !error">
-      <section class="tasks-section">
-        <h2 class="section-title">Recommended for you</h2>
-        <div v-if="recommendedTasks.length > 0" class="tasks-grid">
-          <div 
-            v-for="task in recommendedTasks" 
-            :key="task.id"
-            class="task-card"
-            @click="navigateToTask(task.id)"
+      <!-- Tab Navigation -->
+      <div class="tabs-section">
+        <div class="tab-nav">
+          <button 
+            class="tab-button" 
+            :class="{ active: activeTab === 'created' }"
+            @click="activeTab = 'created'"
           >
-            <div class="task-image">
-              <img v-if="getTaskImage(task)" :src="getTaskImage(task)" alt="Task image" />
-              <div v-else class="task-image-placeholder">
-                <span>{{ task.title.charAt(0).toUpperCase() }}</span>
-              </div>
-            </div>
-            <div class="task-info">
-              <div class="task-meta">
-                <span class="task-category">{{ getTaskCategory(task) }}</span>
-                <span class="task-fee">${{ task.fee || 0 }}</span>
-              </div>
-              <h3 class="task-title">{{ task.title }}</h3>
-              <p class="task-creator">{{ task.creator?.username || 'Anonymous' }}</p>
-              <div class="task-rating">
-                <span class="stars">⭐</span>
-                <span class="rating-value">{{ task.rating || 4.3 }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div v-else class="empty-state">
-          <p>No recommended tasks available at the moment.</p>
-          <router-link :to="{ name: 'tasks' }" class="btn btn-primary">Browse All Gigs</router-link>
-        </div>
-      </section>
-
-      <!-- Popular Tasks -->
-      <section class="tasks-section">
-        <h2 class="section-title">Popular tasks</h2>
-        <div v-if="popularTasks.length > 0" class="tasks-grid">
-          <div 
-            v-for="task in popularTasks" 
-            :key="task.id"
-            class="task-card"
-            @click="navigateToTask(task.id)"
+            My Created Gigs
+          </button>
+          <button 
+            class="tab-button" 
+            :class="{ active: activeTab === 'assigned' }"
+            @click="activeTab = 'assigned'"
           >
-            <div class="task-image">
-              <img v-if="getTaskImage(task)" :src="getTaskImage(task)" alt="Task image" />
-              <div v-else class="task-image-placeholder" :style="{ backgroundColor: getRandomColor() }">
-                <span>{{ task.title.charAt(0).toUpperCase() }}</span>
-              </div>
-            </div>
-            <div class="task-info">
-              <div class="task-meta">
-                <span class="task-category">{{ getTaskCategory(task) }}</span>
-                <span class="task-fee">${{ task.fee || 0 }}</span>
-              </div>
-              <h3 class="task-title">{{ task.title }}</h3>
-              <p class="task-creator">{{ task.creator?.username || 'Anonymous' }}</p>
-              <div class="task-rating">
-                <span class="stars">⭐</span>
-                <span class="rating-value">{{ task.rating || 4.3 }}</span>
-              </div>
-            </div>
-          </div>
+            Gigs Assigned to Me
+          </button>
         </div>
-        <div v-else class="empty-state">
-          <p>No popular tasks available at the moment.</p>
-          <router-link :to="{ name: 'tasks' }" class="btn btn-primary">Browse All Gigs</router-link>
-        </div>
-      </section>
-    </div>
 
-    <!-- Original Gig lists (hidden) -->
-    <div v-if="false" class="row">
-      <!-- Posted Gigs -->
-      <div class="col">
-        <h2 class="mb-3">Gigs Posted by Me</h2>
-        <div class="card mb-4">
-          <div v-if="createdTasks.length === 0" class="p-4 text-center">
-            <p>No gigs posted yet.</p>
-          </div>
-          <ul v-else class="divide-y">
-            <li v-for="task in createdTasks" :key="task.id">
-              <router-link :to="{ name: 'task-detail', params: { id: task.id }}" class="block p-4 hover-card">
-                <div class="flex justify-between items-center mb-2">
-                  <h4 class="font-semibold text-primary">{{ task.title }}</h4>
+        <!-- Tab Content -->
+        <div class="tab-content">
+          <!-- My Created Gigs Tab -->
+          <div v-if="activeTab === 'created'" class="tab-pane">
+            <div v-if="createdTasks.length === 0" class="empty-state">
+              <div class="empty-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+                  <path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.89 22 5.99 22H18C19.1 22 20 21.1 20 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <polyline points="14,2 14,8 20,8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <line x1="16" y1="13" x2="8" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <polyline points="10,9 9,9 8,9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <h3>No gigs created yet</h3>
+              <p>Start by posting your first gig and connect with talented freelancers.</p>
+              <router-link :to="{ name: 'create-task' }" class="btn btn-primary">Post Your First Gig</router-link>
+            </div>
+            <div v-else class="task-list">
+              <div 
+                v-for="task in createdTasks" 
+                :key="task.id"
+                class="task-item"
+                @click="navigateToTask(task.id)"
+              >
+                <div class="task-header">
+                  <h3 class="task-title">{{ task.title }}</h3>
                   <span class="badge" :class="'badge-' + task.status">
                     {{ task.status.replace('_', ' ') }}
                   </span>
                 </div>
-                <div class="flex justify-between items-start">
-                  <p class="text-sm truncate mb-0" style="max-width: 65%;">
-                    {{ task.description }}
-                  </p>
-                  <div class="text-sm text-right ml-2">
-                    <strong>Due:</strong> {{ formatDate(task.deadline) }}
+                <p class="task-description">{{ task.description }}</p>
+                <div class="task-footer">
+                  <div class="task-meta">
+                    <span class="task-fee">${{ task.fee || 0 }}</span>
+                    <span class="task-deadline">Due: {{ formatDate(task.deadline) }}</span>
+                  </div>
+                  <div class="task-stats">
+                    <span v-if="task.applications?.length" class="applications-count">
+                      {{ task.applications.length }} applications
+                    </span>
                   </div>
                 </div>
-              </router-link>
-            </li>
-          </ul>
-        </div>
-      </div>
+              </div>
+            </div>
+          </div>
 
-      <!-- Assigned Gigs -->
-      <div class="col">
-        <h2 class="mb-3">Gigs Assigned to Me</h2>
-        <div class="card">
-          <div v-if="assignedTasks.length === 0" class="p-4 text-center">
-            <p>No gigs assigned yet.</p>
-          </div>
-          <div v-else-if="debug" class="p-4 bg-blue-50">
-            <h4 class="font-semibold">Debug Info (admin only)</h4>
-            <pre class="text-xs overflow-auto mt-2 p-2 bg-gray-100 rounded">{{ JSON.stringify(assignedTasks, null, 2) }}</pre>
-          </div>
-          <ul v-else class="divide-y">
-            <li v-for="task in assignedTasks" :key="task.id">
-              <router-link :to="{ name: 'task-detail', params: { id: task.id }}" class="block p-4 hover-card">
-                <div class="flex justify-between items-center mb-2">
-                  <h4 class="font-semibold text-primary">{{ task.title }}</h4>
+          <!-- Gigs Assigned to Me Tab -->
+          <div v-if="activeTab === 'assigned'" class="tab-pane">
+            <div v-if="assignedTasks.length === 0" class="empty-state">
+              <div class="empty-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+                  <path d="M16 21V19C16 17.9391 15.5786 16.9217 14.8284 16.1716C14.0783 15.4214 13.0609 15 12 15H5C3.93913 15 2.92172 15.4214 2.17157 16.1716C1.42143 16.9217 1 17.9391 1 19V21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <circle cx="8.5" cy="7" r="4" stroke="currentColor" stroke-width="2"/>
+                  <path d="M20 8V13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M23 11L20 8L17 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <h3>No gigs assigned yet</h3>
+              <p>Browse available gigs and apply to start working on exciting projects.</p>
+              <router-link :to="{ name: 'tasks' }" class="btn btn-primary">Browse Available Gigs</router-link>
+            </div>
+            <div v-else class="task-list">
+              <div 
+                v-for="task in assignedTasks" 
+                :key="task.id"
+                class="task-item"
+                @click="navigateToTask(task.id)"
+              >
+                <div class="task-header">
+                  <h3 class="task-title">{{ task.title }}</h3>
                   <span class="badge" :class="'badge-' + task.status">
                     {{ task.status.replace('_', ' ') }}
                   </span>
                 </div>
-                <div class="flex justify-between items-start">
-                  <p class="text-sm truncate mb-0" style="max-width: 65%;">
-                    {{ task.description }}
-                  </p>
-                  <div class="text-sm text-right ml-2">
-                    <strong>Due:</strong> {{ formatDate(task.deadline) }}
+                <p class="task-description">{{ task.description }}</p>
+                <div class="task-footer">
+                  <div class="task-meta">
+                    <span class="task-fee">${{ task.fee || 0 }}</span>
+                    <span class="task-deadline">Due: {{ formatDate(task.deadline) }}</span>
+                  </div>
+                  <div class="task-creator">
+                    <span>Created by: {{ task.creator?.username || 'Anonymous' }}</span>
                   </div>
                 </div>
-              </router-link>
-            </li>
-          </ul>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-    
-    <!-- Empty state for mobile view testing -->
-    <div v-if="false" class="mt-4">
-      <p class="text-center text-gray">This is an empty placeholder view for testing responsiveness.</p>
     </div>
   </div>
 </template>
@@ -236,10 +207,7 @@ const tasksStore = useTasksStore()
 const router = useRouter()
 const isLoading = ref(false)
 const error = ref('')
-const debug = ref(false) // Set to false to hide debug info
-
-const recommendedTasks = ref<Task[]>([])
-const popularTasks = ref<Task[]>([])
+const activeTab = ref<'created' | 'assigned'>('created')
 
 const redirectToLogin = () => {
   const authStore = useAuthStore()
@@ -281,89 +249,6 @@ const navigateToTask = (taskId: number) => {
   router.push({ name: 'task-detail', params: { id: taskId } })
 }
 
-const getTaskImage = (task: Task) => {
-  // Return null for now, could be extended to return actual task images
-  return null
-}
-
-const getTaskCategory = (task: Task) => {
-  // Simple category determination based on keywords in title/description
-  const text = (task.title + ' ' + task.description).toLowerCase()
-  if (text.includes('design') || text.includes('logo')) return 'Design'
-  if (text.includes('web') || text.includes('app') || text.includes('code')) return 'Development'
-  if (text.includes('write') || text.includes('content')) return 'Writing'
-  if (text.includes('data') || text.includes('analysis')) return 'Data Analysis'
-  return 'General'
-}
-
-const getRandomColor = () => {
-  const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', '#B983FF', '#FD79A8', '#A0E7E5']
-  return colors[Math.floor(Math.random() * colors.length)]
-}
-
-// Load sample data for development
-const loadSampleData = () => {
-  // Generated sample data
-  const sampleTasks = [
-    {
-      id: 1,
-      title: "Website Redesign",
-      description: "Looking for a skilled web designer to refresh our company site with modern UI elements and improved user flow.",
-      status: "open",
-      createdBy: 1,
-      deadline: "2023-12-31T00:00:00Z",
-      created_at: "2023-09-15T10:30:00Z",
-    },
-    {
-      id: 2,
-      title: "Mobile App Bug Fixes",
-      description: "Need developer to fix several critical bugs in our iOS application. Familiarity with Swift required.",
-      status: "in_progress",
-      createdBy: 1,
-      assignedTo: 2,
-      deadline: "2023-11-15T00:00:00Z",
-      created_at: "2023-09-10T14:20:00Z",
-    },
-    {
-      id: 3,
-      title: "Content Writing for Blog",
-      description: "Create five SEO-optimized blog posts about digital marketing trends.",
-      status: "completed",
-      createdBy: 1,
-      assignedTo: 3,
-      deadline: "2023-10-01T00:00:00Z",
-      created_at: "2023-08-25T09:15:00Z",
-    }
-  ]
-  
-  // Replace store data with sample data
-  tasksStore.userTasks = sampleTasks
-  
-  // Sample assigned tasks
-  tasksStore.assignedTasks = [
-    {
-      id: 4,
-      title: "Logo Design for Startup",
-      description: "Create a modern logo for a tech startup focusing on AI solutions.",
-      status: "open",
-      createdBy: 2,
-      assignedTo: 1,
-      deadline: "2023-11-30T00:00:00Z",
-      created_at: "2023-09-18T11:45:00Z",
-    },
-    {
-      id: 5,
-      title: "Data Analysis Project",
-      description: "Analyze customer data and create visualization dashboard using Python and Tableau.",
-      status: "in_progress",
-      createdBy: 3,
-      assignedTo: 1,
-      deadline: "2023-12-15T00:00:00Z",
-      created_at: "2023-09-05T16:30:00Z",
-    }
-  ]
-}
-
 const fetchDashboardData = async () => {
   isLoading.value = true
   error.value = ''
@@ -390,34 +275,6 @@ const fetchDashboardData = async () => {
       tasksStore.fetchUserTasks(),
       tasksStore.fetchAssignedTasks()
     ])
-    
-    // Fetch recommended and popular tasks
-    try {
-      const allTasks = await tasksStore.fetchTasks({
-        status: 'open',
-        sort_by: 'created_at',
-        sort_order: 'desc',
-        per_page: 8
-      })
-      
-      // Split tasks for recommended and popular sections
-      if (allTasks && allTasks.data && Array.isArray(allTasks.data)) {
-        recommendedTasks.value = allTasks.data.slice(0, 4)
-        popularTasks.value = allTasks.data.slice(4, 8)
-      } else if (allTasks && Array.isArray(allTasks)) {
-        // Handle case where allTasks is directly an array
-        recommendedTasks.value = allTasks.slice(0, 4)
-        popularTasks.value = allTasks.slice(4, 8)
-      }
-    } catch (err) {
-      console.error('Failed to fetch recommended tasks:', err)
-      // Set empty arrays on error
-      recommendedTasks.value = []
-      popularTasks.value = []
-    }
-    
-    // If the backend is down or no data is available, uncomment this for testing:
-    // loadSampleData()
   } catch (err: any) {
     console.error('Failed to fetch dashboard data:', err)
     
@@ -444,37 +301,55 @@ onMounted(async () => {
   padding: 2rem;
 }
 
+/* Page Header */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.page-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #212529;
+  margin: 0;
+}
+
 /* Stats Section */
 .stats-section {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1.5rem;
   margin-bottom: 3rem;
 }
 
 .stat-card {
-  background: #E3F2FD;
+  background: white;
   border-radius: 12px;
-  padding: 2rem;
+  padding: 1.5rem;
   text-align: center;
   transition: transform 0.2s;
   cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border: 2px solid transparent;
 }
 
 .stat-card:hover {
   transform: translateY(-4px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.stat-card.created {
+  border-color: #4CAF50;
+}
+
+.stat-card.assigned {
+  border-color: #2196F3;
 }
 
 .stat-card.completed {
-  background: #E8F5E9;
-}
-
-.stat-card.certificates {
-  background: #E3F2FD;
-}
-
-.stat-card.achievements {
-  background: #FFF3E0;
+  border-color: #FF9800;
 }
 
 .stat-icon {
@@ -505,93 +380,92 @@ onMounted(async () => {
   font-weight: 500;
 }
 
-/* Tasks Section */
-.tasks-section {
-  margin-bottom: 3rem;
-}
-
-.section-title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #212529;
-  margin-bottom: 1.5rem;
-}
-
-.tasks-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1.5rem;
-}
-
-.task-card {
+/* Tabs Section */
+.tabs-section {
   background: white;
   border-radius: 12px;
-  overflow: hidden;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.task-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-}
-
-.task-image {
-  height: 160px;
-  background: #f8f9fa;
-  position: relative;
   overflow: hidden;
 }
 
-.task-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.task-image-placeholder {
-  width: 100%;
-  height: 100%;
+.tab-nav {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  font-size: 3rem;
-  font-weight: 700;
-  color: white;
+  border-bottom: 1px solid #e9ecef;
 }
 
-.task-info {
-  padding: 1.25rem;
+.tab-button {
+  flex: 1;
+  padding: 1rem 2rem;
+  background: none;
+  border: none;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #6c757d;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-bottom: 3px solid transparent;
 }
 
-.task-meta {
+.tab-button:hover {
+  background: #f8f9fa;
+  color: #495057;
+}
+
+.tab-button.active {
+  color: #1976d2;
+  border-bottom-color: #1976d2;
+  background: #f8f9fa;
+}
+
+.tab-content {
+  min-height: 400px;
+}
+
+.tab-pane {
+  padding: 2rem;
+}
+
+/* Task List */
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.task-item {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-left: 4px solid #dee2e6;
+}
+
+.task-item:hover {
+  background: #e9ecef;
+  border-left-color: #1976d2;
+}
+
+.task-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 0.75rem;
-  font-size: 0.875rem;
-}
-
-.task-category {
-  color: #6c757d;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.task-fee {
-  font-weight: 600;
-  color: #212529;
 }
 
 .task-title {
-  font-size: 1.125rem;
+  font-size: 1.25rem;
   font-weight: 600;
   color: #212529;
-  margin-bottom: 0.5rem;
-  line-height: 1.4;
+  margin: 0;
+  flex: 1;
+  margin-right: 1rem;
+}
+
+.task-description {
+  color: #6c757d;
+  margin-bottom: 1rem;
+  line-height: 1.5;
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -599,27 +473,74 @@ onMounted(async () => {
   -webkit-box-orient: vertical;
 }
 
-.task-creator {
+.task-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.task-meta {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.task-fee {
+  font-weight: 600;
+  color: #28a745;
+  font-size: 1.1rem;
+}
+
+.task-deadline {
   color: #6c757d;
   font-size: 0.875rem;
-  margin-bottom: 1rem;
 }
 
-.task-rating {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.stars {
-  color: #ffc107;
-  font-size: 1rem;
-}
-
-.rating-value {
-  color: #212529;
-  font-weight: 600;
+.task-stats, .task-creator {
+  color: #6c757d;
   font-size: 0.875rem;
+}
+
+.applications-count {
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* Badge Styles */
+.badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 50px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-open {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.badge-in_progress {
+  background: #fff3e0;
+  color: #f57c00;
+}
+
+.badge-completed {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.badge-cancelled {
+  background: #ffebee;
+  color: #d32f2f;
 }
 
 /* Loading and Error States */
@@ -641,13 +562,33 @@ onMounted(async () => {
 /* Empty State */
 .empty-state {
   text-align: center;
-  padding: 3rem 2rem;
+  padding: 4rem 2rem;
   color: #6c757d;
 }
 
+.empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #f8f9fa;
+  margin-bottom: 1.5rem;
+  color: #adb5bd;
+}
+
+.empty-state h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #495057;
+  margin-bottom: 0.5rem;
+}
+
 .empty-state p {
-  margin-bottom: 1rem;
+  margin-bottom: 2rem;
   font-size: 1rem;
+  line-height: 1.5;
 }
 
 .btn {

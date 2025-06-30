@@ -72,18 +72,54 @@
             </div>
 
             <div class="form-group">
-              <label for="deadline" class="form-label">Deadline</label>
-              <input
-                type="datetime-local"
-                name="deadline"
-                id="deadline"
-                v-model="task.deadline"
-                :min="minDeadlineString"
-                class="form-input"
-                :class="{ 'is-invalid': formErrors.deadline }"
-                required
-              />
-              <p class="form-helper">Deadline must be at least one day in the future</p>
+              <label class="form-label">Deadline</label>
+              
+              <!-- Quick preset options -->
+              <div class="deadline-presets">
+                <button
+                  type="button"
+                  v-for="preset in deadlinePresets"
+                  :key="preset.label"
+                  @click="setDeadlinePreset(preset.days)"
+                  class="preset-btn"
+                  :class="{ 'active': isPresetActive(preset.days) }"
+                >
+                  {{ preset.label }}
+                </button>
+              </div>
+
+              <!-- Custom date and time inputs -->
+              <div class="datetime-inputs">
+                <div class="date-input-group">
+                  <label for="deadline-date" class="input-label">Date</label>
+                  <input
+                    type="date"
+                    id="deadline-date"
+                    v-model="deadlineDate"
+                    :min="minDeadlineDate"
+                    class="form-input"
+                    :class="{ 'is-invalid': formErrors.deadline }"
+                    required
+                  />
+                </div>
+                <div class="time-input-group">
+                  <label for="deadline-time" class="input-label">Time</label>
+                  <select
+                    id="deadline-time"
+                    v-model="deadlineTime"
+                    class="form-input"
+                    :class="{ 'is-invalid': formErrors.deadline }"
+                    required
+                  >
+                    <option value="">Select time</option>
+                    <option v-for="time in timeOptions" :key="time.value" :value="time.value">
+                      {{ time.label }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <p class="form-helper">Choose a deadline at least 24 hours from now</p>
               <div v-if="formErrors.deadline" class="invalid-feedback">{{ formErrors.deadline }}</div>
             </div>
 
@@ -116,7 +152,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTasksStore } from '@/stores/tasks'
 
@@ -154,6 +190,92 @@ const task = ref({
   description: '',
   fee: null as number | null,
   deadline: minDeadlineString.value // Initialize with the minimum valid date
+})
+
+// Separate deadline components for better UX
+const deadlineDate = ref('')
+const deadlineTime = ref('')
+
+// Preset deadline options
+const deadlinePresets = [
+  { label: '1 Day', days: 1 },
+  { label: '3 Days', days: 3 },
+  { label: '1 Week', days: 7 },
+  { label: '2 Weeks', days: 14 },
+  { label: '1 Month', days: 30 }
+]
+
+// Time options in 30-minute intervals
+const timeOptions = [
+  { value: '09:00', label: '9:00 AM' },
+  { value: '09:30', label: '9:30 AM' },
+  { value: '10:00', label: '10:00 AM' },
+  { value: '10:30', label: '10:30 AM' },
+  { value: '11:00', label: '11:00 AM' },
+  { value: '11:30', label: '11:30 AM' },
+  { value: '12:00', label: '12:00 PM' },
+  { value: '12:30', label: '12:30 PM' },
+  { value: '13:00', label: '1:00 PM' },
+  { value: '13:30', label: '1:30 PM' },
+  { value: '14:00', label: '2:00 PM' },
+  { value: '14:30', label: '2:30 PM' },
+  { value: '15:00', label: '3:00 PM' },
+  { value: '15:30', label: '3:30 PM' },
+  { value: '16:00', label: '4:00 PM' },
+  { value: '16:30', label: '4:30 PM' },
+  { value: '17:00', label: '5:00 PM' },
+  { value: '17:30', label: '5:30 PM' },
+  { value: '18:00', label: '6:00 PM' },
+  { value: '18:30', label: '6:30 PM' },
+  { value: '19:00', label: '7:00 PM' },
+  { value: '19:30', label: '7:30 PM' },
+  { value: '20:00', label: '8:00 PM' },
+  { value: '20:30', label: '8:30 PM' },
+  { value: '21:00', label: '9:00 PM' }
+]
+
+// Minimum deadline date (tomorrow)
+const minDeadlineDate = computed(() => {
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  return tomorrow.toISOString().split('T')[0]
+})
+
+// Methods for deadline management
+const setDeadlinePreset = (days: number) => {
+  const presetDate = new Date()
+  presetDate.setDate(presetDate.getDate() + days)
+  
+  deadlineDate.value = presetDate.toISOString().split('T')[0]
+  deadlineTime.value = '17:00' // Default to 5:00 PM
+  
+  updateTaskDeadline()
+}
+
+const isPresetActive = (days: number): boolean => {
+  if (!deadlineDate.value || !deadlineTime.value) return false
+  
+  const selectedDate = new Date(`${deadlineDate.value}T${deadlineTime.value}`)
+  const presetDate = new Date()
+  presetDate.setDate(presetDate.getDate() + days)
+  presetDate.setHours(17, 0, 0, 0) // 5:00 PM
+  
+  return Math.abs(selectedDate.getTime() - presetDate.getTime()) < 60000 // Within 1 minute
+}
+
+const updateTaskDeadline = () => {
+  if (deadlineDate.value && deadlineTime.value) {
+    const combinedDateTime = new Date(`${deadlineDate.value}T${deadlineTime.value}`)
+    task.value.deadline = formatDatetimeLocal(combinedDateTime)
+  }
+}
+
+// Watch for changes in date/time inputs
+watch([deadlineDate, deadlineTime], updateTaskDeadline)
+
+// Initialize deadline with 1 week preset
+onMounted(() => {
+  setDeadlinePreset(7) // Default to 1 week from now
 })
 
 const validateDeadline = (deadlineStr: string): boolean => {
@@ -208,11 +330,11 @@ const validateForm = (): boolean => {
   }
   
   // Validate deadline
-  if (!task.value.deadline) {
-    formErrors.value.deadline = 'Deadline is required'
+  if (!deadlineDate.value || !deadlineTime.value) {
+    formErrors.value.deadline = 'Please select both date and time for the deadline'
     isValid = false
   } else if (!validateDeadline(task.value.deadline)) {
-    formErrors.value.deadline = 'Deadline must be at least one day in the future'
+    formErrors.value.deadline = 'Deadline must be at least 24 hours in the future'
     isValid = false
   }
   
@@ -253,3 +375,73 @@ const handleSubmit = async () => {
   }
 }
 </script>
+
+<style scoped>
+/* Deadline preset buttons */
+.deadline-presets {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.preset-btn {
+  padding: 0.5rem 1rem;
+  border: 2px solid #e9ecef;
+  background: white;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #6c757d;
+}
+
+.preset-btn:hover {
+  border-color: #1976d2;
+  color: #1976d2;
+}
+
+.preset-btn.active {
+  background: #1976d2;
+  border-color: #1976d2;
+  color: white;
+}
+
+/* Date and time input layout */
+.datetime-inputs {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.date-input-group,
+.time-input-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.input-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 0.25rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  .deadline-presets {
+    flex-direction: column;
+  }
+  
+  .preset-btn {
+    width: 100%;
+    text-align: center;
+  }
+  
+  .datetime-inputs {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

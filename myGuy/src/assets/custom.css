@@ -779,6 +779,27 @@ input[type="datetime-local"].form-input {
   border-bottom-color: var(--color-primary);
 }
 
+.nav-end {
+  display: flex;
+  align-items: center;
+}
+
+.logout-btn {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.logout-btn:hover {
+  background: var(--color-primary-dark);
+  transform: translateY(-1px);
+}
+
 /* User Profile and Mobile Menu */
 .user-profile {
   display: flex;
