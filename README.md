@@ -419,6 +419,63 @@ Ensure PostgreSQL container is healthy before other services start:
 docker-compose logs postgres-db
 ```
 
+## ☁️ Infrastructure & Deployment
+
+### **Akamai Cloud Infrastructure**
+
+MyGuy is designed for deployment on Akamai Cloud with cost-optimized architecture:
+
+**Production Environment** (~€39/month):
+- 1x Linode Standard 2GB Instance (€9/month)
+- 1x Managed PostgreSQL 1GB (€15/month)
+- 1x Object Storage 250GB (€5/month)
+- 1x Load Balancer with SSL (€10/month)
+
+**Staging Environment** (~€7/month):
+- 1x Linode Nanode 1GB Instance (€4.50/month)
+- Shared PostgreSQL database
+- Object Storage 50GB (€2.50/month)
+
+### **Automated Deployment**
+
+GitHub Actions workflows handle automatic deployment:
+
+- **Staging**: Deploys on every PR to `main` → `staging.myguy.work`
+- **Production**: Deploys on merge to `main` → `myguy.work`
+- **Infrastructure**: Terraform manages all cloud resources
+
+### **Quick Deployment Setup**
+
+1. **Configure GitHub Secrets**:
+```bash
+LINODE_TOKEN=your_api_token
+SSH_PUBLIC_KEY=your_ssh_public_key
+SSH_PRIVATE_KEY=your_ssh_private_key
+JWT_SECRET=your_jwt_secret
+POSTGRES_PASSWORD=your_db_password
+```
+
+2. **Deploy Infrastructure**:
+```bash
+cd terraform
+terraform init
+terraform apply -var-file="environments/production/terraform.tfvars"
+```
+
+3. **Configure DNS**:
+- Point `myguy.work` to load balancer IP
+- Point `staging.myguy.work` to staging instance IP
+
+### **Architecture Benefits**
+
+- **Cost-Effective**: Under €50/month total infrastructure cost
+- **Scalable**: Easy to upgrade instances as user base grows
+- **Automated**: Zero-downtime deployments via GitHub Actions
+- **Secure**: SSL certificates, VPC isolation, firewall rules
+- **Resilient**: Health checks, rollback capabilities, backups
+
+For detailed infrastructure documentation, see [`terraform/README.md`](terraform/README.md).
+
 ## Contributing
 
 1. Fork the repository
