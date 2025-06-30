@@ -143,22 +143,39 @@ const minBidAmount = computed(() => {
 async function loadItem() {
   try {
     loading.value = true;
-    const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}`, {
+    
+    // Validate itemId
+    if (!itemId.value || isNaN(Number(itemId.value))) {
+      throw new Error('Invalid item ID');
+    }
+    
+    console.log('Loading item with ID:', itemId.value);
+    const apiUrl = `http://localhost:8081/api/v1/items/${itemId.value}`;
+    console.log('API URL:', apiUrl);
+    
+    const response = await fetch(apiUrl, {
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
       }
     });
     
+    console.log('Response status:', response.status);
+    
     if (!response.ok) {
-      throw new Error('Failed to load item');
+      const errorData = await response.json().catch(() => ({}));
+      console.error('API Error:', errorData);
+      throw new Error(errorData.error || `HTTP ${response.status}: Failed to load item`);
     }
     
     item.value = await response.json();
+    console.log('Item loaded successfully:', item.value);
     
     if (item.value.is_auction) {
       await loadBids();
     }
   } catch (err) {
+    console.error('Error loading item:', err);
     error.value = err.message;
   } finally {
     loading.value = false;
@@ -167,14 +184,19 @@ async function loadItem() {
 
 async function loadBids() {
   try {
+    console.log('Loading bids for item:', itemId.value);
     const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/bids`, {
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
       }
     });
     
     if (response.ok) {
       bids.value = await response.json();
+      console.log('Bids loaded:', bids.value);
+    } else {
+      console.error('Failed to load bids, status:', response.status);
     }
   } catch (err) {
     console.error('Error loading bids:', err);
