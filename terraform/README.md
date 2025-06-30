@@ -53,17 +53,27 @@ POSTGRES_PASSWORD_PRODUCTION=your_production_db_password
 
 ## 🚀 Deployment Workflows
 
-### Staging Deployment (Automatic)
-- **Trigger**: Every PR to `main` branch
-- **Environment**: `staging.myguy.work`
-- **Cost**: ~€7/month
+### Staging Deployment (Cost-Optimized)
+- **Create Staging**: PR opened to `main` branch → Deploy to `staging.myguy.work`
+- **Update Staging**: PR updated → Redeploy staging
+- **Destroy Staging**: PR closed → Automatic destruction (saves €7/month)
+- **Recreate Staging**: PR reopened → Automatic recreation
+- **Cost**: ~€7/month (only when PRs are active)
 - **Features**: Shared database, no load balancer
 
 ### Production Deployment (Automatic)
-- **Trigger**: Push to `main` branch
-- **Environment**: `myguy.work`
+- **Trigger**: Push to `main` branch (PR merged)
+- **Process**: 
+  1. Destroy staging environment first (if exists)
+  2. Deploy to production `myguy.work`
+  3. Run health checks and tests
 - **Cost**: ~€39/month
 - **Features**: Dedicated database, load balancer, SSL
+
+### Cost Optimization Strategy
+- **Development**: €46/month (staging + production)
+- **Production Only**: €39/month (staging destroyed)
+- **Average**: ~€40/month (staging only during testing)
 
 ## 🛠️ Manual Deployment
 

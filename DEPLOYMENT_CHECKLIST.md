@@ -63,12 +63,20 @@ GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}  # Usually auto-provided
 1. **Create Pull Request**:
    - [ ] Create PR to `main` branch
    - [ ] Verify Terraform plan in PR comments
-   - [ ] Check staging deployment succeeds
+   - [ ] Check staging deployment succeeds at `staging.myguy.work`
+   - [ ] Test application functionality on staging
 
 2. **Deploy to Production**:
    - [ ] Merge PR to `main` branch
+   - [ ] Staging environment automatically destroyed (saves €7/month)
+   - [ ] Production deployment begins automatically
    - [ ] Monitor GitHub Actions workflow
-   - [ ] Verify production deployment
+   - [ ] Verify production deployment at `myguy.work`
+
+3. **Development Workflow**:
+   - [ ] New PRs automatically create fresh staging environments
+   - [ ] Closed PRs automatically destroy staging (cost optimization)
+   - [ ] Reopened PRs automatically recreate staging environments
 
 ### Option B: Manual Deployment
 1. **Initialize Terraform**:
@@ -186,10 +194,16 @@ terraform apply
 
 ## 💰 Cost Monitoring
 
-Expected monthly costs:
-- **Production**: ~€39/month
-- **Staging**: ~€7/month
-- **Total**: ~€46/month
+**Optimized Cost Structure:**
+- **Production Active**: €39/month (staging auto-destroyed)
+- **Development Phase**: €46/month (when staging + production both active)
+- **Average Cost**: ~€40/month (staging only active during PR testing)
+
+**Cost Optimization Features:**
+- ✅ Staging destroyed when PRs closed
+- ✅ Staging destroyed when production deploys
+- ✅ Staging recreated only when needed for testing
+- ✅ Automatic resource cleanup
 
 Monitor usage in Linode console to ensure costs stay within budget.
 

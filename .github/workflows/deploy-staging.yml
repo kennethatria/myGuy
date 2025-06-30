@@ -1,0 +1,325 @@
+name: 'Deploy to Staging'
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened, closed ]
+  workflow_dispatch:
+    inputs:
+      deploy_infrastructure:
+        description: 'Deploy infrastructure changes'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  TF_VERSION: '1.6.0'
+  ENVIRONMENT: 'staging'
+
+jobs:
+  # Destroy staging when PR is closed
+  destroy-staging:
+    name: 'Destroy Staging Environment'
+    runs-on: ubuntu-latest
+    if: github.event.action == 'closed'
+    
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+        terraform_wrapper: false
+
+    - name: Configure Terraform Backend
+      run: |
+        cat > backend.tf << EOF
+        terraform {
+          backend "s3" {
+            bucket   = "myguy-terraform-state"
+            key      = "${{ env.ENVIRONMENT }}/terraform.tfstate"
+            region   = "us-east-1"
+            endpoint = "https://us-east-1.linodeobjects.com"
+            
+            skip_credentials_validation = true
+            skip_region_validation     = true
+            skip_metadata_api_check    = true
+          }
+        }
+        EOF
+
+    - name: Terraform Init
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.LINODE_OBJECT_STORAGE_ACCESS_KEY }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.LINODE_OBJECT_STORAGE_SECRET_KEY }}
+      run: terraform init
+
+    - name: Destroy Staging Infrastructure
+      env:
+        TF_VAR_linode_token: ${{ secrets.LINODE_TOKEN }}
+        TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+        TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
+        TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
+        TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
+        TF_VAR_environment: ${{ env.ENVIRONMENT }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.LINODE_OBJECT_STORAGE_ACCESS_KEY }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.LINODE_OBJECT_STORAGE_SECRET_KEY }}
+      run: |
+        echo "🗑️ PR closed, destroying staging environment..."
+        terraform destroy -auto-approve \
+          -var-file="environments/${{ env.ENVIRONMENT }}/terraform.tfvars"
+        echo "✅ Staging environment destroyed to save costs"
+
+    - name: Comment PR with Destruction Notice
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 🗑️ Staging Environment Destroyed
+            
+            **Status:** ✅ Successfully Destroyed
+            **Reason:** PR closed
+            **Cost Savings:** ~€7/month
+            
+            The staging environment has been automatically destroyed to optimize costs.
+            If you reopen this PR, staging will be recreated automatically. 💰`
+          });
+
+  # Deploy infrastructure if needed (only for open PRs)
+  terraform-deploy:
+    name: 'Deploy Infrastructure'
+    runs-on: ubuntu-latest
+    if: github.event.action != 'closed' && (github.event.inputs.deploy_infrastructure == 'true' || contains(github.event.pull_request.changed_files, 'terraform/'))
+    
+    defaults:
+      run:
+        working-directory: terraform
+
+    outputs:
+      app_instance_ip: ${{ steps.terraform-output.outputs.app_instance_ip }}
+      application_url: ${{ steps.terraform-output.outputs.application_url }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+        terraform_wrapper: false
+
+    - name: Configure Terraform Backend
+      run: |
+        cat > backend.tf << EOF
+        terraform {
+          backend "s3" {
+            bucket   = "myguy-terraform-state"
+            key      = "${{ env.ENVIRONMENT }}/terraform.tfstate"
+            region   = "us-east-1"
+            endpoint = "https://us-east-1.linodeobjects.com"
+            
+            skip_credentials_validation = true
+            skip_region_validation     = true
+            skip_metadata_api_check    = true
+          }
+        }
+        EOF
+
+    - name: Terraform Init
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.LINODE_OBJECT_STORAGE_ACCESS_KEY }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.LINODE_OBJECT_STORAGE_SECRET_KEY }}
+      run: terraform init
+
+    - name: Terraform Apply
+      env:
+        TF_VAR_linode_token: ${{ secrets.LINODE_TOKEN }}
+        TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+        TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
+        TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
+        TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
+        TF_VAR_environment: ${{ env.ENVIRONMENT }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.LINODE_OBJECT_STORAGE_ACCESS_KEY }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.LINODE_OBJECT_STORAGE_SECRET_KEY }}
+      run: |
+        terraform apply -auto-approve \
+          -var-file="environments/${{ env.ENVIRONMENT }}/terraform.tfvars"
+
+    - name: Get Terraform Outputs
+      id: terraform-output
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.LINODE_OBJECT_STORAGE_ACCESS_KEY }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.LINODE_OBJECT_STORAGE_SECRET_KEY }}
+      run: |
+        echo "app_instance_ip=$(terraform output -raw app_instance_ip)" >> $GITHUB_OUTPUT
+        echo "application_url=$(terraform output -raw application_url)" >> $GITHUB_OUTPUT
+
+  # Deploy application (only for open PRs)
+  deploy-application:
+    name: 'Deploy Application'
+    runs-on: ubuntu-latest
+    needs: [terraform-deploy]
+    if: github.event.action != 'closed' && always() && (needs.terraform-deploy.result == 'success' || needs.terraform-deploy.result == 'skipped')
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Get Infrastructure Info
+      id: infrastructure
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.LINODE_OBJECT_STORAGE_ACCESS_KEY }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.LINODE_OBJECT_STORAGE_SECRET_KEY }}
+      run: |
+        # Get outputs from Terraform if infrastructure was deployed
+        if [ "${{ needs.terraform-deploy.result }}" == "success" ]; then
+          echo "app_instance_ip=${{ needs.terraform-deploy.outputs.app_instance_ip }}" >> $GITHUB_OUTPUT
+        else
+          # Get outputs from existing state
+          cd terraform
+          terraform init -backend-config="bucket=myguy-terraform-state" \
+                        -backend-config="key=${{ env.ENVIRONMENT }}/terraform.tfstate" \
+                        -backend-config="region=us-east-1" \
+                        -backend-config="endpoint=https://us-east-1.linodeobjects.com" \
+                        -backend-config="skip_credentials_validation=true" \
+                        -backend-config="skip_region_validation=true" \
+                        -backend-config="skip_metadata_api_check=true"
+          echo "app_instance_ip=$(terraform output -raw app_instance_ip)" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ steps.infrastructure.outputs.app_instance_ip }} >> ~/.ssh/known_hosts
+
+    - name: Create Docker Compose Override for Staging
+      run: |
+        cat > docker-compose.staging.yml << 'EOF'
+        version: '3.8'
+        services:
+          frontend:
+            environment:
+              - VITE_API_URL=https://staging.myguy.work
+              - VITE_WS_URL=https://staging.myguy.work
+              - NODE_ENV=staging
+            ports:
+              - "5173:5173"
+          
+          api:
+            environment:
+              - GIN_MODE=release
+              - DB_CONNECTION=${DB_CONNECTION}
+              - JWT_SECRET=${JWT_SECRET}
+            ports:
+              - "8080:8080"
+          
+          store-service:
+            environment:
+              - GIN_MODE=release
+              - DB_CONNECTION=${DB_CONNECTION}
+              - JWT_SECRET=${JWT_SECRET}
+            ports:
+              - "8081:8081"
+          
+          chat-websocket-service:
+            environment:
+              - NODE_ENV=staging
+              - DB_CONNECTION=${DB_CONNECTION}
+              - CLIENT_URL=https://staging.myguy.work
+            ports:
+              - "8082:8082"
+        EOF
+
+    - name: Deploy Application
+      run: |
+        # Create deployment package
+        tar -czf deployment.tar.gz \
+          --exclude='.git' \
+          --exclude='node_modules' \
+          --exclude='terraform' \
+          --exclude='.github' \
+          .
+        
+        # Copy to server
+        scp -i ~/.ssh/id_rsa deployment.tar.gz root@${{ steps.infrastructure.outputs.app_instance_ip }}:/tmp/
+        
+        # Deploy on server
+        ssh -i ~/.ssh/id_rsa root@${{ steps.infrastructure.outputs.app_instance_ip }} << 'EOF'
+          set -e
+          
+          # Extract deployment
+          cd /opt/myguy
+          tar -xzf /tmp/deployment.tar.gz --strip-components=0
+          rm /tmp/deployment.tar.gz
+          
+          # Source environment variables
+          source .env
+          
+          # Stop existing services
+          docker compose down || true
+          
+          # Build and start services
+          docker compose -f docker-compose.yml -f docker-compose.staging.yml up --build -d
+          
+          # Wait for services to be ready
+          sleep 30
+          
+          # Run health checks
+          curl -f http://localhost:8080/health || exit 1
+          curl -f http://localhost:8081/health || exit 1
+          curl -f http://localhost:8082/health || exit 1
+          
+          # Reload nginx
+          systemctl reload nginx
+          
+          echo "Deployment completed successfully"
+        EOF
+
+    - name: Update PR with Deployment Info
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 🚀 Staging Deployment Complete
+            
+            **Environment:** Staging
+            **Status:** ✅ Deployed Successfully
+            **URL:** https://staging.myguy.work
+            **Server IP:** ${{ steps.infrastructure.outputs.app_instance_ip }}
+            **Commit:** ${context.sha.substring(0, 7)}
+            
+            ### Services Status:
+            - ✅ Main Backend (API)
+            - ✅ Store Service
+            - ✅ Chat WebSocket Service
+            - ✅ Frontend (Vue.js)
+            
+            ### Quick Links:
+            - 🌐 [Application](https://staging.myguy.work)
+            - 📊 [API Health](https://staging.myguy.work/health)
+            - 💬 [Chat Service](https://staging.myguy.work/chat/health)
+            
+            Ready for testing! 🎉`
+          });
+
+    - name: Cleanup
+      if: always()
+      run: |
+        rm -f ~/.ssh/id_rsa
+        rm -f deployment.tar.gz || true

@@ -438,10 +438,15 @@ MyGuy is designed for deployment on Akamai Cloud with cost-optimized architectur
 
 ### **Automated Deployment**
 
-GitHub Actions workflows handle automatic deployment:
+GitHub Actions workflows handle automatic deployment with cost optimization:
 
-- **Staging**: Deploys on every PR to `main` → `staging.myguy.work`
-- **Production**: Deploys on merge to `main` → `myguy.work`
+- **Staging**: 
+  - Deploys when PR is opened/updated → `staging.myguy.work`
+  - **Automatically destroyed** when PR is closed (saves €7/month)
+  - **Automatically recreated** when PR is reopened
+- **Production**: 
+  - Deploys on merge to `main` → `myguy.work`
+  - **Destroys staging first** to prevent double billing
 - **Infrastructure**: Terraform manages all cloud resources
 
 ### **Quick Deployment Setup**
@@ -468,11 +473,12 @@ terraform apply -var-file="environments/production/terraform.tfvars"
 
 ### **Architecture Benefits**
 
-- **Cost-Effective**: Under €50/month total infrastructure cost
-- **Scalable**: Easy to upgrade instances as user base grows
-- **Automated**: Zero-downtime deployments via GitHub Actions
+- **Cost-Optimized**: Only €39/month when production is active (staging auto-destroyed)
+- **Development-Friendly**: Staging created/destroyed automatically with PRs
+- **Zero-Downtime**: Rolling deployments with health checks
 - **Secure**: SSL certificates, VPC isolation, firewall rules
-- **Resilient**: Health checks, rollback capabilities, backups
+- **Scalable**: Easy to upgrade instances as user base grows
+- **Resilient**: Automatic rollback capabilities and backups
 
 For detailed infrastructure documentation, see [`terraform/README.md`](terraform/README.md).
 
