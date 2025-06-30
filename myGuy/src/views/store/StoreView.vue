@@ -475,10 +475,7 @@ async function createItem() {
   isSubmitting.value = true;
   
   try {
-    // Create FormData to handle file uploads
-    const formData = new FormData();
-    
-    // Add item data with proper validation
+    // Try JSON approach first (without images to test)
     const title = newItem.value.title.trim();
     const description = newItem.value.description.trim();
     const category = newItem.value.category;
@@ -493,22 +490,14 @@ async function createItem() {
       isAuction: isAuction
     });
     
-    formData.append('title', title);
-    formData.append('description', description);
-    formData.append('category', category);
-    formData.append('condition', condition);
-    formData.append('is_auction', isAuction.toString());
-    
-    console.log('Form data being sent:', {
-      title: newItem.value.title.trim(),
-      description: newItem.value.description.trim(),
-      category: newItem.value.category,
-      condition: newItem.value.condition,
-      is_auction: newItem.value.is_auction,
-      price: newItem.value.price,
-      starting_bid: newItem.value.starting_bid,
-      bid_increment: newItem.value.bid_increment
-    });
+    // Prepare JSON payload
+    const jsonPayload = {
+      title: title,
+      description: description,
+      category: category,
+      condition: condition,
+      is_auction: isAuction
+    };
     
     if (newItem.value.is_auction) {
       // Clean and validate starting bid
@@ -523,16 +512,12 @@ async function createItem() {
       bidIncrement = Math.max(500, Math.round(bidIncrement));
       
       console.log('Auction values:', { 
-        originalStartingBid: JSON.stringify(newItem.value.starting_bid),
-        originalBidIncrement: JSON.stringify(newItem.value.bid_increment),
-        cleanedStartingBid: startingBidStr,
-        cleanedBidIncrement: bidIncrementStr,
         finalStartingBid: startingBid, 
         finalBidIncrement: bidIncrement 
       });
       
-      formData.append('starting_bid', String(startingBid));
-      formData.append('bid_increment', String(bidIncrement));
+      jsonPayload.starting_bid = startingBid;
+      jsonPayload.bid_increment = bidIncrement;
     } else {
       // Clean and validate price
       let priceStr = String(newItem.value.price || '0').replace(/[^0-9.]/g, '');
@@ -542,40 +527,24 @@ async function createItem() {
       price = Math.max(0, Math.round(price));
       
       console.log('Fixed price value:', { 
-        originalPrice: JSON.stringify(newItem.value.price),
-        cleanedPrice: priceStr,
         finalPrice: price 
       });
       
-      formData.append('price', String(price));
+      jsonPayload.price = price;
     }
     
-    // Add images
-    selectedImages.value.forEach((image, index) => {
-      formData.append(`images`, image.file);
-    });
+    console.log('📦 JSON Payload to send:', JSON.stringify(jsonPayload, null, 2));
     
-    // Debug FormData contents
-    console.log('FormData contents:');
-    for (let [key, value] of formData.entries()) {
-      console.log(key, ':', value, '(type:', typeof value, ')');
-      
-      // Special check for numeric fields
-      if (['price', 'starting_bid', 'bid_increment'].includes(key)) {
-        console.log(`  ${key} raw value:`, JSON.stringify(value));
-        console.log(`  ${key} parsed as number:`, parseFloat(value));
-        console.log(`  ${key} is valid number:`, !isNaN(parseFloat(value)));
-      }
-    }
-    
-    console.log('Sending request to:', 'http://localhost:8081/api/v1/items');
+    // Try sending as JSON first (without images)
+    console.log('🚀 Sending JSON request to:', 'http://localhost:8081/api/v1/items');
     
     const response = await fetch('http://localhost:8081/api/v1/items', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
       },
-      body: formData
+      body: JSON.stringify(jsonPayload)
     });
     
     console.log('Response status:', response.status);
