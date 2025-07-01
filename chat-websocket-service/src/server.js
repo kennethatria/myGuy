@@ -76,6 +76,216 @@ app.post('/api/v1/deletion-warnings/:id/shown', authenticateHTTP, async (req, re
   }
 });
 
+// Task message endpoints
+
+// Get task messages
+app.get('/api/v1/tasks/:taskId/messages', authenticateHTTP, async (req, res) => {
+  try {
+    const taskId = parseInt(req.params.taskId);
+    const userId = req.user.id;
+    
+    if (isNaN(taskId)) {
+      return res.status(400).json({ error: 'Invalid task ID' });
+    }
+    
+    const messages = await messageService.getMessages(taskId, userId);
+    
+    // Format messages to include proper sender/recipient objects
+    const formattedMessages = messages.map(msg => ({
+      ...msg,
+      sender: {
+        id: msg.sender_id,
+        username: msg.sender_name
+      },
+      recipient: {
+        id: msg.recipient_id,
+        username: msg.recipient_name
+      }
+    }));
+    
+    res.json(formattedMessages);
+  } catch (error) {
+    logger.error('Error getting task messages:', error);
+    res.status(500).json({ error: 'Failed to get task messages' });
+  }
+});
+
+// Send task message
+app.post('/api/v1/tasks/:taskId/messages', authenticateHTTP, async (req, res) => {
+  try {
+    const taskId = parseInt(req.params.taskId);
+    const { recipient_id, content } = req.body;
+    const senderId = req.user.id;
+    
+    if (isNaN(taskId)) {
+      return res.status(400).json({ error: 'Invalid task ID' });
+    }
+    
+    if (!recipient_id || !content || !content.trim()) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    const message = await messageService.sendMessage({
+      taskId,
+      senderId,
+      recipientId: parseInt(recipient_id),
+      content: content.trim()
+    });
+    
+    // Get user information to format the response
+    const senderQuery = 'SELECT username FROM users WHERE id = $1';
+    const recipientQuery = 'SELECT username FROM users WHERE id = $1';
+    
+    const db = require('./config/database');
+    const senderResult = await db.query(senderQuery, [senderId]);
+    const recipientResult = await db.query(recipientQuery, [parseInt(recipient_id)]);
+    
+    // Format message with sender/recipient info
+    const formattedMessage = {
+      ...message,
+      sender: {
+        id: senderId,
+        username: senderResult.rows[0]?.username || 'Unknown'
+      },
+      recipient: {
+        id: parseInt(recipient_id),
+        username: recipientResult.rows[0]?.username || 'Unknown'
+      }
+    };
+    
+    res.status(201).json(formattedMessage);
+  } catch (error) {
+    logger.error('Error sending task message:', error);
+    res.status(500).json({ error: 'Failed to send task message' });
+  }
+});
+
+// Get application messages
+app.get('/api/v1/applications/:applicationId/messages', authenticateHTTP, async (req, res) => {
+  try {
+    const applicationId = parseInt(req.params.applicationId);
+    const userId = req.user.id;
+    
+    if (isNaN(applicationId)) {
+      return res.status(400).json({ error: 'Invalid application ID' });
+    }
+    
+    // Get messages for application (using task_id null and application_id)
+    const query = `
+      SELECT 
+        m.*,
+        s.username as sender_name,
+        r.username as recipient_name
+      FROM messages m
+      LEFT JOIN users s ON m.sender_id = s.id
+      LEFT JOIN users r ON m.recipient_id = r.id
+      WHERE m.application_id = $1
+        AND (m.sender_id = $2 OR m.recipient_id = $2)
+      ORDER BY m.created_at ASC
+    `;
+    
+    const db = require('./config/database');
+    const result = await db.query(query, [applicationId, userId]);
+    
+    // Format messages to include proper sender/recipient objects
+    const formattedMessages = result.rows.map(msg => ({
+      ...msg,
+      sender: {
+        id: msg.sender_id,
+        username: msg.sender_name
+      },
+      recipient: {
+        id: msg.recipient_id,
+        username: msg.recipient_name
+      }
+    }));
+    
+    res.json(formattedMessages);
+  } catch (error) {
+    logger.error('Error getting application messages:', error);
+    res.status(500).json({ error: 'Failed to get application messages' });
+  }
+});
+
+// Send application message
+app.post('/api/v1/applications/:applicationId/messages', authenticateHTTP, async (req, res) => {
+  try {
+    const applicationId = parseInt(req.params.applicationId);
+    const { content } = req.body;
+    const senderId = req.user.id;
+    
+    if (isNaN(applicationId)) {
+      return res.status(400).json({ error: 'Invalid application ID' });
+    }
+    
+    if (!content || !content.trim()) {
+      return res.status(400).json({ error: 'Message content is required' });
+    }
+    
+    // Get application details to find recipient
+    const appQuery = 'SELECT task_id, applicant_id FROM applications WHERE id = $1';
+    const taskQuery = 'SELECT creator_id FROM tasks WHERE id = $1';
+    
+    const db = require('./config/database');
+    const appResult = await db.query(appQuery, [applicationId]);
+    
+    if (appResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+    
+    const application = appResult.rows[0];
+    const taskResult = await db.query(taskQuery, [application.task_id]);
+    
+    if (taskResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Associated task not found' });
+    }
+    
+    const task = taskResult.rows[0];
+    
+    // Determine recipient based on sender
+    let recipientId;
+    if (senderId === application.applicant_id) {
+      recipientId = task.creator_id;
+    } else if (senderId === task.creator_id) {
+      recipientId = application.applicant_id;
+    } else {
+      return res.status(403).json({ error: 'Unauthorized to send message in this application' });
+    }
+    
+    const message = await messageService.sendMessage({
+      applicationId,
+      senderId,
+      recipientId,
+      content: content.trim()
+    });
+    
+    // Get user information to format the response
+    const senderQuery = 'SELECT username FROM users WHERE id = $1';
+    const recipientQuery = 'SELECT username FROM users WHERE id = $1';
+    
+    const senderResult = await db.query(senderQuery, [senderId]);
+    const recipientResult = await db.query(recipientQuery, [recipientId]);
+    
+    // Format message with sender/recipient info
+    const formattedMessage = {
+      ...message,
+      sender: {
+        id: senderId,
+        username: senderResult.rows[0]?.username || 'Unknown'
+      },
+      recipient: {
+        id: recipientId,
+        username: recipientResult.rows[0]?.username || 'Unknown'
+      }
+    };
+    
+    res.status(201).json(formattedMessage);
+  } catch (error) {
+    logger.error('Error sending application message:', error);
+    res.status(500).json({ error: 'Failed to send application message' });
+  }
+});
+
 // Store message endpoints
 
 // Get store messages for a specific item

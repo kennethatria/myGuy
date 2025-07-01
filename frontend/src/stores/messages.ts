@@ -52,7 +52,7 @@ export const useMessagesStore = defineStore('messages', () => {
     
     try {
       console.log(`Fetching messages for task ID: ${taskId}`);
-      const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}/messages`, {
+      const response = await fetch(`${config.ENDPOINTS.TASK_MESSAGES}/${taskId}/messages`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -93,7 +93,7 @@ export const useMessagesStore = defineStore('messages', () => {
     const token = authStore.token;
     
     try {
-      const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}/messages`, {
+      const response = await fetch(`${config.ENDPOINTS.TASK_MESSAGES}/${taskId}/messages`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -117,7 +117,7 @@ export const useMessagesStore = defineStore('messages', () => {
     
     try {
       console.log(`Fetching messages for application ID: ${applicationId}`);
-      const response = await fetch(`${config.ENDPOINTS.APPLICATIONS}/${applicationId}/messages`, {
+      const response = await fetch(`${config.ENDPOINTS.APPLICATION_MESSAGES}/${applicationId}/messages`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -142,7 +142,7 @@ export const useMessagesStore = defineStore('messages', () => {
     const token = authStore.token;
     
     try {
-      const response = await fetch(`${config.ENDPOINTS.APPLICATIONS}/${applicationId}/messages`, {
+      const response = await fetch(`${config.ENDPOINTS.APPLICATION_MESSAGES}/${applicationId}/messages`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
