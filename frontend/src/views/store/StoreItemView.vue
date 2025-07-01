@@ -209,12 +209,12 @@
               <p class="message-limit">Limited to 3 messages per person</p>
             </div>
             
-            <div v-for="message in chatMessages" :key="message.id" class="message" :class="{ 'own-message': message.sender_id === userId }">
+            <div v-for="message in chatMessages" :key="message?.id || Math.random()" class="message" :class="{ 'own-message': message?.sender_id === userId }">
               <div class="message-header">
-                <span class="sender">{{ message.sender_id === userId ? 'You' : item.seller.full_name }}</span>
-                <span class="timestamp">{{ formatMessageTime(message.created_at) }}</span>
+                <span class="sender">{{ message?.sender_id === userId ? 'You' : item?.seller?.full_name }}</span>
+                <span class="timestamp">{{ formatMessageTime(message?.created_at) }}</span>
               </div>
-              <div class="message-content">{{ message.content }}</div>
+              <div class="message-content">{{ message?.content }}</div>
             </div>
           </div>
           
@@ -588,7 +588,8 @@ async function loadStoreMessages() {
     });
     
     if (response.ok) {
-      chatMessages.value = await response.json();
+      const data = await response.json();
+      chatMessages.value = data.messages || [];
     } else {
       console.error('Failed to load store messages');
       chatMessages.value = [];
