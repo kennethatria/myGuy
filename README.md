@@ -152,10 +152,25 @@ MyGuy/
 
 ### Chat WebSocket Service (Port 8082)
 **All messaging functionality handled by dedicated chat microservice**
+
+#### HTTP API Endpoints
+- `GET /api/v1/tasks/:taskId/messages` - Get messages for a specific task
+- `POST /api/v1/tasks/:taskId/messages` - Send message to task conversation
+  - Body: `{recipient_id: number, content: string}`
+- `GET /api/v1/applications/:applicationId/messages` - Get messages for a specific application
+- `POST /api/v1/applications/:applicationId/messages` - Send message to application conversation
+  - Body: `{content: string}`
+- `GET /api/v1/deletion-warnings` - Get pending message deletion warnings
+- `POST /api/v1/deletion-warnings/:id/shown` - Mark deletion warning as shown
+- `GET /api/v1/users/:id/last-seen` - Get user's last seen timestamp
+
+#### WebSocket Features
 - Real-time WebSocket connections
 - Task-level messaging
 - Application-specific messaging
 - Message editing, deletion, read receipts
+- Typing indicators and presence
+- Automatic content filtering
 
 ### Store Service (Port 8081)
 **Item marketplace functionality with JSON API support**
