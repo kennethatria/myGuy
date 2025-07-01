@@ -87,7 +87,8 @@ function formatTime(timestamp: string): string {
   padding: 1rem 1.5rem;
   border-bottom: 1px solid #e5e7eb;
   cursor: pointer;
-  transition: background-color 0.15s;
+  transition: all 0.15s;
+  border-left: 3px solid transparent;
 }
 
 .conversation-item:hover {
@@ -95,7 +96,9 @@ function formatTime(timestamp: string): string {
 }
 
 .conversation-item.active {
-  background-color: #ede9fe;
+  background-color: #f0f9ff;
+  border-left-color: #0284c7;
+  box-shadow: inset 0 0 0 1px rgba(2, 132, 199, 0.1);
 }
 
 .conversation-header {
@@ -103,6 +106,8 @@ function formatTime(timestamp: string): string {
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 0.5rem;
+  position: relative;
+  padding-right: 2.5rem; /* Add space for unread badge */
 }
 
 .task-title {
@@ -114,7 +119,7 @@ function formatTime(timestamp: string): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-right: 0.5rem;
+  padding-right: 1rem; /* More space to prevent overlap with badge */
 }
 
 .task-title.unread {
@@ -153,9 +158,9 @@ function formatTime(timestamp: string): string {
 
 .unread-badge {
   position: absolute;
-  top: 1rem;
-  right: 1rem;
-  background: #4F46E5;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: #dc2626;
   color: white;
   font-size: 0.75rem;
   font-weight: 500;
@@ -163,5 +168,6 @@ function formatTime(timestamp: string): string {
   border-radius: 9999px;
   min-width: 1.25rem;
   text-align: center;
+  z-index: 1;
 }
 </style>
