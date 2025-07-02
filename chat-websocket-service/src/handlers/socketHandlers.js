@@ -123,6 +123,23 @@ class SocketHandlers {
         return socket.emit('error', { message: 'Invalid message data' });
       }
 
+      // Check message limit for task messages
+      if (taskId) {
+        const messageCount = await messageService.getUserTaskMessageCount(taskId, socket.userId);
+        const messageLimit = await messageService.getTaskMessageLimit(taskId, socket.userId);
+        
+        if (messageCount >= messageLimit) {
+          const limitMessage = messageLimit === 15 ? 
+            'You\'ve reached your message limit for this gig (15 messages).' : 
+            'You\'ve reached your message limit for this gig (3 messages). The limit increases to 15 once you\'re assigned to the task.';
+          return socket.emit('error', { 
+            message: limitMessage,
+            limit: messageLimit,
+            count: messageCount
+          });
+        }
+      }
+
       // Send message
       const message = await messageService.sendMessage({
         taskId,

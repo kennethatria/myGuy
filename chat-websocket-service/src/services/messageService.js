@@ -566,6 +566,62 @@ class MessageService {
     // 3 messages before booking approval, 10 messages after approval
     return bookingStatus === 'approved' ? 10 : 3;
   }
+
+  /**
+   * Task message limit methods
+   */
+
+  /**
+   * Get user's message count for a specific task
+   */
+  async getUserTaskMessageCount(taskId, userId) {
+    const query = `
+      SELECT COUNT(*) as count
+      FROM messages
+      WHERE task_id = $1 AND sender_id = $2
+    `;
+    
+    const result = await db.query(query, [taskId, userId]);
+    return parseInt(result.rows[0].count);
+  }
+
+  /**
+   * Get message limit for a task based on user role and assignment status
+   */
+  async getTaskMessageLimit(taskId, userId) {
+    try {
+      // Get task information
+      const taskQuery = `
+        SELECT created_by, assigned_to
+        FROM tasks
+        WHERE id = $1
+      `;
+      
+      const result = await db.query(taskQuery, [taskId]);
+      
+      if (result.rows.length === 0) {
+        return 3; // Default limit for non-existent tasks
+      }
+      
+      const task = result.rows[0];
+      
+      // Users who are assigned to the task get 15 messages
+      if (task.assigned_to === userId) {
+        return 15;
+      }
+      
+      // Task owners get 15 messages only if the task is assigned
+      if (task.created_by === userId && task.assigned_to !== null) {
+        return 15;
+      }
+      
+      // Everyone else (non-assigned users) gets 3 messages
+      return 3;
+    } catch (error) {
+      logger.error('Error getting task message limit:', error);
+      return 3; // Default to safe limit on error
+    }
+  }
 }
 
 module.exports = new MessageService();

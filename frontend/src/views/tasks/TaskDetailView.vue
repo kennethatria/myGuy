@@ -429,8 +429,17 @@ const isTaskAssigned = computed(() => {
 })
 
 const currentMessageLimit = computed(() => {
-  // 3 messages before assignment, 15 after assignment
-  return isTaskAssigned.value || isOwner.value ? 15 : 3
+  if (!authStore.user || !task.value) return 3
+  
+  const userId = authStore.user.id
+  // Users who are assigned to the gig get 15 messages
+  if (task.value.assigned_to === userId) return 15
+  
+  // Task owners get 15 messages only if the task is assigned
+  if (task.value.created_by === userId && task.value.assigned_to !== null) return 15
+  
+  // Everyone else (non-assigned users) gets 3 messages
+  return 3
 })
 
 const userMessageCount = computed(() => {
@@ -696,7 +705,9 @@ const handleSendMessage = async () => {
     messages.value = await messagesStore.fetchTaskMessages(task.value.id)
   } catch (error) {
     console.error('Failed to send message:', error)
-    alert('Failed to send message. Please try again.')
+    // Show the specific error message from the backend if available
+    const errorMessage = error.message || 'Failed to send message. Please try again.'
+    alert(errorMessage)
   }
 }
 </script>

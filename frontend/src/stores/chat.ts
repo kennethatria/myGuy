@@ -285,17 +285,23 @@ export const useChatStore = defineStore('chat', () => {
     
     const conv = conversations.value.find(c => c.task_id === conversationId || c.application_id === conversationId);
     if (conv) {
-      activeConversation.value = conv;
+      // Store reference to previous conversation BEFORE updating activeConversation
+      const previousConversation = activeConversation.value;
       
-      // Leave previous conversation
-      if (activeConversation.value) {
-        const prevId = activeConversation.value.task_id || activeConversation.value.application_id;
-        if (conv.task_id) {
+      // Leave previous conversation if it exists and is different
+      if (previousConversation && 
+          (previousConversation.task_id !== conv.task_id || 
+           previousConversation.application_id !== conv.application_id)) {
+        const prevId = previousConversation.task_id || previousConversation.application_id;
+        if (previousConversation.task_id) {
           socket.value.emit('leave:conversation', { taskId: prevId });
         } else {
           socket.value.emit('leave:conversation', { applicationId: prevId });
         }
       }
+      
+      // Set new active conversation
+      activeConversation.value = conv;
       
       // Join new conversation
       if (conv.task_id) {

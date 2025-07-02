@@ -125,6 +125,21 @@ app.post('/api/v1/tasks/:taskId/messages', authenticateHTTP, async (req, res) =>
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
+    // Check message limit
+    const messageCount = await messageService.getUserTaskMessageCount(taskId, senderId);
+    const messageLimit = await messageService.getTaskMessageLimit(taskId, senderId);
+    
+    if (messageCount >= messageLimit) {
+      const limitMessage = messageLimit === 15 ? 
+        'You\'ve reached your message limit for this gig (15 messages).' : 
+        'You\'ve reached your message limit for this gig (3 messages). The limit increases to 15 once you\'re assigned to the task.';
+      return res.status(403).json({ 
+        error: limitMessage,
+        limit: messageLimit,
+        count: messageCount
+      });
+    }
+    
     const message = await messageService.sendMessage({
       taskId,
       senderId,
@@ -157,6 +172,31 @@ app.post('/api/v1/tasks/:taskId/messages', authenticateHTTP, async (req, res) =>
   } catch (error) {
     logger.error('Error sending task message:', error);
     res.status(500).json({ error: 'Failed to send task message' });
+  }
+});
+
+// Get message limits and status for a task
+app.get('/api/v1/tasks/:taskId/message-limits', authenticateHTTP, async (req, res) => {
+  try {
+    const taskId = parseInt(req.params.taskId);
+    const userId = req.user.id;
+    
+    if (isNaN(taskId)) {
+      return res.status(400).json({ error: 'Invalid task ID' });
+    }
+    
+    const messageCount = await messageService.getUserTaskMessageCount(taskId, userId);
+    const messageLimit = await messageService.getTaskMessageLimit(taskId, userId);
+    
+    res.json({
+      messageCount,
+      messageLimit,
+      canSendMore: messageCount < messageLimit,
+      remaining: messageLimit - messageCount
+    });
+  } catch (error) {
+    logger.error('Error getting message limits:', error);
+    res.status(500).json({ error: 'Failed to get message limits' });
   }
 });
 
