@@ -49,7 +49,7 @@
             <div class="form-group">
               <label for="message" class="form-label">
                 Application Message
-                <span class="required">*</span>
+                <span class="optional">(optional)</span>
               </label>
               <textarea
                 id="message"
@@ -58,13 +58,12 @@
                 class="form-input"
                 :class="{ 'is-invalid': errors.message }"
                 placeholder="Explain why you're the right person for this task..."
-                required
               ></textarea>
               <div v-if="errors.message" class="invalid-feedback">
                 {{ errors.message }}
               </div>
               <p class="form-helper">
-                Describe your experience, approach, and timeline for completing this task.
+                Optional: Describe your experience, approach, and timeline for completing this task.
               </p>
             </div>
 
@@ -152,8 +151,9 @@ const validateForm = (): boolean => {
     isValid = false
   }
   
-  if (!formData.message || formData.message.trim().length < 10) {
-    errors.message = 'Please provide a meaningful message (at least 10 characters)'
+  // Message is optional, but if provided, it should have at least 10 characters
+  if (formData.message && formData.message.trim().length > 0 && formData.message.trim().length < 10) {
+    errors.message = 'If providing a message, please make it at least 10 characters'
     isValid = false
   }
   
@@ -167,7 +167,7 @@ const handleSubmit = () => {
   
   emit('submit', {
     proposedFee: formData.proposedFee!,
-    message: formData.message.trim()
+    message: formData.message.trim() || ''
   })
 }
 
@@ -287,6 +287,12 @@ const handleBackdropClick = (e: MouseEvent) => {
 
 .required {
   color: #dc3545;
+}
+
+.optional {
+  color: #6c757d;
+  font-weight: normal;
+  font-style: italic;
 }
 
 .form-input {

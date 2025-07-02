@@ -414,7 +414,12 @@ func (h *Handler) RespondToApplication(c *gin.Context) {
 	}
 
 	if updatedTask != nil {
-		c.JSON(http.StatusOK, updatedTask)
+		// Return simple success response to avoid serialization issues
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Application accepted successfully",
+			"task_id": updatedTask.ID,
+			"status": updatedTask.Status,
+		})
 	} else {
 		c.JSON(http.StatusOK, gin.H{"message": "Application declined"})
 	}

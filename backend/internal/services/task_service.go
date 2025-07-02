@@ -251,16 +251,24 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID uint, userID uint
 }
 
 // UpdateTaskStatus updates the status of a task
-// Only the task creator can update the status
+// Task creator can update any status, assigned users can only mark as completed
 func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID uint, status string, userID uint) (*models.Task, error) {
 	task, err := s.taskRepo.GetByID(ctx, taskID)
 	if err != nil {
 		return nil, ErrTaskNotFound
 	}
 
-	// Only task creator can update status
-	if task.CreatedBy != userID {
-		return nil, ErrUnauthorized
+	// Check authorization based on the status being set
+	if status == "completed" {
+		// Both task creator and assigned user can mark as completed
+		if task.CreatedBy != userID && (task.AssignedTo == nil || *task.AssignedTo != userID) {
+			return nil, ErrUnauthorized
+		}
+	} else {
+		// Only task creator can change to other statuses
+		if task.CreatedBy != userID {
+			return nil, ErrUnauthorized
+		}
 	}
 
 	// Validate status transitions
