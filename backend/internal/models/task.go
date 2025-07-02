@@ -11,11 +11,12 @@ type Task struct {
 	Status      string     `json:"status" gorm:"default:'open'"`
 	CreatedBy   uint       `json:"created_by" gorm:"not null"`
 	AssignedTo  *uint      `json:"assigned_to"`
-	Fee         float64    `json:"fee"`
-	Deadline    time.Time  `json:"deadline"`
-	CompletedAt *time.Time `json:"completed_at"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	Fee                float64    `json:"fee"`
+	Deadline           time.Time  `json:"deadline"`
+	CompletedAt        *time.Time `json:"completed_at"`
+	IsMessagesPublic   bool       `json:"is_messages_public" gorm:"default:false"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 	
 	// Define relationships for preloading
 	Creator   User          `json:"creator" gorm:"foreignKey:CreatedBy"`

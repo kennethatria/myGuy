@@ -129,15 +129,35 @@
         <div class="p-4">
           <div class="gig-chat-header">
             <h3 class="chat-title">Communication</h3>
-            <div class="chat-status">
-              <span v-if="task?.status === 'open'" class="status-badge status-open">Open for Applications</span>
-              <span v-else-if="task?.status === 'assigned'" class="status-badge status-assigned">Task Assigned</span>
-              <span v-else-if="task?.status === 'completed'" class="status-badge status-completed">Completed</span>
+            <div class="chat-header-badges">
+              <div class="chat-status">
+                <span v-if="task?.status === 'open'" class="status-badge status-open">Open for Applications</span>
+                <span v-else-if="task?.status === 'assigned'" class="status-badge status-assigned">Task Assigned</span>
+                <span v-else-if="task?.status === 'completed'" class="status-badge status-completed">Completed</span>
+              </div>
+              <div class="privacy-indicator">
+                <span v-if="isMessagesPrivate" class="privacy-badge privacy-private">
+                  🔒 Private Messages
+                </span>
+                <span v-else class="privacy-badge privacy-public">
+                  🌐 Public Messages
+                </span>
+              </div>
             </div>
           </div>
           
           <div class="chat-content">
-            <div v-if="messages.length === 0" class="no-messages">
+            <div v-if="!canViewMessages && isMessagesPrivate" class="private-messages-notice">
+              <div class="privacy-lock-icon">
+                <i class="fas fa-lock"></i>
+              </div>
+              <p><strong>Private Messages</strong></p>
+              <p class="privacy-notice-subtitle">
+                Messages for this gig are private and only visible to the gig owner and assigned person.
+              </p>
+            </div>
+            
+            <div v-else-if="messages.length === 0" class="no-messages">
               <div class="no-messages-icon">
                 <i class="fas fa-comments"></i>
               </div>
@@ -163,7 +183,7 @@
           
           <!-- Message input section -->
           <div class="chat-input-section">
-            <div v-if="canSendMessage && userCanSendMore" class="chat-input">
+            <div v-if="canViewMessages && canSendMessage && userCanSendMore" class="chat-input">
               <form @submit.prevent="handleSendMessage">
                 <textarea 
                   v-model="newMessage"
@@ -271,6 +291,7 @@ interface Task {
   deadline: string
   fee?: number
   created_at: string
+  is_messages_public?: boolean
   
   // Related data from database preloading
   creator?: {
@@ -419,6 +440,24 @@ const userMessageCount = computed(() => {
 
 const userCanSendMore = computed(() => {
   return userMessageCount.value < currentMessageLimit.value
+})
+
+const canViewMessages = computed(() => {
+  if (!task.value || !authStore.user) return false
+  
+  // If messages are public, anyone can view them
+  if (task.value.is_messages_public) return true
+  
+  // If messages are private, only task participants can view them
+  const userId = authStore.user.id
+  return (
+    userId === task.value.created_by || 
+    userId === task.value.assigned_to
+  )
+})
+
+const isMessagesPrivate = computed(() => {
+  return task.value?.is_messages_public === false
 })
 
 const loadTaskData = async () => {
@@ -871,12 +910,87 @@ const handleSendMessage = async () => {
   margin: 0;
 }
 
+/* Privacy indicator styles */
+.chat-header-badges {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.privacy-indicator {
+  display: flex;
+  align-items: center;
+}
+
+.privacy-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.privacy-private {
+  background-color: #fef3c7;
+  color: #d97706;
+  border: 1px solid #fcd34d;
+}
+
+.privacy-public {
+  background-color: #dbeafe;
+  color: #2563eb;
+  border: 1px solid #93c5fd;
+}
+
+/* Private messages notice */
+.private-messages-notice {
+  text-align: center;
+  padding: 3rem 2rem;
+  background: #f8fafc;
+  border: 2px dashed #d1d5db;
+  border-radius: 8px;
+  margin: 1rem 0;
+}
+
+.privacy-lock-icon {
+  margin-bottom: 1rem;
+}
+
+.privacy-lock-icon i {
+  font-size: 2rem;
+  color: #9ca3af;
+}
+
+.private-messages-notice p:first-of-type {
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+.privacy-notice-subtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0;
+  line-height: 1.5;
+}
+
 /* Mobile responsiveness */
 @media (max-width: 768px) {
   .gig-chat-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.75rem;
+  }
+
+  .chat-header-badges {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    width: 100%;
   }
   
   .message.own-message {

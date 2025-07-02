@@ -72,6 +72,41 @@
             </div>
 
             <div class="form-group">
+              <label class="form-label">Message Privacy</label>
+              <div class="privacy-toggle-container">
+                <div class="privacy-option">
+                  <input
+                    type="radio"
+                    id="private-messages"
+                    name="message-privacy"
+                    :value="false"
+                    v-model="task.isMessagesPublic"
+                    class="privacy-radio"
+                  />
+                  <label for="private-messages" class="privacy-label">
+                    <span class="privacy-title">🔒 Private Messages (Recommended)</span>
+                    <span class="privacy-description">Only you and the assigned person can see messages</span>
+                  </label>
+                </div>
+                <div class="privacy-option">
+                  <input
+                    type="radio"
+                    id="public-messages"
+                    name="message-privacy"
+                    :value="true"
+                    v-model="task.isMessagesPublic"
+                    class="privacy-radio"
+                  />
+                  <label for="public-messages" class="privacy-label">
+                    <span class="privacy-title">🌐 Public Messages</span>
+                    <span class="privacy-description">Anyone viewing the gig can see all messages</span>
+                  </label>
+                </div>
+              </div>
+              <p class="form-helper">Choose whether messages on this gig should be private or public</p>
+            </div>
+
+            <div class="form-group">
               <label class="form-label">Deadline</label>
               
               <!-- Quick preset options -->
@@ -189,7 +224,8 @@ const task = ref({
   title: '',
   description: '',
   fee: null as number | null,
-  deadline: minDeadlineString.value // Initialize with the minimum valid date
+  deadline: minDeadlineString.value, // Initialize with the minimum valid date
+  isMessagesPublic: false // Default to private messages
 })
 
 // Separate deadline components for better UX
@@ -359,7 +395,8 @@ const handleSubmit = async () => {
       title: task.value.title,
       description: task.value.description,
       deadline: formattedDeadline,
-      fee: task.value.fee! // Use the actual fee from the form
+      fee: task.value.fee!, // Use the actual fee from the form
+      is_messages_public: task.value.isMessagesPublic
     }
     
     // Import and use the tasks store
@@ -429,6 +466,60 @@ const handleSubmit = async () => {
   margin-bottom: 0.25rem;
 }
 
+/* Privacy toggle styles */
+.privacy-toggle-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.privacy-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.privacy-option:hover {
+  border-color: #1976d2;
+  background: #f8fafc;
+}
+
+.privacy-option:has(.privacy-radio:checked) {
+  border-color: #1976d2;
+  background: #e3f2fd;
+}
+
+.privacy-radio {
+  margin-top: 0.125rem;
+  accent-color: #1976d2;
+}
+
+.privacy-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  cursor: pointer;
+  flex: 1;
+}
+
+.privacy-title {
+  font-weight: 600;
+  color: #374151;
+  font-size: 0.9rem;
+}
+
+.privacy-description {
+  color: #6b7280;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
 /* Responsive adjustments */
 @media (max-width: 640px) {
   .deadline-presets {
@@ -442,6 +533,14 @@ const handleSubmit = async () => {
   
   .datetime-inputs {
     grid-template-columns: 1fr;
+  }
+
+  .privacy-toggle-container {
+    gap: 0.75rem;
+  }
+
+  .privacy-option {
+    padding: 0.75rem;
   }
 }
 </style>

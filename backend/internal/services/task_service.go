@@ -240,11 +240,13 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID uint, userID uint
 		return ErrTaskNotFound
 	}
 
-	if task.CreatedBy != userID && *task.AssignedTo != userID {
+	if task.CreatedBy != userID && (task.AssignedTo == nil || *task.AssignedTo != userID) {
 		return ErrUnauthorized
 	}
 
 	task.Status = "completed"
+	now := time.Now()
+	task.CompletedAt = &now
 	return s.taskRepo.Update(ctx, task)
 }
 
@@ -288,9 +290,16 @@ func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID uint, status 
 	// Update the status
 	task.Status = status
 
-	// If moving back to open, clear any assignments
+	// Set completed timestamp when task is completed
+	if status == "completed" {
+		now := time.Now()
+		task.CompletedAt = &now
+	}
+
+	// If moving back to open, clear any assignments and completed timestamp
 	if status == "open" {
 		task.AssignedTo = nil
+		task.CompletedAt = nil
 	}
 
 	if err := s.taskRepo.Update(ctx, task); err != nil {

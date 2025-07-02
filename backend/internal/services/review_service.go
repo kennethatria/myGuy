@@ -57,7 +57,7 @@ func (s *ReviewService) CreateReview(ctx context.Context, input CreateReviewInpu
 	}
 
 	// Verify reviewer is either the task creator or assignee
-	if task.CreatedBy != input.ReviewerID && *task.AssignedTo != input.ReviewerID {
+	if task.CreatedBy != input.ReviewerID && (task.AssignedTo == nil || *task.AssignedTo != input.ReviewerID) {
 		return nil, ErrNotTaskParticipant
 	}
 

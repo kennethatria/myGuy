@@ -157,21 +157,65 @@ class MessageService {
    * Get messages for a conversation with pagination
    */
   async getMessages(taskId, userId, limit = 5, offset = 0) {
-    const query = `
-      SELECT 
-        m.*,
-        s.username as sender_name,
-        r.username as recipient_name
-      FROM messages m
-      LEFT JOIN users s ON m.sender_id = s.id
-      LEFT JOIN users r ON m.recipient_id = r.id
-      WHERE m.task_id = $1
-        AND (m.sender_id = $2 OR m.recipient_id = $2)
-      ORDER BY m.created_at DESC
-      LIMIT $3 OFFSET $4
+    // First, get task information to check privacy settings
+    const taskQuery = `
+      SELECT t.*, 
+             (t.created_by = $2 OR t.assigned_to = $2) as is_task_participant
+      FROM tasks t 
+      WHERE t.id = $1
     `;
     
-    const result = await db.query(query, [taskId, userId, limit, offset]);
+    const taskResult = await db.query(taskQuery, [taskId, userId]);
+    
+    if (taskResult.rows.length === 0) {
+      throw new Error('Task not found');
+    }
+    
+    const task = taskResult.rows[0];
+    
+    // Check privacy permissions
+    if (!task.is_messages_public && !task.is_task_participant) {
+      // If messages are private and user is not a task participant, return empty
+      return [];
+    }
+    
+    let messageQuery;
+    let queryParams;
+    
+    if (task.is_messages_public) {
+      // If messages are public, show all messages
+      messageQuery = `
+        SELECT 
+          m.*,
+          s.username as sender_name,
+          r.username as recipient_name
+        FROM messages m
+        LEFT JOIN users s ON m.sender_id = s.id
+        LEFT JOIN users r ON m.recipient_id = r.id
+        WHERE m.task_id = $1
+        ORDER BY m.created_at DESC
+        LIMIT $2 OFFSET $3
+      `;
+      queryParams = [taskId, limit, offset];
+    } else {
+      // If messages are private, only show messages where user is participant
+      messageQuery = `
+        SELECT 
+          m.*,
+          s.username as sender_name,
+          r.username as recipient_name
+        FROM messages m
+        LEFT JOIN users s ON m.sender_id = s.id
+        LEFT JOIN users r ON m.recipient_id = r.id
+        WHERE m.task_id = $1
+          AND (m.sender_id = $2 OR m.recipient_id = $2)
+        ORDER BY m.created_at DESC
+        LIMIT $3 OFFSET $4
+      `;
+      queryParams = [taskId, userId, limit, offset];
+    }
+    
+    const result = await db.query(messageQuery, queryParams);
     return result.rows.reverse(); // Reverse to show oldest first
   }
 
@@ -179,14 +223,50 @@ class MessageService {
    * Get total message count for a conversation
    */
   async getTotalMessageCount(taskId, userId) {
-    const query = `
-      SELECT COUNT(*) as total
-      FROM messages m
-      WHERE m.task_id = $1
-        AND (m.sender_id = $2 OR m.recipient_id = $2)
+    // First, get task information to check privacy settings
+    const taskQuery = `
+      SELECT t.*, 
+             (t.created_by = $2 OR t.assigned_to = $2) as is_task_participant
+      FROM tasks t 
+      WHERE t.id = $1
     `;
     
-    const result = await db.query(query, [taskId, userId]);
+    const taskResult = await db.query(taskQuery, [taskId, userId]);
+    
+    if (taskResult.rows.length === 0) {
+      return 0;
+    }
+    
+    const task = taskResult.rows[0];
+    
+    // Check privacy permissions
+    if (!task.is_messages_public && !task.is_task_participant) {
+      return 0;
+    }
+    
+    let countQuery;
+    let queryParams;
+    
+    if (task.is_messages_public) {
+      // If messages are public, count all messages
+      countQuery = `
+        SELECT COUNT(*) as total
+        FROM messages m
+        WHERE m.task_id = $1
+      `;
+      queryParams = [taskId];
+    } else {
+      // If messages are private, only count messages where user is participant
+      countQuery = `
+        SELECT COUNT(*) as total
+        FROM messages m
+        WHERE m.task_id = $1
+          AND (m.sender_id = $2 OR m.recipient_id = $2)
+      `;
+      queryParams = [taskId, userId];
+    }
+    
+    const result = await db.query(countQuery, queryParams);
     return parseInt(result.rows[0].total);
   }
 
