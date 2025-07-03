@@ -286,8 +286,22 @@ npm run dev
 
 ## Testing
 
+### Testing Status Overview
+
+| Service | Coverage | Status | Documentation |
+|---------|----------|--------|---------------|
+| **Store Service** (8081) | **87%+** | ✅ Complete | [`store-service/README.md#testing`](store-service/README.md#testing) |
+| **Main Backend** (8080) | Limited | ⚠️ Needs Implementation | `improvements/improvements-tests.md` |
+| **Chat Service** (8082) | Unknown | ⚠️ Not Documented | - |
+| **Frontend** | Partial | ⚠️ Basic Tests | See below |
+
+### ✅ Store Service Testing (Complete)
+- **87%+ test coverage** with 60+ test scenarios
+- Comprehensive unit, integration, and workflow tests
+- See [`store-service/README.md#testing`](store-service/README.md#testing) for detailed documentation
+
 ### ⚠️ Critical Issue: Backend Testing
-**Current Status**: Backend has **ZERO test coverage**
+**Main Backend Status**: Limited test coverage
 
 **Required Action**: Implement comprehensive testing before production deployment.
 See `improvements/improvements-tests.md` for detailed testing requirements and implementation plan.

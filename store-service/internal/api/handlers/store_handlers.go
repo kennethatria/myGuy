@@ -16,10 +16,10 @@ import (
 )
 
 type StoreHandler struct {
-	service *services.StoreService
+	service services.StoreServiceInterface
 }
 
-func NewStoreHandler(service *services.StoreService) *StoreHandler {
+func NewStoreHandler(service services.StoreServiceInterface) *StoreHandler {
 	return &StoreHandler{service: service}
 }
 
