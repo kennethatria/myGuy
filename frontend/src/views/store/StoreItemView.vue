@@ -100,6 +100,7 @@
                     @click="sendBookingRequest" 
                     :disabled="loadingBookingRequest"
                     class="btn btn-primary btn-large"
+                    data-testid="booking-request-btn"
                   >
                     {{ loadingBookingRequest ? 'Sending Request...' : 'Request Booking' }}
                   </button>
@@ -155,6 +156,7 @@
                     @click="approveBookingRequest" 
                     class="btn btn-success btn-sm"
                     :disabled="loadingBookingRequest"
+                    data-testid="approve-booking-btn"
                   >
                     Approve
                   </button>
@@ -162,6 +164,7 @@
                     @click="rejectBookingRequest" 
                     class="btn btn-danger btn-sm"
                     :disabled="loadingBookingRequest"
+                    data-testid="reject-booking-btn"
                   >
                     Decline
                   </button>
@@ -211,7 +214,7 @@
             
             <div v-for="message in chatMessages" :key="message?.id || Math.random()" class="message" :class="{ 'own-message': message?.sender_id === userId }">
               <div class="message-header">
-                <span class="sender">{{ message?.sender_id === userId ? 'You' : item?.seller?.full_name }}</span>
+                <span class="sender">{{ message?.sender_id === userId ? 'You' : message?.sender_username || 'Unknown User' }}</span>
                 <span class="timestamp">{{ formatMessageTime(message?.created_at) }}</span>
               </div>
               <div class="message-content">{{ message?.content }}</div>
@@ -452,7 +455,10 @@ async function sendBookingRequest() {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
+      },
+      body: JSON.stringify({
+        message: `I'm interested in booking this item: ${item.value.title}`
+      })
     });
     
     if (response.ok) {

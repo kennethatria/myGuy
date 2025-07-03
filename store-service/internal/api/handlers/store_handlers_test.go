@@ -681,6 +681,43 @@ func TestCreateBookingRequest(t *testing.T) {
 		assert.Equal(t, http.StatusConflict, w.Code)
 		mockService.AssertExpectations(t)
 	})
+
+	t.Run("empty message should work", func(t *testing.T) {
+		req := models.CreateBookingRequestRequest{
+			Message: "",
+		}
+
+		bookingRequest := &models.BookingRequest{
+			ID:          1,
+			ItemID:      1,
+			RequesterID: 1,
+			Status:      "pending",
+			Message:     "",
+		}
+
+		mockService.On("CreateBookingRequest", uint(1), uint(1), req.Message).Return(bookingRequest, nil)
+
+		jsonData, _ := json.Marshal(req)
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/booking-requests", bytes.NewBuffer(jsonData))
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+		mockService.AssertExpectations(t)
+	})
+
+	t.Run("invalid JSON body", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/booking-requests", bytes.NewBuffer([]byte("{")))
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		// Service should not be called for invalid JSON
+	})
 }
 
 func TestApproveBookingRequest(t *testing.T) {
