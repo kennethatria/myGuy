@@ -70,17 +70,6 @@
             </div>
           </div>
           
-          <!-- Debug Info (remove after testing) -->
-          <div v-if="userId" class="debug-info" style="background: #f0f0f0; padding: 1rem; margin: 1rem 0; border-radius: 0.5rem; font-size: 0.875rem;">
-            <strong>Debug Info:</strong><br>
-            Current User ID: {{ userId }}<br>
-            Item Seller ID: {{ item.seller.id }}<br>
-            Is Owner: {{ item.seller.id === userId }}<br>
-            Item Status: {{ item.status }}<br>
-            Has Booking Request: {{ hasBookingRequest }}<br>
-            Booking Requests Count: {{ bookingRequests.length }}<br>
-            Booking Request Status: {{ bookingRequest?.status || 'none' }}
-          </div>
 
           <div class="price-section">
             <div v-if="item.is_auction" class="auction-info">
@@ -442,20 +431,11 @@ async function loadBids() {
 }
 
 async function loadBookingRequest() {
-  if (!item.value || !userId.value) {
-    console.log('Skipping booking request load - missing item or user');
-    return;
-  }
-  
-  console.log('Loading booking requests...');
-  console.log('User ID:', userId.value);
-  console.log('Item seller ID:', item.value.seller.id);
-  console.log('Is owner:', item.value.seller.id === userId.value);
+  if (!item.value || !userId.value) return;
   
   try {
     // Check if user is the item owner
     if (item.value.seller.id === userId.value) {
-      console.log('Loading booking requests for owner...');
       // Load all booking requests for item owners
       const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/booking-requests`, {
         headers: {
@@ -464,24 +444,17 @@ async function loadBookingRequest() {
         }
       });
       
-      console.log('Owner booking requests response status:', response.status);
-      
       if (response.ok) {
         const data = await response.json();
-        console.log('Owner booking requests data:', data);
         bookingRequests.value = data.booking_requests || [];
         // Set the first pending request as the primary one for backwards compatibility
         const pendingRequest = bookingRequests.value.find(req => req.status === 'pending');
         bookingRequest.value = pendingRequest || bookingRequests.value[0] || null;
         hasBookingRequest.value = bookingRequests.value.length > 0;
-        console.log('Set booking requests:', bookingRequests.value.length);
       } else {
         console.error('Failed to load booking requests, status:', response.status);
-        const errorText = await response.text();
-        console.error('Error response:', errorText);
       }
     } else {
-      console.log('Loading booking request for non-owner...');
       // Load user's specific booking request for non-owners
       const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/booking-request`, {
         headers: {
@@ -490,23 +463,16 @@ async function loadBookingRequest() {
         }
       });
       
-      console.log('User booking request response status:', response.status);
-      
       if (response.ok) {
         const data = await response.json();
-        console.log('User booking request data:', data);
         bookingRequest.value = data.booking_request;
         hasBookingRequest.value = bookingRequest.value !== null;
-        console.log('Has booking request:', hasBookingRequest.value);
       } else if (response.status === 404) {
-        console.log('No booking request exists (404)');
         // No booking request exists
         bookingRequest.value = null;
         hasBookingRequest.value = false;
       } else {
         console.error('Failed to load booking request, status:', response.status);
-        const errorText = await response.text();
-        console.error('Error response:', errorText);
       }
     }
   } catch (err) {
