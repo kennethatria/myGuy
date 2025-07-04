@@ -407,4 +407,175 @@ describe('Store Booking Flow', () => {
       expect(wrapper.vm.currentMessageLimit).toBe(10)
     })
   })
+
+  describe('Owner Messaging Interface', () => {
+    beforeEach(() => {
+      vi.clearAllMocks()
+    })
+
+    it('should show message button for approved booking requests', async () => {
+      const ownerItem = { ...mockItem, seller: { ...mockItem.seller, id: 1 } }
+      const approvedBookingRequests = [
+        {
+          id: 1,
+          item_id: 1,
+          requester_id: 2,
+          requester: { id: 2, username: 'buyer1' },
+          status: 'approved',
+          message: 'Request message',
+          created_at: new Date().toISOString()
+        }
+      ]
+
+      // Mock item load
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ownerItem
+      })
+
+      // Mock booking requests load
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ booking_requests: approvedBookingRequests })
+      })
+
+      await router.push('/store/1')
+      await wrapper.vm.loadItem()
+
+      // Set booking requests manually for testing
+      wrapper.vm.bookingRequests = approvedBookingRequests
+
+      await wrapper.vm.$nextTick()
+
+      // Should show message button for approved request
+      const messageButton = wrapper.find('.message-approved-btn')
+      expect(messageButton.exists()).toBe(true)
+      expect(messageButton.text()).toContain('Message buyer1')
+    })
+
+    it('should not show message button for pending booking requests', async () => {
+      const ownerItem = { ...mockItem, seller: { ...mockItem.seller, id: 1 } }
+      const pendingBookingRequests = [
+        {
+          id: 1,
+          item_id: 1,
+          requester_id: 2,
+          requester: { id: 2, username: 'buyer1' },
+          status: 'pending',
+          message: 'Request message',
+          created_at: new Date().toISOString()
+        }
+      ]
+
+      // Mock item load
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ownerItem
+      })
+
+      // Mock booking requests load
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ booking_requests: pendingBookingRequests })
+      })
+
+      await router.push('/store/1')
+      await wrapper.vm.loadItem()
+
+      // Set booking requests manually for testing
+      wrapper.vm.bookingRequests = pendingBookingRequests
+
+      await wrapper.vm.$nextTick()
+
+      // Should not show message button for pending request
+      const messageButton = wrapper.find('.message-approved-btn')
+      expect(messageButton.exists()).toBe(false)
+
+      // Should show approve/decline buttons instead
+      const approveButton = wrapper.find('[data-testid="approve-booking-btn"]')
+      const rejectButton = wrapper.find('[data-testid="reject-booking-btn"]')
+      expect(approveButton.exists()).toBe(true)
+      expect(rejectButton.exists()).toBe(true)
+    })
+
+    it('should open chat modal when messaging approved requester', async () => {
+      const ownerItem = { ...mockItem, seller: { ...mockItem.seller, id: 1 } }
+      wrapper.vm.item = ownerItem
+      wrapper.vm.bookingRequests = [
+        {
+          id: 1,
+          item_id: 1,
+          requester_id: 2,
+          requester: { id: 2, username: 'buyer1' },
+          status: 'approved',
+          message: 'Request message',
+          created_at: new Date().toISOString()
+        }
+      ]
+
+      // Mock store messages API call
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          messages: [],
+          messageCount: 0,
+          messageLimit: 10,
+          bookingStatus: 'approved'
+        })
+      })
+
+      // Trigger the chat opening
+      await wrapper.vm.openStoreChatWithUser(2)
+
+      // Verify chat state
+      expect(wrapper.vm.showChatModal).toBe(true)
+      expect(wrapper.vm.chatRecipientId).toBe(2)
+      expect(wrapper.vm.chatRecipientName).toContain('User 2')
+
+      // Verify API call was made
+      expect(fetch).toHaveBeenCalledWith(
+        'http://localhost:8082/api/v1/store-messages/1',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'Authorization': 'Bearer mock-token'
+          })
+        })
+      )
+    })
+
+    it('should set correct recipient when sending message as owner', async () => {
+      const ownerItem = { ...mockItem, seller: { ...mockItem.seller, id: 1 } }
+      wrapper.vm.item = ownerItem
+      wrapper.vm.chatRecipientId = 2
+      wrapper.vm.newMessage = 'Thanks for your interest!'
+
+      // Mock successful message send
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 1,
+          store_item_id: 1,
+          sender_id: 1,
+          recipient_id: 2,
+          content: 'Thanks for your interest!',
+          created_at: new Date().toISOString()
+        })
+      })
+
+      await wrapper.vm.sendMessage()
+
+      // Verify message was sent to correct recipient
+      expect(fetch).toHaveBeenCalledWith(
+        'http://localhost:8082/api/v1/store-messages',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            store_item_id: 1,
+            recipient_id: 2,
+            content: 'Thanks for your interest!'
+          })
+        })
+      )
+    })
+  })
 })

@@ -131,6 +131,30 @@ CREATE TABLE message_deletion_warnings (
 );
 ```
 
+### Store Messages Table ✅ NEW
+```sql
+CREATE TABLE store_messages (
+  id SERIAL PRIMARY KEY,
+  store_item_id INTEGER NOT NULL,
+  sender_id INTEGER NOT NULL,
+  recipient_id INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  original_content TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  is_read BOOLEAN DEFAULT FALSE,
+  read_at TIMESTAMP
+);
+```
+
+**Indexes for Performance:**
+```sql
+CREATE INDEX idx_store_messages_item_participants 
+ON store_messages(store_item_id, sender_id, recipient_id);
+
+CREATE INDEX idx_store_messages_created_at 
+ON store_messages(store_item_id, created_at);
+```
+
 ## WebSocket Events
 
 ### Client → Server Events
@@ -350,6 +374,64 @@ Get user's last seen timestamp
   "lastSeen": "2024-01-15T10:30:00Z"
 }
 ```
+
+### Store Messaging Endpoints ✅ ENHANCED
+
+#### GET /api/v1/store-messages/:itemId
+Get messages for a store item (private conversations only)
+```json
+{
+  "messages": [
+    {
+      "id": 1,
+      "store_item_id": 123,
+      "sender_id": 2,
+      "recipient_id": 1,
+      "content": "I'm interested in this item",
+      "sender": {
+        "id": 2,
+        "username": "buyer1"
+      },
+      "recipient": {
+        "id": 1,
+        "username": "seller1"
+      },
+      "created_at": "2024-01-15T10:30:00Z"
+    }
+  ],
+  "messageCount": 1,
+  "messageLimit": 3,
+  "bookingStatus": null
+}
+```
+
+#### POST /api/v1/store-messages
+Send a message about a store item
+```json
+{
+  "store_item_id": 123,
+  "recipient_id": 1,
+  "content": "When can I view this item?"
+}
+```
+
+#### GET /api/v1/store-messages/:itemId/limits
+Get message limits and booking status for an item
+```json
+{
+  "messageCount": 2,
+  "messageLimit": 10,
+  "bookingStatus": "approved",
+  "canSendMore": true
+}
+```
+
+**Key Features:**
+- **Privacy Protection**: Only conversation participants can see messages
+- **Owner Interface**: Item owners can message approved booking requesters ✅ NEW
+- **Dynamic Limits**: 3 messages default, 10 after booking approval
+- **Content Filtering**: All messages filtered for contact information
+- **Booking Integration**: Message limits increase when bookings are approved
 
 ## Authentication
 

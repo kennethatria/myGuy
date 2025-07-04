@@ -199,11 +199,20 @@ MyGuy/
 - `POST /api/v1/items/:id/purchase` - Purchase fixed-price item
   - Validation: Cannot purchase own items, item must be active
 
-#### Booking Requests ✅ FIXED
+#### Booking Requests ✅ ENHANCED
 - `POST /api/v1/items/:id/booking-request` - Create booking request for item
 - `GET /api/v1/items/:id/booking-request` - Get booking request (returns 200 with null if none exists)
+- `GET /api/v1/items/:id/booking-requests` - Get all booking requests for item (owner only) ✅ NEW
 - `POST /api/v1/booking-requests/:requestId/approve` - Approve booking request (owner only)
 - `POST /api/v1/booking-requests/:requestId/reject` - Reject booking request (owner only)
+
+#### Store Messaging ✅ ENHANCED
+- `GET /api/v1/store-messages/:itemId` - Get messages for store item (private conversations)
+- `POST /api/v1/store-messages` - Send message about store item
+- `GET /api/v1/store-messages/:itemId/limits` - Get message limits and booking status
+- **Owner Interface**: Item owners can now message approved booking requesters ✅ NEW
+- **Privacy Protection**: Messages only visible to conversation participants
+- **Dynamic Limits**: 3 messages default, 10 messages after booking approval
 
 #### User Management
 - `GET /api/v1/user/listings` - Get current user's listings

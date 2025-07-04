@@ -209,4 +209,145 @@ describe('Store Messages API', () => {
       );
     });
   });
+
+  describe('Enhanced Owner Messaging', () => {
+    it('should allow item owner to see messages sent to them by buyers', async () => {
+      const ownerUserId = 1;
+      const buyerUserId = 2;
+      const itemId = 1;
+      
+      const mockMessages = [
+        {
+          id: 1,
+          store_item_id: itemId,
+          sender_id: buyerUserId,
+          recipient_id: ownerUserId,
+          content: 'I\'m interested in your item',
+          sender_username: 'buyer1',
+          recipient_username: 'seller1',
+          created_at: new Date()
+        }
+      ];
+      
+      jest.spyOn(messageService, 'getStoreMessages').mockResolvedValue(mockMessages);
+      jest.spyOn(messageService, 'getUserStoreMessageCount').mockResolvedValue(1);
+      jest.spyOn(messageService, 'getMessageLimit').mockResolvedValue(3);
+      jest.spyOn(messageService, 'getBookingStatus').mockResolvedValue(null);
+      
+      const response = await request(app)
+        .get(`/api/v1/store-messages/${itemId}`)
+        .set('Authorization', `Bearer ${itemOwnerToken}`)
+        .expect(200);
+      
+      expect(response.body.messages).toHaveLength(1);
+      expect(response.body.messages[0].sender.username).toBe('buyer1');
+      expect(response.body.messages[0].recipient.username).toBe('seller1');
+      expect(messageService.getStoreMessages).toHaveBeenCalledWith(itemId, ownerUserId);
+    });
+    
+    it('should allow item owner to see messages they sent to buyers', async () => {
+      const ownerUserId = 1;
+      const buyerUserId = 2;
+      const itemId = 1;
+      
+      const mockMessages = [
+        {
+          id: 1,
+          store_item_id: itemId,
+          sender_id: ownerUserId,
+          recipient_id: buyerUserId,
+          content: 'Thanks for your interest! When would you like to view it?',
+          sender_username: 'seller1',
+          recipient_username: 'buyer1',
+          created_at: new Date()
+        }
+      ];
+      
+      jest.spyOn(messageService, 'getStoreMessages').mockResolvedValue(mockMessages);
+      jest.spyOn(messageService, 'getUserStoreMessageCount').mockResolvedValue(1);
+      jest.spyOn(messageService, 'getMessageLimit').mockResolvedValue(10); // Approved booking
+      jest.spyOn(messageService, 'getBookingStatus').mockResolvedValue('approved');
+      
+      const response = await request(app)
+        .get(`/api/v1/store-messages/${itemId}`)
+        .set('Authorization', `Bearer ${itemOwnerToken}`)
+        .expect(200);
+      
+      expect(response.body.messages).toHaveLength(1);
+      expect(response.body.messages[0].sender.username).toBe('seller1');
+      expect(response.body.messages[0].recipient.username).toBe('buyer1');
+      expect(response.body.messageLimit).toBe(10); // Enhanced limit for approved booking
+      expect(response.body.bookingStatus).toBe('approved');
+    });
+    
+    it('should show conversation between owner and specific buyer', async () => {
+      const ownerUserId = 1;
+      const buyerUserId = 2;
+      const itemId = 1;
+      
+      const mockConversation = [
+        {
+          id: 1,
+          store_item_id: itemId,
+          sender_id: buyerUserId,
+          recipient_id: ownerUserId,
+          content: 'I\'m interested in this item',
+          sender_username: 'buyer1',
+          recipient_username: 'seller1',
+          created_at: new Date('2024-01-01T10:00:00Z')
+        },
+        {
+          id: 2,
+          store_item_id: itemId,
+          sender_id: ownerUserId,
+          recipient_id: buyerUserId,
+          content: 'Great! When would you like to see it?',
+          sender_username: 'seller1',
+          recipient_username: 'buyer1',
+          created_at: new Date('2024-01-01T10:05:00Z')
+        }
+      ];
+      
+      jest.spyOn(messageService, 'getStoreMessages').mockResolvedValue(mockConversation);
+      jest.spyOn(messageService, 'getUserStoreMessageCount').mockResolvedValue(1);
+      jest.spyOn(messageService, 'getMessageLimit').mockResolvedValue(10);
+      jest.spyOn(messageService, 'getBookingStatus').mockResolvedValue('approved');
+      
+      const response = await request(app)
+        .get(`/api/v1/store-messages/${itemId}`)
+        .set('Authorization', `Bearer ${itemOwnerToken}`)
+        .expect(200);
+      
+      expect(response.body.messages).toHaveLength(2);
+      // Verify conversation flow
+      expect(response.body.messages[0].sender.username).toBe('buyer1');
+      expect(response.body.messages[1].sender.username).toBe('seller1');
+      // Verify messages are ordered chronologically
+      expect(new Date(response.body.messages[0].created_at)).toBeLessThan(
+        new Date(response.body.messages[1].created_at)
+      );
+    });
+    
+    it('should not show messages between other users (privacy maintained)', async () => {
+      const ownerUserId = 1;
+      const unrelatedUserId = 3;
+      const itemId = 1;
+      
+      // No messages should be returned for unrelated user
+      jest.spyOn(messageService, 'getStoreMessages').mockResolvedValue([]);
+      jest.spyOn(messageService, 'getUserStoreMessageCount').mockResolvedValue(0);
+      jest.spyOn(messageService, 'getMessageLimit').mockResolvedValue(3);
+      jest.spyOn(messageService, 'getBookingStatus').mockResolvedValue(null);
+      
+      const unrelatedToken = jwt.sign({ id: unrelatedUserId, username: 'unrelated' }, 'test-secret');
+      
+      const response = await request(app)
+        .get(`/api/v1/store-messages/${itemId}`)
+        .set('Authorization', `Bearer ${unrelatedToken}`)
+        .expect(200);
+      
+      expect(response.body.messages).toHaveLength(0);
+      expect(messageService.getStoreMessages).toHaveBeenCalledWith(itemId, unrelatedUserId);
+    });
+  });
 });

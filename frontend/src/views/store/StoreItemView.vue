@@ -176,6 +176,12 @@
                 
                 <div v-else-if="request.status === 'approved'" class="booking-approved">
                   <p class="approved-text">✓ Approved - You can now coordinate via messages</p>
+                  <button 
+                    @click="openStoreChatWithUser(request.requester.id)" 
+                    class="btn btn-primary btn-sm message-approved-btn"
+                  >
+                    <i class="fas fa-comment"></i> Message {{ request.requester.username }}
+                  </button>
                 </div>
                 
                 <div v-else-if="request.status === 'rejected'" class="booking-rejected">
@@ -208,7 +214,7 @@
     <div v-if="showChatModal" class="chat-modal-overlay" @click="closeChatModal">
       <div class="chat-modal" @click.stop>
         <div class="chat-header">
-          <h3>Message about: {{ item.title }}</h3>
+          <h3>{{ chatRecipientName ? `Conversation with ${chatRecipientName}` : `Message about: ${item.title}` }}</h3>
           <button @click="closeChatModal" class="close-btn">&times;</button>
         </div>
         
@@ -297,6 +303,10 @@ const bookingRequest = ref(null);
 const bookingRequests = ref([]);
 const hasBookingRequest = ref(false);
 const loadingBookingRequest = ref(false);
+
+// Chat recipient for owner conversations
+const chatRecipientId = ref(null);
+const chatRecipientName = ref('');
 
 const userId = computed(() => authStore.user?.id);
 const itemId = computed(() => route.params.id);
@@ -612,6 +622,18 @@ function formatMessageTime(dateString: string): string {
 
 // Chat functions
 async function openStoreChat() {
+  // For buyers messaging the seller
+  chatRecipientId.value = item.value.seller.id;
+  chatRecipientName.value = item.value.seller.full_name || item.value.seller.username;
+  showChatModal.value = true;
+  await loadStoreMessages();
+}
+
+async function openStoreChatWithUser(recipientId) {
+  // For sellers messaging a specific buyer
+  const requester = bookingRequests.value.find(req => req.requester.id === recipientId);
+  chatRecipientId.value = recipientId;
+  chatRecipientName.value = requester?.requester?.username || `User ${recipientId}`;
   showChatModal.value = true;
   await loadStoreMessages();
 }
@@ -662,7 +684,7 @@ async function sendMessage() {
       },
       body: JSON.stringify({
         store_item_id: parseInt(itemId.value),
-        recipient_id: item.value.seller.id,
+        recipient_id: chatRecipientId.value || item.value.seller.id,
         content: newMessage.value.trim()
       })
     });
@@ -1421,6 +1443,13 @@ onMounted(() => {
   color: #dc2626;
   font-weight: 500;
   margin: 0;
+}
+
+.message-approved-btn {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .booking-actions {
