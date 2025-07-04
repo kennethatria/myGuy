@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"store-service/internal/repositories"
 )
 
 var (
@@ -15,19 +16,22 @@ var (
 )
 
 type JWTAuthMiddleware struct {
-	secretKey string
+	secretKey  string
+	userRepo   repositories.UserRepository
 }
 
-func NewJWTAuthMiddleware(secretKey string) *JWTAuthMiddleware {
+func NewJWTAuthMiddleware(secretKey string, userRepo repositories.UserRepository) *JWTAuthMiddleware {
 	return &JWTAuthMiddleware{
 		secretKey: secretKey,
+		userRepo:  userRepo,
 	}
 }
 
 type Claims struct {
-	UserID uint   `json:"user_id"`
-	Email  string `json:"email"`
-	Name   string `json:"name"`
+	UserID   uint   `json:"user_id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Name     string `json:"name"`
 	jwt.RegisteredClaims
 }
 
@@ -70,8 +74,18 @@ func (m *JWTAuthMiddleware) AuthRequired() gin.HandlerFunc {
 			return
 		}
 
+		// Ensure user exists in local database
+		if m.userRepo != nil {
+			_, err := m.userRepo.UpsertFromJWT(claims.UserID, claims.Username, claims.Email, claims.Name)
+			if err != nil {
+				// Log error but don't fail the request
+				// TODO: Add proper logging
+			}
+		}
+
 		// Set user information in context
 		c.Set("userID", claims.UserID)
+		c.Set("username", claims.Username)
 		c.Set("userEmail", claims.Email)
 		c.Set("userName", claims.Name)
 		c.Next()

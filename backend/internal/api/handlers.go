@@ -79,7 +79,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := h.authMiddleware.GenerateToken(user.ID)
+	token, err := h.authMiddleware.GenerateToken(user.ID, user.Username, user.Email, user.FullName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return

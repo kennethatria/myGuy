@@ -72,12 +72,24 @@ func setupIntegrationTestRouter(db *gorm.DB) *gin.Engine {
 		switch userID {
 		case "1":
 			c.Set("userID", uint(1))
+			c.Set("username", "seller1")
+			c.Set("userEmail", "seller1@example.com")
+			c.Set("userName", "Seller One")
 		case "2":
 			c.Set("userID", uint(2))
+			c.Set("username", "buyer1")
+			c.Set("userEmail", "buyer1@example.com")
+			c.Set("userName", "Buyer One")
 		case "3":
 			c.Set("userID", uint(3))
+			c.Set("username", "bidder1")
+			c.Set("userEmail", "bidder1@example.com")
+			c.Set("userName", "Bidder One")
 		default:
 			c.Set("userID", uint(1))
+			c.Set("username", "seller1")
+			c.Set("userEmail", "seller1@example.com")
+			c.Set("userName", "Seller One")
 		}
 		c.Next()
 	})

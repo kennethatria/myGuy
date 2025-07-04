@@ -44,6 +44,8 @@ A microservice for the MyGuy platform that provides a comprehensive marketplace 
 - **Pagination**: Efficient data loading
 - **Status Management**: Active, sold, expired, cancelled
 - **Automatic Expiration**: Bid items expire at deadline
+- **User Synchronization**: Automatic user creation/update from JWT tokens to prevent "Unknown User" issues
+- **Booking Requests**: Item booking system with proper user identification
 
 ## Architecture
 
@@ -51,7 +53,7 @@ A microservice for the MyGuy platform that provides a comprehensive marketplace 
 - **Language**: Go 1.21+
 - **Framework**: Gin HTTP framework
 - **Database**: PostgreSQL with GORM ORM
-- **Authentication**: JWT middleware (shared with main service)
+- **Authentication**: Enhanced JWT middleware with automatic user synchronization
 - **Architecture Pattern**: Clean Architecture
 
 ### Project Structure
@@ -62,19 +64,21 @@ store-service/
 │       └── main.go              # Application entry point
 ├── internal/
 │   ├── models/
-│   │   ├── store_item.go        # Item and bid models
-│   │   └── user.go              # User model (simplified)
+│   │   ├── store_item.go        # Item, bid, and booking models
+│   │   └── user.go              # User model with sync support
 │   ├── repositories/
 │   │   ├── interfaces.go        # Repository contracts
 │   │   ├── store_item_repository.go
-│   │   └── bid_repository.go
+│   │   ├── bid_repository.go
+│   │   ├── booking_request_repository.go
+│   │   └── user_repository.go   # User management with JWT sync
 │   ├── services/
 │   │   └── store_service.go     # Business logic
 │   ├── api/
 │   │   └── handlers/
 │   │       └── store_handlers.go # HTTP handlers
 │   └── middleware/
-│       └── jwt.go               # Auth middleware
+│       └── jwt.go               # Enhanced auth middleware with user sync
 ├── migrations/
 ├── Dockerfile
 ├── go.mod
@@ -269,6 +273,47 @@ Place a bid on an auction item.
 #### POST /items/:id/bids/:bidId/accept
 Accept a bid and complete the sale (seller only).
 
+### Booking Requests
+
+#### POST /items/:id/booking-request
+Create a booking request for an item.
+
+**Request Body:**
+```json
+{
+  "message": "I'm interested in this item, when can I view it?"
+}
+```
+
+**Response:**
+```json
+{
+  "id": 1,
+  "item_id": 123,
+  "requester_id": 456,
+  "requester": {
+    "id": 456,
+    "username": "buyer123",
+    "email": "buyer@example.com",
+    "name": "John Buyer"
+  },
+  "status": "pending",
+  "message": "I'm interested in this item, when can I view it?",
+  "created_at": "2024-01-15T10:30:00Z"
+}
+```
+
+#### GET /items/:id/booking-request
+Get booking request for an item (accessible by item owner or requester).
+
+#### POST /booking-requests/:requestId/approve
+Approve a booking request (item owner only).
+
+#### POST /booking-requests/:requestId/reject
+Reject a booking request (item owner only).
+
+### User Management
+
 #### GET /user/listings
 Get all items listed by the authenticated user.
 
@@ -323,6 +368,35 @@ type Bid struct {
 }
 ```
 
+### BookingRequest
+```go
+type BookingRequest struct {
+    ID          uint           `gorm:"primaryKey"`
+    ItemID      uint           `gorm:"not null"`
+    Item        *StoreItem     `gorm:"foreignKey:ItemID"`
+    RequesterID uint           `gorm:"not null"`
+    Requester   *User          `gorm:"foreignKey:RequesterID"`
+    Status      string         // pending, approved, rejected
+    Message     string         
+    CreatedAt   time.Time      
+    UpdatedAt   time.Time      
+    DeletedAt   gorm.DeletedAt `gorm:"index"`
+}
+```
+
+### User (Synchronized from JWT)
+```go
+type User struct {
+    ID        uint           `gorm:"primaryKey"`
+    Email     string         `gorm:"uniqueIndex;not null"`
+    Name      string         
+    Username  string         `gorm:"uniqueIndex;not null"`
+    CreatedAt time.Time      
+    UpdatedAt time.Time      
+    DeletedAt gorm.DeletedAt `gorm:"index"`
+}
+```
+
 ## Business Logic
 
 ### Item Creation Rules
@@ -351,6 +425,46 @@ type Bid struct {
 ### Automatic Processes
 - Bid expiration checked on each query
 - Items past bid_deadline automatically marked as expired
+
+### JWT Authentication & User Synchronization
+
+#### Enhanced JWT Token Structure
+The service expects JWT tokens with the following claims:
+```json
+{
+  "user_id": 123,
+  "username": "john_doe",
+  "email": "john@example.com", 
+  "name": "John Doe",
+  "exp": 1640995200,
+  "iat": 1640908800
+}
+```
+
+#### Automatic User Synchronization
+1. **JWT Middleware**: Extracts user information from JWT tokens
+2. **User Upsert**: Automatically creates/updates users in local database
+3. **Foreign Key Resolution**: Ensures user records exist for all relationships
+4. **Error Handling**: Graceful degradation if user sync fails (request continues)
+
+#### Benefits
+- **Resolves "Unknown User" Issues**: Proper user identification in booking requests
+- **Database Integrity**: Prevents foreign key constraint violations
+- **Service Independence**: Store service maintains its own user data
+- **Real-time Sync**: User information stays current with each request
+
+#### Implementation Details
+- **User Repository**: Dedicated repository for user CRUD operations
+- **UpsertFromJWT Method**: Handles create/update logic from JWT claims
+- **Database Constraints**: Username and email uniqueness enforced
+- **Middleware Integration**: Seamless user sync during authentication
+
+### Booking Request Rules
+1. One booking request per user per item
+2. Item owner can approve/reject requests
+3. Requester can view their own requests
+4. Item owner can view all requests for their items
+5. Booking requests display proper usernames (fixes "Unknown User" issue)
 
 ## Configuration
 
@@ -411,7 +525,7 @@ The service automatically runs migrations on startup using GORM AutoMigrate.
 
 ## Testing
 
-The store service includes comprehensive test coverage (87%+) across all layers with 60+ test scenarios.
+The store service includes comprehensive test coverage (87%+) across all layers with 85+ test scenarios, including new JWT and user synchronization tests.
 
 ### Prerequisites for Testing
 
@@ -435,13 +549,21 @@ go install github.com/golangci-lint/golangci-lint/cmd/golangci-lint@latest
 
 ### Test Structure
 
-#### 1. Unit Tests (60+ test cases)
+#### 1. Unit Tests (80+ test cases)
 - **Handler Tests** (`internal/api/handlers/store_handlers_test.go`) - 18+ scenarios
 - **Service Tests** (`internal/services/store_service_test.go`) - 15+ scenarios  
-- **Repository Tests** (`internal/repositories/*_test.go`) - 25+ scenarios
+- **Repository Tests** (`internal/repositories/*_test.go`) - 35+ scenarios
+  - Store item repository tests
+  - Bid repository tests  
+  - Booking request repository tests
+  - **NEW**: User repository tests (18 scenarios)
+- **Middleware Tests** (`internal/middleware/jwt_test.go`) - 14+ scenarios
+  - JWT token validation
+  - User synchronization from JWT tokens
+  - Authentication flow testing
 
 #### 2. Integration Tests (4 workflows)
-- **API Integration** (`internal/api/integration_test.go`) - End-to-end workflows
+- **API Integration** (`internal/api/integration_test.go`) - End-to-end workflows with JWT context
 
 ### Running Tests
 

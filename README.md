@@ -16,13 +16,15 @@ A modern task marketplace application where users can create tasks (gigs) for ot
 - ✅ **Store Functionality Fixed**: Listing visibility and access control implemented
 - ✅ **Currency Conversion**: Complete migration from USD to UGX (Uganda Shillings)
 - ✅ **JSON API Support**: Store service now supports both JSON and form data requests
+- ✅ **JWT Enhancement**: Fixed "Unknown User" bug with enhanced token structure and user synchronization
+- ✅ **User Synchronization**: Automatic user sync between services prevents database constraint issues
 - ⚠️ **Testing Required**: Backend has zero test coverage (see `improvements/`)
 - 📋 **Roadmap Available**: See `improvements/` folder for enhancement plans
 
 ## Features
 
 ### Core Functionality
-- **User Authentication**: Secure registration and login system with JWT tokens
+- **User Authentication**: Secure registration and login system with enhanced JWT tokens (includes username, email, name)
 - **Task Management**: Create, browse, and manage tasks through their complete lifecycle
 - **Advanced Search & Filtering**: Search tasks by title/description with filters for status, price range, and deadline
 - **Fee Negotiation**: Applicants can propose their fees when applying for tasks
@@ -42,6 +44,7 @@ A modern task marketplace application where users can create tasks (gigs) for ot
   - **Listing Visibility**: All active listings are visible to users, with proper status filtering
   - **Owner Indicators**: Clear visual indicators when viewing own listings
   - **UGX Currency**: All prices displayed in Uganda Shillings (UGX)
+  - **User Synchronization**: Automatic user data sync from JWT tokens ensures proper user identification
 - **Review System**: Both parties can review each other after task completion with 1-5 star ratings
 - **User Profiles**: View user profiles with ratings and review history
 
@@ -68,7 +71,7 @@ A modern task marketplace application where users can create tasks (gigs) for ot
 - **Language**: Go 1.21+
 - **Framework**: Gin (HTTP web framework)
 - **Database**: PostgreSQL with GORM ORM
-- **Authentication**: JWT tokens
+- **Authentication**: Enhanced JWT tokens with user details and cross-service synchronization
 - **Architecture**: Clean architecture with services, repositories, and handlers
 
 ### Frontend
@@ -403,6 +406,19 @@ docker-compose up -d --scale chat-websocket-service=3
 
 ### Store Service Issues
 
+#### "Unknown User" in Booking Requests ✅ FIXED
+**Issue**: Booking requests displayed "Unknown User" instead of requester username.
+
+**Root Cause**: JWT tokens only contained `UserID` but no username, email, or name information.
+
+**Solution Applied**:
+1. **Enhanced JWT Tokens**: Updated JWT Claims to include `Username`, `Email`, and `Name`
+2. **Backend Token Generation**: Modified login handler to pass complete user information
+3. **Store Service Sync**: Added automatic user synchronization from JWT tokens
+4. **Database Constraints**: Added NOT NULL constraint to username field
+
+**Result**: Booking requests now properly display usernames instead of "Unknown User".
+
 #### Listings Not Visible
 If store listings are not appearing:
 
@@ -425,6 +441,7 @@ If store listings are not appearing:
 4. **Check Response Format**: Frontend expects `{items: [...]}` format from backend
 
 #### Common Solutions Applied
+- **✅ JWT Enhancement**: Fixed "Unknown User" bug with enhanced token structure and user synchronization
 - **Fixed Response Parsing**: Frontend now correctly extracts `data.items` from API response
 - **Added Status Filtering**: Backend defaults to showing only `active` items
 - **JSON API Support**: Store service now supports both JSON and form data requests

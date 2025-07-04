@@ -134,9 +134,12 @@ func setupTestRouter(handler *StoreHandler) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	
-	// Middleware to set userID
+	// Middleware to set user context (simulating JWT middleware)
 	router.Use(func(c *gin.Context) {
 		c.Set("userID", uint(1))
+		c.Set("username", "testuser")
+		c.Set("userEmail", "test@example.com")
+		c.Set("userName", "Test User")
 		c.Next()
 	})
 	

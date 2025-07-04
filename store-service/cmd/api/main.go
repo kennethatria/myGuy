@@ -42,6 +42,7 @@ func main() {
 	itemRepo := repositories.NewStoreItemRepository(db)
 	bidRepo := repositories.NewBidRepository(db)
 	bookingRepo := repositories.NewBookingRequestRepository(db)
+	userRepo := repositories.NewUserRepository(db)
 
 	// Initialize services
 	storeService := services.NewStoreService(itemRepo, bidRepo, bookingRepo)
@@ -54,7 +55,7 @@ func main() {
 	if jwtSecret == "" {
 		log.Fatal("JWT_SECRET environment variable is required")
 	}
-	jwtMiddleware := middleware.NewJWTAuthMiddleware(jwtSecret)
+	jwtMiddleware := middleware.NewJWTAuthMiddleware(jwtSecret, userRepo)
 
 	// Setup routes
 	router := gin.Default()

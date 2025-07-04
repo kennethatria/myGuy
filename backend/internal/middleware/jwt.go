@@ -26,13 +26,19 @@ func NewJWTAuthMiddleware(secretKey string) *JWTAuthMiddleware {
 }
 
 type Claims struct {
-	UserID uint `json:"user_id"`
+	UserID   uint   `json:"user_id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Name     string `json:"name"`
 	jwt.RegisteredClaims
 }
 
-func (m *JWTAuthMiddleware) GenerateToken(userID uint) (string, error) {
+func (m *JWTAuthMiddleware) GenerateToken(userID uint, username, email, name string) (string, error) {
 	claims := Claims{
-		UserID: userID,
+		UserID:   userID,
+		Username: username,
+		Email:    email,
+		Name:     name,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -83,6 +89,9 @@ func (m *JWTAuthMiddleware) AuthRequired() gin.HandlerFunc {
 		}
 
 		c.Set("userID", claims.UserID)
+		c.Set("username", claims.Username)
+		c.Set("email", claims.Email)
+		c.Set("name", claims.Name)
 		c.Next()
 	}
 }
