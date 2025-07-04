@@ -20,9 +20,9 @@
         <div class="conversations-list">
           <ConversationItem
             v-for="conversation in chatStore.conversations"
-            :key="conversation.task_id || conversation.application_id"
+            :key="conversation.task_id || conversation.application_id || conversation.item_id"
             :conversation="conversation"
-            :active="chatStore.activeConversation ? ((chatStore.activeConversation.task_id === conversation.task_id) || (chatStore.activeConversation.application_id === conversation.application_id)) : false"
+            :active="chatStore.activeConversation ? ((chatStore.activeConversation.task_id === conversation.task_id) || (chatStore.activeConversation.application_id === conversation.application_id) || (chatStore.activeConversation.item_id === conversation.item_id)) : false"
             @click="selectConversation(conversation)"
           />
         </div>
@@ -74,7 +74,7 @@ onUnmounted(() => {
 });
 
 function selectConversation(conversation: ConversationSummary) {
-  const conversationId = conversation.task_id || conversation.application_id;
+  const conversationId = conversation.task_id || conversation.application_id || conversation.item_id;
   if (conversationId) {
     chatStore.joinConversation(conversationId);
   }

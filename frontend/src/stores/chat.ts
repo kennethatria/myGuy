@@ -34,19 +34,19 @@ export const useChatStore = defineStore('chat', () => {
   
   const activeMessages = computed(() => {
     if (!activeConversation.value) return [];
-    const conversationId = activeConversation.value.task_id || activeConversation.value.application_id;
+    const conversationId = activeConversation.value.task_id || activeConversation.value.application_id || activeConversation.value.item_id;
     return messages.value.get(conversationId!) || [];
   });
   
   const activeTypingUsers = computed(() => {
     if (!activeConversation.value) return [];
-    const conversationId = activeConversation.value.task_id || activeConversation.value.application_id;
+    const conversationId = activeConversation.value.task_id || activeConversation.value.application_id || activeConversation.value.item_id;
     return typingUsers.value.get(conversationId!) || [];
   });
   
   const activeHasMoreMessages = computed(() => {
     if (!activeConversation.value) return false;
-    const conversationId = activeConversation.value.task_id || activeConversation.value.application_id;
+    const conversationId = activeConversation.value.task_id || activeConversation.value.application_id || activeConversation.value.item_id;
     
     // Get total message count for this conversation
     const totalCount = totalMessageCounts.value.get(conversationId!) || 0;
@@ -130,24 +130,31 @@ export const useChatStore = defineStore('chat', () => {
   
   // Event handlers
   function handleNewMessage(message: Message) {
-    const taskId = message.task_id;
-    const taskMessages = messages.value.get(taskId) || [];
-    messages.value.set(taskId, [...taskMessages, message]);
+    const conversationId = message.task_id || message.application_id || message.item_id;
+    if (!conversationId) return;
+    
+    const conversationMessages = messages.value.get(conversationId) || [];
+    messages.value.set(conversationId, [...conversationMessages, message]);
     
     // Update total message count
-    const currentCount = totalMessageCounts.value.get(taskId) || 0;
-    totalMessageCounts.value.set(taskId, currentCount + 1);
+    const currentCount = totalMessageCounts.value.get(conversationId) || 0;
+    totalMessageCounts.value.set(conversationId, currentCount + 1);
     
     // Update conversation last message
-    const conv = conversations.value.find(c => c.task_id === taskId);
+    const conv = conversations.value.find(c => 
+      c.task_id === conversationId || 
+      c.application_id === conversationId || 
+      c.item_id === conversationId
+    );
     if (conv) {
       conv.last_message = message.content;
       conv.last_message_time = message.created_at;
       
       // Increment unread count if not the active conversation
-      if (activeConversation.value?.task_id !== taskId && message.sender_id !== authStore.user?.id) {
-        const currentUnread = unreadCounts.value.get(taskId) || 0;
-        unreadCounts.value.set(taskId, currentUnread + 1);
+      const activeConvId = activeConversation.value?.task_id || activeConversation.value?.application_id || activeConversation.value?.item_id;
+      if (activeConvId !== conversationId && message.sender_id !== authStore.user?.id) {
+        const currentUnread = unreadCounts.value.get(conversationId) || 0;
+        unreadCounts.value.set(conversationId, currentUnread + 1);
         conv.unread_count = currentUnread + 1;
       }
     }
@@ -163,33 +170,35 @@ export const useChatStore = defineStore('chat', () => {
   }
   
   function handleMessageEdited(message: Message) {
-    const taskId = message.task_id;
-    const taskMessages = messages.value.get(taskId) || [];
-    const index = taskMessages.findIndex(m => m.id === message.id);
+    const conversationId = message.task_id || message.application_id || message.item_id;
+    if (!conversationId) return;
+    
+    const conversationMessages = messages.value.get(conversationId) || [];
+    const index = conversationMessages.findIndex(m => m.id === message.id);
     if (index !== -1) {
-      taskMessages[index] = message;
-      messages.value.set(taskId, [...taskMessages]);
+      conversationMessages[index] = message;
+      messages.value.set(conversationId, [...conversationMessages]);
     }
   }
   
   function handleMessageDeleted({ messageId }: { messageId: number }) {
-    messages.value.forEach((taskMessages, taskId) => {
-      const index = taskMessages.findIndex(m => m.id === messageId);
+    messages.value.forEach((conversationMessages, conversationId) => {
+      const index = conversationMessages.findIndex(m => m.id === messageId);
       if (index !== -1) {
-        taskMessages[index].content = '[Message deleted]';
-        taskMessages[index].is_deleted = true;
-        messages.value.set(taskId, [...taskMessages]);
+        conversationMessages[index].content = '[Message deleted]';
+        conversationMessages[index].is_deleted = true;
+        messages.value.set(conversationId, [...conversationMessages]);
       }
     });
   }
   
   function handleMessageRead({ messageId, readAt }: { messageId: number; readAt: string }) {
-    messages.value.forEach((taskMessages, taskId) => {
-      const message = taskMessages.find(m => m.id === messageId);
+    messages.value.forEach((conversationMessages, conversationId) => {
+      const message = conversationMessages.find(m => m.id === messageId);
       if (message) {
         message.is_read = true;
         message.read_at = readAt;
-        messages.value.set(taskId, [...taskMessages]);
+        messages.value.set(conversationId, [...conversationMessages]);
       }
     });
   }
@@ -217,35 +226,41 @@ export const useChatStore = defineStore('chat', () => {
     
     // Update unread counts
     convs.forEach(conv => {
-      const conversationId = conv.task_id || conv.application_id;
+      const conversationId = conv.task_id || conv.application_id || conv.item_id;
       if (conversationId) {
         unreadCounts.value.set(conversationId, conv.unread_count);
       }
     });
   }
   
-  function handleMessagesList({ taskId, messages: msgs, offset, totalCount }: { taskId: number; messages: Message[]; offset: number; totalCount?: number }) {
+  function handleMessagesList({ taskId, applicationId, itemId, messages: msgs, offset, totalCount }: { taskId?: number; applicationId?: number; itemId?: number; messages: Message[]; offset: number; totalCount?: number }) {
+    const conversationId = taskId || applicationId || itemId;
+    if (!conversationId) return;
+    
     if (offset === 0) {
-      messages.value.set(taskId, msgs);
+      messages.value.set(conversationId, msgs);
     } else {
       // Prepend older messages
-      const existing = messages.value.get(taskId) || [];
-      messages.value.set(taskId, [...msgs, ...existing]);
+      const existing = messages.value.get(conversationId) || [];
+      messages.value.set(conversationId, [...msgs, ...existing]);
     }
     
     // Store total count if provided
     if (totalCount !== undefined) {
-      totalMessageCounts.value.set(taskId, totalCount);
+      totalMessageCounts.value.set(conversationId, totalCount);
     }
     
     // If we got less than requested, there are no more messages
-    hasMoreMessages.value.set(taskId, msgs.length === 5);
+    hasMoreMessages.value.set(conversationId, msgs.length === 5);
     isLoadingMessages.value = false;
   }
   
-  function handleConversationMarkedRead({ taskId, count }: { taskId: number; count: number }) {
-    unreadCounts.value.set(taskId, 0);
-    const conv = conversations.value.find(c => c.task_id === taskId || c.application_id === taskId);
+  function handleConversationMarkedRead({ taskId, applicationId, itemId, count }: { taskId?: number; applicationId?: number; itemId?: number; count: number }) {
+    const conversationId = taskId || applicationId || itemId;
+    if (!conversationId) return;
+    
+    unreadCounts.value.set(conversationId, 0);
+    const conv = conversations.value.find(c => c.task_id === conversationId || c.application_id === conversationId || c.item_id === conversationId);
     if (conv) {
       conv.unread_count = 0;
     }
@@ -283,7 +298,7 @@ export const useChatStore = defineStore('chat', () => {
   function joinConversation(conversationId: number) {
     if (!socket.value) return;
     
-    const conv = conversations.value.find(c => c.task_id === conversationId || c.application_id === conversationId);
+    const conv = conversations.value.find(c => c.task_id === conversationId || c.application_id === conversationId || c.item_id === conversationId);
     if (conv) {
       // Store reference to previous conversation BEFORE updating activeConversation
       const previousConversation = activeConversation.value;
@@ -291,12 +306,15 @@ export const useChatStore = defineStore('chat', () => {
       // Leave previous conversation if it exists and is different
       if (previousConversation && 
           (previousConversation.task_id !== conv.task_id || 
-           previousConversation.application_id !== conv.application_id)) {
-        const prevId = previousConversation.task_id || previousConversation.application_id;
+           previousConversation.application_id !== conv.application_id ||
+           previousConversation.item_id !== conv.item_id)) {
+        const prevId = previousConversation.task_id || previousConversation.application_id || previousConversation.item_id;
         if (previousConversation.task_id) {
           socket.value.emit('leave:conversation', { taskId: prevId });
-        } else {
+        } else if (previousConversation.application_id) {
           socket.value.emit('leave:conversation', { applicationId: prevId });
+        } else if (previousConversation.item_id) {
+          socket.value.emit('leave:conversation', { itemId: prevId });
         }
       }
       
@@ -306,19 +324,33 @@ export const useChatStore = defineStore('chat', () => {
       // Join new conversation
       if (conv.task_id) {
         socket.value.emit('join:conversation', { taskId: conversationId });
-      } else {
+      } else if (conv.application_id) {
         socket.value.emit('join:conversation', { applicationId: conversationId });
+      } else if (conv.item_id) {
+        socket.value.emit('join:conversation', { itemId: conversationId });
       }
       
       // Load messages if not already loaded
       if (!messages.value.has(conversationId)) {
         isLoadingMessages.value = true;
-        socket.value.emit('messages:get', { taskId: conversationId, limit: 5, offset: 0 });
+        if (conv.task_id) {
+          socket.value.emit('messages:get', { taskId: conversationId, limit: 5, offset: 0 });
+        } else if (conv.application_id) {
+          socket.value.emit('messages:get', { applicationId: conversationId, limit: 5, offset: 0 });
+        } else if (conv.item_id) {
+          socket.value.emit('messages:get', { itemId: conversationId, limit: 5, offset: 0 });
+        }
       }
       
       // Mark as read
       if (conv.unread_count > 0) {
-        socket.value.emit('conversation:read', { taskId: conversationId });
+        if (conv.task_id) {
+          socket.value.emit('conversation:read', { taskId: conversationId });
+        } else if (conv.application_id) {
+          socket.value.emit('conversation:read', { applicationId: conversationId });
+        } else if (conv.item_id) {
+          socket.value.emit('conversation:read', { itemId: conversationId });
+        }
       }
     }
   }
@@ -335,6 +367,12 @@ export const useChatStore = defineStore('chat', () => {
     } else if (activeConversation.value.application_id) {
       socket.value.emit('message:send', {
         applicationId: activeConversation.value.application_id,
+        recipientId,
+        content
+      });
+    } else if (activeConversation.value.item_id) {
+      socket.value.emit('message:send', {
+        itemId: activeConversation.value.item_id,
         recipientId,
         content
       });
@@ -369,33 +407,70 @@ export const useChatStore = defineStore('chat', () => {
   function loadMoreMessages() {
     if (!socket.value || !activeConversation.value || isLoadingMessages.value) return;
     
-    const taskId = activeConversation.value.task_id;
-    const currentMessages = messages.value.get(taskId) || [];
+    const conversationId = activeConversation.value.task_id || activeConversation.value.application_id || activeConversation.value.item_id;
+    if (!conversationId) return;
     
-    if (!hasMoreMessages.value.get(taskId)) return;
+    const currentMessages = messages.value.get(conversationId) || [];
+    
+    if (!hasMoreMessages.value.get(conversationId)) return;
     
     isLoadingMessages.value = true;
-    socket.value.emit('messages:get', {
-      taskId,
-      limit: 5,
-      offset: currentMessages.length
-    });
+    
+    if (activeConversation.value.task_id) {
+      socket.value.emit('messages:get', {
+        taskId: conversationId,
+        limit: 5,
+        offset: currentMessages.length
+      });
+    } else if (activeConversation.value.application_id) {
+      socket.value.emit('messages:get', {
+        applicationId: conversationId,
+        limit: 5,
+        offset: currentMessages.length
+      });
+    } else if (activeConversation.value.item_id) {
+      socket.value.emit('messages:get', {
+        itemId: conversationId,
+        limit: 5,
+        offset: currentMessages.length
+      });
+    }
   }
   
   function startTyping() {
     if (!socket.value || !activeConversation.value) return;
     
-    socket.value.emit('typing:start', {
-      taskId: activeConversation.value.task_id
-    });
+    if (activeConversation.value.task_id) {
+      socket.value.emit('typing:start', {
+        taskId: activeConversation.value.task_id
+      });
+    } else if (activeConversation.value.application_id) {
+      socket.value.emit('typing:start', {
+        applicationId: activeConversation.value.application_id
+      });
+    } else if (activeConversation.value.item_id) {
+      socket.value.emit('typing:start', {
+        itemId: activeConversation.value.item_id
+      });
+    }
   }
   
   function stopTyping() {
     if (!socket.value || !activeConversation.value) return;
     
-    socket.value.emit('typing:stop', {
-      taskId: activeConversation.value.task_id
-    });
+    if (activeConversation.value.task_id) {
+      socket.value.emit('typing:stop', {
+        taskId: activeConversation.value.task_id
+      });
+    } else if (activeConversation.value.application_id) {
+      socket.value.emit('typing:stop', {
+        applicationId: activeConversation.value.application_id
+      });
+    } else if (activeConversation.value.item_id) {
+      socket.value.emit('typing:stop', {
+        itemId: activeConversation.value.item_id
+      });
+    }
   }
   
   async function loadDeletionWarnings() {

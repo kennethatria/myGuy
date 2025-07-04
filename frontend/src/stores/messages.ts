@@ -5,8 +5,9 @@ import { useAuthStore } from './auth'
 
 export interface Message {
   id: number
-  task_id: number
+  task_id?: number
   application_id?: number
+  item_id?: number
   sender_id: number
   recipient_id: number
   content: string
@@ -31,8 +32,10 @@ export interface Message {
 export interface ConversationSummary {
   task_id?: number
   application_id?: number
+  item_id?: number
   task_title?: string
   application_title?: string
+  item_title?: string
   task_description?: string
   task_status?: string
   last_message: string
@@ -40,7 +43,7 @@ export interface ConversationSummary {
   other_user_id: number
   other_user_name: string
   unread_count: number
-  conversation_type: 'task' | 'application'
+  conversation_type: 'task' | 'application' | 'store'
 }
 
 export const useMessagesStore = defineStore('messages', () => {
@@ -176,11 +179,81 @@ export const useMessagesStore = defineStore('messages', () => {
     }
   }
 
+  const fetchStoreMessages = async (itemId: number): Promise<Message[]> => {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
+    try {
+      console.log(`Fetching messages for store item ID: ${itemId}`);
+      const response = await fetch(`${config.ENDPOINTS.STORE_MESSAGES}/${itemId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      if (!response.ok) {
+        console.warn(`Failed to fetch store messages, status: ${response.status}`);
+        return [];
+      }
+      
+      const data = await response.json();
+      console.log(`Fetched ${data.length} messages for store item ${itemId}`);
+      
+      const validatedData = data.map((msg: any) => ({
+        ...msg,
+        id: msg.id || Math.random(),
+        sender: msg.sender || { id: 0, username: 'Unknown User' },
+        content: msg.content || '',
+        created_at: msg.created_at || new Date().toISOString()
+      }));
+      
+      return validatedData;
+    } catch (error) {
+      console.error('Error fetching store messages:', error);
+      return [];
+    }
+  }
+
+  const sendStoreMessage = async (itemId: number, content: string): Promise<Message> => {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
+    try {
+      const response = await fetch(`${config.ENDPOINTS.STORE_MESSAGES}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ item_id: itemId, content }),
+      })
+      
+      if (!response.ok) {
+        if (response.status === 403) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Message limit exceeded')
+        } else {
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.error || 'Failed to send message')
+        }
+      }
+      
+      const newMessage = await response.json()
+      return newMessage
+    } catch (error) {
+      console.error('Error sending store message:', error)
+      throw error
+    }
+  }
+
   return {
     messages,
     fetchTaskMessages,
     sendMessage,
     fetchApplicationMessages,
     sendApplicationMessage,
+    fetchStoreMessages,
+    sendStoreMessage,
   }
 })

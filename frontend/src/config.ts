@@ -15,5 +15,6 @@ export default {
     // Chat endpoints
     TASK_MESSAGES: `${CHAT_API_URL}/tasks`,
     APPLICATION_MESSAGES: `${CHAT_API_URL}/applications`,
+    STORE_MESSAGES: `${CHAT_API_URL}/store-messages`,
   }
 };
