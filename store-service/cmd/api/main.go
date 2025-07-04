@@ -102,6 +102,7 @@ func main() {
 			// Booking requests
 			auth.POST("/items/:id/booking-request", storeHandler.CreateBookingRequest)
 			auth.GET("/items/:id/booking-request", storeHandler.GetBookingRequest)
+			auth.GET("/items/:id/booking-requests", storeHandler.GetAllBookingRequests)
 			auth.POST("/booking-requests/:requestId/approve", storeHandler.ApproveBookingRequest)
 			auth.POST("/booking-requests/:requestId/reject", storeHandler.RejectBookingRequest)
 

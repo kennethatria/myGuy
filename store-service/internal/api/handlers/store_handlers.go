@@ -481,6 +481,30 @@ func (h *StoreHandler) GetBookingRequest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"booking_request": bookingRequest})
 }
 
+// GetAllBookingRequests retrieves all booking requests for an item (owner only)
+func (h *StoreHandler) GetAllBookingRequests(c *gin.Context) {
+	userID := c.GetUint("userID")
+	
+	itemIDStr := c.Param("id")
+	itemID, err := strconv.Atoi(itemIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item ID"})
+		return
+	}
+
+	bookingRequests, err := h.service.GetAllBookingRequestsByItem(uint(itemID), userID)
+	if err != nil {
+		if err.Error() == "unauthorized: you are not the owner of this item" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"booking_requests": bookingRequests})
+}
+
 // ApproveBookingRequest approves a booking request
 func (h *StoreHandler) ApproveBookingRequest(c *gin.Context) {
 	userID := c.GetUint("userID")

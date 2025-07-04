@@ -144,16 +144,20 @@
             </div>
             
             <!-- Booking Request Management for Owner -->
-            <div v-if="bookingRequest && bookingRequest.status === 'pending'" class="booking-management">
-              <h4>Booking Request</h4>
-              <div class="booking-request-card">
+            <div v-if="bookingRequests.length > 0" class="booking-management">
+              <h4>Booking Requests ({{ bookingRequests.length }})</h4>
+              
+              <div v-for="request in bookingRequests" :key="request.id" class="booking-request-card">
                 <div class="requester-info">
-                  <p><strong>Request from:</strong> {{ bookingRequest.requester?.username || 'Unknown User' }}</p>
-                  <p class="request-time">{{ formatDate(bookingRequest.created_at) }}</p>
+                  <p><strong>Request from:</strong> {{ request.requester?.username || 'Unknown User' }}</p>
+                  <p class="request-time">{{ formatDate(request.created_at) }}</p>
+                  <p v-if="request.message" class="request-message">{{ request.message }}</p>
+                  <span :class="`status-badge status-${request.status}`">{{ request.status.toUpperCase() }}</span>
                 </div>
-                <div class="booking-actions">
+                
+                <div v-if="request.status === 'pending'" class="booking-actions">
                   <button 
-                    @click="approveBookingRequest" 
+                    @click="approveBookingRequest(request)" 
                     class="btn btn-success btn-sm"
                     :disabled="loadingBookingRequest"
                     data-testid="approve-booking-btn"
@@ -161,7 +165,7 @@
                     Approve
                   </button>
                   <button 
-                    @click="rejectBookingRequest" 
+                    @click="rejectBookingRequest(request)" 
                     class="btn btn-danger btn-sm"
                     :disabled="loadingBookingRequest"
                     data-testid="reject-booking-btn"
@@ -169,12 +173,15 @@
                     Decline
                   </button>
                 </div>
+                
+                <div v-else-if="request.status === 'approved'" class="booking-approved">
+                  <p class="approved-text">✓ Approved - You can now coordinate via messages</p>
+                </div>
+                
+                <div v-else-if="request.status === 'rejected'" class="booking-rejected">
+                  <p class="rejected-text">✗ Declined</p>
+                </div>
               </div>
-            </div>
-            
-            <div v-else-if="bookingRequest && bookingRequest.status === 'approved'" class="booking-approved-owner">
-              <h4>Booking Approved</h4>
-              <p>You've approved the booking request from {{ bookingRequest.requester?.username }}. You can now coordinate the item exchange via messages.</p>
             </div>
           </div>
           
@@ -287,6 +294,7 @@ const loadingMessages = ref(false);
 
 // Booking-related variables
 const bookingRequest = ref(null);
+const bookingRequests = ref([]);
 const hasBookingRequest = ref(false);
 const loadingBookingRequest = ref(false);
 
@@ -392,23 +400,46 @@ async function loadBookingRequest() {
   if (!item.value || !userId.value) return;
   
   try {
-    const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/booking-request`, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Content-Type': 'application/json'
+    // Check if user is the item owner
+    if (item.value.seller.id === userId.value) {
+      // Load all booking requests for item owners
+      const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/booking-requests`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        bookingRequests.value = data.booking_requests || [];
+        // Set the first pending request as the primary one for backwards compatibility
+        const pendingRequest = bookingRequests.value.find(req => req.status === 'pending');
+        bookingRequest.value = pendingRequest || bookingRequests.value[0] || null;
+        hasBookingRequest.value = bookingRequests.value.length > 0;
+      } else {
+        console.error('Failed to load booking requests, status:', response.status);
       }
-    });
-    
-    if (response.ok) {
-      const request = await response.json();
-      bookingRequest.value = request;
-      hasBookingRequest.value = true;
-    } else if (response.status === 404) {
-      // No booking request exists
-      bookingRequest.value = null;
-      hasBookingRequest.value = false;
     } else {
-      console.error('Failed to load booking request, status:', response.status);
+      // Load user's specific booking request for non-owners
+      const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/booking-request`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        bookingRequest.value = data.booking_request;
+        hasBookingRequest.value = bookingRequest.value !== null;
+      } else if (response.status === 404) {
+        // No booking request exists
+        bookingRequest.value = null;
+        hasBookingRequest.value = false;
+      } else {
+        console.error('Failed to load booking request, status:', response.status);
+      }
     }
   } catch (err) {
     console.error('Error loading booking request:', err);
@@ -478,12 +509,12 @@ async function sendBookingRequest() {
   }
 }
 
-async function approveBookingRequest() {
-  if (!bookingRequest.value || loadingBookingRequest.value) return;
+async function approveBookingRequest(request = bookingRequest.value) {
+  if (!request || loadingBookingRequest.value) return;
   
   loadingBookingRequest.value = true;
   try {
-    const response = await fetch(`http://localhost:8081/api/v1/booking-requests/${bookingRequest.value.id}/approve`, {
+    const response = await fetch(`http://localhost:8081/api/v1/booking-requests/${request.id}/approve`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -491,7 +522,11 @@ async function approveBookingRequest() {
     });
     
     if (response.ok) {
-      bookingRequest.value.status = 'approved';
+      request.status = 'approved';
+      // Update both arrays
+      if (bookingRequest.value && bookingRequest.value.id === request.id) {
+        bookingRequest.value.status = 'approved';
+      }
       alert('Booking request approved! The requester can now message you with up to 10 messages.');
     } else {
       const error = await response.json();
@@ -505,8 +540,8 @@ async function approveBookingRequest() {
   }
 }
 
-async function rejectBookingRequest() {
-  if (!bookingRequest.value || loadingBookingRequest.value) return;
+async function rejectBookingRequest(request = bookingRequest.value) {
+  if (!request || loadingBookingRequest.value) return;
   
   if (!confirm('Are you sure you want to decline this booking request?')) {
     return;
@@ -514,7 +549,7 @@ async function rejectBookingRequest() {
   
   loadingBookingRequest.value = true;
   try {
-    const response = await fetch(`http://localhost:8081/api/v1/booking-requests/${bookingRequest.value.id}/reject`, {
+    const response = await fetch(`http://localhost:8081/api/v1/booking-requests/${request.id}/reject`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -522,7 +557,11 @@ async function rejectBookingRequest() {
     });
     
     if (response.ok) {
-      bookingRequest.value.status = 'rejected';
+      request.status = 'rejected';
+      // Update both arrays
+      if (bookingRequest.value && bookingRequest.value.id === request.id) {
+        bookingRequest.value.status = 'rejected';
+      }
       alert('Booking request declined.');
     } else {
       const error = await response.json();
@@ -1313,9 +1352,14 @@ onMounted(() => {
   border: 1px solid #e5e7eb;
   border-radius: 0.375rem;
   padding: 1rem;
+  margin-bottom: 1rem;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+}
+
+.requester-info {
+  flex: 1;
 }
 
 .requester-info p {
@@ -1325,6 +1369,58 @@ onMounted(() => {
 .request-time {
   font-size: 0.75rem;
   color: #6b7280;
+}
+
+.request-message {
+  font-size: 0.875rem;
+  color: #4b5563;
+  font-style: italic;
+  margin: 0.5rem 0;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-top: 0.5rem;
+}
+
+.status-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-approved {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.booking-approved {
+  margin-top: 1rem;
+}
+
+.approved-text {
+  color: #059669;
+  font-weight: 500;
+  margin: 0;
+}
+
+.booking-rejected {
+  margin-top: 1rem;
+}
+
+.rejected-text {
+  color: #dc2626;
+  font-weight: 500;
+  margin: 0;
 }
 
 .booking-actions {

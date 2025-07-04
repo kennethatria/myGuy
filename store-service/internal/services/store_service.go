@@ -351,6 +351,26 @@ func (s *StoreService) GetBookingRequestByItem(itemID uint, userID uint) (*model
 	return bookingRequest, nil
 }
 
+func (s *StoreService) GetAllBookingRequestsByItem(itemID uint, userID uint) ([]models.BookingRequest, error) {
+	// First check if user is the item owner
+	item, err := s.itemRepo.GetByID(itemID)
+	if err != nil {
+		return nil, err
+	}
+
+	if item.SellerID != userID {
+		return nil, errors.New("unauthorized: you are not the owner of this item")
+	}
+
+	// Get all booking requests for this item
+	bookingRequests, err := s.bookingRepo.GetAllByItemID(itemID)
+	if err != nil {
+		return nil, err
+	}
+
+	return bookingRequests, nil
+}
+
 func (s *StoreService) ApproveBookingRequest(requestID uint, ownerID uint) error {
 	// Get the booking request
 	request, err := s.bookingRepo.GetByID(requestID)

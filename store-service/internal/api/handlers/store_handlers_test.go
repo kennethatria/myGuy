@@ -115,6 +115,11 @@ func (m *MockStoreService) GetBookingRequestByItem(itemID uint, userID uint) (*m
 	return args.Get(0).(*models.BookingRequest), args.Error(1)
 }
 
+func (m *MockStoreService) GetAllBookingRequestsByItem(itemID uint, userID uint) ([]models.BookingRequest, error) {
+	args := m.Called(itemID, userID)
+	return args.Get(0).([]models.BookingRequest), args.Error(1)
+}
+
 func (m *MockStoreService) ApproveBookingRequest(requestID uint, ownerID uint) error {
 	args := m.Called(requestID, ownerID)
 	return args.Error(0)
@@ -159,6 +164,7 @@ func setupTestRouter(handler *StoreHandler) *gin.Engine {
 		api.GET("/user/bids", handler.GetUserBids)
 		api.POST("/items/:id/booking-request", handler.CreateBookingRequest)
 		api.GET("/items/:id/booking-request", handler.GetBookingRequest)
+		api.GET("/items/:id/booking-requests", handler.GetAllBookingRequests)
 		api.POST("/booking-requests/:requestId/approve", handler.ApproveBookingRequest)
 		api.POST("/booking-requests/:requestId/reject", handler.RejectBookingRequest)
 		api.GET("/user/booking-requests", handler.GetUserBookingRequests)
@@ -1168,6 +1174,104 @@ func TestGetBookingRequest(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusNotFound, w.Code)
+		mockService.AssertExpectations(t)
+	})
+}
+
+func TestGetAllBookingRequests(t *testing.T) {
+	mockService := new(MockStoreService)
+	handler := NewStoreHandler(mockService)
+	router := setupTestRouter(handler)
+
+	t.Run("successful retrieval of multiple booking requests", func(t *testing.T) {
+		requests := []models.BookingRequest{
+			{
+				ID:          1,
+				ItemID:      1,
+				RequesterID: 2,
+				Status:      "pending",
+				Message:     "First request",
+				CreatedAt:   time.Now(),
+			},
+			{
+				ID:          2,
+				ItemID:      1,
+				RequesterID: 3,
+				Status:      "approved",
+				Message:     "Second request",
+				CreatedAt:   time.Now(),
+			},
+		}
+
+		mockService.On("GetAllBookingRequestsByItem", uint(1), uint(1)).Return(requests, nil)
+
+		req, _ := http.NewRequest("GET", "/api/v1/items/1/booking-requests", nil)
+		req.Header.Set("X-User-ID", "1")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		
+		var response struct {
+			BookingRequests []models.BookingRequest `json:"booking_requests"`
+		}
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		assert.NoError(t, err)
+		assert.Len(t, response.BookingRequests, 2)
+		assert.Equal(t, "pending", response.BookingRequests[0].Status)
+		assert.Equal(t, "approved", response.BookingRequests[1].Status)
+		mockService.AssertExpectations(t)
+	})
+
+	t.Run("unauthorized access - not item owner", func(t *testing.T) {
+		mockService.On("GetAllBookingRequestsByItem", uint(1), uint(2)).Return([]models.BookingRequest{}, errors.New("unauthorized: you are not the owner of this item"))
+
+		req, _ := http.NewRequest("GET", "/api/v1/items/1/booking-requests", nil)
+		req.Header.Set("X-User-ID", "2")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+		mockService.AssertExpectations(t)
+	})
+
+	t.Run("invalid item ID", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/api/v1/items/invalid/booking-requests", nil)
+		req.Header.Set("X-User-ID", "1")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("item not found", func(t *testing.T) {
+		mockService.On("GetAllBookingRequestsByItem", uint(999), uint(1)).Return([]models.BookingRequest{}, errors.New("item not found"))
+
+		req, _ := http.NewRequest("GET", "/api/v1/items/999/booking-requests", nil)
+		req.Header.Set("X-User-ID", "1")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		mockService.AssertExpectations(t)
+	})
+
+	t.Run("empty booking requests list", func(t *testing.T) {
+		mockService.On("GetAllBookingRequestsByItem", uint(1), uint(1)).Return([]models.BookingRequest{}, nil)
+
+		req, _ := http.NewRequest("GET", "/api/v1/items/1/booking-requests", nil)
+		req.Header.Set("X-User-ID", "1")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		
+		var response struct {
+			BookingRequests []models.BookingRequest `json:"booking_requests"`
+		}
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		assert.NoError(t, err)
+		assert.Len(t, response.BookingRequests, 0)
 		mockService.AssertExpectations(t)
 	})
 }

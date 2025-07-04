@@ -36,6 +36,12 @@ func (r *bookingRequestRepository) GetByItemID(itemID uint) (*models.BookingRequ
 	return &request, nil
 }
 
+func (r *bookingRequestRepository) GetAllByItemID(itemID uint) ([]models.BookingRequest, error) {
+	var requests []models.BookingRequest
+	err := r.db.Preload("Item").Preload("Requester").Where("item_id = ?", itemID).Find(&requests).Error
+	return requests, err
+}
+
 func (r *bookingRequestRepository) GetByItemAndRequester(itemID uint, requesterID uint) (*models.BookingRequest, error) {
 	var request models.BookingRequest
 	err := r.db.Preload("Item").Preload("Requester").Where("item_id = ? AND requester_id = ?", itemID, requesterID).First(&request).Error

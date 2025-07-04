@@ -32,6 +32,7 @@ type BookingRequestRepository interface {
 	Create(request *models.BookingRequest) error
 	GetByID(id uint) (*models.BookingRequest, error)
 	GetByItemID(itemID uint) (*models.BookingRequest, error)
+	GetAllByItemID(itemID uint) ([]models.BookingRequest, error)
 	GetByItemAndRequester(itemID uint, requesterID uint) (*models.BookingRequest, error)
 	GetByRequesterID(requesterID uint) ([]models.BookingRequest, error)
 	UpdateStatus(id uint, status string) error

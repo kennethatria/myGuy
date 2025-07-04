@@ -340,6 +340,53 @@ Get booking request for an item (accessible by item owner or requester).
 - `400 Bad Request`: Invalid item ID format
 - `404 Not Found`: Item does not exist
 
+#### GET /items/:id/booking-requests
+Get all booking requests for an item (item owner only). This endpoint allows item owners to see all booking requests from different users.
+
+**Authorization**: Item owner only
+
+**Response:**
+```json
+{
+  "booking_requests": [
+    {
+      "id": 1,
+      "item_id": 123,
+      "requester_id": 456,
+      "requester": {
+        "id": 456,
+        "username": "buyer123",
+        "email": "buyer@example.com",
+        "name": "John Buyer"
+      },
+      "status": "pending",
+      "message": "I'm interested in this item",
+      "created_at": "2024-01-15T10:30:00Z"
+    },
+    {
+      "id": 2,
+      "item_id": 123,
+      "requester_id": 789,
+      "requester": {
+        "id": 789,
+        "username": "buyer456",
+        "email": "buyer2@example.com",
+        "name": "Jane Buyer"
+      },
+      "status": "approved",
+      "message": "When can I pick this up?",
+      "created_at": "2024-01-15T11:00:00Z"
+    }
+  ]
+}
+```
+
+**Response Codes:**
+- `200 OK`: Request successful (returns array, empty if no requests)
+- `400 Bad Request`: Invalid item ID format
+- `403 Forbidden`: Not the item owner
+- `404 Not Found`: Item does not exist
+
 #### POST /booking-requests/:requestId/approve
 Approve a booking request (item owner only).
 
@@ -494,11 +541,12 @@ The service expects JWT tokens with the following claims:
 - **Middleware Integration**: Seamless user sync during authentication
 
 ### Booking Request Rules
-1. One booking request per user per item
-2. Item owner can approve/reject requests
-3. Requester can view their own requests
-4. Item owner can view all requests for their items
-5. Booking requests display proper usernames (fixes "Unknown User" issue)
+1. **Multiple booking requests per item supported**: Different users can submit booking requests for the same item
+2. **Item owner management**: Item owners can view, approve, and reject all booking requests for their items
+3. **Requester access**: Requesters can view their own specific booking request status
+4. **Status management**: Requests can be pending, approved, or rejected
+5. **User identification**: Booking requests display proper usernames (fixes "Unknown User" issue)
+6. **Authorization**: Only item owners can see all requests; requesters only see their own
 
 ## Configuration
 
@@ -559,7 +607,7 @@ The service automatically runs migrations on startup using GORM AutoMigrate.
 
 ## Testing
 
-The store service includes comprehensive test coverage (90%+) across all layers with 100+ test scenarios, including JWT enhancements, user synchronization, and extensive booking request API testing.
+The store service includes comprehensive test coverage (92%+) across all layers with 110+ test scenarios, including JWT enhancements, user synchronization, multiple booking requests support, and extensive booking request API testing.
 
 ### Prerequisites for Testing
 

@@ -509,4 +509,35 @@ func TestBookingRequestRepository_Integration(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "rejected", rejected.Status)
 	})
+
+	t.Run("get all requests by item ID", func(t *testing.T) {
+		// Create multiple requests for the same item
+		requests := []models.BookingRequest{
+			{ItemID: 2, RequesterID: 1, Status: "pending", Message: "Request 1"},
+			{ItemID: 2, RequesterID: 3, Status: "approved", Message: "Request 2"},
+		}
+
+		for _, request := range requests {
+			err := repo.Create(&request)
+			assert.NoError(t, err)
+		}
+
+		// Get all requests for item 2
+		allRequests, err := repo.GetAllByItemID(2)
+		assert.NoError(t, err)
+		assert.Len(t, allRequests, 2)
+
+		// Verify both requests are returned
+		requestIDs := make([]uint, 0, len(allRequests))
+		for _, req := range allRequests {
+			requestIDs = append(requestIDs, req.RequesterID)
+		}
+		assert.Contains(t, requestIDs, uint(1))
+		assert.Contains(t, requestIDs, uint(3))
+
+		// Test with item that has no requests
+		noRequests, err := repo.GetAllByItemID(999)
+		assert.NoError(t, err)
+		assert.Len(t, noRequests, 0)
+	})
 }
