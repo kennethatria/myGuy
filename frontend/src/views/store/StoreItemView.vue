@@ -102,7 +102,7 @@
                     class="btn btn-primary btn-large"
                     data-testid="booking-request-btn"
                   >
-                    {{ loadingBookingRequest ? 'Sending Request...' : 'Request Booking' }}
+                    {{ loadingBookingRequest ? 'Sending Request...' : 'Book Now' }}
                   </button>
                   <p class="booking-info">Send a booking request to the item owner</p>
                 </div>
