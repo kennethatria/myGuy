@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"store-service/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type StoreHandler struct {
@@ -465,11 +467,18 @@ func (h *StoreHandler) GetBookingRequest(c *gin.Context) {
 
 	bookingRequest, err := h.service.GetBookingRequestByItem(uint(itemID), userID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "no booking request found"})
+		// Check if it's a GORM "record not found" error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// Return 200 with null data when no booking request exists
+			c.JSON(http.StatusOK, gin.H{"booking_request": nil})
+			return
+		}
+		// Return 404 for other errors (like item not found)
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, bookingRequest)
+	c.JSON(http.StatusOK, gin.H{"booking_request": bookingRequest})
 }
 
 // ApproveBookingRequest approves a booking request

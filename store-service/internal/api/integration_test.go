@@ -108,8 +108,8 @@ func setupIntegrationTestRouter(db *gorm.DB) *gin.Engine {
 		api.GET("/user/listings", storeHandler.GetUserListings)
 		api.GET("/user/purchases", storeHandler.GetUserPurchases)
 		api.GET("/user/bids", storeHandler.GetUserBids)
-		api.POST("/items/:id/booking-requests", storeHandler.CreateBookingRequest)
-		api.GET("/items/:id/booking-requests", storeHandler.GetBookingRequest)
+		api.POST("/items/:id/booking-request", storeHandler.CreateBookingRequest)
+		api.GET("/items/:id/booking-request", storeHandler.GetBookingRequest)
 		api.POST("/booking-requests/:requestId/approve", storeHandler.ApproveBookingRequest)
 		api.POST("/booking-requests/:requestId/reject", storeHandler.RejectBookingRequest)
 		api.GET("/user/booking-requests", storeHandler.GetUserBookingRequests)
@@ -433,7 +433,7 @@ func TestIntegration_BookingLifecycle(t *testing.T) {
 
 		jsonData, _ := json.Marshal(bookingReq)
 		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/items/%d/booking-requests", itemID), bytes.NewBuffer(jsonData))
+		httpReq, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/items/%d/booking-request", itemID), bytes.NewBuffer(jsonData))
 		httpReq.Header.Set("Content-Type", "application/json")
 		httpReq.Header.Set("X-User-ID", "2")
 
@@ -453,7 +453,7 @@ func TestIntegration_BookingLifecycle(t *testing.T) {
 
 	t.Run("Get booking request as owner", func(t *testing.T) {
 		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", fmt.Sprintf("/api/v1/items/%d/booking-requests", itemID), nil)
+		httpReq, _ := http.NewRequest("GET", fmt.Sprintf("/api/v1/items/%d/booking-request", itemID), nil)
 		httpReq.Header.Set("X-User-ID", "1") // Item owner
 
 		router.ServeHTTP(w, httpReq)
@@ -468,7 +468,7 @@ func TestIntegration_BookingLifecycle(t *testing.T) {
 
 	t.Run("Get booking request as requester", func(t *testing.T) {
 		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", fmt.Sprintf("/api/v1/items/%d/booking-requests", itemID), nil)
+		httpReq, _ := http.NewRequest("GET", fmt.Sprintf("/api/v1/items/%d/booking-request", itemID), nil)
 		httpReq.Header.Set("X-User-ID", "2") // Requester
 
 		router.ServeHTTP(w, httpReq)
@@ -493,7 +493,7 @@ func TestIntegration_BookingLifecycle(t *testing.T) {
 
 	t.Run("Verify booking request is approved", func(t *testing.T) {
 		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", fmt.Sprintf("/api/v1/items/%d/booking-requests", itemID), nil)
+		httpReq, _ := http.NewRequest("GET", fmt.Sprintf("/api/v1/items/%d/booking-request", itemID), nil)
 		httpReq.Header.Set("X-User-ID", "2") // Requester
 
 		router.ServeHTTP(w, httpReq)
@@ -520,6 +520,138 @@ func TestIntegration_BookingLifecycle(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, response, 1)
 		assert.Equal(t, requestID, response[0].ID)
+	})
+}
+
+func TestIntegration_BookingRequestEdgeCases(t *testing.T) {
+	db, err := setupIntegrationTestDB()
+	assert.NoError(t, err)
+	
+	router := setupIntegrationTestRouter(db)
+	
+	var itemID uint
+	
+	// Create a test item
+	t.Run("Create item for edge case testing", func(t *testing.T) {
+		item := models.CreateStoreItemRequest{
+			Title:       "Edge Case Test Item",
+			Description: "Testing edge cases",
+			PriceType:   "fixed",
+			FixedPrice:  50.0,
+			Category:    "electronics",
+			Condition:   "new",
+		}
+
+		jsonData, _ := json.Marshal(item)
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/v1/items", bytes.NewBuffer(jsonData))
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("X-User-ID", "1") // Seller
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+		
+		var response models.StoreItem
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		assert.NoError(t, err)
+		itemID = response.ID
+	})
+
+	t.Run("Get booking request when none exists", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("GET", fmt.Sprintf("/api/v1/items/%d/booking-request", itemID), nil)
+		httpReq.Header.Set("X-User-ID", "2") // Different user
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		
+		var response map[string]interface{}
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		assert.NoError(t, err)
+		assert.Nil(t, response["booking_request"])
+	})
+
+	t.Run("Cannot create booking request for own item", func(t *testing.T) {
+		bookingReq := models.CreateBookingRequestRequest{
+			Message: "I want to book my own item",
+		}
+
+		jsonData, _ := json.Marshal(bookingReq)
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/items/%d/booking-request", itemID), bytes.NewBuffer(jsonData))
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("X-User-ID", "1") // Same as seller
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("Duplicate booking request should fail", func(t *testing.T) {
+		// First booking request
+		bookingReq := models.CreateBookingRequestRequest{
+			Message: "First booking request",
+		}
+
+		jsonData, _ := json.Marshal(bookingReq)
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/items/%d/booking-request", itemID), bytes.NewBuffer(jsonData))
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("X-User-ID", "2")
+
+		router.ServeHTTP(w, httpReq)
+		assert.Equal(t, http.StatusCreated, w.Code)
+
+		// Second booking request from same user should fail
+		bookingReq2 := models.CreateBookingRequestRequest{
+			Message: "Duplicate booking request",
+		}
+
+		jsonData2, _ := json.Marshal(bookingReq2)
+		w2 := httptest.NewRecorder()
+		httpReq2, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/items/%d/booking-request", itemID), bytes.NewBuffer(jsonData2))
+		httpReq2.Header.Set("Content-Type", "application/json")
+		httpReq2.Header.Set("X-User-ID", "2")
+
+		router.ServeHTTP(w2, httpReq2)
+		assert.Equal(t, http.StatusConflict, w2.Code)
+	})
+
+	t.Run("Get booking request after creation", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("GET", fmt.Sprintf("/api/v1/items/%d/booking-request", itemID), nil)
+		httpReq.Header.Set("X-User-ID", "2") // Requester
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		
+		var response map[string]interface{}
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		assert.NoError(t, err)
+		assert.NotNil(t, response["booking_request"])
+		
+		bookingRequest := response["booking_request"].(map[string]interface{})
+		assert.Equal(t, "First booking request", bookingRequest["message"])
+		assert.Equal(t, "pending", bookingRequest["status"])
+	})
+
+	t.Run("Invalid item ID for booking request", func(t *testing.T) {
+		bookingReq := models.CreateBookingRequestRequest{
+			Message: "Invalid item booking",
+		}
+
+		jsonData, _ := json.Marshal(bookingReq)
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/v1/items/99999/booking-request", bytes.NewBuffer(jsonData))
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("X-User-ID", "2")
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 }
 

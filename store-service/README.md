@@ -306,6 +306,40 @@ Create a booking request for an item.
 #### GET /items/:id/booking-request
 Get booking request for an item (accessible by item owner or requester).
 
+**Response Cases:**
+
+**When booking request exists:**
+```json
+{
+  "booking_request": {
+    "id": 1,
+    "item_id": 123,
+    "requester_id": 456,
+    "requester": {
+      "id": 456,
+      "username": "buyer123",
+      "email": "buyer@example.com",
+      "name": "John Buyer"
+    },
+    "status": "pending",
+    "message": "I'm interested in this item",
+    "created_at": "2024-01-15T10:30:00Z"
+  }
+}
+```
+
+**When no booking request exists:**
+```json
+{
+  "booking_request": null
+}
+```
+
+**Response Codes:**
+- `200 OK`: Request successful (with or without booking request data)
+- `400 Bad Request`: Invalid item ID format
+- `404 Not Found`: Item does not exist
+
 #### POST /booking-requests/:requestId/approve
 Approve a booking request (item owner only).
 
@@ -525,7 +559,7 @@ The service automatically runs migrations on startup using GORM AutoMigrate.
 
 ## Testing
 
-The store service includes comprehensive test coverage (87%+) across all layers with 85+ test scenarios, including new JWT and user synchronization tests.
+The store service includes comprehensive test coverage (90%+) across all layers with 100+ test scenarios, including JWT enhancements, user synchronization, and extensive booking request API testing.
 
 ### Prerequisites for Testing
 
@@ -549,21 +583,25 @@ go install github.com/golangci-lint/golangci-lint/cmd/golangci-lint@latest
 
 ### Test Structure
 
-#### 1. Unit Tests (80+ test cases)
-- **Handler Tests** (`internal/api/handlers/store_handlers_test.go`) - 18+ scenarios
+#### 1. Unit Tests (95+ test cases)
+- **Handler Tests** (`internal/api/handlers/store_handlers_test.go`) - 35+ scenarios
+  - **Enhanced**: Added 15+ booking request test cases covering all edge cases
+  - **Coverage**: CreateBookingRequest, GetBookingRequest, ApproveBookingRequest, RejectBookingRequest, GetUserBookingRequests
+  - **Scenarios**: Success cases, error handling, validation, unauthorized access, service errors
 - **Service Tests** (`internal/services/store_service_test.go`) - 15+ scenarios  
 - **Repository Tests** (`internal/repositories/*_test.go`) - 35+ scenarios
   - Store item repository tests
   - Bid repository tests  
   - Booking request repository tests
-  - **NEW**: User repository tests (18 scenarios)
+  - **User repository tests** (18 scenarios)
 - **Middleware Tests** (`internal/middleware/jwt_test.go`) - 14+ scenarios
-  - JWT token validation
+  - JWT token validation with enhanced claims
   - User synchronization from JWT tokens
   - Authentication flow testing
 
 #### 2. Integration Tests (4 workflows)
 - **API Integration** (`internal/api/integration_test.go`) - End-to-end workflows with JWT context
+- **Fixed**: Updated all booking request URLs to use correct singular endpoint format
 
 ### Running Tests
 

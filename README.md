@@ -199,10 +199,17 @@ MyGuy/
 - `POST /api/v1/items/:id/purchase` - Purchase fixed-price item
   - Validation: Cannot purchase own items, item must be active
 
+#### Booking Requests ✅ FIXED
+- `POST /api/v1/items/:id/booking-request` - Create booking request for item
+- `GET /api/v1/items/:id/booking-request` - Get booking request (returns 200 with null if none exists)
+- `POST /api/v1/booking-requests/:requestId/approve` - Approve booking request (owner only)
+- `POST /api/v1/booking-requests/:requestId/reject` - Reject booking request (owner only)
+
 #### User Management
 - `GET /api/v1/user/listings` - Get current user's listings
 - `GET /api/v1/user/purchases` - Get current user's purchases
 - `GET /api/v1/user/bids` - Get current user's bids
+- `GET /api/v1/user/booking-requests` - Get current user's booking requests
 
 #### Access Control Features
 - **Frontend**: Bid/purchase buttons hidden for own items
@@ -299,8 +306,9 @@ npm run dev
 | **Frontend** | Partial | ⚠️ Basic Tests | See below |
 
 ### ✅ Store Service Testing (Complete)
-- **87%+ test coverage** with 60+ test scenarios
+- **90%+ test coverage** with 100+ test scenarios
 - Comprehensive unit, integration, and workflow tests
+- **Enhanced Coverage**: Added 15+ booking request test cases covering all edge cases and error scenarios
 - See [`store-service/README.md#testing`](store-service/README.md#testing) for detailed documentation
 
 ### ⚠️ Critical Issue: Backend Testing
@@ -418,6 +426,21 @@ docker-compose up -d --scale chat-websocket-service=3
 4. **Database Constraints**: Added NOT NULL constraint to username field
 
 **Result**: Booking requests now properly display usernames instead of "Unknown User".
+
+#### Booking Request API – 404 Error ✅ FIXED
+**Issue**: GET requests to `/api/v1/items/:id/booking-request` returned 404 when no booking request existed.
+
+**Root Cause**: 
+1. API returned 404 for "no booking request" instead of proper empty response
+2. URL inconsistency between tests and actual routing
+
+**Solution Applied**:
+1. **Enhanced Error Handling**: Return 200 with `{"booking_request": null}` when no booking exists
+2. **URL Consistency**: Fixed endpoint from `/booking-requests` (plural) to `/booking-request` (singular)
+3. **Response Format**: Standardized response structure across all booking endpoints
+4. **Comprehensive Testing**: Added 15+ test cases covering all edge cases and error scenarios
+
+**Result**: Frontend no longer receives 404 errors when checking for booking requests, enabling proper UI state management.
 
 #### Listings Not Visible
 If store listings are not appearing:

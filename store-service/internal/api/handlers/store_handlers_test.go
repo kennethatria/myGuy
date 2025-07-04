@@ -157,8 +157,8 @@ func setupTestRouter(handler *StoreHandler) *gin.Engine {
 		api.GET("/user/listings", handler.GetUserListings)
 		api.GET("/user/purchases", handler.GetUserPurchases)
 		api.GET("/user/bids", handler.GetUserBids)
-		api.POST("/items/:id/booking-requests", handler.CreateBookingRequest)
-		api.GET("/items/:id/booking-requests", handler.GetBookingRequest)
+		api.POST("/items/:id/booking-request", handler.CreateBookingRequest)
+		api.GET("/items/:id/booking-request", handler.GetBookingRequest)
 		api.POST("/booking-requests/:requestId/approve", handler.ApproveBookingRequest)
 		api.POST("/booking-requests/:requestId/reject", handler.RejectBookingRequest)
 		api.GET("/user/booking-requests", handler.GetUserBookingRequests)
@@ -640,7 +640,7 @@ func TestCreateBookingRequest(t *testing.T) {
 
 		jsonData, _ := json.Marshal(req)
 		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/booking-requests", bytes.NewBuffer(jsonData))
+		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/booking-request", bytes.NewBuffer(jsonData))
 		httpReq.Header.Set("Content-Type", "application/json")
 
 		router.ServeHTTP(w, httpReq)
@@ -658,7 +658,7 @@ func TestCreateBookingRequest(t *testing.T) {
 
 		jsonData, _ := json.Marshal(req)
 		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/booking-requests", bytes.NewBuffer(jsonData))
+		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/booking-request", bytes.NewBuffer(jsonData))
 		httpReq.Header.Set("Content-Type", "application/json")
 
 		router.ServeHTTP(w, httpReq)
@@ -676,7 +676,7 @@ func TestCreateBookingRequest(t *testing.T) {
 
 		jsonData, _ := json.Marshal(req)
 		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/booking-requests", bytes.NewBuffer(jsonData))
+		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/booking-request", bytes.NewBuffer(jsonData))
 		httpReq.Header.Set("Content-Type", "application/json")
 
 		router.ServeHTTP(w, httpReq)
@@ -702,7 +702,7 @@ func TestCreateBookingRequest(t *testing.T) {
 
 		jsonData, _ := json.Marshal(req)
 		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/booking-requests", bytes.NewBuffer(jsonData))
+		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/booking-request", bytes.NewBuffer(jsonData))
 		httpReq.Header.Set("Content-Type", "application/json")
 
 		router.ServeHTTP(w, httpReq)
@@ -713,13 +713,82 @@ func TestCreateBookingRequest(t *testing.T) {
 
 	t.Run("invalid JSON body", func(t *testing.T) {
 		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/booking-requests", bytes.NewBuffer([]byte("{")))
+		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/booking-request", bytes.NewBuffer([]byte("{")))
 		httpReq.Header.Set("Content-Type", "application/json")
 
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 		// Service should not be called for invalid JSON
+	})
+
+	t.Run("invalid item ID", func(t *testing.T) {
+		req := models.CreateBookingRequestRequest{
+			Message: "Test message",
+		}
+
+		jsonData, _ := json.Marshal(req)
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/v1/items/invalid/booking-request", bytes.NewBuffer(jsonData))
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("cannot book own item", func(t *testing.T) {
+		req := models.CreateBookingRequestRequest{
+			Message: "Test message",
+		}
+
+		mockService.On("CreateBookingRequest", uint(1), uint(1), req.Message).Return(nil, errors.New("cannot book your own item"))
+
+		jsonData, _ := json.Marshal(req)
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/booking-request", bytes.NewBuffer(jsonData))
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+		mockService.AssertExpectations(t)
+	})
+
+	t.Run("item not available for booking", func(t *testing.T) {
+		req := models.CreateBookingRequestRequest{
+			Message: "Test message",
+		}
+
+		mockService.On("CreateBookingRequest", uint(1), uint(1), req.Message).Return(nil, errors.New("item is not available for booking"))
+
+		jsonData, _ := json.Marshal(req)
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/booking-request", bytes.NewBuffer(jsonData))
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		mockService.AssertExpectations(t)
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		req := models.CreateBookingRequestRequest{
+			Message: "Test message",
+		}
+
+		mockService.On("CreateBookingRequest", uint(1), uint(1), req.Message).Return(nil, errors.New("database error"))
+
+		jsonData, _ := json.Marshal(req)
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/booking-request", bytes.NewBuffer(jsonData))
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+		mockService.AssertExpectations(t)
 	})
 }
 
@@ -760,6 +829,30 @@ func TestApproveBookingRequest(t *testing.T) {
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
+
+	t.Run("booking request not pending", func(t *testing.T) {
+		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(errors.New("booking request is not pending"))
+
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/approve", nil)
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		mockService.AssertExpectations(t)
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(errors.New("database error"))
+
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/approve", nil)
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+		mockService.AssertExpectations(t)
+	})
 }
 
 func TestRejectBookingRequest(t *testing.T) {
@@ -788,6 +881,39 @@ func TestRejectBookingRequest(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusForbidden, w.Code)
+		mockService.AssertExpectations(t)
+	})
+
+	t.Run("invalid request ID", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/invalid/reject", nil)
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("booking request not pending", func(t *testing.T) {
+		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(errors.New("booking request is not pending"))
+
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/reject", nil)
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		mockService.AssertExpectations(t)
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(errors.New("database error"))
+
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/reject", nil)
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
 		mockService.AssertExpectations(t)
 	})
 }
@@ -823,6 +949,24 @@ func TestGetUserBookingRequests(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
+		mockService.AssertExpectations(t)
+	})
+
+	t.Run("empty booking requests", func(t *testing.T) {
+		mockService.On("GetUserBookingRequests", uint(1)).Return([]models.BookingRequest{}, nil)
+
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("GET", "/api/v1/user/booking-requests", nil)
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		
+		var response []models.BookingRequest
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		assert.NoError(t, err)
+		assert.Empty(t, response)
+		
 		mockService.AssertExpectations(t)
 	})
 }
@@ -962,11 +1106,17 @@ func TestGetBookingRequest(t *testing.T) {
 		mockService.On("GetBookingRequestByItem", uint(1), uint(1)).Return(bookingRequest, nil)
 
 		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", "/api/v1/items/1/booking-requests", nil)
+		httpReq, _ := http.NewRequest("GET", "/api/v1/items/1/booking-request", nil)
 
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
+		
+		var response map[string]interface{}
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		assert.NoError(t, err)
+		assert.NotNil(t, response["booking_request"])
+		
 		mockService.AssertExpectations(t)
 	})
 
@@ -974,7 +1124,34 @@ func TestGetBookingRequest(t *testing.T) {
 		mockService.On("GetBookingRequestByItem", uint(1), uint(1)).Return(nil, gorm.ErrRecordNotFound)
 
 		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", "/api/v1/items/1/booking-requests", nil)
+		httpReq, _ := http.NewRequest("GET", "/api/v1/items/1/booking-request", nil)
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		
+		var response map[string]interface{}
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		assert.NoError(t, err)
+		assert.Nil(t, response["booking_request"])
+		
+		mockService.AssertExpectations(t)
+	})
+
+	t.Run("invalid item ID", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("GET", "/api/v1/items/invalid/booking-request", nil)
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("item not found", func(t *testing.T) {
+		mockService.On("GetBookingRequestByItem", uint(999), uint(1)).Return(nil, errors.New("item not found"))
+
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("GET", "/api/v1/items/999/booking-request", nil)
 
 		router.ServeHTTP(w, httpReq)
 
@@ -982,13 +1159,16 @@ func TestGetBookingRequest(t *testing.T) {
 		mockService.AssertExpectations(t)
 	})
 
-	t.Run("invalid item ID", func(t *testing.T) {
+	t.Run("service error", func(t *testing.T) {
+		mockService.On("GetBookingRequestByItem", uint(1), uint(1)).Return(nil, errors.New("database connection error"))
+
 		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", "/api/v1/items/invalid/booking-requests", nil)
+		httpReq, _ := http.NewRequest("GET", "/api/v1/items/1/booking-request", nil)
 
 		router.ServeHTTP(w, httpReq)
 
-		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		mockService.AssertExpectations(t)
 	})
 }
 
