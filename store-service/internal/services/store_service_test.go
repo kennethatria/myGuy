@@ -157,6 +157,11 @@ func (m *MockBookingRequestRepository) GetByRequesterID(requesterID uint) ([]mod
 	return args.Get(0).([]models.BookingRequest), args.Error(1)
 }
 
+func (m *MockBookingRequestRepository) GetAllByItemID(itemID uint) ([]models.BookingRequest, error) {
+	args := m.Called(itemID)
+	return args.Get(0).([]models.BookingRequest), args.Error(1)
+}
+
 func (m *MockBookingRequestRepository) UpdateStatus(id uint, status string) error {
 	args := m.Called(id, status)
 	return args.Error(0)
@@ -1396,6 +1401,98 @@ func TestGetUserBookingRequests(t *testing.T) {
 		assert.Error(t, err)
 		assert.Empty(t, requests)
 		assert.Contains(t, err.Error(), "database error")
+		bookingRepo.AssertExpectations(t)
+	})
+}
+
+func TestGetAllBookingRequestsByItem(t *testing.T) {
+	t.Run("successful get all requests as owner", func(t *testing.T) {
+		service, itemRepo, _, bookingRepo := setupService()
+		item := &models.StoreItem{
+			ID:       1,
+			SellerID: 1,
+		}
+
+		expectedRequests := []models.BookingRequest{
+			{ID: 1, ItemID: 1, RequesterID: 2, Status: "pending"},
+			{ID: 2, ItemID: 1, RequesterID: 3, Status: "approved"},
+		}
+
+		itemRepo.On("GetByID", uint(1)).Return(item, nil)
+		bookingRepo.On("GetAllByItemID", uint(1)).Return(expectedRequests, nil)
+
+		requests, err := service.GetAllBookingRequestsByItem(1, 1)
+
+		assert.NoError(t, err)
+		assert.Equal(t, expectedRequests, requests)
+		assert.Len(t, requests, 2)
+		itemRepo.AssertExpectations(t)
+		bookingRepo.AssertExpectations(t)
+	})
+
+	t.Run("unauthorized access - not item owner", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
+		item := &models.StoreItem{
+			ID:       1,
+			SellerID: 2, // Different owner
+		}
+
+		itemRepo.On("GetByID", uint(1)).Return(item, nil)
+
+		requests, err := service.GetAllBookingRequestsByItem(1, 1)
+
+		assert.Error(t, err)
+		assert.Nil(t, requests)
+		assert.Contains(t, err.Error(), "unauthorized: you are not the owner of this item")
+		itemRepo.AssertExpectations(t)
+	})
+
+	t.Run("item not found", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
+		itemRepo.On("GetByID", uint(999)).Return(nil, gorm.ErrRecordNotFound)
+
+		requests, err := service.GetAllBookingRequestsByItem(999, 1)
+
+		assert.Error(t, err)
+		assert.Nil(t, requests)
+		assert.Equal(t, gorm.ErrRecordNotFound, err)
+		itemRepo.AssertExpectations(t)
+	})
+
+	t.Run("empty booking requests list", func(t *testing.T) {
+		service, itemRepo, _, bookingRepo := setupService()
+		item := &models.StoreItem{
+			ID:       1,
+			SellerID: 1,
+		}
+
+		itemRepo.On("GetByID", uint(1)).Return(item, nil)
+		bookingRepo.On("GetAllByItemID", uint(1)).Return([]models.BookingRequest{}, nil)
+
+		requests, err := service.GetAllBookingRequestsByItem(1, 1)
+
+		assert.NoError(t, err)
+		assert.Empty(t, requests)
+		itemRepo.AssertExpectations(t)
+		bookingRepo.AssertExpectations(t)
+	})
+
+	t.Run("repository error", func(t *testing.T) {
+		service, itemRepo, _, bookingRepo := setupService()
+		item := &models.StoreItem{
+			ID:       1,
+			SellerID: 1,
+		}
+
+		itemRepo.On("GetByID", uint(1)).Return(item, nil)
+		bookingRepo.On("GetAllByItemID", uint(1)).Return([]models.BookingRequest{}, errors.New("database error"))
+
+		requests, err := service.GetAllBookingRequestsByItem(1, 1)
+
+		assert.Error(t, err)
+		assert.Empty(t, requests)
+		assert.Contains(t, err.Error(), "database error")
+		itemRepo.AssertExpectations(t)
 		bookingRepo.AssertExpectations(t)
 	})
 }

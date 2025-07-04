@@ -16,7 +16,8 @@ The store service maintains **comprehensive test coverage above 85%** after impl
 - **Coverage**: ~85% of handler code
 
 ### 2. Unit Tests for Service Layer (`internal/services/store_service_test.go`)
-- **15+ test scenarios** for business logic
+- **20+ test scenarios** for business logic (updated)
+- **✅ NEW**: Complete test coverage for `GetAllBookingRequestsByItem` method
 - Comprehensive validation testing
 - Error condition handling
 - Mock repository integration
@@ -94,11 +95,11 @@ go test ./internal/middleware/... -v  # Test JWT middleware changes
 | Layer | Coverage | Test Files | Test Cases | Changes |
 |-------|----------|------------|------------|---------|
 | **Handlers** | ~85% | 1 | 18+ scenarios | ✅ Updated JWT context |
-| **Services** | ~90% | 1 | 15+ scenarios | No changes needed |
+| **Services** | ~90% | 1 | 20+ scenarios | ✅ Added GetAllBookingRequestsByItem tests |
 | **Repositories** | ~87% | 4 | 35+ scenarios | ✅ Added user repo tests |
 | **Middleware** | ~90% | 2 | 14+ scenarios | ✅ NEW: JWT tests for both services |
 | **Integration** | ~95% | 1 | 4 workflows | ✅ Updated JWT context |
-| **Overall** | **~87%** | **9** | **85+ tests** | **+25 new tests** |
+| **Overall** | **~87%** | **9** | **90+ tests** | **+30 new tests** |
 
 ## Key Issues Resolved
 
@@ -152,10 +153,11 @@ go test ./internal/middleware/... -v  # Test JWT middleware changes
 
 The store service now maintains **87%+ test coverage** with comprehensive testing of:
 
-- **85+ individual test cases** (+25 new tests)
+- **90+ individual test cases** (+30 new tests)
 - **JWT token enhancements** across both services
 - **User synchronization functionality**
 - **"Unknown User" bug resolution**
+- **Owner messaging and booking request access**
 - **Database integrity improvements**
 - **Enhanced error handling**
 

@@ -20,7 +20,7 @@ make test-coverage-check
 
 - **Overall Coverage**: 87%+
 - **Test Files**: 6
-- **Test Scenarios**: 60+
+- **Test Scenarios**: 65+
 - **Layers Tested**: Handlers, Services, Repositories, Integration
 
 ## 🧪 Test Structure
@@ -28,7 +28,7 @@ make test-coverage-check
 | Test Type | File | Coverage | Scenarios |
 |-----------|------|----------|-----------|
 | **Handler Tests** | `internal/api/handlers/store_handlers_test.go` | ~85% | 18+ |
-| **Service Tests** | `internal/services/store_service_test.go` | ~90% | 15+ |
+| **Service Tests** | `internal/services/store_service_test.go` | ~90% | 20+ |
 | **Repository Tests** | `internal/repositories/*_test.go` | ~85% | 25+ |
 | **Integration Tests** | `internal/api/integration_test.go` | ~95% | 4 workflows |
 
@@ -42,7 +42,7 @@ make test-coverage-check
 ### Business Features
 - ✅ Bidding system (place, validate, accept)
 - ✅ Purchase system (fixed price items)
-- ✅ Booking request workflow
+- ✅ Booking request workflow (including owner access to all requests)
 - ✅ Search, filtering, and pagination
 
 ### Technical Layer

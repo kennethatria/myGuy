@@ -64,10 +64,17 @@ The MyGuy store booking flow allows users to request booking for fixed-price ite
 - Limits automatically update when booking status changes
 
 ### Chat Integration
-- "Message Seller" button available on all items
+- "Message Seller" button available on all items for non-owners
 - Opens chat modal with item context
 - Message history preserved across sessions
 - Content filtering applied to all messages
+
+### Enhanced Owner Messaging (New Feature)
+- **Owner Message Visibility**: Item owners now see a dedicated section showing message count when buyers have sent messages
+- **General Message Viewing**: Owners can click "View Messages" to see all conversations about their item
+- **Message Count Indicator**: Shows "X message(s) from interested buyers" when messages exist
+- **Privacy-First Design**: Owners only see messages sent to them or by them; private conversations between other users remain hidden
+- **Real-time Updates**: Message counts update automatically when new messages are received
 
 ## API Endpoints
 
@@ -76,6 +83,7 @@ The MyGuy store booking flow allows users to request booking for fixed-price ite
 - `GET /api/v1/items/:id` - Get item details
 - `POST /api/v1/items/:id/booking-request` - Create booking request
 - `GET /api/v1/items/:id/booking-request` - Get booking request
+- `GET /api/v1/items/:id/booking-requests` - Get all booking requests for an item (owner only)
 - `POST /api/v1/booking-requests/:id/approve` - Approve request
 - `POST /api/v1/booking-requests/:id/reject` - Reject request
 - `GET /api/v1/user/booking-requests` - Get user's requests
@@ -97,8 +105,10 @@ The MyGuy store booking flow allows users to request booking for fixed-price ite
 - Complete item details display
 - Booking request interface (buyer)
 - Booking management interface (owner)
-- Integrated chat functionality
+- Enhanced owner messaging interface with message count indicators
+- Integrated chat functionality with general message viewing for owners
 - Image gallery with error handling
+- Real-time message count updates
 
 ## State Management
 
@@ -108,6 +118,12 @@ The MyGuy store booking flow allows users to request booking for fixed-price ite
 const bookingRequest = ref(null)
 const hasBookingRequest = ref(false)
 const loadingBookingRequest = ref(false)
+
+// Owner messaging state (NEW)
+const hasUnreadMessages = ref(false)
+const messageCount = ref(0)
+const chatRecipientId = ref(null)
+const chatRecipientName = ref('')
 
 // Computed properties
 const bookingStatus = computed(() => bookingRequest.value?.status || null)
@@ -121,6 +137,10 @@ const currentMessageLimit = computed(() =>
 - Status changes (approve/reject) update `bookingRequest.status`
 - Message limits react to booking status changes
 - Loading states prevent duplicate requests
+- **Owner messaging updates (NEW)**:
+  - `checkForMessages()` function updates `messageCount` and `hasUnreadMessages`
+  - `loadStoreMessages()` updates message count when viewing conversations
+  - Real-time updates when new messages are received
 
 ## Error Handling
 

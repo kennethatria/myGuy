@@ -17,6 +17,7 @@ type StoreServiceInterface interface {
 	GetUserBids(userID uint) ([]models.Bid, error)
 	CreateBookingRequest(itemID uint, requesterID uint, message string) (*models.BookingRequest, error)
 	GetBookingRequestByItem(itemID uint, userID uint) (*models.BookingRequest, error)
+	GetAllBookingRequestsByItem(itemID uint, userID uint) ([]models.BookingRequest, error)
 	ApproveBookingRequest(requestID uint, ownerID uint) error
 	RejectBookingRequest(requestID uint, ownerID uint) error
 	GetUserBookingRequests(userID uint) ([]models.BookingRequest, error)

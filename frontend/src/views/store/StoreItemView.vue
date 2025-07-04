@@ -143,6 +143,20 @@
               <p class="status-info">Status: {{ item.status }}</p>
             </div>
             
+            <!-- General Messages for Owner -->
+            <div v-if="messageCount > 0" class="owner-messages">
+              <h4>Messages about this item</h4>
+              <div class="message-summary">
+                <p>{{ messageCount }} message{{ messageCount === 1 ? '' : 's' }} from interested buyers</p>
+                <button 
+                  @click="openGeneralStoreChat" 
+                  class="btn btn-primary btn-sm message-view-btn"
+                >
+                  <i class="fas fa-comment"></i> View Messages
+                </button>
+              </div>
+            </div>
+            
             <!-- Booking Request Management for Owner -->
             <div v-if="bookingRequests.length > 0" class="booking-management">
               <h4>Booking Requests ({{ bookingRequests.length }})</h4>
@@ -308,6 +322,10 @@ const loadingBookingRequest = ref(false);
 const chatRecipientId = ref(null);
 const chatRecipientName = ref('');
 
+// Message indicators for owners
+const hasUnreadMessages = ref(false);
+const messageCount = ref(0);
+
 const userId = computed(() => authStore.user?.id);
 const itemId = computed(() => route.params.id);
 
@@ -377,6 +395,11 @@ async function loadItem() {
     
     // Load booking request if user is involved
     await loadBookingRequest();
+    
+    // Check for messages if user is the owner
+    if (item.value.seller.id === userId.value) {
+      await checkForMessages();
+    }
   } catch (err) {
     console.error('Error loading item:', err);
     error.value = err.message;
@@ -638,9 +661,38 @@ async function openStoreChatWithUser(recipientId) {
   await loadStoreMessages();
 }
 
+async function openGeneralStoreChat() {
+  // For owners to view all messages about their item
+  chatRecipientId.value = null;
+  chatRecipientName.value = '';
+  showChatModal.value = true;
+  await loadStoreMessages();
+}
+
 function closeChatModal() {
   showChatModal.value = false;
   newMessage.value = '';
+}
+
+async function checkForMessages() {
+  if (!item.value) return;
+  
+  try {
+    const response = await fetch(`http://localhost:8082/api/v1/store-messages/${itemId.value}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      const messages = data.messages || [];
+      messageCount.value = messages.length;
+      hasUnreadMessages.value = messages.length > 0;
+    }
+  } catch (error) {
+    console.error('Error checking for messages:', error);
+  }
 }
 
 async function loadStoreMessages() {
@@ -657,6 +709,7 @@ async function loadStoreMessages() {
     if (response.ok) {
       const data = await response.json();
       chatMessages.value = data.messages || [];
+      messageCount.value = chatMessages.value.length;
     } else {
       console.error('Failed to load store messages');
       chatMessages.value = [];
@@ -1494,6 +1547,58 @@ onMounted(() => {
 .limit-info {
   font-size: 0.75rem;
   color: #059669;
+}
+
+/* Owner Messages Styles */
+.owner-messages {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #b3e5fc;
+}
+
+.owner-messages h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #0277bd;
+}
+
+.message-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: white;
+  padding: 0.75rem;
+  border-radius: 0.375rem;
+  border: 1px solid #e5e7eb;
+}
+
+.message-summary p {
+  margin: 0;
+  color: #374151;
+  font-size: 0.875rem;
+}
+
+.message-view-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #4f46e5;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.message-view-btn:hover {
+  background: #4338ca;
+}
+
+.message-view-btn i {
+  font-size: 0.875rem;
 }
 
 @media (max-width: 768px) {

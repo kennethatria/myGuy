@@ -323,8 +323,8 @@ describe('Store Messages API', () => {
       expect(response.body.messages[0].sender.username).toBe('buyer1');
       expect(response.body.messages[1].sender.username).toBe('seller1');
       // Verify messages are ordered chronologically
-      expect(new Date(response.body.messages[0].created_at)).toBeLessThan(
-        new Date(response.body.messages[1].created_at)
+      expect(new Date(response.body.messages[0].created_at).getTime()).toBeLessThan(
+        new Date(response.body.messages[1].created_at).getTime()
       );
     });
     
