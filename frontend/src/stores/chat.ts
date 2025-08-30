@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from './auth';
+import config from '@/config';
 import type { Message, ConversationSummary } from './messages';
 
 interface TypingUser {
