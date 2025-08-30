@@ -332,6 +332,37 @@ export const useChatStore = defineStore('chat', () => {
       socket.value.emit('conversations:list');
     }
   }
+
+  // HTTP fallback for loading conversations
+  async function loadConversationsHttp() {
+    const authStore = useAuthStore();
+    const token = authStore.token;
+    
+    if (!token) return;
+    
+    try {
+      console.log('Loading conversations via HTTP...');
+      const response = await fetch(`${config.CHAT_API_URL}/conversations`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const conversations = await response.json();
+      console.log('Loaded conversations via HTTP:', conversations);
+      
+      // Process conversations the same way as WebSocket
+      handleConversationsList(conversations);
+      
+    } catch (error) {
+      console.error('Error loading conversations via HTTP:', error);
+    }
+  }
   
   function handleMessagesList({ taskId, applicationId, itemId, messages: msgs, offset, totalCount }: { taskId?: number; applicationId?: number; itemId?: number; messages: Message[]; offset: number; totalCount?: number }) {
     const conversationId = taskId || applicationId || itemId;
@@ -650,6 +681,7 @@ export const useChatStore = defineStore('chat', () => {
     startTyping,
     stopTyping,
     loadDeletionWarnings,
-    dismissWarning
+    dismissWarning,
+    loadConversationsHttp
   };
 });

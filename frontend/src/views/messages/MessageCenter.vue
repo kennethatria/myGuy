@@ -67,6 +67,11 @@ const chatStore = useChatStore();
 onMounted(() => {
   chatStore.connectSocket();
   chatStore.loadDeletionWarnings();
+  
+  // HTTP fallback - load conversations directly via API
+  setTimeout(() => {
+    chatStore.loadConversationsHttp();
+  }, 1000);
 });
 
 onUnmounted(() => {
