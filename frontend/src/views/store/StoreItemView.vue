@@ -234,10 +234,38 @@
         </div>
         
         <div class="chat-content">
+          <!-- Success Message -->
+          <div v-if="showSuccessMessage" class="success-message">
+            <div class="success-content">
+              <i class="fas fa-check-circle"></i>
+              <div>
+                <p><strong>Message sent successfully!</strong></p>
+                <p>Your conversation has been created and will appear in your Messages app. The seller will be notified.</p>
+                <button @click="continueInChat" class="btn btn-link btn-sm">
+                  <i class="fas fa-comments"></i> Continue conversation in Messages app
+                </button>
+              </div>
+            </div>
+          </div>
+          
           <div class="chat-messages">
-            <div v-if="chatMessages.length === 0" class="no-messages">
-              <p>Start a conversation about this item</p>
-              <p class="message-limit">Limited to 3 messages per person</p>
+            <div v-if="chatMessages.length === 0 && !showSuccessMessage" class="no-messages">
+              <p><i class="fas fa-comments"></i> Start a conversation about this item</p>
+              <p class="message-limit">You can send up to 3 messages to get started</p>
+              <div class="conversation-starters">
+                <p class="starter-label">Quick message ideas:</p>
+                <div class="starter-buttons">
+                  <button @click="useStarterMessage('Is this item still available?')" class="starter-btn">
+                    Is this available?
+                  </button>
+                  <button @click="useStarterMessage('Can you provide more details about the condition?')" class="starter-btn">
+                    Condition details?
+                  </button>
+                  <button @click="useStarterMessage('Would you consider a different price?')" class="starter-btn">
+                    Price negotiation?
+                  </button>
+                </div>
+              </div>
             </div>
             
             <div v-for="message in chatMessages" :key="message?.id || Math.random()" class="message" :class="{ 'own-message': message?.sender_id === userId }">
@@ -312,6 +340,7 @@ const chatMessages = ref([]);
 const newMessage = ref('');
 const sendingMessage = ref(false);
 const loadingMessages = ref(false);
+const showSuccessMessage = ref(false);
 
 // Booking-related variables
 const bookingRequest = ref(null);
@@ -646,9 +675,43 @@ function formatMessageTime(dateString: string): string {
 
 // Chat functions
 async function openStoreChat() {
-  // Redirect to the global chat interface
-  // The conversation will appear in the list once messages are exchanged
+  // Show the message composer popup
+  chatRecipientId.value = item.value.seller.id;
+  chatRecipientName.value = item.value.seller.full_name || item.value.seller.username;
+  showChatModal.value = true;
+  
+  // Reset success message state
+  showSuccessMessage.value = false;
+  
+  // Load existing messages if any
+  await loadStoreMessages();
+}
+
+function useStarterMessage(messageText) {
+  newMessage.value = messageText;
+}
+
+async function continueInChat() {
+  // Close the modal and redirect to messages
+  showChatModal.value = false;
+  
+  // Import the chat store and refresh conversations
+  const { useChatStore } = await import('@/stores/chat');
+  const chatStore = useChatStore();
+  
+  // If connected, refresh the conversations list
+  if (chatStore.socket && chatStore.connected) {
+    chatStore.socket.emit('conversations:list');
+  }
+  
+  // Navigate to messages
   router.push('/messages');
+}
+
+function closeChatModal() {
+  showChatModal.value = false;
+  showSuccessMessage.value = false;
+  newMessage.value = '';
 }
 
 async function openStoreChatWithUser(recipientId) {
@@ -727,6 +790,8 @@ async function sendMessage() {
   }
   
   sendingMessage.value = true;
+  const isFirstMessage = chatMessages.value.length === 0;
+  
   try {
     const response = await fetch('http://localhost:8082/api/v1/store-messages', {
       method: 'POST',
@@ -746,11 +811,24 @@ async function sendMessage() {
       chatMessages.value.push(sentMessage);
       newMessage.value = '';
       
-      // Show success message if this was their last allowed message
-      if (userMessageCount.value >= 3) {
+      // Show success feedback for first message
+      if (isFirstMessage) {
+        showSuccessMessage.value = true;
         setTimeout(() => {
-          alert('You\'ve reached the 3-message limit for this item. Consider exchanging contact details to continue the conversation.');
-        }, 500);
+          showSuccessMessage.value = false;
+        }, 5000);
+      }
+      
+      // Show limit warning if approaching/reached limit
+      const currentCount = userMessageCount.value;
+      if (currentCount >= 3 && currentCount < 10) {
+        setTimeout(() => {
+          if (currentCount === 3) {
+            alert('You\'ve reached the 3-message limit. Your conversation will continue in the Messages app with full chat features once the seller responds or approves your booking request.');
+          } else {
+            alert('You\'ve sent the maximum number of messages for this item. Continue your conversation in the Messages app.');
+          }
+        }, 1000);
       }
     } else {
       const error = await response.json();
@@ -1610,5 +1688,126 @@ onMounted(() => {
   .booking-actions {
     justify-content: center;
   }
+}
+
+/* Success Message Styles */
+.success-message {
+  background: #f0f9f0;
+  border: 1px solid #c3e6c3;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.success-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.success-content i {
+  color: #28a745;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.success-content p {
+  margin: 0 0 0.5rem 0;
+  color: #155724;
+}
+
+.success-content p:last-of-type {
+  margin-bottom: 0;
+}
+
+/* Conversation Starter Styles */
+.conversation-starters {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.starter-label {
+  font-size: 0.875rem;
+  color: #6c757d;
+  margin-bottom: 0.75rem;
+  font-weight: 500;
+}
+
+.starter-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.starter-btn {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 0.75rem;
+  text-align: left;
+  color: #495057;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.starter-btn:hover {
+  background: #e9ecef;
+  border-color: #adb5bd;
+  transform: translateY(-1px);
+}
+
+.starter-btn:active {
+  transform: translateY(0);
+}
+
+/* Enhanced No Messages Styling */
+.no-messages {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: #6c757d;
+}
+
+.no-messages i {
+  font-size: 1.5rem;
+  color: #adb5bd;
+  margin-right: 0.5rem;
+}
+
+.no-messages p:first-child {
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: #495057;
+  margin-bottom: 0.5rem;
+}
+
+.message-limit {
+  font-size: 0.875rem;
+  color: #6c757d;
+  margin-bottom: 1rem !important;
+}
+
+/* Button Link Style */
+.btn-link {
+  color: #007bff;
+  text-decoration: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.btn-link:hover {
+  color: #0056b3;
+  text-decoration: underline;
+}
+
+.btn-link i {
+  margin-right: 0.375rem;
 }
 </style>

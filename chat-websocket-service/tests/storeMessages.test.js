@@ -74,6 +74,52 @@ app.get('/api/v1/store-messages/:itemId', mockAuth, async (req, res) => {
   }
 });
 
+// Mock the POST store messages endpoint
+app.post('/api/v1/store-messages', mockAuth, async (req, res) => {
+  try {
+    const { store_item_id, recipient_id, content } = req.body;
+    const senderId = req.user.id;
+    
+    if (!store_item_id || !recipient_id || !content || !content.trim()) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    const message = await messageService.createStoreMessage({
+      store_item_id: parseInt(store_item_id),
+      sender_id: senderId,
+      recipient_id: parseInt(recipient_id),
+      content: content.trim()
+    });
+    
+    const formattedMessage = {
+      ...message,
+      sender: {
+        id: senderId,
+        username: req.user.username || 'Unknown'
+      },
+      recipient: {
+        id: parseInt(recipient_id),
+        username: 'Unknown'
+      }
+    };
+    
+    res.status(201).json(formattedMessage);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// Mock conversations endpoint for testing
+app.get('/api/v1/conversations', mockAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const conversations = await messageService.getUserConversations(userId);
+    res.json(conversations);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get conversations' });
+  }
+});
+
 describe('Store Messages API', () => {
   let itemOwnerToken, buyerToken;
   
@@ -471,6 +517,187 @@ describe('Store Messages API', () => {
         expect(data.messages[0].store_item_id).toBe(itemId);
         expect(data.messages[0].content).toBe('Test store message');
         done();
+      });
+    });
+  });
+
+  describe('End-to-End Store Message Flow', () => {
+    let mockStoreItem, mockUsers;
+    
+    beforeAll(() => {
+      // Mock store item data
+      mockStoreItem = {
+        id: 1,
+        title: 'Test Item',
+        seller: { id: 2, username: 'seller1', full_name: 'Test Seller' }
+      };
+      
+      // Mock users
+      mockUsers = {
+        buyer: { id: 1, username: 'buyer1' },
+        seller: { id: 2, username: 'seller1' }
+      };
+    });
+    
+    it('should handle complete message flow from popup to chat thread', async () => {
+      const itemId = 1;
+      const buyerId = 1;
+      const sellerId = 2;
+      const messageContent = 'Is this item still available?';
+      
+      // Mock the store message creation response
+      const mockCreatedMessage = {
+        id: 1,
+        store_item_id: itemId,
+        sender_id: buyerId,
+        recipient_id: sellerId,
+        content: messageContent,
+        created_at: new Date().toISOString(),
+        sender: { id: buyerId, username: 'buyer1' },
+        recipient: { id: sellerId, username: 'seller1' }
+      };
+      
+      // Mock the HTTP API response
+      jest.spyOn(messageService, 'createStoreMessage').mockResolvedValue(mockCreatedMessage);
+      
+      const buyerToken = jwt.sign({ id: buyerId, username: 'buyer1' }, 'test-secret');
+      
+      // 1. Send message via popup modal (HTTP API)
+      const response = await request(app)
+        .post('/api/v1/store-messages')
+        .set('Authorization', `Bearer ${buyerToken}`)
+        .send({
+          store_item_id: itemId,
+          recipient_id: sellerId,
+          content: messageContent
+        })
+        .expect(201);
+      
+      expect(response.body).toMatchObject({
+        store_item_id: itemId,
+        sender_id: buyerId,
+        recipient_id: sellerId,
+        content: messageContent
+      });
+      
+      // 2. Verify conversation appears in conversations list
+      const mockConversations = [{
+        item_id: itemId,
+        item_title: 'Test Item',
+        other_user_id: sellerId,
+        other_user_name: 'seller1',
+        content: messageContent,
+        created_at: new Date().toISOString(),
+        unread_count: 0
+      }];
+      
+      jest.spyOn(messageService, 'getUserConversations').mockResolvedValue(mockConversations);
+      
+      const conversationsResponse = await request(app)
+        .get('/api/v1/conversations')
+        .set('Authorization', `Bearer ${buyerToken}`)
+        .expect(200);
+      
+      expect(conversationsResponse.body).toHaveLength(1);
+      expect(conversationsResponse.body[0]).toMatchObject({
+        item_id: itemId,
+        item_title: 'Test Item',
+        other_user_name: 'seller1'
+      });
+      
+      // 3. Verify messages can be retrieved for the conversation
+      const mockStoreMessages = [mockCreatedMessage];
+      jest.spyOn(messageService, 'getStoreMessages').mockResolvedValue(mockStoreMessages);
+      
+      const messagesResponse = await request(app)
+        .get(`/api/v1/store-messages/${itemId}`)
+        .set('Authorization', `Bearer ${buyerToken}`)
+        .expect(200);
+      
+      expect(messagesResponse.body.messages).toHaveLength(1);
+      expect(messagesResponse.body.messages[0]).toMatchObject({
+        store_item_id: itemId,
+        content: messageContent
+      });
+    });
+    
+    it('should handle seller reply in global chat', async () => {
+      const itemId = 1;
+      const buyerId = 1;
+      const sellerId = 2;
+      const replyContent = 'Yes, it\'s still available! Would you like to arrange pickup?';
+      
+      // Mock seller's reply message
+      const mockReplyMessage = {
+        id: 2,
+        store_item_id: itemId,
+        sender_id: sellerId,
+        recipient_id: buyerId,
+        content: replyContent,
+        created_at: new Date().toISOString(),
+        sender: { id: sellerId, username: 'seller1' },
+        recipient: { id: buyerId, username: 'buyer1' }
+      };
+      
+      jest.spyOn(messageService, 'createStoreMessage').mockResolvedValue(mockReplyMessage);
+      
+      const sellerToken = jwt.sign({ id: sellerId, username: 'seller1' }, 'test-secret');
+      
+      // Seller sends reply via chat interface
+      const response = await request(app)
+        .post('/api/v1/store-messages')
+        .set('Authorization', `Bearer ${sellerToken}`)
+        .send({
+          store_item_id: itemId,
+          recipient_id: buyerId,
+          content: replyContent
+        })
+        .expect(201);
+      
+      expect(response.body).toMatchObject({
+        store_item_id: itemId,
+        sender_id: sellerId,
+        recipient_id: buyerId,
+        content: replyContent
+      });
+      
+      // Verify buyer can see the reply
+      const mockConversationMessages = [
+        {
+          id: 1,
+          store_item_id: itemId,
+          sender_id: buyerId,
+          recipient_id: sellerId,
+          content: 'Is this item still available?',
+          sender_username: 'buyer1',
+          recipient_username: 'seller1',
+          created_at: new Date(Date.now() - 60000).toISOString()
+        },
+        {
+          id: 2,
+          store_item_id: itemId,
+          sender_id: sellerId,
+          recipient_id: buyerId,
+          content: replyContent,
+          sender_username: 'seller1',
+          recipient_username: 'buyer1',
+          created_at: new Date().toISOString()
+        }
+      ];
+      
+      jest.spyOn(messageService, 'getStoreMessages').mockResolvedValue(mockConversationMessages);
+      
+      const buyerToken = jwt.sign({ id: buyerId, username: 'buyer1' }, 'test-secret');
+      
+      const messagesResponse = await request(app)
+        .get(`/api/v1/store-messages/${itemId}`)
+        .set('Authorization', `Bearer ${buyerToken}`)
+        .expect(200);
+      
+      expect(messagesResponse.body.messages).toHaveLength(2);
+      expect(messagesResponse.body.messages[1]).toMatchObject({
+        sender_id: sellerId,
+        content: replyContent
       });
     });
   });
