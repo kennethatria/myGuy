@@ -275,12 +275,14 @@ class MessageService {
    */
   async getUserConversations(userId) {
     const query = `
-      WITH LastMessages AS (
+      WITH TaskMessages AS (
         SELECT DISTINCT ON (COALESCE(task_id, application_id))
           m.*,
           t.title as task_title,
           t.description as task_description,
           t.status as task_status,
+          NULL as item_title,
+          NULL as item_id,
           CASE 
             WHEN m.sender_id = $1 THEN r.username
             ELSE s.username
@@ -296,6 +298,43 @@ class MessageService {
         WHERE m.sender_id = $1 OR m.recipient_id = $1
         ORDER BY COALESCE(task_id, application_id), created_at DESC
       ),
+      StoreMessages AS (
+        SELECT DISTINCT ON (sm.store_item_id)
+          sm.id,
+          sm.store_item_id as item_id,
+          NULL as task_id,
+          NULL as application_id,
+          sm.sender_id,
+          sm.recipient_id,
+          sm.content,
+          sm.created_at,
+          sm.is_read,
+          sm.read_at,
+          NULL as original_content,
+          NULL as task_title,
+          NULL as task_description,
+          NULL as task_status,
+          si.title as item_title,
+          CASE 
+            WHEN sm.sender_id = $1 THEN r.username
+            ELSE s.username
+          END as other_user_name,
+          CASE 
+            WHEN sm.sender_id = $1 THEN sm.recipient_id
+            ELSE sm.sender_id
+          END as other_user_id
+        FROM store_messages sm
+        LEFT JOIN store_items si ON sm.store_item_id = si.id
+        LEFT JOIN users s ON sm.sender_id = s.id
+        LEFT JOIN users r ON sm.recipient_id = r.id
+        WHERE sm.sender_id = $1 OR sm.recipient_id = $1
+        ORDER BY sm.store_item_id, sm.created_at DESC
+      ),
+      AllMessages AS (
+        SELECT * FROM TaskMessages
+        UNION ALL
+        SELECT * FROM StoreMessages
+      ),
       UnreadCounts AS (
         SELECT 
           COALESCE(task_id, application_id) as conversation_id,
@@ -303,13 +342,20 @@ class MessageService {
         FROM messages
         WHERE recipient_id = $1 AND is_read = false
         GROUP BY COALESCE(task_id, application_id)
+        UNION ALL
+        SELECT 
+          store_item_id as conversation_id,
+          COUNT(*) as unread_count
+        FROM store_messages
+        WHERE recipient_id = $1 AND is_read = false
+        GROUP BY store_item_id
       )
       SELECT 
-        lm.*,
+        am.*,
         COALESCE(uc.unread_count, 0) as unread_count
-      FROM LastMessages lm
-      LEFT JOIN UnreadCounts uc ON COALESCE(lm.task_id, lm.application_id) = uc.conversation_id
-      ORDER BY lm.created_at DESC
+      FROM AllMessages am
+      LEFT JOIN UnreadCounts uc ON COALESCE(am.task_id, am.application_id, am.item_id) = uc.conversation_id
+      ORDER BY am.created_at DESC
     `;
     
     const result = await db.query(query, [userId]);

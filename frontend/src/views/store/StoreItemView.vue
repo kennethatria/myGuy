@@ -646,11 +646,9 @@ function formatMessageTime(dateString: string): string {
 
 // Chat functions
 async function openStoreChat() {
-  // For buyers messaging the seller
-  chatRecipientId.value = item.value.seller.id;
-  chatRecipientName.value = item.value.seller.full_name || item.value.seller.username;
-  showChatModal.value = true;
-  await loadStoreMessages();
+  // Redirect to the global chat interface
+  // The conversation will appear in the list once messages are exchanged
+  router.push('/messages');
 }
 
 async function openStoreChatWithUser(recipientId) {

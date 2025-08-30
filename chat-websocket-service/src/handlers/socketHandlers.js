@@ -76,9 +76,9 @@ class SocketHandlers {
   /**
    * Handle joining a conversation room
    */
-  async handleJoinConversation(socket, { taskId, applicationId }) {
+  async handleJoinConversation(socket, { taskId, applicationId, itemId }) {
     try {
-      const roomName = taskId ? `task:${taskId}` : `application:${applicationId}`;
+      const roomName = taskId ? `task:${taskId}` : applicationId ? `application:${applicationId}` : `item:${itemId}`;
       socket.join(roomName);
       
       logger.info('User joined conversation', { 
@@ -87,7 +87,7 @@ class SocketHandlers {
       });
 
       // Update user activity
-      await messageService.updateUserActivity(socket.userId, taskId || applicationId);
+      await messageService.updateUserActivity(socket.userId, taskId || applicationId || itemId);
 
       socket.emit('conversation:joined', { room: roomName });
     } catch (error) {
@@ -99,8 +99,8 @@ class SocketHandlers {
   /**
    * Handle leaving a conversation room
    */
-  handleLeaveConversation(socket, { taskId, applicationId }) {
-    const roomName = taskId ? `task:${taskId}` : `application:${applicationId}`;
+  handleLeaveConversation(socket, { taskId, applicationId, itemId }) {
+    const roomName = taskId ? `task:${taskId}` : applicationId ? `application:${applicationId}` : `item:${itemId}`;
     socket.leave(roomName);
     
     logger.info('User left conversation', { 
@@ -116,10 +116,10 @@ class SocketHandlers {
    */
   async handleSendMessage(socket, data) {
     try {
-      const { taskId, applicationId, recipientId, content } = data;
+      const { taskId, applicationId, itemId, recipientId, content } = data;
 
       // Validate input
-      if (!content || (!taskId && !applicationId) || !recipientId) {
+      if (!content || (!taskId && !applicationId && !itemId) || !recipientId) {
         return socket.emit('error', { message: 'Invalid message data' });
       }
 
@@ -140,14 +140,41 @@ class SocketHandlers {
         }
       }
 
-      // Send message
-      const message = await messageService.sendMessage({
-        taskId,
-        applicationId,
-        senderId: socket.userId,
-        recipientId,
-        content
-      });
+      // Check message limit for store messages
+      if (itemId) {
+        const messageCount = await messageService.getUserStoreMessageCount(itemId, socket.userId);
+        const messageLimit = await messageService.getMessageLimit(itemId, socket.userId);
+        
+        if (messageCount >= messageLimit) {
+          const limitMessage = messageLimit === 10 ? 
+            'Message limit reached (10 messages per item)' : 
+            'Message limit reached (3 messages per item). Limit increases to 10 when booking is approved.';
+          return socket.emit('error', { 
+            message: limitMessage,
+            limit: messageLimit,
+            count: messageCount
+          });
+        }
+      }
+
+      let message;
+      // Send different types of messages
+      if (itemId) {
+        message = await messageService.createStoreMessage({
+          store_item_id: itemId,
+          sender_id: socket.userId,
+          recipient_id: recipientId,
+          content
+        });
+      } else {
+        message = await messageService.sendMessage({
+          taskId,
+          applicationId,
+          senderId: socket.userId,
+          recipientId,
+          content
+        });
+      }
 
       // Get user information for formatting
       const senderInfo = await this.getUserInfo(socket.userId);
@@ -170,13 +197,13 @@ class SocketHandlers {
       socket.emit('message:sent', formattedMessage);
 
       // Emit to conversation room
-      const roomName = taskId ? `task:${taskId}` : `application:${applicationId}`;
+      const roomName = taskId ? `task:${taskId}` : applicationId ? `application:${applicationId}` : `item:${itemId}`;
       socket.to(roomName).emit('message:new', formattedMessage);
 
       // Emit to recipient's personal room (for notifications)
       this.io.to(`user:${recipientId}`).emit('message:notification', {
         message: formattedMessage,
-        conversationId: taskId || applicationId
+        conversationId: taskId || applicationId || itemId
       });
 
       // Send warning if content was filtered
@@ -262,19 +289,32 @@ class SocketHandlers {
   /**
    * Handle marking entire conversation as read
    */
-  async handleMarkConversationAsRead(socket, { taskId }) {
+  async handleMarkConversationAsRead(socket, { taskId, applicationId, itemId }) {
     try {
-      const readMessages = await messageService.markConversationAsRead(taskId, socket.userId);
+      let readMessages, roomName, responseId;
+      
+      if (itemId) {
+        // Store messages don't have a markConversationAsRead method yet
+        // For now, we'll emit success with 0 count since store messages aren't tracking read status
+        roomName = `item:${itemId}`;
+        readMessages = [];
+        responseId = { itemId };
+      } else {
+        // Task/application messages (existing logic)
+        readMessages = await messageService.markConversationAsRead(taskId, socket.userId);
+        roomName = taskId ? `task:${taskId}` : `application:${applicationId}`;
+        responseId = taskId ? { taskId } : { applicationId };
+      }
       
       // Emit read receipts for all messages
       readMessages.forEach(msg => {
-        this.io.to(`task:${taskId}`).emit('message:read', {
+        this.io.to(roomName).emit('message:read', {
           messageId: msg.id,
           readAt: new Date()
         });
       });
 
-      socket.emit('conversation:marked-read', { taskId, count: readMessages.length });
+      socket.emit('conversation:marked-read', { ...responseId, count: readMessages.length });
 
     } catch (error) {
       logger.error('Error marking conversation as read:', error);
@@ -285,25 +325,25 @@ class SocketHandlers {
   /**
    * Handle typing start
    */
-  handleTypingStart(socket, { taskId, applicationId }) {
-    const roomName = taskId ? `task:${taskId}` : `application:${applicationId}`;
+  handleTypingStart(socket, { taskId, applicationId, itemId }) {
+    const roomName = taskId ? `task:${taskId}` : applicationId ? `application:${applicationId}` : `item:${itemId}`;
     
     socket.to(roomName).emit('user:typing', {
       userId: socket.userId,
       userName: socket.userName,
-      conversationId: taskId || applicationId
+      conversationId: taskId || applicationId || itemId
     });
   }
 
   /**
    * Handle typing stop
    */
-  handleTypingStop(socket, { taskId, applicationId }) {
-    const roomName = taskId ? `task:${taskId}` : `application:${applicationId}`;
+  handleTypingStop(socket, { taskId, applicationId, itemId }) {
+    const roomName = taskId ? `task:${taskId}` : applicationId ? `application:${applicationId}` : `item:${itemId}`;
     
     socket.to(roomName).emit('user:stopped-typing', {
       userId: socket.userId,
-      conversationId: taskId || applicationId
+      conversationId: taskId || applicationId || itemId
     });
   }
 
@@ -339,30 +379,61 @@ class SocketHandlers {
   /**
    * Handle getting messages for a conversation
    */
-  async handleGetMessages(socket, { taskId, limit = 5, offset = 0 }) {
+  async handleGetMessages(socket, { taskId, applicationId, itemId, limit = 5, offset = 0 }) {
     try {
-      const messages = await messageService.getMessages(taskId, socket.userId, limit, offset);
-      const totalCount = await messageService.getTotalMessageCount(taskId, socket.userId);
+      let messages, totalCount;
       
-      // Format messages to include proper sender/recipient objects
-      const formattedMessages = messages.map(msg => ({
-        ...msg,
-        sender: {
-          id: msg.sender_id,
-          username: msg.sender_name
-        },
-        recipient: {
-          id: msg.recipient_id,
-          username: msg.recipient_name
-        }
-      }));
+      if (itemId) {
+        // Get store messages
+        messages = await messageService.getStoreMessages(itemId, socket.userId);
+        totalCount = messages.length; // Store messages don't have pagination yet
+        
+        // For store messages, we need to format differently since getStoreMessages returns different structure
+        const formattedMessages = messages.map(msg => ({
+          ...msg,
+          sender: {
+            id: msg.sender_id,
+            username: msg.sender_username
+          },
+          recipient: {
+            id: msg.recipient_id,
+            username: msg.recipient_username
+          }
+        }));
+        
+        socket.emit('messages:list', { 
+          itemId, 
+          messages: formattedMessages, 
+          offset: 0,
+          totalCount
+        });
+      } else {
+        // Get task/application messages (existing logic)
+        messages = await messageService.getMessages(taskId, socket.userId, limit, offset);
+        totalCount = await messageService.getTotalMessageCount(taskId, socket.userId);
+        
+        // Format messages to include proper sender/recipient objects
+        const formattedMessages = messages.map(msg => ({
+          ...msg,
+          sender: {
+            id: msg.sender_id,
+            username: msg.sender_name
+          },
+          recipient: {
+            id: msg.recipient_id,
+            username: msg.recipient_name
+          }
+        }));
+        
+        socket.emit('messages:list', { 
+          taskId, 
+          applicationId,
+          messages: formattedMessages, 
+          offset,
+          totalCount
+        });
+      }
       
-      socket.emit('messages:list', { 
-        taskId, 
-        messages: formattedMessages, 
-        offset,
-        totalCount
-      });
     } catch (error) {
       logger.error('Error getting messages:', error);
       socket.emit('error', { message: 'Failed to get messages' });

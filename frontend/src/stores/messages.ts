@@ -215,7 +215,7 @@ export const useMessagesStore = defineStore('messages', () => {
     }
   }
 
-  const sendStoreMessage = async (itemId: number, content: string): Promise<Message> => {
+  const sendStoreMessage = async (itemId: number, content: string, recipientId: number): Promise<Message> => {
     const authStore = useAuthStore();
     const token = authStore.token;
     
@@ -226,7 +226,7 @@ export const useMessagesStore = defineStore('messages', () => {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ item_id: itemId, content }),
+        body: JSON.stringify({ store_item_id: itemId, recipient_id: recipientId, content }),
       })
       
       if (!response.ok) {

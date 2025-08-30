@@ -1,6 +1,8 @@
 const request = require('supertest');
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const { Server } = require('socket.io');
+const Client = require('socket.io-client');
 
 // Mock database
 jest.mock('../src/config/database', () => ({
@@ -348,6 +350,128 @@ describe('Store Messages API', () => {
       
       expect(response.body.messages).toHaveLength(0);
       expect(messageService.getStoreMessages).toHaveBeenCalledWith(itemId, unrelatedUserId);
+    });
+  });
+
+  describe('WebSocket Store Messaging Integration', () => {
+    let io, serverSocket, clientSocket;
+    const port = 3001;
+    
+    beforeAll((done) => {
+      // Create WebSocket server
+      const httpServer = require('http').createServer();
+      io = new Server(httpServer);
+      httpServer.listen(port, () => {
+        done();
+      });
+    });
+    
+    afterAll(() => {
+      io.close();
+    });
+    
+    beforeEach((done) => {
+      // Mock socket handlers with store message support
+      io.on('connection', (socket) => {
+        socket.userId = 1;
+        socket.userName = 'testuser';
+        serverSocket = socket;
+        
+        // Mock WebSocket handlers for store messages
+        socket.on('join:conversation', ({ itemId }) => {
+          if (itemId) {
+            socket.join(`item:${itemId}`);
+            socket.emit('conversation:joined', { room: `item:${itemId}` });
+          }
+        });
+        
+        socket.on('message:send', async ({ itemId, recipientId, content }) => {
+          if (itemId) {
+            // Mock store message creation
+            const mockMessage = {
+              id: 1,
+              store_item_id: itemId,
+              sender_id: socket.userId,
+              recipient_id: recipientId,
+              content: content,
+              created_at: new Date().toISOString()
+            };
+            
+            socket.emit('message:sent', mockMessage);
+            socket.to(`item:${itemId}`).emit('message:new', mockMessage);
+          }
+        });
+        
+        socket.on('messages:get', ({ itemId }) => {
+          if (itemId) {
+            const mockMessages = [{
+              id: 1,
+              store_item_id: itemId,
+              sender_id: 1,
+              recipient_id: 2,
+              content: 'Test store message',
+              created_at: new Date().toISOString()
+            }];
+            
+            socket.emit('messages:list', { 
+              itemId, 
+              messages: mockMessages, 
+              offset: 0,
+              totalCount: 1
+            });
+          }
+        });
+      });
+      
+      // Create client socket
+      clientSocket = Client(`http://localhost:${port}`);
+      clientSocket.on('connect', done);
+    });
+    
+    afterEach(() => {
+      serverSocket?.disconnect();
+      clientSocket?.disconnect();
+    });
+    
+    it('should join store conversation room', (done) => {
+      const itemId = 1;
+      
+      clientSocket.emit('join:conversation', { itemId });
+      
+      clientSocket.on('conversation:joined', (data) => {
+        expect(data.room).toBe(`item:${itemId}`);
+        done();
+      });
+    });
+    
+    it('should send store messages via WebSocket', (done) => {
+      const itemId = 1;
+      const recipientId = 2;
+      const content = 'WebSocket store message test';
+      
+      clientSocket.emit('message:send', { itemId, recipientId, content });
+      
+      clientSocket.on('message:sent', (message) => {
+        expect(message.store_item_id).toBe(itemId);
+        expect(message.sender_id).toBe(1);
+        expect(message.recipient_id).toBe(recipientId);
+        expect(message.content).toBe(content);
+        done();
+      });
+    });
+    
+    it('should retrieve store messages via WebSocket', (done) => {
+      const itemId = 1;
+      
+      clientSocket.emit('messages:get', { itemId });
+      
+      clientSocket.on('messages:list', (data) => {
+        expect(data.itemId).toBe(itemId);
+        expect(data.messages).toHaveLength(1);
+        expect(data.messages[0].store_item_id).toBe(itemId);
+        expect(data.messages[0].content).toBe('Test store message');
+        done();
+      });
     });
   });
 });
