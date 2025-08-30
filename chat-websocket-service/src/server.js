@@ -484,7 +484,7 @@ app.get('/api/v1/conversations', authenticateHTTP, async (req, res) => {
     const formattedConversations = conversations.map(conv => ({
       task_id: conv.task_id,
       application_id: conv.application_id,
-      item_id: conv.item_id,
+      item_id: conv.store_item_id,
       task_title: conv.task_title,
       task_description: conv.task_description,
       task_status: conv.task_status,
@@ -496,7 +496,7 @@ app.get('/api/v1/conversations', authenticateHTTP, async (req, res) => {
       unread_count: conv.unread_count || 0,
       conversation_type: conv.task_id ? 'task' : 
                         conv.application_id ? 'application' : 
-                        conv.item_id ? 'store' : 'unknown'
+                        conv.store_item_id ? 'store' : 'unknown'
     }));
     
     res.json(formattedConversations);
