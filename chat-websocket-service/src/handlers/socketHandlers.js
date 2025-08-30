@@ -456,6 +456,7 @@ class SocketHandlers {
       socket.emit('messages:list', { 
         taskId, 
         applicationId,
+        itemId,
         messages: formattedMessages, 
         offset,
         totalCount
