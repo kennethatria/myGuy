@@ -53,6 +53,11 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Test endpoint without auth
+app.get('/api/v1/test', (req, res) => {
+  res.json({ message: 'Test endpoint works', timestamp: new Date() });
+});
+
 
 // Get deletion warnings for user
 app.get('/api/v1/deletion-warnings', authenticateHTTP, async (req, res) => {

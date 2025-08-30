@@ -111,8 +111,11 @@ export const useChatStore = defineStore('chat', () => {
       connected.value = true;
       console.log('WebSocket connected');
       
-      // Load conversations on connect
-      socket.value?.emit('conversations:list');
+      // Load conversations on connect with delay to ensure auth is processed
+      setTimeout(() => {
+        console.log('Requesting conversations via WebSocket...');
+        socket.value?.emit('conversations:list');
+      }, 500);
     });
     
     socket.value.on('disconnect', () => {
