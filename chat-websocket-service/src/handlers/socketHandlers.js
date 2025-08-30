@@ -19,15 +19,7 @@ class SocketHandlers {
         userId: socket.userId 
       });
 
-      // Auto-load conversations on connect - immediately
-      logger.info('Auto-loading conversations on connect', { userId: socket.userId });
-      setTimeout(async () => {
-        try {
-          await this.handleGetConversations(socket);
-        } catch (error) {
-          logger.error('Error in auto-load conversations', { userId: socket.userId, error: error.message });
-        }
-      }, 100);
+      // Removed auto-load for debugging
 
     // Track user's sockets
     this.addUserSocket(socket.userId, socket.id);
