@@ -731,11 +731,6 @@ async function openGeneralStoreChat() {
   await loadStoreMessages();
 }
 
-function closeChatModal() {
-  showChatModal.value = false;
-  newMessage.value = '';
-}
-
 async function checkForMessages() {
   if (!item.value) return;
   
