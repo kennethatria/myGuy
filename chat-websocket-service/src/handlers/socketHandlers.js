@@ -22,18 +22,23 @@ class SocketHandlers {
       // Removed auto-load for debugging
 
     // Track user's sockets
+    logger.info('Step 1: Adding user socket', { userId: socket.userId });
     this.addUserSocket(socket.userId, socket.id);
 
     // Join user's personal room
+    logger.info('Step 2: Joining user room', { userId: socket.userId });
     socket.join(`user:${socket.userId}`);
 
     // Update user's online status
+    logger.info('Step 3: Updating presence', { userId: socket.userId });
     this.updateUserPresence(socket.userId, true);
 
     // Set up event handlers
+    logger.info('Step 4: Setting up event handlers', { userId: socket.userId });
     this.setupEventHandlers(socket);
 
     // Handle disconnect
+    logger.info('Step 5: Setting up disconnect handler', { userId: socket.userId });
     socket.on('disconnect', () => {
       this.handleDisconnect(socket);
     });
