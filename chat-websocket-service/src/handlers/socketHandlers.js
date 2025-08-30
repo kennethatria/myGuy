@@ -50,6 +50,8 @@ class SocketHandlers {
    * Set up all socket event handlers
    */
   setupEventHandlers(socket) {
+    try {
+      logger.info('Setting up event handlers for socket', { userId: socket.userId, socketId: socket.id });
     // Join conversation room
     socket.on('join:conversation', (data) => this.handleJoinConversation(socket, data));
     
@@ -92,6 +94,12 @@ class SocketHandlers {
       logger.info('Received test:ping, sending pong', { userId: socket.userId });
       socket.emit('test:pong', { message: 'pong', userId: socket.userId });
     });
+    
+    logger.info('Event handlers setup completed', { userId: socket.userId });
+    
+    } catch (error) {
+      logger.error('Error setting up event handlers', { userId: socket.userId, error: error.message });
+    }
   }
 
   /**
