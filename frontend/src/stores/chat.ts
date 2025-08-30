@@ -109,6 +109,7 @@ export const useChatStore = defineStore('chat', () => {
     
     // Conversation events
     socket.value.on('conversations:list', handleConversationsList);
+    socket.value.on('conversations:refresh', handleConversationsRefresh);
     socket.value.on('messages:list', handleMessagesList);
     socket.value.on('conversation:marked-read', handleConversationMarkedRead);
     
@@ -231,6 +232,13 @@ export const useChatStore = defineStore('chat', () => {
         unreadCounts.value.set(conversationId, conv.unread_count);
       }
     });
+  }
+  
+  function handleConversationsRefresh() {
+    // Refresh conversations list by emitting the request
+    if (socket.value) {
+      socket.value.emit('conversations:list');
+    }
   }
   
   function handleMessagesList({ taskId, applicationId, itemId, messages: msgs, offset, totalCount }: { taskId?: number; applicationId?: number; itemId?: number; messages: Message[]; offset: number; totalCount?: number }) {

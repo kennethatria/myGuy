@@ -358,15 +358,19 @@ class SocketHandlers {
       const formattedConversations = conversations.map(conv => ({
         task_id: conv.task_id,
         application_id: conv.application_id,
+        item_id: conv.item_id,
         task_title: conv.task_title,
         task_description: conv.task_description,
         task_status: conv.task_status,
+        item_title: conv.item_title,
         last_message: conv.content || '',
         last_message_time: conv.created_at, // Use created_at as the timestamp
         other_user_id: conv.other_user_id,
         other_user_name: conv.other_user_name,
         unread_count: conv.unread_count || 0,
-        conversation_type: conv.task_id ? 'task' : 'application'
+        conversation_type: conv.task_id ? 'task' : 
+                          conv.application_id ? 'application' : 
+                          conv.item_id ? 'store' : 'unknown'
       }));
       
       socket.emit('conversations:list', formattedConversations);

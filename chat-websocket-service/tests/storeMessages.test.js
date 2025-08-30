@@ -559,6 +559,8 @@ describe('Store Messages API', () => {
       
       // Mock the HTTP API response
       jest.spyOn(messageService, 'createStoreMessage').mockResolvedValue(mockCreatedMessage);
+      jest.spyOn(messageService, 'getUserStoreMessageCount').mockResolvedValue(0);
+      jest.spyOn(messageService, 'getMessageLimit').mockResolvedValue(3);
       
       const buyerToken = jwt.sign({ id: buyerId, username: 'buyer1' }, 'test-secret');
       
@@ -580,7 +582,7 @@ describe('Store Messages API', () => {
         content: messageContent
       });
       
-      // 2. Verify conversation appears in conversations list
+      // 2. Verify conversation appears in conversations list with proper formatting
       const mockConversations = [{
         item_id: itemId,
         item_title: 'Test Item',
@@ -602,7 +604,8 @@ describe('Store Messages API', () => {
       expect(conversationsResponse.body[0]).toMatchObject({
         item_id: itemId,
         item_title: 'Test Item',
-        other_user_name: 'seller1'
+        other_user_name: 'seller1',
+        conversation_type: 'store' // Verify it's correctly identified as store conversation
       });
       
       // 3. Verify messages can be retrieved for the conversation

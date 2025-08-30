@@ -452,10 +452,57 @@ app.post('/api/v1/store-messages', authenticateHTTP, async (req, res) => {
       }
     };
     
+    // Emit WebSocket events to notify connected clients
+    if (io) {
+      // Emit to the item room (for users currently viewing the item)
+      io.to(`item:${store_item_id}`).emit('message:new', formattedMessage);
+      
+      // Emit notification to recipient's personal room
+      io.to(`user:${recipient_id}`).emit('message:notification', {
+        message: formattedMessage,
+        conversationId: store_item_id
+      });
+      
+      // Refresh conversations list for both sender and recipient
+      io.to(`user:${senderId}`).emit('conversations:refresh');
+      io.to(`user:${recipient_id}`).emit('conversations:refresh');
+    }
+    
     res.status(201).json(formattedMessage);
   } catch (error) {
     logger.error('Error creating store message:', error);
     res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// Get user's conversations list
+app.get('/api/v1/conversations', authenticateHTTP, async (req, res) => {
+  try {
+    const conversations = await messageService.getUserConversations(req.user.id);
+    
+    // Format conversations to match WebSocket format
+    const formattedConversations = conversations.map(conv => ({
+      task_id: conv.task_id,
+      application_id: conv.application_id,
+      item_id: conv.item_id,
+      task_title: conv.task_title,
+      task_description: conv.task_description,
+      task_status: conv.task_status,
+      item_title: conv.item_title,
+      last_message: conv.content || '',
+      last_message_time: conv.created_at,
+      other_user_id: conv.other_user_id,
+      other_user_name: conv.other_user_name,
+      unread_count: conv.unread_count || 0,
+      conversation_type: conv.task_id ? 'task' : 
+                        conv.application_id ? 'application' : 
+                        conv.item_id ? 'store' : 'unknown'
+    }));
+    
+    res.json(formattedConversations);
+  } catch (error) {
+    logger.error('Error getting conversations:', error);
+    res.status(500).json({ error: 'Failed to get conversations' });
   }
 });
 
