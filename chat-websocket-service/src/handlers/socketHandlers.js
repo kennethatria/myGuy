@@ -86,6 +86,12 @@ class SocketHandlers {
     
     // Get user's last seen
     socket.on('user:lastseen', (data) => this.handleGetLastSeen(socket, data));
+    
+    // Test ping/pong
+    socket.on('test:ping', () => {
+      logger.info('Received test:ping, sending pong', { userId: socket.userId });
+      socket.emit('test:pong', { message: 'pong', userId: socket.userId });
+    });
   }
 
   /**

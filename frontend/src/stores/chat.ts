@@ -115,6 +115,10 @@ export const useChatStore = defineStore('chat', () => {
       setTimeout(() => {
         console.log('Requesting conversations via WebSocket...');
         socket.value?.emit('conversations:list');
+        
+        // Test WebSocket communication
+        console.log('Testing WebSocket with ping...');
+        socket.value?.emit('test:ping');
       }, 500);
     });
     
@@ -207,6 +211,9 @@ export const useChatStore = defineStore('chat', () => {
     socket.value.on('conversations:list', handleConversationsList);
     socket.value.on('conversations:refresh', handleConversationsRefresh);
     socket.value.on('messages:list', handleMessagesList);
+    socket.value.on('test:pong', (data) => {
+      console.log('Received test:pong:', data);
+    });
     socket.value.on('conversation:marked-read', handleConversationMarkedRead);
     
     // Typing events
