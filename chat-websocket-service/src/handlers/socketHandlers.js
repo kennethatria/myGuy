@@ -13,20 +13,21 @@ class SocketHandlers {
    * Handle new socket connection
    */
   handleConnection(socket) {
-    logger.info('New socket connection', { 
-      socketId: socket.id, 
-      userId: socket.userId 
-    });
+    try {
+      logger.info('New socket connection', { 
+        socketId: socket.id, 
+        userId: socket.userId 
+      });
 
-    // Auto-load conversations on connect - immediately
-    logger.info('Auto-loading conversations on connect', { userId: socket.userId });
-    setTimeout(async () => {
-      try {
-        await this.handleGetConversations(socket);
-      } catch (error) {
-        logger.error('Error in auto-load conversations', { userId: socket.userId, error: error.message });
-      }
-    }, 100);
+      // Auto-load conversations on connect - immediately
+      logger.info('Auto-loading conversations on connect', { userId: socket.userId });
+      setTimeout(async () => {
+        try {
+          await this.handleGetConversations(socket);
+        } catch (error) {
+          logger.error('Error in auto-load conversations', { userId: socket.userId, error: error.message });
+        }
+      }, 100);
 
     // Track user's sockets
     this.addUserSocket(socket.userId, socket.id);
@@ -44,6 +45,17 @@ class SocketHandlers {
     socket.on('disconnect', () => {
       this.handleDisconnect(socket);
     });
+    
+    logger.info('handleConnection completed successfully', { userId: socket.userId });
+    
+    } catch (error) {
+      logger.error('Error in handleConnection', { 
+        userId: socket.userId, 
+        socketId: socket.id, 
+        error: error.message, 
+        stack: error.stack 
+      });
+    }
   }
 
   /**
