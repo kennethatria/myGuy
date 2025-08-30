@@ -363,7 +363,9 @@ class SocketHandlers {
    */
   async handleGetConversations(socket) {
     try {
+      logger.info('Getting conversations for user', { userId: socket.userId });
       const conversations = await messageService.getUserConversations(socket.userId);
+      logger.info('Raw conversations retrieved', { userId: socket.userId, count: conversations.length });
       
       // Format conversations to ensure proper timestamp and structure
       const formattedConversations = conversations.map(conv => ({
@@ -384,6 +386,12 @@ class SocketHandlers {
                           conv.application_id ? 'application' : 
                           conv.store_item_id ? 'store' : 'unknown'
       }));
+      
+      logger.info('Formatted conversations', { 
+        userId: socket.userId, 
+        count: formattedConversations.length,
+        storeConversations: formattedConversations.filter(c => c.conversation_type === 'store').length
+      });
       
       socket.emit('conversations:list', formattedConversations);
     } catch (error) {
