@@ -682,6 +682,15 @@ async function openStoreChat() {
   
   // Reset success message state
   showSuccessMessage.value = false;
+
+  // Import and initialize chat store for socket connection
+  const { useChatStore } = await import('@/stores/chat');
+  const chatStore = useChatStore();
+  
+  // Join the item's socket room for real-time updates
+  if (chatStore.socket && chatStore.connected) {
+    chatStore.socket.emit('join:conversation', { itemId: itemId.value });
+  }
   
   // Load existing messages if any
   await loadStoreMessages();

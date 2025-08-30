@@ -3,10 +3,14 @@ const { filterContent } = require('../utils/contentFilter');
 const logger = require('../utils/logger');
 
 class MessageService {
+  constructor() {
+    // Initialization if needed
+  }
+
   /**
    * Send a new message
    */
-  async sendMessage({ taskId, applicationId, senderId, recipientId, content }) {
+  async sendMessage({ taskId, applicationId, storeItemId, senderId, recipientId, content }) {
     const client = await db.getClient();
     
     try {
@@ -17,14 +21,15 @@ class MessageService {
       
       // Store message
       const messageQuery = `
-        INSERT INTO messages (task_id, application_id, sender_id, recipient_id, content, original_content, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        INSERT INTO messages (task_id, application_id, store_item_id, sender_id, recipient_id, content, original_content, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
         RETURNING *
       `;
       
       const messageResult = await client.query(messageQuery, [
         taskId || null,
         applicationId || null,
+        storeItemId || null,
         senderId,
         recipientId,
         filtered,
@@ -32,7 +37,7 @@ class MessageService {
       ]);
 
       // Update user activity
-      await this.updateUserActivity(senderId, taskId || applicationId);
+      await this.updateUserActivity(senderId, taskId || applicationId || storeItemId);
 
       await client.query('COMMIT');
 
@@ -156,63 +161,130 @@ class MessageService {
   /**
    * Get messages for a conversation with pagination
    */
-  async getMessages(taskId, userId, limit = 5, offset = 0) {
-    // First, get task information to check privacy settings
-    const taskQuery = `
-      SELECT t.*, 
-             (t.created_by = $2 OR t.assigned_to = $2) as is_task_participant
-      FROM tasks t 
-      WHERE t.id = $1
-    `;
-    
-    const taskResult = await db.query(taskQuery, [taskId, userId]);
-    
-    if (taskResult.rows.length === 0) {
-      throw new Error('Task not found');
-    }
-    
-    const task = taskResult.rows[0];
-    
-    // Check privacy permissions
-    if (!task.is_messages_public && !task.is_task_participant) {
-      // If messages are private and user is not a task participant, return empty
-      return [];
-    }
-    
+  async getMessages({ taskId, applicationId, itemId, userId, limit = 5, offset = 0 }) {
     let messageQuery;
     let queryParams;
-    
-    if (task.is_messages_public) {
-      // If messages are public, show all messages
-      messageQuery = `
-        SELECT 
-          m.*,
-          s.username as sender_name,
-          r.username as recipient_name
-        FROM messages m
-        LEFT JOIN users s ON m.sender_id = s.id
-        LEFT JOIN users r ON m.recipient_id = r.id
-        WHERE m.task_id = $1
-        ORDER BY m.created_at DESC
-        LIMIT $2 OFFSET $3
+    let conversationId = taskId || applicationId || itemId;
+
+    if (itemId) {
+      // This is a store item conversation
+      const itemQuery = `
+        SELECT si.*, 
+               (si.seller_id = $1) as is_seller
+        FROM store_items si 
+        WHERE si.id = $2
       `;
-      queryParams = [taskId, limit, offset];
+      
+      const itemResult = await db.query(itemQuery, [userId, itemId]);
+      
+      if (itemResult.rows.length > 0) {
+        const item = itemResult.rows[0];
+        messageQuery = `
+          SELECT 
+            m.*,
+            s.username as sender_name,
+            r.username as recipient_name
+          FROM messages m
+          LEFT JOIN users s ON m.sender_id = s.id
+          LEFT JOIN users r ON m.recipient_id = r.id
+          WHERE m.store_item_id = $1
+            AND (m.sender_id = $2 OR m.recipient_id = $2 OR EXISTS(
+              SELECT 1 FROM store_items si
+              WHERE si.id = m.store_item_id
+                AND si.seller_id = $2
+            ))
+          ORDER BY m.created_at DESC
+          LIMIT $3 OFFSET $4
+        `;
+        queryParams = [itemId, userId, limit, offset];
+      } else {
+        return [];
+      }
     } else {
-      // If messages are private, only show messages where user is participant
-      messageQuery = `
-        SELECT 
-          m.*,
-          s.username as sender_name,
-          r.username as recipient_name
-        FROM messages m
-        LEFT JOIN users s ON m.sender_id = s.id
-        LEFT JOIN users r ON m.recipient_id = r.id
-        WHERE m.task_id = $1
-          AND (m.sender_id = $2 OR m.recipient_id = $2)
-        ORDER BY m.created_at DESC
-        LIMIT $3 OFFSET $4
+      // First check if this is a task conversation
+      const taskQuery = `
+        SELECT t.*, 
+               (t.created_by = $2 OR t.assigned_to = $2) as is_task_participant
+        FROM tasks t 
+        WHERE t.id = $1
       `;
-      queryParams = [taskId, userId, limit, offset];
+    
+      const taskResult = await db.query(taskQuery, [conversationId, userId]);
+    
+      if (taskResult.rows.length > 0) {
+        // This is a task conversation
+        const task = taskResult.rows[0];
+        
+        // Check privacy permissions
+        if (!task.is_messages_public && !task.is_task_participant) {
+          return []; // Return empty if private and user not participant
+        }
+        
+        if (task.is_messages_public) {
+          // If messages are public, show all messages
+          messageQuery = `
+            SELECT 
+              m.*,
+              s.username as sender_name,
+              r.username as recipient_name
+            FROM messages m
+            LEFT JOIN users s ON m.sender_id = s.id
+            LEFT JOIN users r ON m.recipient_id = r.id
+            WHERE m.task_id = $1
+            ORDER BY m.created_at DESC
+            LIMIT $2 OFFSET $3
+          `;
+          queryParams = [conversationId, limit, offset];
+        } else {
+          // If messages are private, only show messages where user is participant
+          messageQuery = `
+            SELECT 
+              m.*,
+              s.username as sender_name,
+              r.username as recipient_name
+            FROM messages m
+            LEFT JOIN users s ON m.sender_id = s.id
+            LEFT JOIN users r ON m.recipient_id = r.id
+            WHERE m.task_id = $1
+              AND (m.sender_id = $2 OR m.recipient_id = $2)
+            ORDER BY m.created_at DESC
+            LIMIT $3 OFFSET $4
+          `;
+          queryParams = [conversationId, userId, limit, offset];
+        }
+      } else {
+        // Check if this is a store item conversation
+        const itemQuery = `
+          SELECT si.*, 
+                 (si.seller_id = $2) as is_seller
+          FROM store_items si 
+          WHERE si.id = $1
+        `;
+        
+        const itemResult = await db.query(itemQuery, [conversationId, userId]);
+        
+        if (itemResult.rows.length > 0) {
+          const item = itemResult.rows[0];
+          // This is a store item conversation
+          messageQuery = `
+            SELECT 
+              m.*,
+              s.username as sender_name,
+              r.username as recipient_name
+            FROM messages m
+            LEFT JOIN users s ON m.sender_id = s.id
+            LEFT JOIN users r ON m.recipient_id = r.id
+            LEFT JOIN store_items si ON m.store_item_id = si.id
+            WHERE m.store_item_id = $1
+              AND (m.sender_id = $2 OR m.recipient_id = $2 OR si.seller_id = $2)
+            ORDER BY m.created_at DESC
+            LIMIT $3 OFFSET $4
+          `;
+          queryParams = [conversationId, userId, limit, offset];
+        } else {
+          throw new Error('Conversation not found');
+        }
+      }
     }
     
     const result = await db.query(messageQuery, queryParams);
@@ -222,52 +294,69 @@ class MessageService {
   /**
    * Get total message count for a conversation
    */
-  async getTotalMessageCount(taskId, userId) {
-    // First, get task information to check privacy settings
-    const taskQuery = `
-      SELECT t.*, 
-             (t.created_by = $2 OR t.assigned_to = $2) as is_task_participant
-      FROM tasks t 
-      WHERE t.id = $1
-    `;
-    
-    const taskResult = await db.query(taskQuery, [taskId, userId]);
-    
-    if (taskResult.rows.length === 0) {
-      return 0;
-    }
-    
-    const task = taskResult.rows[0];
-    
-    // Check privacy permissions
-    if (!task.is_messages_public && !task.is_task_participant) {
-      return 0;
-    }
-    
-    let countQuery;
-    let queryParams;
-    
-    if (task.is_messages_public) {
-      // If messages are public, count all messages
-      countQuery = `
+  async getTotalMessageCount({ taskId, applicationId, itemId, userId }) {
+    if (itemId) {
+      // Count store messages
+      const query = `
         SELECT COUNT(*) as total
         FROM messages m
-        WHERE m.task_id = $1
+        WHERE m.store_item_id = $1
+          AND (m.sender_id = $2 OR m.recipient_id = $2 OR EXISTS(
+            SELECT 1 FROM store_items si
+            WHERE si.id = m.store_item_id
+              AND si.seller_id = $2
+          ))
       `;
-      queryParams = [taskId];
-    } else {
-      // If messages are private, only count messages where user is participant
-      countQuery = `
-        SELECT COUNT(*) as total
-        FROM messages m
-        WHERE m.task_id = $1
-          AND (m.sender_id = $2 OR m.recipient_id = $2)
+      const result = await db.query(query, [itemId, userId]);
+      return parseInt(result.rows[0].total);
+    } else if (taskId) {
+      // First, get task information to check privacy settings
+      const taskQuery = `
+        SELECT t.*, 
+               (t.created_by = $2 OR t.assigned_to = $2) as is_task_participant
+        FROM tasks t 
+        WHERE t.id = $1
       `;
-      queryParams = [taskId, userId];
+      
+      const taskResult = await db.query(taskQuery, [taskId, userId]);
+      
+      if (taskResult.rows.length === 0) {
+        return 0;
+      }
+      
+      const task = taskResult.rows[0];
+      
+      // Check privacy permissions
+      if (!task.is_messages_public && !task.is_task_participant) {
+        return 0;
+      }
+      
+      let countQuery;
+      let queryParams;
+      
+      if (task.is_messages_public) {
+        // If messages are public, count all messages
+        countQuery = `
+          SELECT COUNT(*) as total
+          FROM messages m
+          WHERE m.task_id = $1
+        `;
+        queryParams = [taskId];
+      } else {
+        // If messages are private, only count messages where user is participant
+        countQuery = `
+          SELECT COUNT(*) as total
+          FROM messages m
+          WHERE m.task_id = $1
+            AND (m.sender_id = $2 OR m.recipient_id = $2)
+        `;
+        queryParams = [taskId, userId];
+      }
+      
+      const result = await db.query(countQuery, queryParams);
+      return parseInt(result.rows[0].total);
     }
-    
-    const result = await db.query(countQuery, queryParams);
-    return parseInt(result.rows[0].total);
+    return 0;
   }
 
   /**
@@ -275,87 +364,60 @@ class MessageService {
    */
   async getUserConversations(userId) {
     const query = `
-      WITH TaskMessages AS (
-        SELECT DISTINCT ON (COALESCE(task_id, application_id))
+      WITH ConversationMessages AS (
+        SELECT DISTINCT ON (COALESCE(task_id, application_id, store_item_id))
           m.*,
           t.title as task_title,
           t.description as task_description,
           t.status as task_status,
-          NULL as item_title,
-          NULL as item_id,
+          si.title as item_title,
+          si.seller_id,
           CASE 
+            WHEN m.store_item_id IS NOT NULL THEN 
+              CASE
+                WHEN si.seller_id = $1 AND m.sender_id <> $1 THEN s.username
+                WHEN si.seller_id = $1 AND m.sender_id = $1 THEN r.username
+                WHEN m.sender_id = $1 THEN r.username
+                ELSE s.username
+              END
             WHEN m.sender_id = $1 THEN r.username
             ELSE s.username
           END as other_user_name,
           CASE 
+            WHEN m.store_item_id IS NOT NULL THEN
+              CASE
+                WHEN si.seller_id = $1 AND m.sender_id <> $1 THEN m.sender_id
+                WHEN si.seller_id = $1 AND m.sender_id = $1 THEN m.recipient_id
+                WHEN m.sender_id = $1 THEN m.recipient_id
+                ELSE m.sender_id
+              END
             WHEN m.sender_id = $1 THEN m.recipient_id
             ELSE m.sender_id
           END as other_user_id
         FROM messages m
         LEFT JOIN tasks t ON m.task_id = t.id
+        LEFT JOIN store_items si ON m.store_item_id = si.id
         LEFT JOIN users s ON m.sender_id = s.id
         LEFT JOIN users r ON m.recipient_id = r.id
-        WHERE m.sender_id = $1 OR m.recipient_id = $1
-        ORDER BY COALESCE(task_id, application_id), created_at DESC
-      ),
-      StoreMessages AS (
-        SELECT DISTINCT ON (sm.store_item_id)
-          sm.id,
-          sm.store_item_id as item_id,
-          NULL as task_id,
-          NULL as application_id,
-          sm.sender_id,
-          sm.recipient_id,
-          sm.content,
-          sm.created_at,
-          sm.is_read,
-          sm.read_at,
-          NULL as original_content,
-          NULL as task_title,
-          NULL as task_description,
-          NULL as task_status,
-          si.title as item_title,
-          CASE 
-            WHEN sm.sender_id = $1 THEN r.username
-            ELSE s.username
-          END as other_user_name,
-          CASE 
-            WHEN sm.sender_id = $1 THEN sm.recipient_id
-            ELSE sm.sender_id
-          END as other_user_id
-        FROM store_messages sm
-        LEFT JOIN store_items si ON sm.store_item_id = si.id
-        LEFT JOIN users s ON sm.sender_id = s.id
-        LEFT JOIN users r ON sm.recipient_id = r.id
-        WHERE sm.sender_id = $1 OR sm.recipient_id = $1
-        ORDER BY sm.store_item_id, sm.created_at DESC
-      ),
-      AllMessages AS (
-        SELECT * FROM TaskMessages
-        UNION ALL
-        SELECT * FROM StoreMessages
+        WHERE m.sender_id = $1 
+           OR m.recipient_id = $1 
+           OR (si.seller_id = $1)
+        ORDER BY COALESCE(task_id, application_id, store_item_id), created_at DESC
       ),
       UnreadCounts AS (
         SELECT 
-          COALESCE(task_id, application_id) as conversation_id,
+          COALESCE(task_id, application_id, store_item_id) as conversation_id,
           COUNT(*) as unread_count
         FROM messages
         WHERE recipient_id = $1 AND is_read = false
-        GROUP BY COALESCE(task_id, application_id)
-        UNION ALL
-        SELECT 
-          store_item_id as conversation_id,
-          COUNT(*) as unread_count
-        FROM store_messages
-        WHERE recipient_id = $1 AND is_read = false
-        GROUP BY store_item_id
+        GROUP BY COALESCE(task_id, application_id, store_item_id)
       )
       SELECT 
-        am.*,
+        cm.*,
         COALESCE(uc.unread_count, 0) as unread_count
-      FROM AllMessages am
-      LEFT JOIN UnreadCounts uc ON COALESCE(am.task_id, am.application_id, am.item_id) = uc.conversation_id
-      ORDER BY am.created_at DESC
+      FROM ConversationMessages cm
+      LEFT JOIN UnreadCounts uc ON COALESCE(cm.task_id, cm.application_id, cm.store_item_id) = uc.conversation_id
+      ORDER BY cm.created_at DESC
     `;
     
     const result = await db.query(query, [userId]);
@@ -487,15 +549,15 @@ class MessageService {
   async getStoreMessages(itemId, userId) {
     const query = `
       SELECT 
-        sm.*,
+        m.*,
         s.username as sender_username,
         r.username as recipient_username
-      FROM store_messages sm
-      LEFT JOIN users s ON sm.sender_id = s.id
-      LEFT JOIN users r ON sm.recipient_id = r.id
-      WHERE sm.store_item_id = $1
-        AND (sm.sender_id = $2 OR sm.recipient_id = $2)
-      ORDER BY sm.created_at ASC
+      FROM messages m
+      LEFT JOIN users s ON m.sender_id = s.id
+      LEFT JOIN users r ON m.recipient_id = r.id
+      WHERE m.store_item_id = $1
+        AND (m.sender_id = $2 OR m.recipient_id = $2)
+      ORDER BY m.created_at ASC
     `;
     
     const result = await db.query(query, [itemId, userId]);
@@ -514,24 +576,9 @@ class MessageService {
       // Filter content
       const { filtered, hasRemovedContent } = filterContent(content);
       
-      // Create store messages table if it doesn't exist
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS store_messages (
-          id SERIAL PRIMARY KEY,
-          store_item_id INTEGER NOT NULL,
-          sender_id INTEGER NOT NULL,
-          recipient_id INTEGER NOT NULL,
-          content TEXT NOT NULL,
-          original_content TEXT,
-          created_at TIMESTAMP DEFAULT NOW(),
-          is_read BOOLEAN DEFAULT FALSE,
-          read_at TIMESTAMP
-        )
-      `);
-      
-      // Store message
+      // Store message in unified messages table
       const messageQuery = `
-        INSERT INTO store_messages (store_item_id, sender_id, recipient_id, content, original_content, created_at)
+        INSERT INTO messages (store_item_id, sender_id, recipient_id, content, original_content, created_at)
         VALUES ($1, $2, $3, $4, $5, NOW())
         RETURNING *
       `;
@@ -565,7 +612,7 @@ class MessageService {
   async getUserStoreMessageCount(itemId, userId) {
     const query = `
       SELECT COUNT(*) as count
-      FROM store_messages
+      FROM messages
       WHERE store_item_id = $1 AND sender_id = $2
     `;
     

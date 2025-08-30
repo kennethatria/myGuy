@@ -8,6 +8,7 @@ export interface Message {
   task_id?: number
   application_id?: number
   item_id?: number
+  store_item_id?: number
   sender_id: number
   recipient_id: number
   content: string

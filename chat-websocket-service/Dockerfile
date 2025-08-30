@@ -23,5 +23,9 @@ USER nodejs
 # Expose port
 EXPOSE 8082
 
-# Start the server
-CMD ["node", "src/server.js"]
+# Start script with migrations
+COPY docker-entrypoint.sh /app/
+RUN chmod +x /app/docker-entrypoint.sh
+
+# Start the server with migrations
+CMD ["/app/docker-entrypoint.sh"]

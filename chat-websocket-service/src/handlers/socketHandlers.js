@@ -1,10 +1,12 @@
 const messageService = require('../services/messageService');
 const logger = require('../utils/logger');
+const StoreMessageHandler = require('./storeMessageHandler');
 
 class SocketHandlers {
   constructor(io) {
     this.io = io;
     this.userSockets = new Map(); // userId -> Set of socket IDs
+    this.storeHandler = new StoreMessageHandler(io);
   }
 
   /**
@@ -79,12 +81,30 @@ class SocketHandlers {
   async handleJoinConversation(socket, { taskId, applicationId, itemId }) {
     try {
       const roomName = taskId ? `task:${taskId}` : applicationId ? `application:${applicationId}` : `item:${itemId}`;
-      socket.join(roomName);
       
-      logger.info('User joined conversation', { 
-        userId: socket.userId, 
-        room: roomName 
+      // Always join the room - both buyers and sellers need updates
+      socket.join(roomName);
+      logger.info('User joined conversation', {
+        userId: socket.userId,
+        room: roomName
       });
+
+      // If this is a store item, check if user is the owner or buyer to join their personal room
+      if (itemId) {
+        const db = require('../config/database');
+        const query = 'SELECT seller_id FROM store_items WHERE id = $1';
+        const result = await db.query(query, [itemId]);
+        
+        if (result.rows.length > 0) {
+          // Join seller's personal room for notifications
+          const sellerRoom = `user:${result.rows[0].seller_id}`;
+          socket.join(sellerRoom);
+          logger.info('User joined seller room', {
+            userId: socket.userId,
+            room: sellerRoom
+          });
+        }
+      }
 
       // Update user activity
       await messageService.updateUserActivity(socket.userId, taskId || applicationId || itemId);
@@ -157,24 +177,15 @@ class SocketHandlers {
         }
       }
 
-      let message;
-      // Send different types of messages
-      if (itemId) {
-        message = await messageService.createStoreMessage({
-          store_item_id: itemId,
-          sender_id: socket.userId,
-          recipient_id: recipientId,
-          content
-        });
-      } else {
-        message = await messageService.sendMessage({
-          taskId,
-          applicationId,
-          senderId: socket.userId,
-          recipientId,
-          content
-        });
-      }
+      // Send message using unified message service
+      const message = await messageService.sendMessage({
+        taskId,
+        applicationId,
+        storeItemId: itemId,
+        senderId: socket.userId,
+        recipientId,
+        content
+      });
 
       // Get user information for formatting
       const senderInfo = await this.getUserInfo(socket.userId);
@@ -358,19 +369,20 @@ class SocketHandlers {
       const formattedConversations = conversations.map(conv => ({
         task_id: conv.task_id,
         application_id: conv.application_id,
-        item_id: conv.item_id,
+        item_id: conv.store_item_id,
         task_title: conv.task_title,
         task_description: conv.task_description,
         task_status: conv.task_status,
         item_title: conv.item_title,
         last_message: conv.content || '',
-        last_message_time: conv.created_at, // Use created_at as the timestamp
+        last_message_time: conv.created_at,
         other_user_id: conv.other_user_id,
         other_user_name: conv.other_user_name,
         unread_count: conv.unread_count || 0,
+        is_seller: conv.seller_id === socket.userId,
         conversation_type: conv.task_id ? 'task' : 
                           conv.application_id ? 'application' : 
-                          conv.item_id ? 'store' : 'unknown'
+                          conv.store_item_id ? 'store' : 'unknown'
       }));
       
       socket.emit('conversations:list', formattedConversations);
@@ -385,39 +397,42 @@ class SocketHandlers {
    */
   async handleGetMessages(socket, { taskId, applicationId, itemId, limit = 5, offset = 0 }) {
     try {
+      logger.info('Getting messages', { 
+        taskId, 
+        applicationId, 
+        itemId, 
+        userId: socket.userId,
+        limit,
+        offset
+      });
+
       let messages, totalCount;
       
-      if (itemId) {
-        // Get store messages
-        messages = await messageService.getStoreMessages(itemId, socket.userId);
-        totalCount = messages.length; // Store messages don't have pagination yet
+      // Get messages using unified getMessages method
+      messages = await messageService.getMessages({
+        taskId,
+        applicationId,
+        itemId,
+        userId: socket.userId,
+        limit,
+        offset
+      });
+
+      logger.info('Retrieved messages', { count: messages.length });
+
+      totalCount = await messageService.getTotalMessageCount({
+        taskId,
+        applicationId,
+        itemId,
+        userId: socket.userId
+      });
+
+      logger.info('Total message count', { totalCount });
         
-        // For store messages, we need to format differently since getStoreMessages returns different structure
-        const formattedMessages = messages.map(msg => ({
-          ...msg,
-          sender: {
-            id: msg.sender_id,
-            username: msg.sender_username
-          },
-          recipient: {
-            id: msg.recipient_id,
-            username: msg.recipient_username
-          }
-        }));
-        
-        socket.emit('messages:list', { 
-          itemId, 
-          messages: formattedMessages, 
-          offset: 0,
-          totalCount
-        });
-      } else {
-        // Get task/application messages (existing logic)
-        messages = await messageService.getMessages(taskId, socket.userId, limit, offset);
-        totalCount = await messageService.getTotalMessageCount(taskId, socket.userId);
-        
-        // Format messages to include proper sender/recipient objects
-        const formattedMessages = messages.map(msg => ({
+      // Format messages to include proper sender/recipient objects
+      const formattedMessages = messages.map(msg => {
+        logger.info('Formatting message', { messageId: msg.id });
+        return {
           ...msg,
           sender: {
             id: msg.sender_id,
@@ -427,16 +442,24 @@ class SocketHandlers {
             id: msg.recipient_id,
             username: msg.recipient_name
           }
-        }));
+        };
+      });
         
-        socket.emit('messages:list', { 
-          taskId, 
-          applicationId,
-          messages: formattedMessages, 
-          offset,
-          totalCount
-        });
-      }
+      logger.info('Emitting messages:list event', { 
+        taskId, 
+        applicationId,
+        messageCount: formattedMessages.length,
+        offset,
+        totalCount
+      });
+        
+      socket.emit('messages:list', { 
+        taskId, 
+        applicationId,
+        messages: formattedMessages, 
+        offset,
+        totalCount
+      });
       
     } catch (error) {
       logger.error('Error getting messages:', error);

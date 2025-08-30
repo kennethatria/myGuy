@@ -76,13 +76,34 @@ onUnmounted(() => {
 function selectConversation(conversation: ConversationSummary) {
   const conversationId = conversation.task_id || conversation.application_id || conversation.item_id;
   if (conversationId) {
-    chatStore.joinConversation(conversationId);
+    if (conversation.conversation_type === 'store') {
+      chatStore.joinStoreConversation(conversationId);
+    } else {
+      chatStore.joinConversation(conversationId);
+    }
   }
 }
 
 function sendMessage(content: string) {
-  if (chatStore.activeConversation) {
-    chatStore.sendMessage(content, chatStore.activeConversation.other_user_id);
+  if (!chatStore.activeConversation) return;
+  
+  const conversationId = chatStore.activeConversation.task_id || 
+    chatStore.activeConversation.application_id || 
+    chatStore.activeConversation.item_id;
+    
+  if (!conversationId) return;
+  
+  if (chatStore.activeConversation.conversation_type === 'store') {
+    chatStore.sendStoreMessage(
+      content, 
+      chatStore.activeConversation.other_user_id, 
+      conversationId
+    );
+  } else {
+    chatStore.sendMessage(
+      content, 
+      chatStore.activeConversation.other_user_id
+    );
   }
 }
 </script>

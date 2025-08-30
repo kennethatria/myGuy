@@ -523,15 +523,29 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Start server
-const PORT = process.env.PORT || 8082;
+// Run migrations and start server
+const runMigration = require('./scripts/migrate');
 
-httpServer.listen(PORT, () => {
-  logger.info(`Chat WebSocket service running on port ${PORT}`);
-  
-  // Initialize scheduler
-  schedulerService.init();
-});
+const startServer = async () => {
+  const PORT = process.env.PORT || 8082;
+
+  try {
+    // Run database migrations
+    await runMigration();
+
+    httpServer.listen(PORT, () => {
+      logger.info(`Chat WebSocket service running on port ${PORT}`);
+      
+      // Initialize scheduler
+      schedulerService.init();
+    });
+  } catch (error) {
+    logger.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+startServer();
 
 // Graceful shutdown
 process.on('SIGTERM', () => {

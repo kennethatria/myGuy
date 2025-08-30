@@ -18,6 +18,7 @@ export const useChatStore = defineStore('chat', () => {
   const conversations = ref<ConversationSummary[]>([]);
   const activeConversation = ref<ConversationSummary | null>(null);
   const messages = ref<Map<number, Message[]>>(new Map());
+  const storeMessages = ref<Map<number, Message[]>>(new Map()); // Store messages by item ID
   const typingUsers = ref<Map<number, TypingUser[]>>(new Map());
   const unreadCounts = ref<Map<number, number>>(new Map());
   const isLoadingMessages = ref(false);
@@ -35,6 +36,13 @@ export const useChatStore = defineStore('chat', () => {
   const activeMessages = computed(() => {
     if (!activeConversation.value) return [];
     const conversationId = activeConversation.value.task_id || activeConversation.value.application_id || activeConversation.value.item_id;
+    
+    // Return store messages if it's a store conversation
+    if (activeConversation.value.conversation_type === 'store') {
+      return storeMessages.value.get(conversationId!) || [];
+    }
+    
+    // Return regular messages for task/application conversations
     return messages.value.get(conversationId!) || [];
   });
   
@@ -58,18 +66,39 @@ export const useChatStore = defineStore('chat', () => {
   });
   
   // Socket connection
+  // Store message methods
+  async function joinStoreConversation(itemId: number) {
+    if (!socket.value?.connected) await connectSocket();
+    socket.value?.emit('join:conversation', { itemId });
+  }
+
+  async function sendStoreMessage(content: string, recipientId: number, itemId: number) {
+    if (!socket.value?.connected) return;
+    
+    socket.value.emit('message:send', {
+      itemId,
+      recipientId,
+      content
+    });
+  }
+
+  function getStoreMessages(itemId: number): Message[] {
+    return storeMessages.value.get(itemId) || [];
+  }
+
   function connectSocket() {
     if (socket.value?.connected) return;
     
     try {
-      socket.value = io('http://localhost:8082', {
+      socket.value = io(import.meta.env.VITE_CHAT_WS_URL || 'http://localhost:8082', {
         auth: {
           token: authStore.token
         },
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionAttempts: 3,
-        timeout: 5000
+        timeout: 5000,
+        transports: ['websocket', 'polling']
       });
     } catch (error) {
       console.error('Failed to initialize WebSocket connection:', error);
@@ -99,8 +128,71 @@ export const useChatStore = defineStore('chat', () => {
     });
     
     // Message events
-    socket.value.on('message:new', handleNewMessage);
-    socket.value.on('message:sent', handleMessageSent);
+    socket.value.on('message:new', (message: Message) => {
+      if (message.store_item_id) {
+        // Handle store message
+        const messages = storeMessages.value.get(message.store_item_id) || [];
+        storeMessages.value.set(message.store_item_id, [...messages, message]);
+        
+        // Add to conversations if not exists
+        const existingConv = conversations.value.find(c => c.item_id === message.store_item_id);
+        if (!existingConv) {
+          conversations.value.push({
+            item_id: message.store_item_id,
+            item_title: message.store_item_title || 'Store Item',
+            last_message: message.content,
+            last_message_time: message.created_at,
+            other_user_id: message.sender_id === authStore.user?.id ? message.recipient_id : message.sender_id,
+            other_user_name: message.sender_id === authStore.user?.id ? 
+              (message.recipient?.username || 'Unknown User') : 
+              (message.sender?.username || 'Unknown User'),
+            unread_count: message.sender_id !== authStore.user?.id ? 1 : 0,
+            conversation_type: 'store'
+          });
+        } else {
+          // Update existing conversation
+          existingConv.last_message = message.content;
+          existingConv.last_message_time = message.created_at;
+          if (message.sender_id !== authStore.user?.id) {
+            existingConv.unread_count = (existingConv.unread_count || 0) + 1;
+          }
+        }
+      } else {
+        // Handle task/application message
+        handleNewMessage(message);
+      }
+    });
+
+    socket.value.on('message:sent', (message: Message) => {
+      if (message.store_item_id) {
+        // Handle store message
+        const messages = storeMessages.value.get(message.store_item_id) || [];
+        storeMessages.value.set(message.store_item_id, [...messages, message]);
+        
+        // Add to conversations if not exists
+        const existingConv = conversations.value.find(c => c.item_id === message.store_item_id);
+        if (!existingConv) {
+          conversations.value.push({
+            item_id: message.store_item_id,
+            item_title: 'Store Item',  // We'll update this with the actual title when available
+            last_message: message.content,
+            last_message_time: message.created_at,
+            other_user_id: message.recipient_id,
+            other_user_name: message.recipient?.username || 'Unknown User',
+            unread_count: 0,
+            conversation_type: 'store'
+          });
+        } else {
+          // Update existing conversation
+          existingConv.last_message = message.content;
+          existingConv.last_message_time = message.created_at;
+        }
+      } else {
+        // Handle task/application message
+        handleMessageSent(message);
+      }
+    });
+    
     socket.value.on('message:edited', handleMessageEdited);
     socket.value.on('message:deleted', handleMessageDeleted);
     socket.value.on('message:read', handleMessageRead);
@@ -528,6 +620,7 @@ export const useChatStore = defineStore('chat', () => {
     conversations,
     activeConversation,
     messages,
+    storeMessages,
     typingUsers,
     unreadCounts,
     isLoadingMessages,
@@ -539,6 +632,11 @@ export const useChatStore = defineStore('chat', () => {
     activeMessages,
     activeTypingUsers,
     activeHasMoreMessages,
+    
+    // Store message methods
+    getStoreMessages,
+    joinStoreConversation,
+    sendStoreMessage,
     
     // Actions
     connectSocket,

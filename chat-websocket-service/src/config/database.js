@@ -2,7 +2,7 @@ const { Pool } = require('pg');
 const logger = require('../utils/logger');
 
 const pool = new Pool({
-  connectionString: process.env.DB_CONNECTION || 'postgresql://postgres:password@localhost:5432/myguy',
+  connectionString: process.env.DB_CONNECTION || 'postgresql://postgres:mysecretpassword@localhost:5433/my_guy',
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
