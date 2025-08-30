@@ -18,6 +18,10 @@ class SocketHandlers {
       userId: socket.userId 
     });
 
+    // Auto-load conversations on connect - immediately
+    logger.info('Auto-loading conversations on connect', { userId: socket.userId });
+    this.handleGetConversations(socket);
+
     // Track user's sockets
     this.addUserSocket(socket.userId, socket.id);
 
@@ -66,7 +70,10 @@ class SocketHandlers {
     socket.on('typing:stop', (data) => this.handleTypingStop(socket, data));
     
     // Get conversations list
-    socket.on('conversations:list', () => this.handleGetConversations(socket));
+    socket.on('conversations:list', () => {
+      logger.info('Received conversations:list event', { userId: socket.userId });
+      this.handleGetConversations(socket);
+    });
     
     // Get messages for conversation
     socket.on('messages:get', (data) => this.handleGetMessages(socket, data));
