@@ -16,6 +16,9 @@ export const useChatStore = defineStore('chat', () => {
   // State
   const socket = ref<Socket | null>(null);
   const connected = ref(false);
+  const chatUnavailable = ref(false);
+  const connectionError = ref<string | null>(null);
+  const reconnectAttempts = ref(0);
   const conversations = ref<ConversationSummary[]>([]);
   const activeConversation = ref<ConversationSummary | null>(null);
   const messages = ref<Map<number, Message[]>>(new Map());
@@ -89,49 +92,77 @@ export const useChatStore = defineStore('chat', () => {
 
   function connectSocket() {
     if (socket.value?.connected) return;
-    
+
     try {
-      socket.value = io(import.meta.env.VITE_CHAT_WS_URL || 'http://localhost:8082', {
+      const chatUrl = import.meta.env.VITE_CHAT_WS_URL || config.CHAT_API_URL || 'http://localhost:8082';
+
+      socket.value = io(chatUrl, {
         auth: {
           token: authStore.token
         },
         reconnection: true,
         reconnectionDelay: 1000,
-        reconnectionAttempts: 3,
+        reconnectionDelayMax: 5000,
+        reconnectionAttempts: 10, // Increased from 3 to 10
         timeout: 5000,
         transports: ['websocket', 'polling']
       });
     } catch (error) {
       console.error('Failed to initialize WebSocket connection:', error);
+      chatUnavailable.value = true;
+      connectionError.value = error instanceof Error ? error.message : 'Unknown error';
       return;
     }
-    
+
     // Connection events
     socket.value.on('connect', () => {
       connected.value = true;
-      console.log('WebSocket connected');
-      
+      chatUnavailable.value = false;
+      connectionError.value = null;
+      reconnectAttempts.value = 0;
+      console.log('✓ Chat WebSocket connected');
+
       // Load conversations on connect with delay to ensure auth is processed
       setTimeout(() => {
         console.log('Requesting conversations via WebSocket...');
         socket.value?.emit('conversations:list');
-        
+
         // Test WebSocket communication
         console.log('Testing WebSocket with ping...');
         socket.value?.emit('test:ping');
       }, 500);
     });
-    
-    socket.value.on('disconnect', () => {
+
+    socket.value.on('disconnect', (reason: string) => {
       connected.value = false;
-      console.log('WebSocket disconnected');
+      console.log('WebSocket disconnected:', reason);
+
+      // Mark as unavailable if disconnected by server or failed to connect
+      if (reason === 'io server disconnect' || reason === 'transport close') {
+        chatUnavailable.value = true;
+        connectionError.value = `Disconnected: ${reason}`;
+      }
     });
-    
+
+    socket.value.on('connect_error', (error: any) => {
+      reconnectAttempts.value++;
+      console.warn(`Chat connection attempt ${reconnectAttempts.value} failed:`, error.message);
+      connectionError.value = error.message;
+
+      // Mark as unavailable after multiple failed attempts
+      if (reconnectAttempts.value >= 5) {
+        chatUnavailable.value = true;
+        console.error('⚠️ Chat service unavailable after multiple connection attempts');
+      }
+    });
+
     socket.value.on('error', (error: any) => {
       console.error('WebSocket error:', error);
+      connectionError.value = error?.message || 'Unknown error';
+
       // Don't break the app on WebSocket errors
       if (error?.message) {
-        console.warn('Chat service unavailable:', error.message);
+        console.warn('Chat service error:', error.message);
       }
     });
     
@@ -622,7 +653,8 @@ export const useChatStore = defineStore('chat', () => {
         return;
       }
       
-      const response = await fetch('http://localhost:8082/api/v1/deletion-warnings', {
+      const chatApiUrl = import.meta.env.VITE_CHAT_API_URL || config.CHAT_API_URL || 'http://localhost:8082/api/v1';
+      const response = await fetch(`${chatApiUrl}/deletion-warnings`, {
         headers: {
           'Authorization': `Bearer ${authStore.token}`
         }
@@ -642,7 +674,8 @@ export const useChatStore = defineStore('chat', () => {
   
   async function dismissWarning(warningId: number) {
     try {
-      await fetch(`http://localhost:8082/api/v1/deletion-warnings/${warningId}/shown`, {
+      const chatApiUrl = import.meta.env.VITE_CHAT_API_URL || config.CHAT_API_URL || 'http://localhost:8082/api/v1';
+      await fetch(`${chatApiUrl}/deletion-warnings/${warningId}/shown`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${authStore.token}`
@@ -659,6 +692,9 @@ export const useChatStore = defineStore('chat', () => {
     // State
     socket,
     connected,
+    chatUnavailable,
+    connectionError,
+    reconnectAttempts,
     conversations,
     activeConversation,
     messages,

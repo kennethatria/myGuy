@@ -12,20 +12,23 @@ class MessageService {
    */
   async sendMessage({ taskId, applicationId, storeItemId, senderId, recipientId, content }) {
     const client = await db.getClient();
-    
+
     try {
       await client.query('BEGIN');
 
       // Filter content
       const { filtered, hasRemovedContent } = filterContent(content);
-      
+
+      // Determine message type
+      const messageType = taskId ? 'task' : (applicationId ? 'application' : 'store');
+
       // Store message
       const messageQuery = `
-        INSERT INTO messages (task_id, application_id, store_item_id, sender_id, recipient_id, content, original_content, created_at)
+        INSERT INTO messages (task_id, application_id, store_item_id, sender_id, recipient_id, content, message_type, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
         RETURNING *
       `;
-      
+
       const messageResult = await client.query(messageQuery, [
         taskId || null,
         applicationId || null,
@@ -33,7 +36,7 @@ class MessageService {
         senderId,
         recipientId,
         filtered,
-        content // Store original for audit
+        messageType
       ]);
 
       // Update user activity
@@ -43,7 +46,7 @@ class MessageService {
 
       const message = messageResult.rows[0];
       message.hasRemovedContent = hasRemovedContent;
-      
+
       return message;
     } catch (error) {
       await client.query('ROLLBACK');
@@ -59,14 +62,14 @@ class MessageService {
    */
   async editMessage(messageId, userId, newContent) {
     const client = await db.getClient();
-    
+
     try {
       await client.query('BEGIN');
 
       // Check if user owns the message
       const checkQuery = 'SELECT * FROM messages WHERE id = $1 AND sender_id = $2';
       const checkResult = await client.query(checkQuery, [messageId, userId]);
-      
+
       if (checkResult.rows.length === 0) {
         throw new Error('Message not found or unauthorized');
       }
@@ -76,22 +79,21 @@ class MessageService {
 
       // Update message
       const updateQuery = `
-        UPDATE messages 
-        SET content = $1, 
-            original_content = $2,
-            is_edited = true, 
+        UPDATE messages
+        SET content = $1,
+            is_edited = true,
             edited_at = NOW()
-        WHERE id = $3
+        WHERE id = $2
         RETURNING *
       `;
-      
-      const result = await client.query(updateQuery, [filtered, newContent, messageId]);
+
+      const result = await client.query(updateQuery, [filtered, messageId]);
 
       await client.query('COMMIT');
-      
+
       const message = result.rows[0];
       message.hasRemovedContent = hasRemovedContent;
-      
+
       return message;
     } catch (error) {
       await client.query('ROLLBACK');
@@ -363,63 +365,47 @@ class MessageService {
    * Get user conversations list
    */
   async getUserConversations(userId) {
+    // Simplified query - no cross-database JOINs
+    // Frontend should fetch task/user/item details via their respective APIs
     const query = `
       WITH ConversationMessages AS (
         SELECT DISTINCT ON (COALESCE(task_id, application_id, store_item_id))
-          m.*,
-          t.title as task_title,
-          t.description as task_description,
-          t.status as task_status,
-          si.title as item_title,
-          si.seller_id,
-          CASE 
-            WHEN m.store_item_id IS NOT NULL THEN 
-              CASE
-                WHEN si.seller_id = $1 AND m.sender_id <> $1 THEN s.username
-                WHEN si.seller_id = $1 AND m.sender_id = $1 THEN r.username
-                WHEN m.sender_id = $1 THEN r.username
-                ELSE s.username
-              END
-            WHEN m.sender_id = $1 THEN r.username
-            ELSE s.username
-          END as other_user_name,
-          CASE 
-            WHEN m.store_item_id IS NOT NULL THEN
-              CASE
-                WHEN si.seller_id = $1 AND m.sender_id <> $1 THEN m.sender_id
-                WHEN si.seller_id = $1 AND m.sender_id = $1 THEN m.recipient_id
-                WHEN m.sender_id = $1 THEN m.recipient_id
-                ELSE m.sender_id
-              END
+          m.id,
+          m.task_id,
+          m.application_id,
+          m.store_item_id,
+          m.sender_id,
+          m.recipient_id,
+          m.content,
+          m.message_type,
+          m.is_read,
+          m.created_at,
+          m.updated_at,
+          -- Determine other_user_id (person you're chatting with)
+          CASE
             WHEN m.sender_id = $1 THEN m.recipient_id
             ELSE m.sender_id
           END as other_user_id
         FROM messages m
-        LEFT JOIN tasks t ON m.task_id = t.id
-        LEFT JOIN store_items si ON m.store_item_id = si.id
-        LEFT JOIN users s ON m.sender_id = s.id
-        LEFT JOIN users r ON m.recipient_id = r.id
-        WHERE m.sender_id = $1 
-           OR m.recipient_id = $1 
-           OR (si.seller_id = $1)
+        WHERE m.sender_id = $1 OR m.recipient_id = $1
         ORDER BY COALESCE(task_id, application_id, store_item_id), created_at DESC
       ),
       UnreadCounts AS (
-        SELECT 
+        SELECT
           COALESCE(task_id, application_id, store_item_id) as conversation_id,
           COUNT(*) as unread_count
         FROM messages
         WHERE recipient_id = $1 AND is_read = false
         GROUP BY COALESCE(task_id, application_id, store_item_id)
       )
-      SELECT 
+      SELECT
         cm.*,
         COALESCE(uc.unread_count, 0) as unread_count
       FROM ConversationMessages cm
       LEFT JOIN UnreadCounts uc ON COALESCE(cm.task_id, cm.application_id, cm.store_item_id) = uc.conversation_id
       ORDER BY cm.created_at DESC
     `;
-    
+
     const result = await db.query(query, [userId]);
     return result.rows;
   }
@@ -458,22 +444,25 @@ class MessageService {
    * Check for messages to be deleted
    */
   async getMessagesForDeletion() {
+    // Simplified query - no cross-database JOINs
+    // Find old messages (> 6 months) that should be considered for deletion
+    // Task status checking should be done via API in the scheduler
     const query = `
       SELECT DISTINCT
-        t.id as task_id,
-        t.assignee_id,
-        t.creator_id,
-        t.completed_at,
+        m.task_id,
+        m.application_id,
+        m.store_item_id,
         MAX(m.created_at) as last_message_date,
-        COUNT(m.id) as message_count
-      FROM tasks t
-      INNER JOIN messages m ON m.task_id = t.id
-      WHERE 
-        (t.status = 'completed' AND t.completed_at < NOW() - INTERVAL '5 months')
-        OR (t.status IN ('cancelled', 'pending') AND m.created_at < NOW() - INTERVAL '1 month')
-      GROUP BY t.id
+        COUNT(m.id) as message_count,
+        MIN(m.sender_id) as first_user_id,
+        MIN(m.recipient_id) as second_user_id
+      FROM messages m
+      WHERE m.created_at < NOW() - INTERVAL '6 months'
+        AND m.is_deleted = false
+      GROUP BY m.task_id, m.application_id, m.store_item_id
+      HAVING COUNT(m.id) > 0
     `;
-    
+
     const result = await db.query(query);
     return result.rows;
   }
@@ -495,13 +484,13 @@ class MessageService {
    * Get deletion warnings for user
    */
   async getUserDeletionWarnings(userId) {
+    // Simplified query - no cross-database JOINs
+    // Returns warnings for messages where user is sender or recipient
     const query = `
-      SELECT 
-        mdw.*,
-        t.title as task_title
+      SELECT DISTINCT
+        mdw.*
       FROM message_deletion_warnings mdw
-      INNER JOIN tasks t ON mdw.task_id = t.id
-      WHERE (t.created_by = $1 OR t.assigned_to = $1)
+      WHERE mdw.user_id = $1
         AND mdw.deletion_scheduled_at > NOW()
         AND mdw.deletion_scheduled_at < NOW() + INTERVAL '1 month'
         AND mdw.warning_shown = false
@@ -545,21 +534,17 @@ class MessageService {
 
   /**
    * Get store messages for a specific item (only between involved parties)
+   * Returns message data with user IDs only - frontend should fetch user details via Main API
    */
   async getStoreMessages(itemId, userId) {
     const query = `
-      SELECT 
-        m.*,
-        s.username as sender_username,
-        r.username as recipient_username
+      SELECT m.*
       FROM messages m
-      LEFT JOIN users s ON m.sender_id = s.id
-      LEFT JOIN users r ON m.recipient_id = r.id
       WHERE m.store_item_id = $1
         AND (m.sender_id = $2 OR m.recipient_id = $2)
       ORDER BY m.created_at ASC
     `;
-    
+
     const result = await db.query(query, [itemId, userId]);
     return result.rows;
   }
@@ -569,33 +554,32 @@ class MessageService {
    */
   async createStoreMessage({ store_item_id, sender_id, recipient_id, content }) {
     const client = await db.getClient();
-    
+
     try {
       await client.query('BEGIN');
 
       // Filter content
       const { filtered, hasRemovedContent } = filterContent(content);
-      
+
       // Store message in unified messages table
       const messageQuery = `
-        INSERT INTO messages (store_item_id, sender_id, recipient_id, content, original_content, created_at)
-        VALUES ($1, $2, $3, $4, $5, NOW())
+        INSERT INTO messages (store_item_id, sender_id, recipient_id, content, message_type, created_at)
+        VALUES ($1, $2, $3, $4, 'store', NOW())
         RETURNING *
       `;
-      
+
       const messageResult = await client.query(messageQuery, [
         store_item_id,
         sender_id,
         recipient_id,
-        filtered,
-        content // Store original for audit
+        filtered
       ]);
 
       await client.query('COMMIT');
 
       const message = messageResult.rows[0];
       message.hasRemovedContent = hasRemovedContent;
-      
+
       return message;
     } catch (error) {
       await client.query('ROLLBACK');
@@ -622,27 +606,14 @@ class MessageService {
 
   /**
    * Check booking status for dynamic message limits
+   * TODO: Integrate with ValidationService to check via Store API
    */
   async getBookingStatus(itemId, userId) {
     try {
-      // Check if there's an approved booking request for this item involving this user
-      const query = `
-        SELECT status
-        FROM booking_requests
-        WHERE item_id = $1 
-        AND (requester_id = $2 OR item_id IN (
-          SELECT id FROM store_items WHERE seller_id = $2
-        ))
-        ORDER BY created_at DESC
-        LIMIT 1
-      `;
-      
-      const result = await db.query(query, [itemId, userId]);
-      
-      if (result.rows.length > 0) {
-        return result.rows[0].status;
-      }
-      
+      // booking_requests table exists in my_guy_store database (not accessible from my_guy_chat)
+      // For now, return null to default to 3 message limit
+      // Future: Use ValidationService to check via Store API endpoint
+      logger.warn(`Booking status check not implemented for item ${itemId} (separate database)`);
       return null;
     } catch (error) {
       logger.error('Error checking booking status:', error);
@@ -680,36 +651,15 @@ class MessageService {
 
   /**
    * Get message limit for a task based on user role and assignment status
+   * TODO: Integrate with ValidationService to check task ownership via Main API
    */
   async getTaskMessageLimit(taskId, userId) {
     try {
-      // Get task information
-      const taskQuery = `
-        SELECT created_by, assigned_to
-        FROM tasks
-        WHERE id = $1
-      `;
-      
-      const result = await db.query(taskQuery, [taskId]);
-      
-      if (result.rows.length === 0) {
-        return 3; // Default limit for non-existent tasks
-      }
-      
-      const task = result.rows[0];
-      
-      // Users who are assigned to the task get 15 messages
-      if (task.assigned_to === userId) {
-        return 15;
-      }
-      
-      // Task owners get 15 messages only if the task is assigned
-      if (task.created_by === userId && task.assigned_to !== null) {
-        return 15;
-      }
-      
-      // Everyone else (non-assigned users) gets 3 messages
-      return 3;
+      // tasks table exists in my_guy database (not accessible from my_guy_chat)
+      // For now, return default limit of 3 messages
+      // Future: Use ValidationService to check task ownership/assignment via Main API endpoint
+      logger.warn(`Task message limit check not implemented for task ${taskId} (separate database)`);
+      return 3; // Default to safe limit
     } catch (error) {
       logger.error('Error getting task message limit:', error);
       return 3; // Default to safe limit on error

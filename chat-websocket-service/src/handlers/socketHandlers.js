@@ -179,39 +179,7 @@ class SocketHandlers {
         return socket.emit('error', { message: 'Invalid message data' });
       }
 
-      // Check message limit for task messages
-      if (taskId) {
-        const messageCount = await messageService.getUserTaskMessageCount(taskId, socket.userId);
-        const messageLimit = await messageService.getTaskMessageLimit(taskId, socket.userId);
-        
-        if (messageCount >= messageLimit) {
-          const limitMessage = messageLimit === 15 ? 
-            'You\'ve reached your message limit for this gig (15 messages).' : 
-            'You\'ve reached your message limit for this gig (3 messages). The limit increases to 15 once you\'re assigned to the task.';
-          return socket.emit('error', { 
-            message: limitMessage,
-            limit: messageLimit,
-            count: messageCount
-          });
-        }
-      }
-
-      // Check message limit for store messages
-      if (itemId) {
-        const messageCount = await messageService.getUserStoreMessageCount(itemId, socket.userId);
-        const messageLimit = await messageService.getMessageLimit(itemId, socket.userId);
-        
-        if (messageCount >= messageLimit) {
-          const limitMessage = messageLimit === 10 ? 
-            'Message limit reached (10 messages per item)' : 
-            'Message limit reached (3 messages per item). Limit increases to 10 when booking is approved.';
-          return socket.emit('error', { 
-            message: limitMessage,
-            limit: messageLimit,
-            count: messageCount
-          });
-        }
-      }
+      // Message limits removed - unlimited messaging allowed
 
       // Send message using unified message service
       const message = await messageService.sendMessage({

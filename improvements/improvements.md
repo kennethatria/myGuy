@@ -1,5 +1,8 @@
 # Backend Improvements Checklist
 
+## Recent Fixes & Updates
+📋 **Latest:** See `fixes-2026-01-02.md` for recent bug fixes and deployment issues resolved
+
 ## Security Enhancements
 
 - [ ] Add rate limiting for login/register endpoints

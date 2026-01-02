@@ -43,14 +43,70 @@ io.on('connection', (socket) => {
 
 // HTTP API Routes
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+// Health check (enhanced with migration status and service info)
+app.get('/health', async (req, res) => {
+  const health = {
+    status: 'ok',
     service: 'chat-websocket-service',
     version: '1.0.0',
-    uptime: process.uptime()
-  });
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    database: 'unknown',
+    migrations: {
+      status: 'unknown',
+      count: 0,
+      lastRun: null
+    },
+    environment: {
+      node_env: process.env.NODE_ENV || 'production',
+      port: process.env.PORT || 8082
+    }
+  };
+
+  try {
+    // Check database connection
+    const db = require('./config/database');
+    await db.query('SELECT NOW()');
+    health.database = 'connected';
+
+    // Check migration status
+    const migrationResult = await db.query(`
+      SELECT COUNT(*) as count, MAX(applied_at) as last_run
+      FROM schema_migrations
+    `);
+
+    if (migrationResult.rows && migrationResult.rows.length > 0) {
+      health.migrations = {
+        status: 'applied',
+        count: parseInt(migrationResult.rows[0].count),
+        lastRun: migrationResult.rows[0].last_run
+      };
+    }
+
+    // Get table counts for additional health info
+    const tablesResult = await db.query(`
+      SELECT
+        (SELECT COUNT(*) FROM messages) as message_count,
+        (SELECT COUNT(*) FROM user_activity) as active_users
+    `);
+
+    if (tablesResult.rows && tablesResult.rows.length > 0) {
+      health.stats = {
+        messages: parseInt(tablesResult.rows[0].message_count),
+        activeUsers: parseInt(tablesResult.rows[0].active_users)
+      };
+    }
+
+  } catch (error) {
+    logger.error('Health check failed:', error);
+    health.status = 'degraded';
+    health.database = 'error';
+    health.error = error.message;
+  }
+
+  // Set HTTP status based on health
+  const httpStatus = health.status === 'ok' ? 200 : 503;
+  res.status(httpStatus).json(health);
 });
 
 // Test endpoint without auth
@@ -129,22 +185,8 @@ app.post('/api/v1/tasks/:taskId/messages', authenticateHTTP, async (req, res) =>
     if (!recipient_id || !content || !content.trim()) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    
-    // Check message limit
-    const messageCount = await messageService.getUserTaskMessageCount(taskId, senderId);
-    const messageLimit = await messageService.getTaskMessageLimit(taskId, senderId);
-    
-    if (messageCount >= messageLimit) {
-      const limitMessage = messageLimit === 15 ? 
-        'You\'ve reached your message limit for this gig (15 messages).' : 
-        'You\'ve reached your message limit for this gig (3 messages). The limit increases to 15 once you\'re assigned to the task.';
-      return res.status(403).json({ 
-        error: limitMessage,
-        limit: messageLimit,
-        count: messageCount
-      });
-    }
-    
+
+    // Message limits removed - unlimited messaging allowed
     const message = await messageService.sendMessage({
       taskId,
       senderId,
@@ -185,19 +227,20 @@ app.get('/api/v1/tasks/:taskId/message-limits', authenticateHTTP, async (req, re
   try {
     const taskId = parseInt(req.params.taskId);
     const userId = req.user.id;
-    
+
     if (isNaN(taskId)) {
       return res.status(400).json({ error: 'Invalid task ID' });
     }
-    
+
     const messageCount = await messageService.getUserTaskMessageCount(taskId, userId);
-    const messageLimit = await messageService.getTaskMessageLimit(taskId, userId);
-    
+
+    // Message limits removed - unlimited messaging
     res.json({
       messageCount,
-      messageLimit,
-      canSendMore: messageCount < messageLimit,
-      remaining: messageLimit - messageCount
+      messageLimit: null,
+      unlimited: true,
+      canSendMore: true,
+      remaining: null
     });
   } catch (error) {
     logger.error('Error getting message limits:', error);
@@ -210,42 +253,26 @@ app.get('/api/v1/applications/:applicationId/messages', authenticateHTTP, async 
   try {
     const applicationId = parseInt(req.params.applicationId);
     const userId = req.user.id;
-    
+
     if (isNaN(applicationId)) {
       return res.status(400).json({ error: 'Invalid application ID' });
     }
-    
-    // Get messages for application (using task_id null and application_id)
+
+    // Get messages for application - no cross-database JOINs
+    // Frontend should fetch user details via Main API
     const query = `
-      SELECT 
-        m.*,
-        s.username as sender_name,
-        r.username as recipient_name
+      SELECT m.*
       FROM messages m
-      LEFT JOIN users s ON m.sender_id = s.id
-      LEFT JOIN users r ON m.recipient_id = r.id
       WHERE m.application_id = $1
         AND (m.sender_id = $2 OR m.recipient_id = $2)
       ORDER BY m.created_at ASC
     `;
-    
+
     const db = require('./config/database');
     const result = await db.query(query, [applicationId, userId]);
-    
-    // Format messages to include proper sender/recipient objects
-    const formattedMessages = result.rows.map(msg => ({
-      ...msg,
-      sender: {
-        id: msg.sender_id,
-        username: msg.sender_name
-      },
-      recipient: {
-        id: msg.recipient_id,
-        username: msg.recipient_name
-      }
-    }));
-    
-    res.json(formattedMessages);
+
+    // Return messages with IDs only - frontend fetches usernames separately
+    res.json(result.rows);
   } catch (error) {
     logger.error('Error getting application messages:', error);
     res.status(500).json({ error: 'Failed to get application messages' });
@@ -256,75 +283,34 @@ app.get('/api/v1/applications/:applicationId/messages', authenticateHTTP, async 
 app.post('/api/v1/applications/:applicationId/messages', authenticateHTTP, async (req, res) => {
   try {
     const applicationId = parseInt(req.params.applicationId);
-    const { content } = req.body;
+    const { content, recipientId } = req.body;
     const senderId = req.user.id;
-    
+
     if (isNaN(applicationId)) {
       return res.status(400).json({ error: 'Invalid application ID' });
     }
-    
+
     if (!content || !content.trim()) {
       return res.status(400).json({ error: 'Message content is required' });
     }
-    
-    // Get application details to find recipient
-    const appQuery = 'SELECT task_id, applicant_id FROM applications WHERE id = $1';
-    const taskQuery = 'SELECT creator_id FROM tasks WHERE id = $1';
-    
-    const db = require('./config/database');
-    const appResult = await db.query(appQuery, [applicationId]);
-    
-    if (appResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Application not found' });
+
+    if (!recipientId) {
+      return res.status(400).json({ error: 'Recipient ID is required' });
     }
-    
-    const application = appResult.rows[0];
-    const taskResult = await db.query(taskQuery, [application.task_id]);
-    
-    if (taskResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Associated task not found' });
-    }
-    
-    const task = taskResult.rows[0];
-    
-    // Determine recipient based on sender
-    let recipientId;
-    if (senderId === application.applicant_id) {
-      recipientId = task.creator_id;
-    } else if (senderId === task.creator_id) {
-      recipientId = application.applicant_id;
-    } else {
-      return res.status(403).json({ error: 'Unauthorized to send message in this application' });
-    }
-    
+
+    // applications and tasks tables exist in my_guy database (not accessible)
+    // Frontend must provide recipientId based on application context
+    // TODO: Use ValidationService to validate application exists via Main API
+
     const message = await messageService.sendMessage({
       applicationId,
       senderId,
       recipientId,
       content: content.trim()
     });
-    
-    // Get user information to format the response
-    const senderQuery = 'SELECT username FROM users WHERE id = $1';
-    const recipientQuery = 'SELECT username FROM users WHERE id = $1';
-    
-    const senderResult = await db.query(senderQuery, [senderId]);
-    const recipientResult = await db.query(recipientQuery, [recipientId]);
-    
-    // Format message with sender/recipient info
-    const formattedMessage = {
-      ...message,
-      sender: {
-        id: senderId,
-        username: senderResult.rows[0]?.username || 'Unknown'
-      },
-      recipient: {
-        id: recipientId,
-        username: recipientResult.rows[0]?.username || 'Unknown'
-      }
-    };
-    
-    res.status(201).json(formattedMessage);
+
+    // Return message with IDs only - frontend fetches usernames separately
+    res.status(201).json(message);
   } catch (error) {
     logger.error('Error sending application message:', error);
     res.status(500).json({ error: 'Failed to send application message' });
@@ -338,33 +324,22 @@ app.get('/api/v1/store-messages/:itemId', authenticateHTTP, async (req, res) => 
   try {
     const itemId = parseInt(req.params.itemId);
     const userId = req.user.id;
-    
+
     if (isNaN(itemId)) {
       return res.status(400).json({ error: 'Invalid item ID' });
     }
-    
+
     const messages = await messageService.getStoreMessages(itemId, userId);
     const messageCount = await messageService.getUserStoreMessageCount(itemId, userId);
-    const messageLimit = await messageService.getMessageLimit(itemId, userId);
     const bookingStatus = await messageService.getBookingStatus(itemId, userId);
-    
-    // Format messages to include proper sender/recipient objects
-    const formattedMessages = messages.map(msg => ({
-      ...msg,
-      sender: {
-        id: msg.sender_id,
-        username: msg.sender_username
-      },
-      recipient: {
-        id: msg.recipient_id,
-        username: msg.recipient_username
-      }
-    }));
-    
+
+    // Return messages with IDs only - frontend fetches usernames via Main API
+    // Message limits removed - unlimited messaging
     res.json({
-      messages: formattedMessages,
+      messages,
       messageCount,
-      messageLimit,
+      messageLimit: null,
+      unlimited: true,
       bookingStatus
     });
   } catch (error) {
@@ -378,20 +353,21 @@ app.get('/api/v1/store-messages/:itemId/limits', authenticateHTTP, async (req, r
   try {
     const itemId = parseInt(req.params.itemId);
     const userId = req.user.id;
-    
+
     if (isNaN(itemId)) {
       return res.status(400).json({ error: 'Invalid item ID' });
     }
-    
+
     const messageCount = await messageService.getUserStoreMessageCount(itemId, userId);
-    const messageLimit = await messageService.getMessageLimit(itemId, userId);
     const bookingStatus = await messageService.getBookingStatus(itemId, userId);
-    
+
+    // Message limits removed - unlimited messaging
     res.json({
       messageCount,
-      messageLimit,
+      messageLimit: null,
+      unlimited: true,
       bookingStatus,
-      canSendMore: messageCount < messageLimit
+      canSendMore: true
     });
   } catch (error) {
     logger.error('Error getting message limits:', error);
@@ -413,22 +389,8 @@ app.post('/api/v1/store-messages', authenticateHTTP, async (req, res) => {
     if (content.length > 500) {
       return res.status(400).json({ error: 'Message too long (max 500 characters)' });
     }
-    
-    // Check dynamic message limit based on booking status
-    const messageCount = await messageService.getUserStoreMessageCount(store_item_id, senderId);
-    const messageLimit = await messageService.getMessageLimit(store_item_id, senderId);
-    
-    if (messageCount >= messageLimit) {
-      const limitMessage = messageLimit === 10 ? 
-        'Message limit reached (10 messages per item)' : 
-        'Message limit reached (3 messages per item). Limit increases to 10 when booking is approved.';
-      return res.status(403).json({ 
-        error: limitMessage,
-        limit: messageLimit,
-        count: messageCount
-      });
-    }
-    
+
+    // Message limits removed - unlimited messaging allowed
     const message = await messageService.createStoreMessage({
       store_item_id: parseInt(store_item_id),
       sender_id: senderId,
@@ -529,7 +491,7 @@ app.use((err, req, res, next) => {
 });
 
 // Run migrations and start server
-const runMigration = require('./scripts/migrate');
+const runMigration = require('./scripts/migrate-simple');
 
 const startServer = async () => {
   const PORT = process.env.PORT || 8082;

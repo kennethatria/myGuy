@@ -1,5 +1,4 @@
 -- Migration to integrate store messages into unified messages table
-BEGIN;
 
 -- 1. Add store_item_id to messages table
 ALTER TABLE messages
@@ -117,5 +116,3 @@ BEGIN
     END IF;
 END
 $$;
-
-COMMIT;
