@@ -1,779 +1,159 @@
 # Chat WebSocket Service - MyGuy Platform
 
-A real-time messaging microservice for the MyGuy platform that handles WebSocket connections, message delivery, read receipts, and content filtering.
+This real-time messaging microservice for the MyGuy platform handles WebSocket connections, message delivery and management, conversation state, and content filtering.
 
 ## Table of Contents
 
-- [Architecture Overview](#architecture-overview)
-- [Features](#features)
-- [Technology Stack](#technology-stack)
-- [Database Schema](#database-schema)
-- [WebSocket Events](#websocket-events)
-- [API Endpoints](#api-endpoints)
-- [Authentication](#authentication)
-- [Message Lifecycle](#message-lifecycle)
-- [Content Filtering](#content-filtering)
-- [Message Deletion Policy](#message-deletion-policy)
-- [Development Setup](#development-setup)
-- [Configuration](#configuration)
-- [Testing](#testing)
-- [Monitoring & Debugging](#monitoring--debugging)
-- [Security Considerations](#security-considerations)
-- [Scaling](#scaling)
-
-## Architecture Overview
-
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Vue.js App    │────▶│  WebSocket      │────▶│   PostgreSQL    │
-│  (Socket.IO     │◀────│    Service      │◀────│    Database     │
-│    Client)      │     │  (Socket.IO)    │     │                 │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-                               │
-                               ▼
-                        ┌─────────────────┐
-                        │   Scheduler     │
-                        │   (node-cron)   │
-                        └─────────────────┘
-```
-
-### Key Components
-
-1. **WebSocket Server**: Handles real-time bidirectional communication
-2. **Message Service**: Business logic for message operations
-3. **Content Filter**: Removes URLs, emails, and phone numbers
-4. **Scheduler Service**: Manages message deletion lifecycle
-5. **Database Layer**: PostgreSQL with connection pooling
-
-## Features
-
-### Real-time Messaging
-- Instant message delivery via WebSocket
-- Typing indicators
-- Online/offline presence tracking
-- Message notifications across devices
-
-### Message Management
-- Edit messages (with edit history tracking)
-- Soft delete with "[Message deleted]" placeholder
-- Read receipts with timestamps
-- Message filtering (removes contact information)
-- Original content preservation for audit
-
-### Conversation Features
-- Group messages by task/application
-- Unread message counters
-- Last message preview
-- Conversation search and filtering
-- Pagination for message history
-
-### Automated Lifecycle
-- Automatic message deletion after:
-  - 6 months for completed tasks
-  - 1 month for cancelled/inactive tasks
-- 30-day advance deletion warnings
-- User notification system
-
-## Technology Stack
-
-- **Runtime**: Node.js 18+
-- **WebSocket**: Socket.IO 4.7+
-- **HTTP Server**: Express 4.18+
-- **Database**: PostgreSQL with pg driver
-- **Authentication**: JWT (jsonwebtoken)
-- **Scheduling**: node-cron
-- **Logging**: Winston
-- **Security**: Helmet, CORS
-- **Environment**: dotenv
-
-## Database Schema
-
-### Messages Table (Extended)
-```sql
-CREATE TABLE messages (
-  id SERIAL PRIMARY KEY,
-  task_id INTEGER NOT NULL,
-  application_id INTEGER,
-  sender_id INTEGER NOT NULL,
-  recipient_id INTEGER NOT NULL,
-  content TEXT NOT NULL,
-  original_content TEXT,
-  is_read BOOLEAN DEFAULT FALSE,
-  read_at TIMESTAMP,
-  is_edited BOOLEAN DEFAULT FALSE,
-  edited_at TIMESTAMP,
-  is_deleted BOOLEAN DEFAULT FALSE,
-  deleted_at TIMESTAMP,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-```
-
-### User Activity Table
-```sql
-CREATE TABLE user_activity (
-  user_id INTEGER PRIMARY KEY,
-  last_seen TIMESTAMP NOT NULL DEFAULT NOW(),
-  last_conversation_id INTEGER,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-```
-
-### Message Deletion Warnings Table
-```sql
-CREATE TABLE message_deletion_warnings (
-  id SERIAL PRIMARY KEY,
-  task_id INTEGER NOT NULL,
-  deletion_scheduled_at TIMESTAMP NOT NULL,
-  warning_shown BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(task_id)
-);
-```
-
-### Store Messages Table ✅ NEW
-```sql
-CREATE TABLE store_messages (
-  id SERIAL PRIMARY KEY,
-  store_item_id INTEGER NOT NULL,
-  sender_id INTEGER NOT NULL,
-  recipient_id INTEGER NOT NULL,
-  content TEXT NOT NULL,
-  original_content TEXT,
-  created_at TIMESTAMP DEFAULT NOW(),
-  is_read BOOLEAN DEFAULT FALSE,
-  read_at TIMESTAMP
-);
-```
-
-**Indexes for Performance:**
-```sql
-CREATE INDEX idx_store_messages_item_participants 
-ON store_messages(store_item_id, sender_id, recipient_id);
-
-CREATE INDEX idx_store_messages_created_at 
-ON store_messages(store_item_id, created_at);
-```
-
-## WebSocket Events
-
-### Client → Server Events
-
-#### Connection & Room Management
-```javascript
-// Join a conversation room
-socket.emit('join:conversation', {
-  taskId: 123,          // OR
-  applicationId: 456
-});
-
-// Leave a conversation room
-socket.emit('leave:conversation', {
-  taskId: 123
-});
-```
-
-#### Message Operations
-```javascript
-// Send a message
-socket.emit('message:send', {
-  taskId: 123,
-  recipientId: 456,
-  content: "Hello!"
-});
-
-// Edit a message
-socket.emit('message:edit', {
-  messageId: 789,
-  content: "Updated message"
-});
-
-// Delete a message
-socket.emit('message:delete', {
-  messageId: 789
-});
-
-// Mark message as read
-socket.emit('message:read', {
-  messageId: 789
-});
-
-// Mark entire conversation as read
-socket.emit('conversation:read', {
-  taskId: 123
-});
-```
-
-#### Data Fetching
-```javascript
-// Get conversations list
-socket.emit('conversations:list');
-
-// Get messages for a conversation
-socket.emit('messages:get', {
-  taskId: 123,
-  limit: 5,      // optional, default: 5
-  offset: 0      // optional, for pagination
-});
-
-// Get user's last seen
-socket.emit('user:lastseen', {
-  userId: 456
-});
-```
-
-#### Typing Indicators
-```javascript
-// Start typing
-socket.emit('typing:start', {
-  taskId: 123
-});
-
-// Stop typing
-socket.emit('typing:stop', {
-  taskId: 123
-});
-```
-
-### Server → Client Events
-
-#### Message Events
-```javascript
-// New message received
-socket.on('message:new', (message) => {
-  // message object with all fields
-});
-
-// Message sent confirmation
-socket.on('message:sent', (message) => {
-  // Confirms message was saved
-});
-
-// Message edited
-socket.on('message:edited', (message) => {
-  // Updated message object
-});
-
-// Message deleted
-socket.on('message:deleted', ({ messageId }) => {
-  // ID of deleted message
-});
-
-// Message read receipt
-socket.on('message:read', ({ messageId, readAt }) => {
-  // Read confirmation
-});
-
-// Content filtered warning
-socket.on('message:filtered', ({ 
-  messageId, 
-  warning: "Links and contact information have been removed" 
-}) => {
-  // Show warning to user
-});
-```
-
-#### Conversation Events
-```javascript
-// Conversations list
-socket.on('conversations:list', (conversations) => {
-  // Array of conversation summaries
-});
-
-// Messages list
-socket.on('messages:list', ({ taskId, messages, offset }) => {
-  // Paginated messages
-});
-
-// Conversation marked as read
-socket.on('conversation:marked-read', ({ taskId, count }) => {
-  // Number of messages marked
-});
-```
-
-#### User Events
-```javascript
-// User typing
-socket.on('user:typing', ({ userId, userName, conversationId }) => {
-  // Show typing indicator
-});
-
-// User stopped typing
-socket.on('user:stopped-typing', ({ userId, conversationId }) => {
-  // Hide typing indicator
-});
-
-// User presence update
-socket.on('user:presence', ({ userId, isOnline, lastSeen }) => {
-  // Update user status
-});
-
-// User last seen
-socket.on('user:lastseen', ({ userId, lastSeen }) => {
-  // Timestamp or null
-});
-```
-
-#### System Events
-```javascript
-// Error handling
-socket.on('error', ({ message }) => {
-  // Handle error
-});
-
-// Connection events
-socket.on('connect', () => {
-  // Connected to server
-});
-
-socket.on('disconnect', () => {
-  // Disconnected from server
-});
-```
-
-## API Endpoints
-
-### GET /health
-Health check endpoint
-```json
-{
-  "status": "ok",
-  "service": "chat-websocket-service",
-  "version": "1.0.0",
-  "uptime": 12345
-}
-```
-
-### GET /api/v1/deletion-warnings
-Get pending deletion warnings for the authenticated user
-```json
-[
-  {
-    "id": 1,
-    "task_id": 123,
-    "task_title": "Fix login bug",
-    "deletion_scheduled_at": "2024-07-15T00:00:00Z",
-    "warning_shown": false
-  }
-]
-```
-
-### POST /api/v1/deletion-warnings/:id/shown
-Mark a deletion warning as shown
-```json
-{
-  "success": true
-}
-```
-
-### GET /api/v1/users/:id/last-seen
-Get user's last seen timestamp
-```json
-{
-  "userId": 123,
-  "lastSeen": "2024-01-15T10:30:00Z"
-}
-```
-
-### Store Messaging Endpoints ✅ ENHANCED
-
-#### GET /api/v1/store-messages/:itemId
-Get messages for a store item (private conversations only)
-```json
-{
-  "messages": [
-    {
-      "id": 1,
-      "store_item_id": 123,
-      "sender_id": 2,
-      "recipient_id": 1,
-      "content": "I'm interested in this item",
-      "sender": {
-        "id": 2,
-        "username": "buyer1"
-      },
-      "recipient": {
-        "id": 1,
-        "username": "seller1"
-      },
-      "created_at": "2024-01-15T10:30:00Z"
-    }
-  ],
-  "messageCount": 1,
-  "messageLimit": 3,
-  "bookingStatus": null
-}
-```
-
-#### POST /api/v1/store-messages
-Send a message about a store item
-```json
-{
-  "store_item_id": 123,
-  "recipient_id": 1,
-  "content": "When can I view this item?"
-}
-```
-
-#### GET /api/v1/store-messages/:itemId/limits
-Get message limits and booking status for an item
-```json
-{
-  "messageCount": 2,
-  "messageLimit": 10,
-  "bookingStatus": "approved",
-  "canSendMore": true
-}
-```
-
-**Key Features:**
-- **Privacy Protection**: Only conversation participants can see messages
-- **Owner Interface**: Item owners can message approved booking requesters ✅ NEW
-- **Dynamic Limits**: 3 messages default, 10 after booking approval
-- **Content Filtering**: All messages filtered for contact information
-- **Booking Integration**: Message limits increase when bookings are approved
-
-## Authentication
-
-### JWT Token Structure
-```javascript
-{
-  "user_id": 123,
-  "email": "user@example.com",
-  "name": "John Doe",
-  "iat": 1234567890,
-  "exp": 1234654290
-}
-```
-
-### Socket Authentication
-```javascript
-const socket = io('http://localhost:8082', {
-  auth: {
-    token: 'eyJhbGciOiJIUzI1NiIs...'
-  }
-});
-```
-
-### HTTP Authentication
-```http
-GET /api/v1/deletion-warnings
-Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
-```
-
-## Message Lifecycle
-
-### 1. Message Creation
-```
-Client → Send Message → Content Filter → Save to DB → Emit to Recipients
-```
-
-### 2. Message Editing
-```
-Client → Edit Request → Verify Owner → Content Filter → Update DB → Broadcast Changes
-```
-
-### 3. Message Deletion (Soft)
-```
-Client → Delete Request → Verify Owner → Mark Deleted → Update Content → Broadcast
-```
-
-### 4. Automatic Deletion
-```
-Scheduler → Check Tasks → Create Warnings → Wait 30 Days → Delete Messages → Remove Records
-```
-
-## Content Filtering
-
-### Filtered Patterns
-1. **URLs**: HTTP(S), FTP, www links
-2. **Emails**: Standard email format
-3. **Phone Numbers**: 10-15 digit patterns with common formats
-4. **Social Handles**: @mentions
-
-### Example Transformations
-```
-Input:  "Call me at 555-1234 or email john@example.com"
-Output: "Call me at [phone removed] or email [email removed]"
-
-Input:  "Check out https://example.com for more info"
-Output: "Check out [link removed] for more info"
-```
-
-### Implementation
-```javascript
-const patterns = {
-  urls: /(?:https?|ftp|ftps):\/\/[^\s]+|www\.[^\s]+\.[^\s]+/gi,
-  emails: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
-  phones: /(?:\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}/g
-};
-```
-
-## Message Deletion Policy
-
-### Deletion Schedule
-1. **Completed Tasks**: Messages deleted 6 months after task completion
-2. **Cancelled/Inactive Tasks**: Messages deleted 1 month after last activity
-3. **Warning Period**: Users notified 30 days before deletion
-
-### Deletion Process
-```
-Daily at 2 AM: Check for messages to delete
-Daily at 3 AM: Create deletion warnings
-Daily at 4 AM: Execute scheduled deletions
-```
-
-### Warning Display
-- Banner shown on login if warnings exist
-- Warnings persist until acknowledged
-- Shows exact deletion date for each conversation
-
-## Development Setup
+1.  [Architecture](#1-architecture)
+2.  [Features](#2-features)
+3.  [Technology Stack](#3-technology-stack)
+4.  [Getting Started (Development)](#4-getting-started-development)
+5.  [Configuration](#5-configuration)
+6.  [Database and Migrations](#6-database-and-migrations)
+7.  [WebSocket API](#7-websocket-api)
+8.  [REST API](#8-rest-api)
+9.  [Message Lifecycle](#9-message-lifecycle)
+10. [Security & Filtering](#10-security--filtering)
+
+---
+
+## 1. Architecture
+
+The service operates as a standalone Node.js application, managing all real-time communication between clients. It connects to its own dedicated PostgreSQL database (`my_guy_chat`) and uses a shared JWT secret for stateless authentication.
+
+**Key Design Principles:**
+-   **Unified Message Table**: A single `messages` table handles all message types (for tasks, store items, etc.), distinguished by foreign key columns (`task_id`, `store_item_id`).
+-   **Service Independence**: The chat service does not query other services' databases directly. It communicates only through IDs, with the frontend responsible for fetching associated data (like user or task details).
+-   **Real-time & REST**: Provides a rich WebSocket API for real-time events and a REST API for stateless operations like health checks.
+
+## 2. Features
+
+-   **Real-time Messaging**: Instant message delivery, typing indicators, and online presence.
+-   **Conversation Management**: Groups messages by context (task, store item) and tracks unread counts.
+-   **Message Lifecycle**: Supports editing (with history), soft deletion, and read receipts.
+-   **Content Filtering**: Automatically removes URLs, emails, and phone numbers from messages to ensure user privacy.
+-   **Automated Deletion**: A scheduler (`node-cron`) automatically deletes old messages based on predefined rules (e.g., 6 months after task completion).
+
+## 3. Technology Stack
+
+-   **Runtime**: Node.js 18+
+-   **Framework**: Express 4.18+
+-   **WebSocket**: Socket.IO 4.7+
+-   **Database**: PostgreSQL with `node-postgres` (pg)
+-   **Authentication**: JSON Web Tokens (JWT)
+-   **Scheduling**: `node-cron`
+-   **Logging**: Winston
+
+## 4. Getting Started (Development)
 
 ### Prerequisites
-- Node.js 18+
-- PostgreSQL 12+
-- Docker (optional)
+-   Node.js 18+
+-   PostgreSQL 12+
+-   Docker (recommended)
 
-### Local Development
-```bash
-# Clone repository
-git clone <repository-url>
-cd chat-websocket-service
-
-# Install dependencies
-npm install
-
-# Create .env file
-cp .env.example .env
-# Edit .env with your configuration
-
-# Run database migrations
-psql -U postgres -d myguy -f migrations/001_message_updates.sql
-
-# Start development server
-npm run dev
-```
+### Local Setup
+1.  **Clone Repository:**
+    ```bash
+    git clone <repository-url>
+    cd chat-websocket-service
+    ```
+2.  **Install Dependencies:**
+    ```bash
+    npm install
+    ```
+3.  **Configure Environment:**
+    -   Create a `.env` file from `.env.example`.
+    -   Set `DATABASE_URL` to your `my_guy_chat` database instance.
+    -   Set `JWT_SECRET` to match the other services.
+4.  **Run Migrations:**
+    ```bash
+    npm run migrate
+    ```
+5.  **Start the Service:**
+    ```bash
+    npm run dev
+    ```
 
 ### Docker Development
+The service is included in the project's root `docker-compose.yml`.
 ```bash
-# Build and run with docker-compose
-docker-compose up chat-websocket-service
+# From project root
+docker-compose up --build chat-websocket-service
 ```
 
-## Configuration
+## 5. Configuration
 
-### Environment Variables
-```env
-# Server
-PORT=8082
-NODE_ENV=development
-LOG_LEVEL=info
+Key environment variables are defined in `.env`:
 
-# Database
-DB_CONNECTION=postgresql://user:pass@localhost:5432/myguy
+-   `PORT`: The port for the service to run on (e.g., 8082).
+-   `DATABASE_URL`: Connection string for the PostgreSQL database.
+-   `JWT_SECRET`: The shared secret for validating JWTs.
+-   `CLIENT_URL`: The URL of the frontend client for CORS configuration.
+-   `LOG_LEVEL`: Logging verbosity (e.g., `info`, `debug`).
 
-# Authentication
-JWT_SECRET=your-secret-key
+## 6. Database and Migrations
 
-# Client
-CLIENT_URL=http://localhost:5173
-```
+The service connects to its own `my_guy_chat` database. The schema is managed by `node-pg-migrate`, which tracks executed migrations in a database table named `pgmigrations`.
 
-### Configuration Options
-- **Connection Pool**: Max 20 connections, 30s idle timeout
-- **Socket.IO**: 60s ping timeout, 25s ping interval
-- **Message Pagination**: Default 5 messages per request
-- **Typing Timeout**: 3 seconds auto-stop
-- **Scheduler Timezone**: UTC
+### Key Tables
+-   **`messages`**: A unified table for all messages. The message context is determined by which foreign key column (`task_id`, `store_item_id`, etc.) is populated.
+-   **`user_activity`**: Tracks user presence and last seen status.
+-   **`message_deletion_warnings`**: Logs upcoming automated message deletions.
 
-## Testing
+### Migrations
+Migrations are handled via npm scripts. They run automatically on service startup.
 
-### Unit Tests
-```bash
-npm test
-```
+-   **Run pending migrations:**
+    ```bash
+    npm run migrate
+    ```
+-   **Create a new migration:**
+    ```bash
+    npm run migrate:create <migration_name>
+    ```
 
-### Integration Tests
-```bash
-npm run test:integration
-```
+## 7. WebSocket API
 
-### Load Testing
-```javascript
-// Example Socket.IO load test
-const io = require('socket.io-client');
-const sockets = [];
+Authentication is performed by passing a JWT in the `auth.token` field upon connection.
 
-for (let i = 0; i < 100; i++) {
-  const socket = io('http://localhost:8082', {
-    auth: { token: generateToken(i) }
-  });
-  sockets.push(socket);
-}
-```
+### Key Events (Client → Server)
+-   `join:conversation`: Join a room for a specific task or item (`{ taskId: 1 }` or `{ itemId: 2 }`).
+-   `message:send`: Send a message (`{ recipientId: 1, content: 'Hello!', ... }`).
+-   `message:edit`: Edit a message (`{ messageId: 1, content: 'New content' }`).
+-   `message:delete`: Soft-delete a message (`{ messageId: 1 }`).
+-   `conversation:read`: Mark all messages in a conversation as read (`{ taskId: 1 }`).
+-   `conversations:list`: Request the list of all conversations for the user.
+-   `messages:get`: Request a paginated history of messages for a conversation.
+-   `typing:start` / `typing:stop`: Manage typing indicators.
 
-### Testing Scenarios
-1. **Message Delivery**: Ensure messages reach all recipients
-2. **Read Receipts**: Verify read status updates
-3. **Content Filtering**: Test all filter patterns
-4. **Concurrent Edits**: Handle race conditions
-5. **Reconnection**: Test message queue on disconnect
+### Key Events (Server → Client)
+-   `message:new`: A new message has arrived.
+-   `message:edited` / `message:deleted`: A message was changed.
+-   `user:typing` / `user:stopped-typing`: Typing indicator updates.
+-   `conversations:list`: The user's list of conversations.
+-   `error`: An error occurred (`{ message: 'Error description' }`).
 
-## Monitoring & Debugging
+## 8. REST API
 
-### Logging
-```javascript
-// Log levels: error, warn, info, debug
-logger.info('Socket connected', { userId, socketId });
-logger.error('Database error', { error, query });
-```
+-   `GET /health`: Health check endpoint to verify the service is running.
+-   `GET /api/v1/deletion-warnings`: Get pending deletion warnings for the authenticated user.
+-   `POST /api/v1/deletion-warnings/:id/shown`: Mark a warning as acknowledged.
 
-### Health Checks
-```bash
-# Check service health
-curl http://localhost:8082/health
+## 9. Message Lifecycle
 
-# Check database connection
-docker exec chat-websocket-service node -e "
-  const { pool } = require('./src/config/database');
-  pool.query('SELECT NOW()').then(console.log);
-"
-```
+1.  **Creation**: A client sends `message:send`. The server filters content, saves to the `messages` table, and emits `message:new` to the recipient.
+2.  **Editing**: A client sends `message:edit`. The server verifies ownership, updates the record, and emits `message:edited`.
+3.  **Deletion**: A client sends `message:delete`. The server soft-deletes the message (replaces content with "[Message deleted]") and emits `message:deleted`.
+4.  **Auto-Deletion**: A daily cron job checks for old conversations tied to completed/inactive tasks and schedules them for permanent deletion, notifying users 30 days in advance.
 
-### Debug Mode
-```env
-LOG_LEVEL=debug
-NODE_ENV=development
-```
+## 10. Security & Filtering
 
-### Common Issues
-1. **Connection Timeouts**: Check JWT expiration
-2. **Missing Messages**: Verify room subscriptions
-3. **Slow Queries**: Add database indexes
-4. **Memory Leaks**: Monitor socket cleanup
-
-## Security Considerations
-
-### Authentication
-- JWT tokens required for all connections
-- Tokens validated on each request
-- User context attached to socket instances
-
-### Authorization
-- Users can only edit/delete own messages
-- Message access restricted to participants
-- Task/application ownership verified
-
-### Input Validation
-- Message length limits (1000 chars)
-- Content sanitization
-- SQL injection prevention via parameterized queries
-
-### Rate Limiting
-- Consider implementing per-user message limits
-- Typing indicator throttling
-- Connection attempt limits
-
-### Data Privacy
-- Original content stored but never exposed
-- Soft deletes preserve audit trail
-- Automatic deletion for compliance
-
-## Scaling
-
-### Horizontal Scaling
-```yaml
-# docker-compose.yml
-chat-websocket-service:
-  scale: 3
-  deploy:
-    replicas: 3
-```
-
-### Redis Adapter (Future)
-```javascript
-// For multi-instance deployments
-const { createAdapter } = require('@socket.io/redis-adapter');
-io.adapter(createAdapter(redisClient));
-```
-
-### Database Optimization
-- Connection pooling configured
-- Indexes on frequently queried columns
-- Partitioning for large message tables
-
-### Performance Tips
-1. Enable database query caching
-2. Implement message archiving
-3. Use CDN for static assets
-4. Consider message compression
-5. Optimize database indexes
-
-## Troubleshooting
-
-### Connection Issues
-```bash
-# Test WebSocket connection
-wscat -c ws://localhost:8082 -H "Authorization: Bearer TOKEN"
-```
-
-### Database Issues
-```sql
--- Check active connections
-SELECT count(*) FROM pg_stat_activity;
-
--- Check message table size
-SELECT pg_size_pretty(pg_total_relation_size('messages'));
-```
-
-### Memory Usage
-```bash
-# Monitor Node.js memory
-node --inspect src/server.js
-```
-
-## API Integration Examples
-
-### Frontend Integration
-```javascript
-import { io } from 'socket.io-client';
-
-const socket = io('http://localhost:8082', {
-  auth: { token: localStorage.getItem('token') }
-});
-
-// Send message
-socket.emit('message:send', {
-  taskId: 123,
-  recipientId: 456,
-  content: 'Hello!'
-});
-
-// Listen for new messages
-socket.on('message:new', (message) => {
-  console.log('New message:', message);
-});
-```
-
-### Backend Integration
-```go
-// Notify chat service of task completion
-func markTaskCompleted(taskID uint) error {
-    task.CompletedAt = time.Now()
-    // Chat service will handle message lifecycle
-    return db.Save(&task).Error
-}
-```
-
-## Contributing
-
-1. Follow existing code style
-2. Add tests for new features
-3. Update documentation
-4. Run linter before committing
-5. Keep commits focused and descriptive
-
-## License
-
-This service is part of the MyGuy platform and follows the same license terms.
+-   **Authentication**: All socket connections and REST endpoints are protected and require a valid JWT.
+-   **Authorization**: Business logic verifies that users can only access or modify their own messages and conversations.
+-   **Content Filtering**: To protect user privacy, the following patterns are automatically removed from message content before storage:
+    -   URLs (e.g., `http://example.com`)
+    -   Emails (e.g., `user@example.com`)
+    -   Phone numbers
+    -   Social media handles (`@username`)
+    The original, unfiltered content is stored separately for auditing but is never exposed to clients.
+-   **Input Validation**: Message length and payload structure are validated.

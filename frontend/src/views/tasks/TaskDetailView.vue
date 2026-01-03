@@ -156,77 +156,21 @@
                 Messages for this gig are private and only visible to the gig owner and assigned person.
               </p>
             </div>
-            
-            <div v-else-if="messages.length === 0" class="no-messages">
-              <div class="no-messages-icon">
-                <i class="fas fa-comments"></i>
-              </div>
-              <p>No messages yet</p>
-              <p class="no-messages-subtitle" v-if="task?.status === 'open'">
-                Apply for this gig to start messaging
-              </p>
-              <p class="no-messages-subtitle" v-else-if="task?.status === 'assigned'">
-                Start the conversation about this task
-              </p>
-            </div>
-            
-            <div v-else class="chat-messages">
-              <div v-for="message in messages" :key="message.id" class="message" :class="{ 'own-message': message.sender?.id === authStore.user?.id }">
-                <div class="message-header">
-                  <span class="sender">{{ message.sender?.id === authStore.user?.id ? 'You' : (message.sender?.username || 'Unknown User') }}</span>
-                  <span class="timestamp">{{ formatMessageTime(message.createdAt || new Date()) }}</span>
-                </div>
-                <div class="message-content">{{ message.content || 'No message content' }}</div>
-              </div>
-            </div>
+
+            <ChatWindow
+              v-else-if="canViewMessages && task && chatRecipientId"
+              :conversation-id="task.id"
+              conversation-type="task"
+              :recipient-id="chatRecipientId"
+              :recipient-name="chatRecipientName"
+              conversation-title="Task Communication"
+              :hide-input="!canSendMessage"
+            />
           </div>
-          
-          <!-- Message input section -->
-          <div class="chat-input-section">
-            <div v-if="canViewMessages && canSendMessage && userCanSendMore" class="chat-input">
-              <form @submit.prevent="handleSendMessage">
-                <textarea 
-                  v-model="newMessage"
-                  placeholder="Type your message about this gig..."
-                  :maxlength="500"
-                  rows="3"
-                  @keydown.enter.ctrl="handleSendMessage"
-                  class="message-textarea"
-                ></textarea>
-                <div class="input-footer">
-                  <div class="message-info">
-                    <span class="message-count">{{ userMessageCount }}/{{ currentMessageLimit }} messages sent</span>
-                    <span v-if="!isTaskAssigned && !isOwner" class="limit-info">
-                      • Limit increases to 15 when task is assigned
-                    </span>
-                  </div>
-                  <button 
-                    type="submit"
-                    :disabled="!newMessage.trim()"
-                    class="btn btn-primary btn-sm"
-                  >
-                    Send
-                  </button>
-                </div>
-              </form>
-            </div>
-            
-            <div v-else-if="canSendMessage && !userCanSendMore" class="message-limit-reached">
-              <div class="limit-reached-content">
-                <i class="fas fa-info-circle"></i>
-                <div>
-                  <p><strong>Message limit reached</strong></p>
-                  <p v-if="!isTaskAssigned && !isOwner" class="suggestion">
-                    The task owner can assign this task to you to unlock more messages (up to 15 total).
-                  </p>
-                  <p v-else class="suggestion">
-                    You've reached the maximum number of messages for this conversation.
-                  </p>
-                </div>
-              </div>
-            </div>
-            
-            <div v-else-if="isOwner && task?.status === 'open'" class="assignment-required">
+
+          <!-- Permission notices when can view but can't send -->
+          <div v-if="canViewMessages && !canSendMessage" class="chat-input-section">
+            <div v-if="isOwner && task?.status === 'open'" class="assignment-required">
               <div class="assignment-content">
                 <i class="fas fa-user-plus"></i>
                 <div>
@@ -235,7 +179,7 @@
                 </div>
               </div>
             </div>
-            
+
             <div v-else-if="!isOwner && task?.status === 'open'" class="application-required">
               <div class="application-content">
                 <i class="fas fa-paper-plane"></i>
@@ -267,17 +211,18 @@ import { useRoute, useRouter } from 'vue-router'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/stores/auth'
 import { useTasksStore } from '@/stores/tasks'
-import { useMessagesStore } from '@/stores/messages'
+import { useChatStore } from '@/stores/chat'
 import { useUsersStore } from '@/stores/users'
 import { useReviewsStore } from '@/stores/reviews'
 import ApplicationDetail from '@/components/ApplicationDetail.vue'
 import ApplicationModal from '@/components/ApplicationModal.vue'
+import ChatWindow from '@/components/ChatWindow.vue'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const tasksStore = useTasksStore()
-const messagesStore = useMessagesStore()
+const chatStore = useChatStore()
 const usersStore = useUsersStore()
 const reviewsStore = useReviewsStore()
 
@@ -318,21 +263,9 @@ interface Application {
   message?: string
 }
 
-interface Message {
-  id: number
-  sender: {
-    id: number
-    username: string
-  }
-  content: string
-  createdAt: string
-}
-
 const task = ref<Task | null>(null)
 const applications = ref<Application[]>([])
 const hasReviewed = ref(false)
-const messages = ref<Message[]>([])
-const newMessage = ref('')
 const isLoading = ref(true)
 const error = ref('')
 const creator = ref<any>(null)
@@ -346,15 +279,6 @@ const statusClasses = {
 
 const formatDate = (date: string) => {
   return format(new Date(date), 'MMM dd, yyyy h:mm a')
-}
-
-const formatMessageTime = (dateString: string | Date): string => {
-  try {
-    const date = new Date(dateString)
-    return format(date, 'MMM d, h:mm a')
-  } catch (error) {
-    return 'Unknown time'
-  }
 }
 
 const formatCurrency = (amount: number) => {
@@ -423,34 +347,6 @@ const visibleApplications = computed(() => {
   return applications.value.filter(app => app.applicant.id === authStore.user?.id)
 })
 
-// Message limit computed properties
-const isTaskAssigned = computed(() => {
-  return task.value?.status === 'assigned' || task.value?.assigned_to !== null
-})
-
-const currentMessageLimit = computed(() => {
-  if (!authStore.user || !task.value) return 3
-  
-  const userId = authStore.user.id
-  // Users who are assigned to the gig get 15 messages
-  if (task.value.assigned_to === userId) return 15
-  
-  // Task owners get 15 messages only if the task is assigned
-  if (task.value.created_by === userId && task.value.assigned_to !== null) return 15
-  
-  // Everyone else (non-assigned users) gets 3 messages
-  return 3
-})
-
-const userMessageCount = computed(() => {
-  if (!authStore.user || !messages.value) return 0
-  return messages.value.filter(msg => msg.sender?.id === authStore.user?.id).length
-})
-
-const userCanSendMore = computed(() => {
-  return userMessageCount.value < currentMessageLimit.value
-})
-
 const canViewMessages = computed(() => {
   if (!task.value || !authStore.user) return false
   
@@ -467,6 +363,30 @@ const canViewMessages = computed(() => {
 
 const isMessagesPrivate = computed(() => {
   return task.value?.is_messages_public === false
+})
+
+const chatRecipientId = computed(() => {
+  if (!task.value || !authStore.user) return null
+
+  // If current user is the owner, send to assigned person
+  if (isOwner.value) {
+    return task.value.assigned_to || null
+  }
+
+  // If current user is not the owner, send to task creator
+  return task.value.created_by || task.value.creator?.id || null
+})
+
+const chatRecipientName = computed(() => {
+  if (!task.value) return ''
+
+  if (isOwner.value) {
+    // Owner messaging assignee
+    return task.value.assignee?.username || 'Assigned Person'
+  }
+
+  // Non-owner messaging creator
+  return task.value.creator?.username || 'Task Owner'
 })
 
 const loadTaskData = async () => {
@@ -543,18 +463,9 @@ const loadTaskData = async () => {
     }
     applications.value = applicationsData || [];
     console.log(`Loaded ${applications.value.length} applications`);
-    
-    // Load messages separately since they're not included in the task data
-    try {
-      const messagesData = await messagesStore.fetchTaskMessages(taskId);
-      messages.value = messagesData || [];
-      console.log(`Loaded ${messages.value.length} messages`);
-    } catch (msgErr) {
-      console.error('Failed to fetch messages:', msgErr);
-      // Non-critical error, don't show to user but log it
-      messages.value = []; // Ensure we have an empty array
-    }
-    
+
+    // Messages are loaded by ChatWindow component via useChatStore
+
     // Check if the current user has already reviewed this task
     if (task.value.status === 'completed' && authStore.user) {
       try {
@@ -575,6 +486,11 @@ const loadTaskData = async () => {
 
 onMounted(async () => {
   await loadTaskData()
+
+  // Connect to chat socket
+  if (!chatStore.connected) {
+    await chatStore.connectSocket()
+  }
 })
 
 const showApplicationModal = ref(false)
@@ -658,58 +574,7 @@ const handleApplicationMessageSent = () => {
   console.log('Application message sent successfully')
 }
 
-const handleSendMessage = async () => {
-  if (!task.value || !newMessage.value.trim() || !authStore.user) return
-
-  // Check message limit
-  if (!userCanSendMore.value) {
-    alert(`You've reached the message limit (${currentMessageLimit.value} messages). ${isTaskAssigned.value ? '' : 'The limit will increase to 15 once the task is assigned.'}`)
-    return
-  }
-
-  try {
-    let recipientId: number | undefined
-    
-    console.log('Sending message - Debug info:', {
-      isOwner: isOwner.value,
-      taskCreatedBy: task.value.created_by,
-      taskAssignedTo: task.value.assigned_to,
-      currentUserId: authStore.user.id,
-      taskCreator: task.value.creator
-    })
-    
-    if (isOwner.value) {
-      // Task owner sending message
-      if (task.value.assigned_to) {
-        // If task is assigned, send to assignee
-        recipientId = task.value.assigned_to
-      } else {
-        // For open tasks, owner can't send messages to themselves
-        alert('This task is not assigned yet. Messages will be available once someone is assigned.')
-        return
-      }
-    } else {
-      // Non-owner sending message to task creator
-      recipientId = task.value.created_by || task.value.creator?.id
-    }
-
-    if (!recipientId) {
-      console.error('Recipient ID not found. Task data:', task.value)
-      throw new Error('No recipient found for message')
-    }
-
-    await messagesStore.sendMessage(task.value.id, recipientId, newMessage.value.trim())
-    newMessage.value = ''
-    
-    // Refresh messages
-    messages.value = await messagesStore.fetchTaskMessages(task.value.id)
-  } catch (error) {
-    console.error('Failed to send message:', error)
-    // Show the specific error message from the backend if available
-    const errorMessage = error.message || 'Failed to send message. Please try again.'
-    alert(errorMessage)
-  }
-}
+// Message sending is now handled by ChatWindow component
 </script>
 
 <style scoped>

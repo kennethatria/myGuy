@@ -170,122 +170,43 @@ class MessageService {
 
     if (itemId) {
       // This is a store item conversation
-      const itemQuery = `
-        SELECT si.*, 
-               (si.seller_id = $1) as is_seller
-        FROM store_items si 
-        WHERE si.id = $2
+      // Note: Removed store_items query - store_items table is in my_guy_store database
+      // Access control is enforced by filtering messages where user is sender or recipient
+      messageQuery = `
+        SELECT m.*
+        FROM messages m
+        WHERE m.store_item_id = $1
+          AND (m.sender_id = $2 OR m.recipient_id = $2)
+        ORDER BY m.created_at DESC
+        LIMIT $3 OFFSET $4
       `;
-      
-      const itemResult = await db.query(itemQuery, [userId, itemId]);
-      
-      if (itemResult.rows.length > 0) {
-        const item = itemResult.rows[0];
+      queryParams = [itemId, userId, limit, offset];
+    } else {
+      // Task or application conversation
+      // Note: Removed tasks/store_items queries - tables are in different databases
+      // Access control is enforced by filtering messages where user is sender or recipient
+      if (taskId) {
         messageQuery = `
-          SELECT 
-            m.*,
-            s.username as sender_name,
-            r.username as recipient_name
+          SELECT m.*
           FROM messages m
-          LEFT JOIN users s ON m.sender_id = s.id
-          LEFT JOIN users r ON m.recipient_id = r.id
-          WHERE m.store_item_id = $1
-            AND (m.sender_id = $2 OR m.recipient_id = $2 OR EXISTS(
-              SELECT 1 FROM store_items si
-              WHERE si.id = m.store_item_id
-                AND si.seller_id = $2
-            ))
+          WHERE m.task_id = $1
+            AND (m.sender_id = $2 OR m.recipient_id = $2)
           ORDER BY m.created_at DESC
           LIMIT $3 OFFSET $4
         `;
-        queryParams = [itemId, userId, limit, offset];
-      } else {
-        return [];
-      }
-    } else {
-      // First check if this is a task conversation
-      const taskQuery = `
-        SELECT t.*, 
-               (t.created_by = $2 OR t.assigned_to = $2) as is_task_participant
-        FROM tasks t 
-        WHERE t.id = $1
-      `;
-    
-      const taskResult = await db.query(taskQuery, [conversationId, userId]);
-    
-      if (taskResult.rows.length > 0) {
-        // This is a task conversation
-        const task = taskResult.rows[0];
-        
-        // Check privacy permissions
-        if (!task.is_messages_public && !task.is_task_participant) {
-          return []; // Return empty if private and user not participant
-        }
-        
-        if (task.is_messages_public) {
-          // If messages are public, show all messages
-          messageQuery = `
-            SELECT 
-              m.*,
-              s.username as sender_name,
-              r.username as recipient_name
-            FROM messages m
-            LEFT JOIN users s ON m.sender_id = s.id
-            LEFT JOIN users r ON m.recipient_id = r.id
-            WHERE m.task_id = $1
-            ORDER BY m.created_at DESC
-            LIMIT $2 OFFSET $3
-          `;
-          queryParams = [conversationId, limit, offset];
-        } else {
-          // If messages are private, only show messages where user is participant
-          messageQuery = `
-            SELECT 
-              m.*,
-              s.username as sender_name,
-              r.username as recipient_name
-            FROM messages m
-            LEFT JOIN users s ON m.sender_id = s.id
-            LEFT JOIN users r ON m.recipient_id = r.id
-            WHERE m.task_id = $1
-              AND (m.sender_id = $2 OR m.recipient_id = $2)
-            ORDER BY m.created_at DESC
-            LIMIT $3 OFFSET $4
-          `;
-          queryParams = [conversationId, userId, limit, offset];
-        }
-      } else {
-        // Check if this is a store item conversation
-        const itemQuery = `
-          SELECT si.*, 
-                 (si.seller_id = $2) as is_seller
-          FROM store_items si 
-          WHERE si.id = $1
+        queryParams = [taskId, userId, limit, offset];
+      } else if (applicationId) {
+        messageQuery = `
+          SELECT m.*
+          FROM messages m
+          WHERE m.application_id = $1
+            AND (m.sender_id = $2 OR m.recipient_id = $2)
+          ORDER BY m.created_at DESC
+          LIMIT $3 OFFSET $4
         `;
-        
-        const itemResult = await db.query(itemQuery, [conversationId, userId]);
-        
-        if (itemResult.rows.length > 0) {
-          const item = itemResult.rows[0];
-          // This is a store item conversation
-          messageQuery = `
-            SELECT 
-              m.*,
-              s.username as sender_name,
-              r.username as recipient_name
-            FROM messages m
-            LEFT JOIN users s ON m.sender_id = s.id
-            LEFT JOIN users r ON m.recipient_id = r.id
-            LEFT JOIN store_items si ON m.store_item_id = si.id
-            WHERE m.store_item_id = $1
-              AND (m.sender_id = $2 OR m.recipient_id = $2 OR si.seller_id = $2)
-            ORDER BY m.created_at DESC
-            LIMIT $3 OFFSET $4
-          `;
-          queryParams = [conversationId, userId, limit, offset];
-        } else {
-          throw new Error('Conversation not found');
-        }
+        queryParams = [applicationId, userId, limit, offset];
+      } else {
+        return []; // Unknown conversation type
       }
     }
     
@@ -299,63 +220,37 @@ class MessageService {
   async getTotalMessageCount({ taskId, applicationId, itemId, userId }) {
     if (itemId) {
       // Count store messages
+      // Note: Removed store_items query - store_items table is in my_guy_store database
+      // Access control is enforced by filtering messages where user is sender or recipient
       const query = `
         SELECT COUNT(*) as total
         FROM messages m
         WHERE m.store_item_id = $1
-          AND (m.sender_id = $2 OR m.recipient_id = $2 OR EXISTS(
-            SELECT 1 FROM store_items si
-            WHERE si.id = m.store_item_id
-              AND si.seller_id = $2
-          ))
+          AND (m.sender_id = $2 OR m.recipient_id = $2)
       `;
       const result = await db.query(query, [itemId, userId]);
       return parseInt(result.rows[0].total);
     } else if (taskId) {
-      // First, get task information to check privacy settings
-      const taskQuery = `
-        SELECT t.*, 
-               (t.created_by = $2 OR t.assigned_to = $2) as is_task_participant
-        FROM tasks t 
-        WHERE t.id = $1
+      // Count task messages
+      // Note: Removed tasks query - tasks table is in my_guy database
+      // Access control is enforced by filtering messages where user is sender or recipient
+      const query = `
+        SELECT COUNT(*) as total
+        FROM messages m
+        WHERE m.task_id = $1
+          AND (m.sender_id = $2 OR m.recipient_id = $2)
       `;
-      
-      const taskResult = await db.query(taskQuery, [taskId, userId]);
-      
-      if (taskResult.rows.length === 0) {
-        return 0;
-      }
-      
-      const task = taskResult.rows[0];
-      
-      // Check privacy permissions
-      if (!task.is_messages_public && !task.is_task_participant) {
-        return 0;
-      }
-      
-      let countQuery;
-      let queryParams;
-      
-      if (task.is_messages_public) {
-        // If messages are public, count all messages
-        countQuery = `
-          SELECT COUNT(*) as total
-          FROM messages m
-          WHERE m.task_id = $1
-        `;
-        queryParams = [taskId];
-      } else {
-        // If messages are private, only count messages where user is participant
-        countQuery = `
-          SELECT COUNT(*) as total
-          FROM messages m
-          WHERE m.task_id = $1
-            AND (m.sender_id = $2 OR m.recipient_id = $2)
-        `;
-        queryParams = [taskId, userId];
-      }
-      
-      const result = await db.query(countQuery, queryParams);
+      const result = await db.query(query, [taskId, userId]);
+      return parseInt(result.rows[0].total);
+    } else if (applicationId) {
+      // Count application messages
+      const query = `
+        SELECT COUNT(*) as total
+        FROM messages m
+        WHERE m.application_id = $1
+          AND (m.sender_id = $2 OR m.recipient_id = $2)
+      `;
+      const result = await db.query(query, [applicationId, userId]);
       return parseInt(result.rows[0].total);
     }
     return 0;

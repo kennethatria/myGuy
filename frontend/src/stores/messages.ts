@@ -107,15 +107,9 @@ export const useMessagesStore = defineStore('messages', () => {
       })
       
       if (!response.ok) {
-        if (response.status === 403) {
-          // Message limit exceeded
-          const errorData = await response.json()
-          throw new Error(errorData.error || 'Message limit exceeded')
-        } else {
-          // Other errors
-          const errorData = await response.json().catch(() => ({}))
-          throw new Error(errorData.error || 'Failed to send message')
-        }
+        // Handle all errors the same way
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to send message')
       }
       
       const newMessage = await response.json()
@@ -231,13 +225,9 @@ export const useMessagesStore = defineStore('messages', () => {
       })
       
       if (!response.ok) {
-        if (response.status === 403) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || 'Message limit exceeded')
-        } else {
-          const errorData = await response.json().catch(() => ({}))
-          throw new Error(errorData.error || 'Failed to send message')
-        }
+        // Handle all errors the same way
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to send message')
       }
       
       const newMessage = await response.json()

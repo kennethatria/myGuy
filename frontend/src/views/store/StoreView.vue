@@ -60,7 +60,7 @@
         <div class="item-image">
           <img 
             v-if="item.images && item.images.length > 0" 
-            :src="'http://localhost:8081' + item.images[0].url" 
+            :src="config.STORE_API_BASE_URL + item.images[0].url" 
             :alt="item.title || 'Item image'"
             @error="handleImageError"
           />
@@ -368,6 +368,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import config from '@/config';
 
 const router = useRouter();
 
@@ -434,7 +435,7 @@ async function loadItems() {
       items.value = [];
     }
     
-    const response = await fetch('http://localhost:8081/api/v1/items', {
+    const response = await fetch(`${config.STORE_API_URL}/items`, {
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`
       }
@@ -600,9 +601,9 @@ async function createItem() {
     }
     
     console.log('📦 JSON Payload to send:', JSON.stringify(jsonPayload, null, 2));
-    
+
     // Send as JSON (backend now supports JSON)
-    console.log('🚀 Sending JSON request to:', 'http://localhost:8081/api/v1/items');
+    console.log('🚀 Sending JSON request to:', `${config.STORE_API_URL}/items`);
     
     // If images are selected, use FormData to include them
     let requestBody;
@@ -637,7 +638,7 @@ async function createItem() {
       requestBody = JSON.stringify(jsonPayload);
     }
     
-    const response = await fetch('http://localhost:8081/api/v1/items', {
+    const response = await fetch(`${config.STORE_API_URL}/items`, {
       method: 'POST',
       headers: requestHeaders,
       body: requestBody

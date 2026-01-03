@@ -225,6 +225,7 @@ import { format } from 'date-fns'
 import { useTasksStore } from '@/stores/tasks'
 import { useAuthStore } from '@/stores/auth'
 import { debounce } from 'lodash-es'
+import config from '@/config'
 
 interface Task {
   id: number
@@ -378,7 +379,7 @@ const fetchTasks = async () => {
   error.value = ''
   
   try {
-    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'}/tasks?${buildQueryParams()}`, {
+    const response = await fetch(`${config.API_URL}/tasks?${buildQueryParams()}`, {
       headers: {
         'Authorization': `Bearer ${authStore.token}`,
         'Content-Type': 'application/json'

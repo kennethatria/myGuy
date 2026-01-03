@@ -17,7 +17,7 @@
         <div class="item-image-section">
           <div v-if="item.images && item.images.length > 0" class="image-gallery">
             <div class="main-image">
-              <img :src="'http://localhost:8081' + (selectedImage || item.images[0].url)" :alt="item.title" />
+              <img :src="config.STORE_API_BASE_URL + (selectedImage || item.images[0].url)" :alt="item.title" />
             </div>
             <div v-if="item.images.length > 1" class="image-thumbnails">
               <div 
@@ -27,7 +27,7 @@
                 :class="{ active: selectedImage === image.url || (!selectedImage && index === 0) }"
                 @click="selectedImage = image.url"
               >
-                <img :src="'http://localhost:8081' + image.url" :alt="`${item.title} ${index + 1}`" />
+                <img :src="config.STORE_API_BASE_URL + image.url" :alt="`${item.title} ${index + 1}`" />
               </div>
             </div>
           </div>
@@ -122,7 +122,6 @@
                     <div>
                       <p><strong>Booking Approved!</strong></p>
                       <p>You can now message the owner to coordinate pickup/delivery</p>
-                      <p class="message-limit-info">Message limit increased to 10</p>
                     </div>
                   </div>
                   
@@ -226,92 +225,19 @@
     </div>
     
     <!-- Store Chat Modal -->
+    <!-- Chat Modal with new ChatWindow component -->
     <div v-if="showChatModal" class="chat-modal-overlay" @click="closeChatModal">
-      <div class="chat-modal" @click.stop>
-        <div class="chat-header">
-          <h3>{{ chatRecipientName ? `Conversation with ${chatRecipientName}` : `Message about: ${item.title}` }}</h3>
-          <button @click="closeChatModal" class="close-btn">&times;</button>
-        </div>
-        
-        <div class="chat-content">
-          <!-- Success Message -->
-          <div v-if="showSuccessMessage" class="success-message">
-            <div class="success-content">
-              <i class="fas fa-check-circle"></i>
-              <div>
-                <p><strong>Message sent successfully!</strong></p>
-                <p>Your conversation has been created and will appear in your Messages app. The seller will be notified.</p>
-                <button @click="continueInChat" class="btn btn-link btn-sm">
-                  <i class="fas fa-comments"></i> Continue conversation in Messages app
-                </button>
-              </div>
-            </div>
-          </div>
-          
-          <div class="chat-messages">
-            <div v-if="chatMessages.length === 0 && !showSuccessMessage" class="no-messages">
-              <p><i class="fas fa-comments"></i> Start a conversation about this item</p>
-              <p class="message-limit">You can send up to 3 messages to get started</p>
-              <div class="conversation-starters">
-                <p class="starter-label">Quick message ideas:</p>
-                <div class="starter-buttons">
-                  <button @click="useStarterMessage('Is this item still available?')" class="starter-btn">
-                    Is this available?
-                  </button>
-                  <button @click="useStarterMessage('Can you provide more details about the condition?')" class="starter-btn">
-                    Condition details?
-                  </button>
-                  <button @click="useStarterMessage('Would you consider a different price?')" class="starter-btn">
-                    Price negotiation?
-                  </button>
-                </div>
-              </div>
-            </div>
-            
-            <div v-for="message in chatMessages" :key="message?.id || Math.random()" class="message" :class="{ 'own-message': message?.sender_id === userId }">
-              <div class="message-header">
-                <span class="sender">{{ message?.sender_id === userId ? 'You' : message?.sender_username || 'Unknown User' }}</span>
-                <span class="timestamp">{{ formatMessageTime(message?.created_at) }}</span>
-              </div>
-              <div class="message-content">{{ message?.content }}</div>
-            </div>
-          </div>
-          
-          <div class="chat-input-section">
-            <div v-if="canSendMessage" class="chat-input">
-              <textarea 
-                v-model="newMessage" 
-                placeholder="Type your message about this item..."
-                :maxlength="500"
-                rows="3"
-                @keydown.enter.ctrl="sendMessage"
-              ></textarea>
-              <div class="input-footer">
-                <span class="message-count">{{ userMessageCount }}/{{ currentMessageLimit }} messages sent</span>
-                <span v-if="bookingStatus !== 'approved'" class="limit-info">
-                  • Limit increases to 10 when booking is approved
-                </span>
-                <button 
-                  @click="sendMessage" 
-                  :disabled="!newMessage.trim() || sendingMessage"
-                  class="btn btn-primary btn-sm"
-                >
-                  {{ sendingMessage ? 'Sending...' : 'Send' }}
-                </button>
-              </div>
-            </div>
-            
-            <div v-else class="message-limit-reached">
-              <p><i class="fas fa-info-circle"></i> You've reached the {{ currentMessageLimit }}-message limit for this item.</p>
-              <p v-if="bookingStatus !== 'approved'" class="suggestion">
-                Request a booking to increase the limit to 10 messages and coordinate pickup/delivery.
-              </p>
-              <p v-else class="suggestion">
-                Consider exchanging contact details to continue the conversation.
-              </p>
-            </div>
-          </div>
-        </div>
+      <div class="chat-modal-container" @click.stop>
+        <ChatWindow
+          v-if="item"
+          :conversation-id="Number(itemId)"
+          conversation-type="store"
+          :recipient-id="chatRecipientId || item.seller.id"
+          :recipient-name="chatRecipientName"
+          :conversation-title="`Message about: ${item.title}`"
+          :show-close-button="true"
+          @close="closeChatModal"
+        />
       </div>
     </div>
   </div>
@@ -321,11 +247,15 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { useChatStore } from '@/stores/chat';
 import { format } from 'date-fns';
+import ChatWindow from '@/components/ChatWindow.vue';
+import config from '@/config';
 
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
+const chatStore = useChatStore();
 
 const item = ref(null);
 const bids = ref([]);
@@ -334,13 +264,10 @@ const error = ref('');
 const bidAmount = ref('');
 const selectedImage = ref('');
 
-// Chat-related variables
+// Chat-related variables (simplified - ChatWindow handles messaging)
 const showChatModal = ref(false);
-const chatMessages = ref([]);
-const newMessage = ref('');
-const sendingMessage = ref(false);
-const loadingMessages = ref(false);
-const showSuccessMessage = ref(false);
+const chatRecipientId = ref(null);
+const chatRecipientName = ref('');
 
 // Booking-related variables
 const bookingRequest = ref(null);
@@ -348,12 +275,7 @@ const bookingRequests = ref([]);
 const hasBookingRequest = ref(false);
 const loadingBookingRequest = ref(false);
 
-// Chat recipient for owner conversations
-const chatRecipientId = ref(null);
-const chatRecipientName = ref('');
-
 // Message indicators for owners
-const hasUnreadMessages = ref(false);
 const messageCount = ref(0);
 
 const userId = computed(() => authStore.user?.id);
@@ -365,25 +287,7 @@ const minBidAmount = computed(() => {
   return currentBid + item.value.bid_increment;
 });
 
-// Chat-related computed properties
-const userMessageCount = computed(() => {
-  return chatMessages.value.filter(msg => msg.sender_id === userId.value).length;
-});
-
-const canSendMessage = computed(() => {
-  return userMessageCount.value < currentMessageLimit.value;
-});
-
 // Booking computed properties
-const currentMessageLimit = computed(() => {
-  // 3 messages before booking approval, 10 after approval
-  return bookingRequest.value?.status === 'approved' ? 10 : 3;
-});
-
-const canSendBookingMessage = computed(() => {
-  return userMessageCount.value < currentMessageLimit.value;
-});
-
 const bookingStatus = computed(() => {
   return bookingRequest.value?.status || null;
 });
@@ -398,7 +302,7 @@ async function loadItem() {
     }
     
     console.log('Loading item with ID:', itemId.value);
-    const apiUrl = `http://localhost:8081/api/v1/items/${itemId.value}`;
+    const apiUrl = `${config.STORE_API_URL}/items/${itemId.value}`;
     console.log('API URL:', apiUrl);
     
     const response = await fetch(apiUrl, {
@@ -440,14 +344,13 @@ async function loadItem() {
 
 async function loadBids() {
   try {
-    console.log('Loading bids for item:', itemId.value);
-    const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/bids`, {
+    const response = await fetch(`${config.STORE_API_URL}/items/${itemId.value}/bids`, {
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`,
         'Content-Type': 'application/json'
       }
     });
-    
+
     if (response.ok) {
       bids.value = await response.json();
       console.log('Bids loaded:', bids.value);
@@ -466,7 +369,7 @@ async function loadBookingRequest() {
     // Check if user is the item owner
     if (item.value.seller.id === userId.value) {
       // Load all booking requests for item owners
-      const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/booking-requests`, {
+      const response = await fetch(`${config.STORE_API_URL}/items/${itemId.value}/booking-requests`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
           'Content-Type': 'application/json'
@@ -485,7 +388,7 @@ async function loadBookingRequest() {
       }
     } else {
       // Load user's specific booking request for non-owners
-      const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/booking-request`, {
+      const response = await fetch(`${config.STORE_API_URL}/items/${itemId.value}/booking-request`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
           'Content-Type': 'application/json'
@@ -516,7 +419,7 @@ async function placeBid() {
   }
   
   try {
-    const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/bids`, {
+    const response = await fetch(`${config.STORE_API_URL}/items/${itemId.value}/bids`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -544,7 +447,7 @@ async function sendBookingRequest() {
   
   loadingBookingRequest.value = true;
   try {
-    const response = await fetch(`http://localhost:8081/api/v1/items/${itemId.value}/booking-request`, {
+    const response = await fetch(`${config.STORE_API_URL}/items/${itemId.value}/booking-request`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -577,7 +480,7 @@ async function approveBookingRequest(request = bookingRequest.value) {
   
   loadingBookingRequest.value = true;
   try {
-    const response = await fetch(`http://localhost:8081/api/v1/booking-requests/${request.id}/approve`, {
+    const response = await fetch(`${config.STORE_API_URL}/booking-requests/${request.id}/approve`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -590,7 +493,7 @@ async function approveBookingRequest(request = bookingRequest.value) {
       if (bookingRequest.value && bookingRequest.value.id === request.id) {
         bookingRequest.value.status = 'approved';
       }
-      alert('Booking request approved! The requester can now message you with up to 10 messages.');
+      alert('Booking request approved! The requester can now message you.');
     } else {
       const error = await response.json();
       alert(error.error || 'Failed to approve booking request');
@@ -612,7 +515,7 @@ async function rejectBookingRequest(request = bookingRequest.value) {
   
   loadingBookingRequest.value = true;
   try {
-    const response = await fetch(`http://localhost:8081/api/v1/booking-requests/${request.id}/reject`, {
+    const response = await fetch(`${config.STORE_API_URL}/booking-requests/${request.id}/reject`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -673,176 +576,43 @@ function formatMessageTime(dateString: string): string {
   }
 }
 
-// Chat functions
-async function openStoreChat() {
-  // Show the message composer popup
+// Chat functions (simplified - ChatWindow component now handles messaging logic)
+function openStoreChat() {
+  // Set recipient info and show modal - ChatWindow handles socket connection and loading messages
   chatRecipientId.value = item.value.seller.id;
   chatRecipientName.value = item.value.seller.full_name || item.value.seller.username;
   showChatModal.value = true;
-  
-  // Reset success message state
-  showSuccessMessage.value = false;
-
-  // Import and initialize chat store for socket connection
-  const { useChatStore } = await import('@/stores/chat');
-  const chatStore = useChatStore();
-  
-  // Join the item's socket room for real-time updates
-  if (chatStore.socket && chatStore.connected) {
-    chatStore.socket.emit('join:conversation', { itemId: itemId.value });
-  }
-  
-  // Load existing messages if any
-  await loadStoreMessages();
-}
-
-function useStarterMessage(messageText) {
-  newMessage.value = messageText;
-}
-
-async function continueInChat() {
-  // Close the modal and redirect to messages
-  showChatModal.value = false;
-  
-  // Import the chat store and refresh conversations
-  const { useChatStore } = await import('@/stores/chat');
-  const chatStore = useChatStore();
-  
-  // If connected, refresh the conversations list
-  if (chatStore.socket && chatStore.connected) {
-    chatStore.socket.emit('conversations:list');
-  }
-  
-  // Navigate to messages
-  router.push('/messages');
 }
 
 function closeChatModal() {
   showChatModal.value = false;
-  showSuccessMessage.value = false;
-  newMessage.value = '';
 }
 
-async function openStoreChatWithUser(recipientId) {
+function openStoreChatWithUser(recipientId: number) {
   // For sellers messaging a specific buyer
   const requester = bookingRequests.value.find(req => req.requester.id === recipientId);
   chatRecipientId.value = recipientId;
   chatRecipientName.value = requester?.requester?.username || `User ${recipientId}`;
   showChatModal.value = true;
-  await loadStoreMessages();
 }
 
-async function openGeneralStoreChat() {
-  // For owners to view all messages about their item
-  chatRecipientId.value = null;
-  chatRecipientName.value = '';
+function openGeneralStoreChat() {
+  // For owners to view all messages about their item - use seller as recipient
+  chatRecipientId.value = item.value.seller.id;
+  chatRecipientName.value = item.value.seller.full_name || item.value.seller.username;
   showChatModal.value = true;
-  await loadStoreMessages();
 }
 
 async function checkForMessages() {
   if (!item.value) return;
-  
+
   try {
-    const response = await fetch(`http://localhost:8082/api/v1/store-messages/${itemId.value}`, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    });
-    
-    if (response.ok) {
-      const data = await response.json();
-      const messages = data.messages || [];
-      messageCount.value = messages.length;
-      hasUnreadMessages.value = messages.length > 0;
-    }
+    // Use chatStore to get store messages
+    const messages = chatStore.getStoreMessages(Number(itemId.value));
+    messageCount.value = messages.length;
+    hasUnreadMessages.value = messages.some(msg => !msg.is_read && msg.sender_id !== userId.value);
   } catch (error) {
     console.error('Error checking for messages:', error);
-  }
-}
-
-async function loadStoreMessages() {
-  if (!item.value) return;
-  
-  loadingMessages.value = true;
-  try {
-    const response = await fetch(`http://localhost:8082/api/v1/store-messages/${itemId.value}`, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    });
-    
-    if (response.ok) {
-      const data = await response.json();
-      chatMessages.value = data.messages || [];
-      messageCount.value = chatMessages.value.length;
-    } else {
-      console.error('Failed to load store messages');
-      chatMessages.value = [];
-    }
-  } catch (error) {
-    console.error('Error loading store messages:', error);
-    chatMessages.value = [];
-  } finally {
-    loadingMessages.value = false;
-  }
-}
-
-async function sendMessage() {
-  if (!newMessage.value.trim() || sendingMessage.value || !canSendMessage.value) {
-    return;
-  }
-  
-  sendingMessage.value = true;
-  const isFirstMessage = chatMessages.value.length === 0;
-  
-  try {
-    const response = await fetch('http://localhost:8082/api/v1/store-messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      },
-      body: JSON.stringify({
-        store_item_id: parseInt(itemId.value),
-        recipient_id: chatRecipientId.value || item.value.seller.id,
-        content: newMessage.value.trim()
-      })
-    });
-    
-    if (response.ok) {
-      const sentMessage = await response.json();
-      chatMessages.value.push(sentMessage);
-      newMessage.value = '';
-      
-      // Show success feedback for first message
-      if (isFirstMessage) {
-        showSuccessMessage.value = true;
-        setTimeout(() => {
-          showSuccessMessage.value = false;
-        }, 5000);
-      }
-      
-      // Show limit warning if approaching/reached limit
-      const currentCount = userMessageCount.value;
-      if (currentCount >= 3 && currentCount < 10) {
-        setTimeout(() => {
-          if (currentCount === 3) {
-            alert('You\'ve reached the 3-message limit. Your conversation will continue in the Messages app with full chat features once the seller responds or approves your booking request.');
-          } else {
-            alert('You\'ve sent the maximum number of messages for this item. Continue your conversation in the Messages app.');
-          }
-        }, 1000);
-      }
-    } else {
-      const error = await response.json();
-      alert(error.error || 'Failed to send message');
-    }
-  } catch (error) {
-    console.error('Error sending message:', error);
-    alert('Failed to send message. Please try again.');
-  } finally {
-    sendingMessage.value = false;
   }
 }
 

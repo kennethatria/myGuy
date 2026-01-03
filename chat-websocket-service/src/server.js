@@ -193,25 +193,19 @@ app.post('/api/v1/tasks/:taskId/messages', authenticateHTTP, async (req, res) =>
       recipientId: parseInt(recipient_id),
       content: content.trim()
     });
-    
-    // Get user information to format the response
-    const senderQuery = 'SELECT username FROM users WHERE id = $1';
-    const recipientQuery = 'SELECT username FROM users WHERE id = $1';
-    
-    const db = require('./config/database');
-    const senderResult = await db.query(senderQuery, [senderId]);
-    const recipientResult = await db.query(recipientQuery, [parseInt(recipient_id)]);
-    
-    // Format message with sender/recipient info
+
+    // Format message with sender/recipient IDs only
+    // Frontend will handle fetching usernames from main API
+    // (Avoids cross-database query - users table is in my_guy, not my_guy_chat)
     const formattedMessage = {
       ...message,
       sender: {
         id: senderId,
-        username: senderResult.rows[0]?.username || 'Unknown'
+        username: 'User' // Frontend should replace with actual username
       },
       recipient: {
         id: parseInt(recipient_id),
-        username: recipientResult.rows[0]?.username || 'Unknown'
+        username: 'User' // Frontend should replace with actual username
       }
     };
     
@@ -397,25 +391,19 @@ app.post('/api/v1/store-messages', authenticateHTTP, async (req, res) => {
       recipient_id: parseInt(recipient_id),
       content: content.trim()
     });
-    
-    // Get user information to format the response
-    const senderQuery = 'SELECT username FROM users WHERE id = $1';
-    const recipientQuery = 'SELECT username FROM users WHERE id = $1';
-    
-    const db = require('./config/database');
-    const senderResult = await db.query(senderQuery, [senderId]);
-    const recipientResult = await db.query(recipientQuery, [parseInt(recipient_id)]);
-    
-    // Format message with sender/recipient info
+
+    // Format message with sender/recipient IDs only
+    // Frontend will handle fetching usernames from main API
+    // (Avoids cross-database query - users table is in my_guy, not my_guy_chat)
     const formattedMessage = {
       ...message,
       sender: {
         id: senderId,
-        username: senderResult.rows[0]?.username || 'Unknown'
+        username: 'User' // Frontend should replace with actual username
       },
       recipient: {
         id: parseInt(recipient_id),
-        username: recipientResult.rows[0]?.username || 'Unknown'
+        username: 'User' // Frontend should replace with actual username
       }
     };
     

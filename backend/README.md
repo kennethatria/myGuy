@@ -208,7 +208,7 @@ type Review struct {
 - Password hashing with bcrypt
 - Input validation and sanitization
 - Authorization checks for resource access
-- CORS enabled (currently allows all origins)
+- CORS enabled (currently allows all origins for development; **must be restricted to the frontend URL in production**).
 
 ## Database
 - PostgreSQL with GORM ORM

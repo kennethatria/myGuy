@@ -94,7 +94,7 @@ export const useChatStore = defineStore('chat', () => {
     if (socket.value?.connected) return;
 
     try {
-      const chatUrl = import.meta.env.VITE_CHAT_WS_URL || config.CHAT_API_URL || 'http://localhost:8082';
+      const chatUrl = config.CHAT_WS_URL;
 
       socket.value = io(chatUrl, {
         auth: {
@@ -653,7 +653,7 @@ export const useChatStore = defineStore('chat', () => {
         return;
       }
       
-      const chatApiUrl = import.meta.env.VITE_CHAT_API_URL || config.CHAT_API_URL || 'http://localhost:8082/api/v1';
+      const chatApiUrl = config.CHAT_API_URL;
       const response = await fetch(`${chatApiUrl}/deletion-warnings`, {
         headers: {
           'Authorization': `Bearer ${authStore.token}`
@@ -674,7 +674,7 @@ export const useChatStore = defineStore('chat', () => {
   
   async function dismissWarning(warningId: number) {
     try {
-      const chatApiUrl = import.meta.env.VITE_CHAT_API_URL || config.CHAT_API_URL || 'http://localhost:8082/api/v1';
+      const chatApiUrl = config.CHAT_API_URL;
       await fetch(`${chatApiUrl}/deletion-warnings/${warningId}/shown`, {
         method: 'POST',
         headers: {

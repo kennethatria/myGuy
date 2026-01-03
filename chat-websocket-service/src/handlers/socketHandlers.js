@@ -116,34 +116,33 @@ class SocketHandlers {
    */
   async handleJoinConversation(socket, { taskId, applicationId, itemId }) {
     try {
-      const roomName = taskId ? `task:${taskId}` : applicationId ? `application:${applicationId}` : `item:${itemId}`;
-      
+      // Parse IDs to ensure they're integers (frontend might send strings)
+      const parsedTaskId = taskId ? parseInt(taskId) : null;
+      const parsedApplicationId = applicationId ? parseInt(applicationId) : null;
+      const parsedItemId = itemId ? parseInt(itemId) : null;
+
+      const roomName = parsedTaskId ? `task:${parsedTaskId}` : parsedApplicationId ? `application:${parsedApplicationId}` : `item:${parsedItemId}`;
+
       // Always join the room - both buyers and sellers need updates
       socket.join(roomName);
       logger.info('User joined conversation', {
         userId: socket.userId,
-        room: roomName
+        room: roomName,
+        taskId: parsedTaskId,
+        applicationId: parsedApplicationId,
+        itemId: parsedItemId
       });
 
-      // If this is a store item, check if user is the owner or buyer to join their personal room
-      if (itemId) {
-        const db = require('../config/database');
-        const query = 'SELECT seller_id FROM store_items WHERE id = $1';
-        const result = await db.query(query, [itemId]);
-        
-        if (result.rows.length > 0) {
-          // Join seller's personal room for notifications
-          const sellerRoom = `user:${result.rows[0].seller_id}`;
-          socket.join(sellerRoom);
-          logger.info('User joined seller room', {
-            userId: socket.userId,
-            room: sellerRoom
-          });
-        }
-      }
+      // Note: Removed store_items query to avoid cross-database access
+      // store_items table is in my_guy_store database, chat service uses my_guy_chat
+      // Seller will receive notifications via the item:X room they're already in
+      // Access control is enforced by messages table filtering (sender_id/recipient_id)
 
-      // Update user activity
-      await messageService.updateUserActivity(socket.userId, taskId || applicationId || itemId);
+      // Update user activity - pass the parsed conversationId
+      const conversationId = parsedTaskId || parsedApplicationId || parsedItemId;
+      if (conversationId) {
+        await messageService.updateUserActivity(socket.userId, conversationId);
+      }
 
       socket.emit('conversation:joined', { room: roomName });
     } catch (error) {
@@ -495,13 +494,17 @@ class SocketHandlers {
 
   /**
    * Get user information by ID
+   * Note: Returns placeholder data to avoid cross-database queries
+   * Frontend should fetch actual usernames from main API
    */
   async getUserInfo(userId) {
     try {
-      const db = require('../config/database');
-      const query = 'SELECT id, username FROM users WHERE id = $1';
-      const result = await db.query(query, [userId]);
-      return result.rows[0] || null;
+      // Return placeholder to avoid cross-database query
+      // users table is in my_guy database, not my_guy_chat
+      return {
+        id: userId,
+        username: 'User' // Frontend will replace with actual username
+      };
     } catch (error) {
       logger.error('Error getting user info:', error);
       return null;
