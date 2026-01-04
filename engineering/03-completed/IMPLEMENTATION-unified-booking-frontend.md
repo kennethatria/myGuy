@@ -236,6 +236,7 @@ npm run build
 - Build succeeded despite some pre-existing TypeScript type errors in other files
 - No new type errors introduced by booking feature
 - All new code compiles correctly
+- **Pre-existing errors documented:** See `../01-proposed/TODO-typescript-errors.md` for tracking and resolution plan (62 errors in 10 files, unrelated to booking feature)
 
 ---
 
