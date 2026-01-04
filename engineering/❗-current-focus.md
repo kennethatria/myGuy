@@ -18,7 +18,12 @@ This document provides a high-level summary of the current engineering focus, up
 - **Goal:** Move booking requests from hidden item pages to the main `/messages` view to ensure sellers actually see and respond to them.
 - **Details:** [RFC-booking-via-messages.md](./01-proposed/RFC-booking-via-messages.md)
 
-### 2. Browser Push Notifications
+### 2. Descriptive Conversation Titles
+- **Status:** 🟡 Proposed (UX Priority)
+- **Goal:** Replace the generic "Conversation" label with the actual Store Item or Task title in the message list to help users distinguish between different chats.
+- **Details:** [RFC-conversation-titles.md](./01-proposed/RFC-conversation-titles.md)
+
+### 3. Browser Push Notifications
 - **Status:** 🟡 Proposed
 - **Goal:** Notify users of new messages even when they are offline or the app is in the background, significantly improving user re-engagement.
 - **Details:** [DESIGN-browser-push-notifications.md](./01-proposed/DESIGN-browser-push-notifications.md)
