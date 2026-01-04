@@ -65,14 +65,21 @@
         
         <!-- Messages -->
         <div class="messages-area" ref="messagesArea">
-          <MessageBubble
-            v-for="message in messages"
-            :key="message.id"
-            :message="message"
-            :is-own-message="isOwnMessage(message)"
-            @edit="editMessage"
-            @delete="deleteMessage"
-          />
+          <template v-for="message in messages" :key="message.id">
+            <BookingMessageBubble
+              v-if="isBookingMessage(message)"
+              :message="message"
+              :is-own-message="isOwnMessage(message)"
+              @booking-action="handleBookingAction"
+            />
+            <MessageBubble
+              v-else
+              :message="message"
+              :is-own-message="isOwnMessage(message)"
+              @edit="editMessage"
+              @delete="deleteMessage"
+            />
+          </template>
           
           <!-- Typing Indicator -->
           <div v-if="typingUsers.length > 0" class="typing-indicator">
@@ -108,6 +115,7 @@ import { useRouter } from 'vue-router';
 import { useChatStore } from '@/stores/chat';
 import { useAuthStore } from '@/stores/auth';
 import MessageBubble from './MessageBubble.vue';
+import BookingMessageBubble from './BookingMessageBubble.vue';
 import type { ConversationSummary, Message } from '@/stores/messages';
 
 const router = useRouter();
@@ -170,6 +178,14 @@ function backToList() {
 
 function isOwnMessage(message: Message): boolean {
   return message.sender_id === authStore.user?.id;
+}
+
+function isBookingMessage(message: Message): boolean {
+  return ['booking_request', 'booking_approved', 'booking_declined'].includes(message.message_type);
+}
+
+function handleBookingAction(bookingId: number, action: 'approve' | 'decline') {
+  chatStore.handleBookingAction(bookingId, action);
 }
 
 function sendMessage() {

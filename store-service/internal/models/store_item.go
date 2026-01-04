@@ -58,16 +58,19 @@ type Bid struct {
 }
 
 type BookingRequest struct {
-	ID          uint           `json:"id" gorm:"primaryKey"`
-	ItemID      uint           `json:"item_id" gorm:"not null"`
-	Item        *StoreItem     `json:"item,omitempty" gorm:"foreignKey:ItemID"`
-	RequesterID uint           `json:"requester_id" gorm:"not null"`
-	Requester   *User          `json:"requester,omitempty" gorm:"foreignKey:RequesterID"`
-	Status      string         `json:"status" gorm:"default:'pending'"` // pending, approved, rejected
-	Message     string         `json:"message"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
+	ID                       uint           `json:"id" gorm:"primaryKey"`
+	ItemID                   uint           `json:"item_id" gorm:"not null"`
+	Item                     *StoreItem     `json:"item,omitempty" gorm:"foreignKey:ItemID"`
+	RequesterID              uint           `json:"requester_id" gorm:"not null"`
+	Requester                *User          `json:"requester,omitempty" gorm:"foreignKey:RequesterID"`
+	Status                   string         `json:"status" gorm:"default:'pending'"` // pending, approved, rejected
+	Message                  string         `json:"message"`
+	ChatNotified             bool           `json:"-" gorm:"default:false"`
+	NotificationAttempts     int            `json:"-" gorm:"default:0"`
+	LastNotificationAttempt  *time.Time     `json:"-"`
+	CreatedAt                time.Time      `json:"created_at"`
+	UpdatedAt                time.Time      `json:"updated_at"`
+	DeletedAt                gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 // DTOs for API requests/responses

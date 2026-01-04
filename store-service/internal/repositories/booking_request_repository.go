@@ -64,3 +64,22 @@ func (r *bookingRequestRepository) UpdateStatus(id uint, status string) error {
 func (r *bookingRequestRepository) Delete(id uint) error {
 	return r.db.Delete(&models.BookingRequest{}, id).Error
 }
+
+func (r *bookingRequestRepository) UpdateChatNotificationStatus(bookingID uint, notified bool, attempts int) error {
+	return r.db.Model(&models.BookingRequest{}).
+		Where("id = ?", bookingID).
+		Updates(map[string]interface{}{
+			"chat_notified":             notified,
+			"notification_attempts":     attempts,
+			"last_notification_attempt": gorm.Expr("NOW()"),
+		}).Error
+}
+
+func (r *bookingRequestRepository) IncrementNotificationAttempts(bookingID uint) error {
+	return r.db.Model(&models.BookingRequest{}).
+		Where("id = ?", bookingID).
+		Updates(map[string]interface{}{
+			"notification_attempts":     gorm.Expr("notification_attempts + 1"),
+			"last_notification_attempt": gorm.Expr("NOW()"),
+		}).Error
+}

@@ -12,6 +12,14 @@ export interface Message {
   sender_id: number
   recipient_id: number
   content: string
+  message_type: 'text' | 'booking_request' | 'booking_approved' | 'booking_declined' | 'system_alert'
+  metadata?: {
+    booking_id?: number
+    item_id?: number
+    item_title?: string
+    item_image?: string
+    status?: 'pending' | 'approved' | 'declined'
+  }
   is_read: boolean
   read_at?: string
   is_edited: boolean

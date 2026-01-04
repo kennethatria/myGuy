@@ -324,7 +324,15 @@ func (s *StoreService) CreateBookingRequest(itemID uint, requesterID uint, messa
 	}
 
 	// Return with preloaded data
-	return s.bookingRepo.GetByID(bookingRequest.ID)
+	bookingWithData, err := s.bookingRepo.GetByID(bookingRequest.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Notify chat service asynchronously (don't block on this)
+	go NotifyChatServiceAboutBooking(bookingWithData, item, s.bookingRepo)
+
+	return bookingWithData, nil
 }
 
 func (s *StoreService) GetBookingRequestByItem(itemID uint, userID uint) (*models.BookingRequest, error) {

@@ -462,7 +462,9 @@ async function sendBookingRequest() {
       const request = await response.json();
       bookingRequest.value = request;
       hasBookingRequest.value = true;
-      alert('Booking request sent successfully!');
+
+      // Redirect to messages page to see the booking request
+      router.push('/messages');
     } else {
       const error = await response.json();
       alert(error.error || 'Failed to send booking request');

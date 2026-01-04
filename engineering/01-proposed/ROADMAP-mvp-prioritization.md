@@ -81,6 +81,17 @@ The items are sourced from the `TODO` and `ROADMAP` documents in this directory.
 
 *These are important for stability and maintainability. It is strongly recommended to address them before a wider public launch, but they are not immediate blockers for a small, controlled user test.*
 
+### 1. Unified Booking & Messaging Flow ✅ **COMPLETED**
+-   **Problem:** Sellers are not notified of booking requests and must manually check each item page. Booking and communication are fragmented across different UIs.
+-   **Impact:** Poor seller experience, missed booking requests, lower conversion rate. Especially problematic for sellers with multiple items.
+-   **Action:** Integrate booking workflow into the chat system. Buyers get redirected to chat after booking, sellers see booking requests as special messages with approve/decline buttons.
+-   **Source:** [RFC-booking-via-messages.md](./RFC-booking-via-messages.md), [PLAN-unified-booking-messaging.md](./PLAN-unified-booking-messaging.md), [USER-FLOW-booking-summary.md](./USER-FLOW-booking-summary.md)
+-   **Status:** ✅ **COMPLETED** - January 4, 2026
+-   **Backend Status:** ✅ **COMPLETED** - January 4, 2026 (migrations, endpoints, notification logic)
+-   **Frontend Status:** ✅ **COMPLETED** - January 4, 2026 (booking message component, chat UI updates, redirect flow)
+-   **Details:** See `../03-completed/IMPLEMENTATION-unified-booking-backend.md` and `../03-completed/IMPLEMENTATION-unified-booking-frontend.md`
+-   **Deployment:** See `DEPLOYMENT-CHECKLIST-booking.md` for deployment steps
+
 ### 1. Refactor Frontend Chat into a Reusable Component ✅ **RESOLVED**
 -   **Problem:** The chat UI and logic are duplicated in multiple places.
 -   **Impact:** This creates a significant maintenance burden.
@@ -98,6 +109,17 @@ The items are sourced from the `TODO` and `ROADMAP` documents in this directory.
     -   (Chat) Plan for integrating a Redis adapter for Socket.IO.
     -   (Chat & Store) Review and add necessary database indexes to foreign key columns and common query filters.
 -   **Source:** `TODO-chat-functionality-review.md`, `ROADMAP-store-service-improvements.md`
+
+### 3. Resolve TypeScript Type Errors
+-   **Problem:** 62 pre-existing TypeScript type errors across 10 frontend files (App.vue, TaskDetailView, StoreItemView, etc.).
+-   **Impact:** Reduced type safety, potential runtime errors, harder to maintain code, builds succeed but with warnings.
+-   **Action:**
+    -   **Phase 1 (P1 - Before MVP):** Fix critical errors in App.vue, StoreItemView, TaskDetailView (~40 errors, 4-6 hours)
+    -   **Phase 2 (P2 - Before Production):** Standardize property naming, consolidate types, fix null safety (~22 errors, 10-15 hours)
+    -   **Phase 3 (P3 - Future):** Enable strict TypeScript mode, prevent regression via CI
+-   **Source:** [TODO-typescript-errors.md](./TODO-typescript-errors.md)
+-   **Root Causes:** Inconsistent snake_case/camelCase, missing null checks, duplicate type definitions, missing type annotations
+-   **Status:** 📋 Tracked, not started
 
 ---
 

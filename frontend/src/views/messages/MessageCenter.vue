@@ -43,6 +43,7 @@
           @load-more="chatStore.loadMoreMessages"
           @typing-start="chatStore.startTyping"
           @typing-stop="chatStore.stopTyping"
+          @booking-action="chatStore.handleBookingAction"
         />
         
         <div v-else class="no-conversation">

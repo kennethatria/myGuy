@@ -37,6 +37,8 @@ type BookingRequestRepository interface {
 	GetByRequesterID(requesterID uint) ([]models.BookingRequest, error)
 	UpdateStatus(id uint, status string) error
 	Delete(id uint) error
+	UpdateChatNotificationStatus(bookingID uint, notified bool, attempts int) error
+	IncrementNotificationAttempts(bookingID uint) error
 }
 
 type UserRepository interface {

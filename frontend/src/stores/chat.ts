@@ -817,13 +817,38 @@ export const useChatStore = defineStore('chat', () => {
           'Authorization': `Bearer ${authStore.token}`
         }
       });
-      
+
       deletionWarnings.value = deletionWarnings.value.filter(w => w.id !== warningId);
     } catch (error) {
       console.error('Failed to dismiss warning:', error);
     }
   }
-  
+
+  async function handleBookingAction(bookingId: number, action: 'approve' | 'decline') {
+    try {
+      const chatApiUrl = config.CHAT_API_URL;
+      const response = await fetch(`${chatApiUrl}/booking-action`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authStore.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ bookingId, action })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to ${action} booking`);
+      }
+
+      // The WebSocket will receive the updated message automatically
+      console.log(`✓ Booking ${action}d successfully`);
+    } catch (error) {
+      console.error(`Failed to ${action} booking:`, error);
+      throw error;
+    }
+  }
+
   return {
     // State
     socket,
@@ -865,6 +890,7 @@ export const useChatStore = defineStore('chat', () => {
     stopTyping,
     loadDeletionWarnings,
     dismissWarning,
-    loadConversationsHttp
+    loadConversationsHttp,
+    handleBookingAction
   };
 });

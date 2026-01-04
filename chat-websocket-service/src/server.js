@@ -472,6 +472,13 @@ app.get('/api/v1/users/:id/last-seen', authenticateHTTP, async (req, res) => {
   }
 });
 
+// Booking notification routes
+const bookingNotifications = require('./api/bookingNotifications');
+app.use('/api/v1', bookingNotifications);
+
+// Make io instance available to routes
+app.set('io', io);
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   logger.error('Unhandled error:', err);

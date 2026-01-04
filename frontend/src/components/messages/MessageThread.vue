@@ -24,14 +24,21 @@
       </div>
       
       <!-- Messages -->
-      <MessageBubble
-        v-for="message in messages"
-        :key="message.id"
-        :message="message"
-        :is-own-message="isOwnMessage(message)"
-        @edit="$emit('edit-message', message.id, $event)"
-        @delete="$emit('delete-message', message.id)"
-      />
+      <template v-for="message in messages" :key="message.id">
+        <BookingMessageBubble
+          v-if="isBookingMessage(message)"
+          :message="message"
+          :is-own-message="isOwnMessage(message)"
+          @booking-action="handleBookingAction"
+        />
+        <MessageBubble
+          v-else
+          :message="message"
+          :is-own-message="isOwnMessage(message)"
+          @edit="$emit('edit-message', message.id, $event)"
+          @delete="$emit('delete-message', message.id)"
+        />
+      </template>
       
       <!-- Typing Indicators -->
       <div v-if="typingUsers.length > 0" class="typing-indicator">
@@ -69,6 +76,7 @@
 import { ref, computed, nextTick, watch } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import MessageBubble from './MessageBubble.vue';
+import BookingMessageBubble from './BookingMessageBubble.vue';
 import type { Message, ConversationSummary } from '@/stores/messages';
 
 const props = defineProps<{
@@ -86,6 +94,7 @@ const emit = defineEmits<{
   'load-more': [];
   'typing-start': [];
   'typing-stop': [];
+  'booking-action': [bookingId: number, action: 'approve' | 'decline'];
 }>();
 
 const authStore = useAuthStore();
@@ -107,6 +116,14 @@ const typingText = computed(() => {
 
 function isOwnMessage(message: Message): boolean {
   return message.sender_id === authStore.user?.id;
+}
+
+function isBookingMessage(message: Message): boolean {
+  return ['booking_request', 'booking_approved', 'booking_declined'].includes(message.message_type);
+}
+
+function handleBookingAction(bookingId: number, action: 'approve' | 'decline') {
+  emit('booking-action', bookingId, action);
 }
 
 function sendMessage() {
