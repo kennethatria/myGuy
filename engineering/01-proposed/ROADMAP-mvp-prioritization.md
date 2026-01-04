@@ -34,6 +34,13 @@ The items are sourced from the `TODO` and `ROADMAP` documents in this directory.
 -   **Fixed:** Updated .env to point to correct database, added ID parsing (parseInt), removed cross-database query, rebuilt container
 -   **Details:** See `../03-completed/FIXLOG-p0-websocket-join-conversation.md`
 
+### 4. MessageCenter Loading & Display Failures ✅ **RESOLVED**
+-   **Problem:** Store item messages failed to load in MessageCenter due to cross-database queries and frontend logic errors.
+-   **Impact:** MVP Blocker. Users could not view or reply to store-related messages.
+-   **Action:** Removed cross-database queries and fixed Map key type mismatches.
+-   **Status:** ✅ **RESOLVED** - January 4, 2026
+-   **Details:** See `../03-completed/FIXLOG-messagecenter-loading-failure.md` and `../03-completed/FIXLOG-empty-message-body.md`
+
 ---
 
 ## P1: Critical for MVP

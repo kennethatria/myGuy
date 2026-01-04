@@ -1,7 +1,9 @@
 # ISSUE: MessageCenter Loading Failure - Reintroduced Cross-Database Query Bug
 
 **Date:** 2026-01-03
-**Status:** 🔴 **CRITICAL** - Blocking message functionality
+**Status:** ✅ **RESOLVED**
+**Resolution Date:** 2026-01-04
+**Resolution Details:** See [FIXLOG-messagecenter-loading-failure.md](./FIXLOG-messagecenter-loading-failure.md) and [FIXLOG-empty-message-body.md](./FIXLOG-empty-message-body.md)
 **Reporter:** Investigation requested by user
 **Severity:** P0 - Production Breaking
 

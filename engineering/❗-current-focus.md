@@ -27,6 +27,11 @@ This document provides a high-level summary of the current engineering focus, up
 
 ## ✅ Recently Completed
 
+### Empty Message Body Fix
+- **Status:** ✅ Done
+- **Summary:** Fixed a critical bug where the message body appeared empty for store item conversations. Addressed a frontend logic error and type mismatch in the chat store state management.
+- **Details:** See `FIXLOG-empty-message-body.md` in the `03-completed` directory.
+
 ### MessageCenter Loading Failure
 - **Status:** ✅ Done
 - **Summary:** Resolved the blocking issue where store item messages failed to load. Removed unused and problematic `StoreMessageHandler` code that contained cross-database queries.

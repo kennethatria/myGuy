@@ -39,6 +39,15 @@ This document summarizes a comprehensive review of the `store`, `task`, and `cha
 -   **Fixed:** Updated .env database URL, added ID type parsing, removed cross-database query, rebuilt container
 -   **Details:** See `../03-completed/FIXLOG-p0-websocket-join-conversation.md`
 
+### 4. MessageCenter Loading & Display Failures ✅ **RESOLVED**
+-   **Service(s):** Chat, Frontend
+-   **Area:** Backend & Frontend
+-   **Problem:** Store item messages failed to load in MessageCenter due to cross-database queries (backend) and a state management logic error (frontend).
+-   **Impact:** **MVP Blocker**. Users could not view or reply to store-related messages.
+-   **Action:** Removed cross-database queries from `socketHandlers.js` and fixed Map key type mismatch in `chat.ts`.
+-   **Status:** ✅ **RESOLVED** - January 4, 2026
+-   **Details:** See `../03-completed/FIXLOG-messagecenter-loading-failure.md` and `../03-completed/FIXLOG-empty-message-body.md`
+
 ---
 
 ## P1: Critical for MVP

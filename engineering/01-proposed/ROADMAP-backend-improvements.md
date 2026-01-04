@@ -53,9 +53,10 @@
 ## Priority Implementation Order
 
 ### High Priority
-1. [ ] Security improvements (rate limiting, CORS)
-2. [ ] Database indexes for performance
-3. [ ] Input validation enhancements
+1. [ ] **Backend Test Coverage (Unit & Integration)** - *Critical Priority*
+2. [ ] Security improvements (rate limiting, CORS)
+3. [ ] Database indexes for performance
+4. [ ] Input validation enhancements
 
 ### Medium Priority
 4. [ ] Soft delete implementation
