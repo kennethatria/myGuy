@@ -1,5 +1,7 @@
 # Roadmap: MVP Launch Prioritization
 
+**[NOTICE] This document is the single source of truth for MVP priorities. When updating this file, please ensure the summary in `engineering/❗-current-focus.md` is also updated to reflect the current P0 and top P1 items.**
+
 This document outlines the prioritized list of issues to be addressed before deploying a Minimum Viable Product (MVP) for user testing. The goal is to ensure a stable, functional, and usable product for early adopters.
 
 The items are sourced from the `TODO` and `ROADMAP` documents in this directory.
@@ -41,12 +43,13 @@ The items are sourced from the `TODO` and `ROADMAP` documents in this directory.
 -   **Status:** ✅ **RESOLVED** - January 4, 2026
 -   **Details:** See `../03-completed/FIXLOG-messagecenter-loading-failure.md` and `../03-completed/FIXLOG-empty-message-body.md`
 
-### 5. Resolve "Unknown Sender" in Messages
-- **Problem:** All message senders are displayed as "Unknown User" because the chat service only provides a `sender_id`, not a full user object.
-- **Impact:** The chat is unusable as users cannot tell who is sending messages.
-- **Action:** Implement a frontend user caching system (`useUserStore`) to fetch and store user details, and update UI components to use it.
-- **Source:** `RFC-unknown-sender.md`
+### 5. Core Messaging UX is Unusable
+- **Problem:** Users cannot identify who they are talking to ("Unknown User") or what they are talking about ("Conversation" title). This makes the chat feature non-functional for its primary purpose.
+- **Impact:** Blocker for any user testing. A chat system without sender and context is unusable.
+- **Action:** Implement the frontend enrichment strategies to resolve user and context (task/item) titles.
+- **Source:** [RFC-unknown-sender.md](./RFC-unknown-sender.md), [RFC-conversation-titles.md](./RFC-conversation-titles.md)
 - **Status:** 🔴 Open
+
 ---
 
 ## P1: Critical for MVP
@@ -59,21 +62,13 @@ The items are sourced from the `TODO` and `ROADMAP` documents in this directory.
 -   **Action:** Modify the frontend to send filter parameters to the backend API and handle the filtered results. Implement pagination at the same time.
 -   **Source:** `TODO-frontend-store-service-integration.md`
 
-### 2. Fix Inconsistent Chat State Management ✅ **RESOLVED**
--   **Problem:** The chat implementation in the Store view is completely separate from the central Pinia chat store, leading to a disconnected user experience.
--   **Impact:** Messages sent from the store will not appear in a user's main conversation list, leading to confusion and lost messages.
--   **Action:** Refactor the chat in `StoreItemView.vue` to use the central `useChatStore` for all state and actions.
--   **Source:** `TODO-chat-functionality-review.md`
--   **Status:** ✅ **RESOLVED** - January 3, 2026
--   **Details:** See `../03-completed/FIXLOG-p1-p2-chat-refactoring.md`
-
-### 3. Add Backend Testing Foundation
+### 2. Add Backend Testing Foundation
 -   **Problem:** The main `backend` service has zero test coverage.
 -   **Impact:** There is a very high risk of regressions and uncaught bugs in core business logic (tasks, applications, user management). A single change could break the platform without warning.
 -   **Action:** Implement a basic testing suite for the main backend, focusing first on critical paths like user authentication and task creation.
 -   **Source:** `ADR-backend-testing-strategy.md`
 
-### 4. Ensure Transactional Bidding
+### 3. Ensure Transactional Bidding
 -   **Problem:** The bidding logic may be vulnerable to race conditions.
 -   **Impact:** Potential for data corruption and an unfair auction if two bids are placed simultaneously.
 -   **Action:** Review the backend bidding logic and ensure the read-validate-write process is wrapped in a database transaction.

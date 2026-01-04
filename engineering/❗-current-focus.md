@@ -1,67 +1,24 @@
 # Engineering Priorities: Q1 2026
 
-This document provides a high-level summary of the current engineering focus, upcoming priorities, and links to relevant documents. It is the single source of truth for "what we are working on."
-
-## 🎯 Top Priority: Backend Test Coverage
-
-- **Status:** 🔴 Not Started
-- **Problem:** The main Go backend has 0% test coverage, which is a critical risk for production stability and future development. The `store-service` (87%+ coverage) should be used as the blueprint.
-- **Action:** Implement a comprehensive testing suite, including unit and integration tests.
-- **Details:** [ADR-backend-testing-strategy.md](./01-proposed/ADR-backend-testing-strategy.md)
+**This document is a high-level summary. For the detailed, canonical list of MVP priorities, see [ROADMAP-mvp-prioritization.md](./01-proposed/ROADMAP-mvp-prioritization.md).**
 
 ---
 
-## ⏳ Next Up
+## 🎯 Top Priority: Core Messaging UX (P0)
 
-### 1. Booking Requests via Messages
-- **Status:** 🟡 Proposed (Critical UX)
-- **Goal:** Move booking requests from hidden item pages to the main `/messages` view to ensure sellers actually see and respond to them.
-- **Details:** [RFC-booking-via-messages.md](./01-proposed/RFC-booking-via-messages.md)
-
-### 2. Descriptive Conversation Titles
-- **Status:** 🟡 Proposed (UX Priority)
-- **Goal:** Replace the generic "Conversation" label with the actual Store Item or Task title in the message list to help users distinguish between different chats.
-- **Details:** [RFC-conversation-titles.md](./01-proposed/RFC-conversation-titles.md)
-
-### 3. Browser Push Notifications
-- **Status:** 🟡 Proposed
-- **Goal:** Notify users of new messages even when they are offline or the app is in the background, significantly improving user re-engagement.
-- **Details:** [DESIGN-browser-push-notifications.md](./01-proposed/DESIGN-browser-push-notifications.md)
-
-### 3. Dedicated Authentication Service
-- **Status:** 🟡 Proposed
-- **Goal:** Improve security, scalability, and separation of concerns by extracting authentication into its own microservice.
-- **Details:** [ADR-dedicated-auth-service.md](./01-proposed/ADR-dedicated-auth-service.md)
+- **Status:** 🔴 Blocked
+- **Problem:** The chat system is unusable because users cannot see who is sending messages ("Unknown User") or what the conversation is about (generic "Conversation" titles).
+- **Next Action:** Implement the frontend enrichment strategy outlined in the RFCs.
+- **Details:** See `P0` items in the [MVP Roadmap](./01-proposed/ROADMAP-mvp-prioritization.md).
 
 ---
 
-## ✅ Recently Completed
+## ⏳ Other Critical Priorities (P1)
 
-### Empty Message Body Fix
-- **Status:** ✅ Done
-- **Summary:** Fixed a critical bug where the message body appeared empty for store item conversations. Addressed a frontend logic error and type mismatch in the chat store state management.
-- **Details:** See `FIXLOG-empty-message-body.md` in the `03-completed` directory.
+The following `P1` items are also critical for a successful MVP launch.
 
-### MessageCenter Loading Failure
-- **Status:** ✅ Done
-- **Summary:** Resolved the blocking issue where store item messages failed to load. Removed unused and problematic `StoreMessageHandler` code that contained cross-database queries.
-- **Details:** See `FIXLOG-messagecenter-loading-failure.md` in the `03-completed` directory.
+- **Backend Filtering for Store Items:** To prevent performance collapse.
+- **Backend Testing Foundation:** To reduce regression risk.
+- **Transactional Bidding:** To ensure data integrity in auctions.
 
-### Chat Service Refactor
-- **Status:** ✅ Done
-- **Summary:** Successfully refactored the `chat-websocket-service` to use its own dedicated database (`my_guy_chat`). This resolved numerous critical cross-database query bugs and stabilized the messaging functionality.
-- **Details:** See logs in the [03-completed/](./03-completed/) directory.
-
-### Message Limits Removal
-- **Status:** ✅ Done
-- **Summary:** Removed all artificial message limits from the frontend and backend to reduce user friction and encourage communication.
-- **Details:** See `FIXLOG-frontend-message-limits-removal.md` and `FIXLOG-backend-message-limits-removal.md` in the `03-completed` directory.
-
----
-
-## 📚 Key Architectural Documents
-For onboarding and reference, these documents describe how the system is currently built.
-
-- **Chat Service Architecture:** [ARCH-chat-service-architecture.md](./02-reference/ARCH-chat-service-architecture.md)
-- **Deployment Workflow:** [REF-deployment-workflow.md](./02-reference/REF-deployment-workflow.md)
-- **Testing Summary:** [REF-testing-summary.md](./02-reference/REF-testing-summary.md)
+For a full breakdown of all `P1`, `P2`, and `P3` items, please refer to the [MVP Roadmap](./01-proposed/ROADMAP-mvp-prioritization.md).
