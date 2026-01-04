@@ -41,6 +41,12 @@ The items are sourced from the `TODO` and `ROADMAP` documents in this directory.
 -   **Status:** ✅ **RESOLVED** - January 4, 2026
 -   **Details:** See `../03-completed/FIXLOG-messagecenter-loading-failure.md` and `../03-completed/FIXLOG-empty-message-body.md`
 
+### 5. Resolve "Unknown Sender" in Messages
+- **Problem:** All message senders are displayed as "Unknown User" because the chat service only provides a `sender_id`, not a full user object.
+- **Impact:** The chat is unusable as users cannot tell who is sending messages.
+- **Action:** Implement a frontend user caching system (`useUserStore`) to fetch and store user details, and update UI components to use it.
+- **Source:** `RFC-unknown-sender.md`
+- **Status:** 🔴 Open
 ---
 
 ## P1: Critical for MVP
