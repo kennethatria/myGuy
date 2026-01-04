@@ -1,30 +1,26 @@
-# MyGuy Project Context (Gemini CLI)
+# Project: MyGuy Platform Context
 
-## Architecture Overview
-MyGuy is a microservices platform for a task marketplace.
-- **Service Independence**: Services communicate only via IDs. No cross-service DB queries.
-- **Shared Auth**: All services use the same `JWT_SECRET`.
-- **User Privacy**: Chat service automatically filters PII (emails, phone, URLs).
+## 🏗 Architecture & Service Topology
+MyGuy is a microservices-based task marketplace. Refer to the specific service READMEs for implementation details.
 
-## Service Map
-| Service | Language/Framework | Port | DB Name |
-| :--- | :--- | :--- | :--- |
-| **Backend** | Go (Gin) | 8080 | `my_guy` |
-| **Store** | Go (Gin) | 8081 | `my_guy_store` |
-| **Chat** | Node.js (Express) | 8082 | `my_guy_chat` |
-| **Frontend** | Vue 3 (TS) | 5173 | N/A |
+- **Backend**: Go (Gin) on Port 8080. Core marketplace API (Users, Tasks).
+- **Store Service**: Go (Gin) on Port 8081. Fixed-price and auction bidding.
+- **Chat Service**: Node.js (Express + Socket.IO) on Port 8082. Real-time messaging.
+- **Frontend**: Vue 3 + TypeScript on Port 5173.
 
-## Project-Specific Rules for Gemini
-- **Strict Separation**: If I ask for a feature involving two services, plan the API changes in each service separately.
-- **Testing Standard**: Use `store-service` as the "Gold Standard" for testing logic. When writing Go code for the `backend` service, replicate the pattern found in `store-service/Makefile` and `internal/services/`.
-- **Privacy Filtering**: When working on the Chat Service, ensure any new message handling logic includes the content filtering middleware.
+## 📜 Critical Engineering Principles
+- **Database Isolation**: Services never query each other's databases directly.
+- **Shared Auth**: All services use a unified `JWT_SECRET` for independent validation.
+- **User Privacy**: The Chat Service must automatically filter PII (emails, phone numbers, URLs).
+- **Service Blueprint**: Use the `store-service` (92%+ test coverage) as the architectural blueprint for any new Go development or testing strategies.
 
-## Dev Commands Reference
-- **All Services**: `docker-compose up --build`
+## 📂 Documentation & Status Tracking
+Always reference the `engineering/` directory for project health and historical context:
+- **Priorities**: Check `engineering/❗-current-focus.md` for the current Q1 2026 testing push.
+- **Decisions**: Refer to `engineering/01-proposed/` for ADRs (Architecture Decision Records).
+- **History**: See `engineering/03-completed/` for previous fixes and investigations.
+
+## 🛠 Common Commands
+- **Launch Platform**: `docker-compose up --build`
 - **Store Tests**: `cd store-service && make test-coverage`
 - **Chat Migrations**: `cd chat-websocket-service && npm run migrate`
-
-## Implementation Checklist (Standard Workflow)
-1. Verify `JWT_SECRET` alignment across `.env` files.
-2. If adding an endpoint, check the corresponding local user cache logic.
-3. For Chat updates, ensure the `messages` table schema supports the new context.
