@@ -2,17 +2,6 @@
 
 This document provides a high-level summary of the current engineering focus, upcoming priorities, and links to relevant documents. It is the single source of truth for "what we are working on."
 
-## 🚨 CRITICAL: MessageCenter Loading Failure (P0)
-
-- **Status:** 🔴 **BLOCKING** - Discovered 2026-01-03
-- **Problem:** Store item messages completely broken in MessageCenter due to reintroduced cross-database query bug. Users cannot read or respond to store-related messages via `/messages` route.
-- **Impact:** ~33% of message types non-functional. Users forced to use workaround (viewing messages on item detail pages).
-- **Root Cause:** Recent refactor (commit ef8f696) accidentally reintroduced a previously-fixed bug where chat service tries to query `store_items` table that doesn't exist in its database.
-- **Action:** Remove cross-database query from `socketHandlers.js` (15 min fix)
-- **Details:** [ISSUE-messagecenter-loading-failure-2026-01-03.md](./01-proposed/ISSUE-messagecenter-loading-failure-2026-01-03.md)
-
----
-
 ## 🎯 Top Priority: Backend Test Coverage
 
 - **Status:** 🔴 Not Started
@@ -37,6 +26,11 @@ This document provides a high-level summary of the current engineering focus, up
 ---
 
 ## ✅ Recently Completed
+
+### MessageCenter Loading Failure
+- **Status:** ✅ Done
+- **Summary:** Resolved the blocking issue where store item messages failed to load. Removed unused and problematic `StoreMessageHandler` code that contained cross-database queries.
+- **Details:** See `FIXLOG-messagecenter-loading-failure.md` in the `03-completed` directory.
 
 ### Chat Service Refactor
 - **Status:** ✅ Done

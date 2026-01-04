@@ -1,12 +1,10 @@
 const messageService = require('../services/messageService');
 const logger = require('../utils/logger');
-const StoreMessageHandler = require('./storeMessageHandler');
 
 class SocketHandlers {
   constructor(io) {
     this.io = io;
     this.userSockets = new Map(); // userId -> Set of socket IDs
-    this.storeHandler = new StoreMessageHandler(io);
   }
 
   /**

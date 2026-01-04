@@ -76,11 +76,8 @@ onUnmounted(() => {
 function selectConversation(conversation: ConversationSummary) {
   const conversationId = conversation.task_id || conversation.application_id || conversation.item_id;
   if (conversationId) {
-    if (conversation.conversation_type === 'store') {
-      chatStore.joinStoreConversation(conversationId);
-    } else {
-      chatStore.joinConversation(conversationId);
-    }
+    // joinConversation handles all conversation types (tasks, applications, and store items)
+    chatStore.joinConversation(conversationId);
   }
 }
 

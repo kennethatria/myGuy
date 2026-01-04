@@ -407,15 +407,31 @@ export const useChatStore = defineStore('chat', () => {
   }
   
   function handleMessagesList({ taskId, applicationId, itemId, messages: msgs, offset, totalCount }: { taskId?: number; applicationId?: number; itemId?: number; messages: Message[]; offset: number; totalCount?: number }) {
-    const conversationId = taskId || applicationId || itemId;
+    // Ensure IDs are numbers to match Map keys
+    const parsedTaskId = taskId ? Number(taskId) : undefined;
+    const parsedApplicationId = applicationId ? Number(applicationId) : undefined;
+    const parsedItemId = itemId ? Number(itemId) : undefined;
+    
+    const conversationId = parsedTaskId || parsedApplicationId || parsedItemId;
     if (!conversationId) return;
     
-    if (offset === 0) {
-      messages.value.set(conversationId, msgs);
+    // Route messages to correct storage Map based on conversation type
+    if (parsedItemId) {
+      if (offset === 0) {
+        storeMessages.value.set(parsedItemId, msgs);
+      } else {
+        // Prepend older messages
+        const existing = storeMessages.value.get(parsedItemId) || [];
+        storeMessages.value.set(parsedItemId, [...msgs, ...existing]);
+      }
     } else {
-      // Prepend older messages
-      const existing = messages.value.get(conversationId) || [];
-      messages.value.set(conversationId, [...msgs, ...existing]);
+      if (offset === 0) {
+        messages.value.set(conversationId, msgs);
+      } else {
+        // Prepend older messages
+        const existing = messages.value.get(conversationId) || [];
+        messages.value.set(conversationId, [...msgs, ...existing]);
+      }
     }
     
     // Store total count if provided
@@ -503,8 +519,12 @@ export const useChatStore = defineStore('chat', () => {
         socket.value.emit('join:conversation', { itemId: conversationId });
       }
       
-      // Load messages if not already loaded
-      if (!messages.value.has(conversationId)) {
+      // Load messages if not already loaded - check correct Map based on conversation type
+      const hasMessages = conv.item_id
+        ? storeMessages.value.has(conversationId)
+        : messages.value.has(conversationId);
+
+      if (!hasMessages) {
         isLoadingMessages.value = true;
         if (conv.task_id) {
           socket.value.emit('messages:get', { taskId: conversationId, limit: 5, offset: 0 });
@@ -579,16 +599,19 @@ export const useChatStore = defineStore('chat', () => {
   
   function loadMoreMessages() {
     if (!socket.value || !activeConversation.value || isLoadingMessages.value) return;
-    
+
     const conversationId = activeConversation.value.task_id || activeConversation.value.application_id || activeConversation.value.item_id;
     if (!conversationId) return;
-    
-    const currentMessages = messages.value.get(conversationId) || [];
-    
+
+    // Get messages from correct Map based on conversation type
+    const currentMessages = activeConversation.value.item_id
+      ? (storeMessages.value.get(conversationId) || [])
+      : (messages.value.get(conversationId) || []);
+
     if (!hasMoreMessages.value.get(conversationId)) return;
-    
+
     isLoadingMessages.value = true;
-    
+
     if (activeConversation.value.task_id) {
       socket.value.emit('messages:get', {
         taskId: conversationId,
