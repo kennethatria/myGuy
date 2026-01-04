@@ -2,7 +2,7 @@
   <div class="message-bubble" :class="{ 'own-message': isOwnMessage }">
     <div class="message-content">
       <div class="message-header">
-        <span class="sender-name">{{ message.sender?.username || 'Unknown User' }}</span>
+        <span class="sender-name">{{ senderName }}</span>
         <span class="message-time">{{ formatTime(message.created_at) }}</span>
       </div>
       
@@ -51,7 +51,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
+import { useUserStore } from '@/stores/user';
 import type { Message } from '@/stores/messages';
 
 const props = defineProps<{
@@ -64,8 +65,27 @@ const emit = defineEmits<{
   delete: [];
 }>();
 
+const userStore = useUserStore();
 const isEditing = ref(false);
 const editText = ref('');
+
+// Compute sender name from enriched message data or user store
+const senderName = computed(() => {
+  // First try the enriched sender object on the message
+  if (props.message.sender?.username) {
+    return props.message.sender.username;
+  }
+
+  // Fallback to user store lookup
+  if (props.message.sender_id) {
+    const user = userStore.getUserById(props.message.sender_id);
+    if (user) {
+      return user.username;
+    }
+  }
+
+  return 'Unknown User';
+});
 
 function formatTime(timestamp: string): string {
   const date = new Date(timestamp);

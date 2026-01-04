@@ -2,6 +2,8 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from './auth';
+import { useUserStore } from './user';
+import { useContextStore } from './context';
 import config from '@/config';
 import type { Message, ConversationSummary } from './messages';
 
@@ -178,16 +180,19 @@ export const useChatStore = defineStore('chat', () => {
         if (!existingConv) {
           conversations.value.push({
             item_id: message.store_item_id,
-            item_title: message.store_item_title || 'Store Item',
+            item_title: 'Store Item', // Will be enriched by enrichConversations
             last_message: message.content,
             last_message_time: message.created_at,
             other_user_id: message.sender_id === authStore.user?.id ? message.recipient_id : message.sender_id,
-            other_user_name: message.sender_id === authStore.user?.id ? 
-              (message.recipient?.username || 'Unknown User') : 
+            other_user_name: message.sender_id === authStore.user?.id ?
+              (message.recipient?.username || 'Unknown User') :
               (message.sender?.username || 'Unknown User'),
             unread_count: message.sender_id !== authStore.user?.id ? 1 : 0,
             conversation_type: 'store'
           });
+
+          // Enrich the new conversation
+          enrichConversations();
         } else {
           // Update existing conversation
           existingConv.last_message = message.content;
@@ -267,24 +272,27 @@ export const useChatStore = defineStore('chat', () => {
   function handleNewMessage(message: Message) {
     const conversationId = message.task_id || message.application_id || message.item_id;
     if (!conversationId) return;
-    
+
+    // Enrich the new message with sender data
+    enrichMessages([message]);
+
     const conversationMessages = messages.value.get(conversationId) || [];
     messages.value.set(conversationId, [...conversationMessages, message]);
-    
+
     // Update total message count
     const currentCount = totalMessageCounts.value.get(conversationId) || 0;
     totalMessageCounts.value.set(conversationId, currentCount + 1);
-    
+
     // Update conversation last message
-    const conv = conversations.value.find(c => 
-      c.task_id === conversationId || 
-      c.application_id === conversationId || 
+    const conv = conversations.value.find(c =>
+      c.task_id === conversationId ||
+      c.application_id === conversationId ||
       c.item_id === conversationId
     );
     if (conv) {
       conv.last_message = message.content;
       conv.last_message_time = message.created_at;
-      
+
       // Increment unread count if not the active conversation
       const activeConvId = activeConversation.value?.task_id || activeConversation.value?.application_id || activeConversation.value?.item_id;
       if (activeConvId !== conversationId && message.sender_id !== authStore.user?.id) {
@@ -293,9 +301,9 @@ export const useChatStore = defineStore('chat', () => {
         conv.unread_count = currentUnread + 1;
       }
     }
-    
+
     // Sort conversations by last message time
-    conversations.value.sort((a, b) => 
+    conversations.value.sort((a, b) =>
       new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime()
     );
   }
@@ -358,12 +366,74 @@ export const useChatStore = defineStore('chat', () => {
   
   function handleConversationsList(convs: ConversationSummary[]) {
     conversations.value = convs;
-    
+
     // Update unread counts
     convs.forEach(conv => {
       const conversationId = conv.task_id || conv.application_id || conv.item_id;
       if (conversationId) {
         unreadCounts.value.set(conversationId, conv.unread_count);
+      }
+    });
+
+    // Enrich conversations with user names and context titles
+    enrichConversations();
+  }
+
+  /**
+   * Enrich conversations with user names and task/item titles
+   */
+  async function enrichConversations() {
+    const userStore = useUserStore();
+    const contextStore = useContextStore();
+
+    // Collect all unique user IDs and context IDs
+    const userIds = new Set<number>();
+    const taskIds: number[] = [];
+    const itemIds: number[] = [];
+
+    conversations.value.forEach(conv => {
+      if (conv.other_user_id) {
+        userIds.add(conv.other_user_id);
+      }
+      if (conv.task_id) {
+        taskIds.push(conv.task_id);
+      }
+      if (conv.item_id) {
+        itemIds.push(conv.item_id);
+      }
+    });
+
+    // Fetch all users in parallel
+    await userStore.fetchUsers([...userIds]);
+
+    // Fetch all tasks and items in parallel
+    await Promise.all([
+      contextStore.fetchTasks(taskIds),
+      contextStore.fetchItems(itemIds)
+    ]);
+
+    // Update conversations with enriched data
+    conversations.value.forEach(conv => {
+      // Enrich user name
+      const user = userStore.getUserById(conv.other_user_id);
+      if (user) {
+        conv.other_user_name = user.username;
+      }
+
+      // Enrich task title
+      if (conv.task_id) {
+        const task = contextStore.getTaskById(conv.task_id);
+        if (task) {
+          conv.task_title = task.title;
+        }
+      }
+
+      // Enrich store item title
+      if (conv.item_id) {
+        const item = contextStore.getItemById(conv.item_id);
+        if (item) {
+          conv.item_title = item.title;
+        }
       }
     });
   }
@@ -411,10 +481,13 @@ export const useChatStore = defineStore('chat', () => {
     const parsedTaskId = taskId ? Number(taskId) : undefined;
     const parsedApplicationId = applicationId ? Number(applicationId) : undefined;
     const parsedItemId = itemId ? Number(itemId) : undefined;
-    
+
     const conversationId = parsedTaskId || parsedApplicationId || parsedItemId;
     if (!conversationId) return;
-    
+
+    // Enrich messages with sender/recipient data
+    enrichMessages(msgs);
+
     // Route messages to correct storage Map based on conversation type
     if (parsedItemId) {
       if (offset === 0) {
@@ -433,15 +506,55 @@ export const useChatStore = defineStore('chat', () => {
         messages.value.set(conversationId, [...msgs, ...existing]);
       }
     }
-    
+
     // Store total count if provided
     if (totalCount !== undefined) {
       totalMessageCounts.value.set(conversationId, totalCount);
     }
-    
+
     // If we got less than requested, there are no more messages
     hasMoreMessages.value.set(conversationId, msgs.length === 5);
     isLoadingMessages.value = false;
+  }
+
+  /**
+   * Enrich messages with sender and recipient user data
+   */
+  async function enrichMessages(msgs: Message[]) {
+    const userStore = useUserStore();
+
+    // Collect all unique user IDs from messages
+    const userIds = new Set<number>();
+    msgs.forEach(msg => {
+      if (msg.sender_id) {
+        userIds.add(msg.sender_id);
+      }
+      if (msg.recipient_id) {
+        userIds.add(msg.recipient_id);
+      }
+    });
+
+    // Fetch all users
+    await userStore.fetchUsers([...userIds]);
+
+    // Attach sender and recipient data to each message
+    msgs.forEach(msg => {
+      const sender = userStore.getUserById(msg.sender_id);
+      if (sender) {
+        msg.sender = {
+          id: sender.id,
+          username: sender.username
+        };
+      }
+
+      const recipient = userStore.getUserById(msg.recipient_id);
+      if (recipient) {
+        msg.recipient = {
+          id: recipient.id,
+          username: recipient.username
+        };
+      }
+    });
   }
   
   function handleConversationMarkedRead({ taskId, applicationId, itemId, count }: { taskId?: number; applicationId?: number; itemId?: number; count: number }) {

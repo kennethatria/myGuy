@@ -1,12 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import config from '@/config'
+import { useUserStore } from './user'
 
 interface User {
   id: number
   username: string
   email: string
   fullName: string
+  name?: string
   bio?: string
   averageRating?: number
   createdAt: string
@@ -28,6 +30,17 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     token.value = null
     localStorage.removeItem('token')
+
+    // Clear user store cache on logout
+    const userStore = useUserStore()
+    userStore.clearCache()
+  }
+
+  const cacheCurrentUser = () => {
+    if (user.value) {
+      const userStore = useUserStore()
+      userStore.cacheCurrentUser()
+    }
   }
 
   const login = async (email: string, password: string): Promise<boolean> => {
@@ -46,9 +59,13 @@ export const useAuthStore = defineStore('auth', () => {
       const data = await response.json()
       user.value = data.user
       token.value = data.token
-      
+
       // Set token in localStorage and update default headers
       setAuthHeaders(data.token)
+
+      // Cache current user in user store
+      cacheCurrentUser()
+
       return true
     } catch (error) {
       console.error('Login failed:', error)
@@ -97,6 +114,10 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       user.value = await response.json()
+
+      // Cache current user in user store
+      cacheCurrentUser()
+
       return true
     } catch (error) {
       console.error('Auth check failed:', error)

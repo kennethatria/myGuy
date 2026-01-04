@@ -43,12 +43,13 @@ The items are sourced from the `TODO` and `ROADMAP` documents in this directory.
 -   **Status:** ✅ **RESOLVED** - January 4, 2026
 -   **Details:** See `../03-completed/FIXLOG-messagecenter-loading-failure.md` and `../03-completed/FIXLOG-empty-message-body.md`
 
-### 5. Core Messaging UX is Unusable
+### 5. Core Messaging UX is Unusable ✅ **RESOLVED**
 - **Problem:** Users cannot identify who they are talking to ("Unknown User") or what they are talking about ("Conversation" title). This makes the chat feature non-functional for its primary purpose.
 - **Impact:** Blocker for any user testing. A chat system without sender and context is unusable.
 - **Action:** Implement the frontend enrichment strategies to resolve user and context (task/item) titles.
 - **Source:** [RFC-unknown-sender.md](./RFC-unknown-sender.md), [RFC-conversation-titles.md](./RFC-conversation-titles.md)
-- **Status:** 🔴 Open
+- **Status:** ✅ **RESOLVED** - January 4, 2026
+- **Details:** Created user and context stores for caching. Implemented enrichment in chat store. Updated UI components. See `../03-completed/FIXLOG-p0-messaging-ux.md`
 
 ---
 

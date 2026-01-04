@@ -1,19 +1,19 @@
 <template>
-  <div 
+  <div
     class="conversation-item"
     :class="{ 'active': active }"
     @click="$emit('click')"
   >
     <div class="conversation-header">
-      <h3 class="task-title" :class="{ 'unread': conversation.unread_count > 0 }">{{ conversation.task_title || conversation.application_title || conversation.item_title || 'Conversation' }}</h3>
+      <h3 class="task-title" :class="{ 'unread': conversation.unread_count > 0 }">{{ conversationTitle }}</h3>
       <span class="timestamp">{{ formatTime(conversation.last_message_time) }}</span>
     </div>
-    
+
     <div class="conversation-body">
-      <p class="other-user">{{ conversation.other_user_name }}</p>
+      <p class="other-user">{{ otherUserName }}</p>
       <p class="last-message" :class="{ 'unread': conversation.unread_count > 0 }">{{ conversation.last_message }}</p>
     </div>
-    
+
     <div v-if="conversation.unread_count > 0" class="unread-badge">
       {{ conversation.unread_count }}
     </div>
@@ -21,9 +21,12 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
+import { useUserStore } from '@/stores/user';
+import { useContextStore } from '@/stores/context';
 import type { ConversationSummary } from '@/stores/messages';
 
-defineProps<{
+const props = defineProps<{
   conversation: ConversationSummary;
   active: boolean;
 }>();
@@ -31,6 +34,60 @@ defineProps<{
 defineEmits<{
   click: [];
 }>();
+
+const userStore = useUserStore();
+const contextStore = useContextStore();
+
+// Compute conversation title from enriched data or fallback to stores
+const conversationTitle = computed(() => {
+  // Try enriched data first
+  if (props.conversation.task_title) {
+    return props.conversation.task_title;
+  }
+  if (props.conversation.application_title) {
+    return props.conversation.application_title;
+  }
+  if (props.conversation.item_title) {
+    return props.conversation.item_title;
+  }
+
+  // Fallback to context store lookup
+  if (props.conversation.task_id) {
+    const task = contextStore.getTaskById(props.conversation.task_id);
+    if (task) {
+      return task.title;
+    }
+    return `Task #${props.conversation.task_id}`;
+  }
+
+  if (props.conversation.item_id) {
+    const item = contextStore.getItemById(props.conversation.item_id);
+    if (item) {
+      return item.title;
+    }
+    return `Item #${props.conversation.item_id}`;
+  }
+
+  return 'Conversation';
+});
+
+// Compute other user name from enriched data or fallback to user store
+const otherUserName = computed(() => {
+  // Try enriched data first
+  if (props.conversation.other_user_name && props.conversation.other_user_name !== 'Unknown User') {
+    return props.conversation.other_user_name;
+  }
+
+  // Fallback to user store lookup
+  if (props.conversation.other_user_id) {
+    const user = userStore.getUserById(props.conversation.other_user_id);
+    if (user) {
+      return user.username;
+    }
+  }
+
+  return 'Unknown User';
+});
 
 function formatTime(timestamp: string): string {
   if (!timestamp) {
