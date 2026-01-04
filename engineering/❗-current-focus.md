@@ -13,12 +13,17 @@ This document provides a high-level summary of the current engineering focus, up
 
 ## ⏳ Next Up
 
-### 1. Browser Push Notifications
+### 1. Booking Requests via Messages
+- **Status:** 🟡 Proposed (Critical UX)
+- **Goal:** Move booking requests from hidden item pages to the main `/messages` view to ensure sellers actually see and respond to them.
+- **Details:** [RFC-booking-via-messages.md](./01-proposed/RFC-booking-via-messages.md)
+
+### 2. Browser Push Notifications
 - **Status:** 🟡 Proposed
 - **Goal:** Notify users of new messages even when they are offline or the app is in the background, significantly improving user re-engagement.
 - **Details:** [DESIGN-browser-push-notifications.md](./01-proposed/DESIGN-browser-push-notifications.md)
 
-### 2. Dedicated Authentication Service
+### 3. Dedicated Authentication Service
 - **Status:** 🟡 Proposed
 - **Goal:** Improve security, scalability, and separation of concerns by extracting authentication into its own microservice.
 - **Details:** [ADR-dedicated-auth-service.md](./01-proposed/ADR-dedicated-auth-service.md)
