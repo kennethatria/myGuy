@@ -24,20 +24,6 @@
             </router-link>
           </li>
         </ul>
-        
-        <ul class="nav-list nav-secondary">
-          <li v-for="item in secondaryNavigation" :key="item.name">
-            <router-link
-              :to="item.to"
-              class="nav-item"
-              :class="{ 'active': isActiveRoute(item) }"
-              :title="item.text"
-            >
-              <span class="nav-icon" v-html="item.icon"></span>
-              <span v-if="!isSidebarCollapsed" class="nav-text">{{ item.text }}</span>
-            </router-link>
-          </li>
-        </ul>
       </nav>
       
       <div class="sidebar-footer">
@@ -160,17 +146,14 @@ const mainNavigation = computed(() => [
     text: 'Messages',
     badge: totalUnreadCount.value > 0 ? totalUnreadCount.value : undefined,
     icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 15C21 15.5304 20.7893 16.0391 20.4142 16.4142C20.0391 16.7893 19.5304 17 19 17H7L3 21V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H19C19.5304 3 20.0391 3.21071 20.4142 3.58579C20.7893 3.96086 21 4.46957 21 5V15Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-  }
-])
-
-const secondaryNavigation = [
+  },
   { 
     name: 'store', 
     to: { name: 'store' }, 
     text: 'Store',
     icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 9V21H21V9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 9H21L19 3H5L3 9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 3V9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
   }
-]
+])
 
 const userInitials = computed(() => {
   if (!user.value?.fullName) return '?'
@@ -285,12 +268,6 @@ onMounted(async () => {
   list-style: none;
   padding: 0;
   margin: 0;
-}
-
-.nav-secondary {
-  margin-top: 2rem;
-  padding-top: 2rem;
-  border-top: 1px solid #e0e0e0;
 }
 
 .nav-item {
