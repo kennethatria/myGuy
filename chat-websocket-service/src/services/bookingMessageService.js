@@ -45,7 +45,7 @@ async function createBookingRequestMessage({
 
     // Emit to seller via WebSocket
     if (io) {
-      io.to(`user_${sellerId}`).emit('message:new', message);
+      io.to(`user:${sellerId}`).emit('message:new', message);
       console.log(`📋 Booking request message sent to seller ${sellerId} for item ${itemId}`);
     }
 
@@ -124,15 +124,15 @@ async function updateBookingMessageStatus(bookingId, status, approverId, io) {
 
     // Emit to both users via WebSocket
     if (io) {
-      io.to(`user_${requestMessage.sender_id}`).emit('message:new', statusMessage);
-      io.to(`user_${approverId}`).emit('message:new', statusMessage);
+      io.to(`user:${requestMessage.sender_id}`).emit('message:new', statusMessage);
+      io.to(`user:${approverId}`).emit('message:new', statusMessage);
 
       // Also emit update for the original message
-      io.to(`user_${requestMessage.sender_id}`).emit('message:updated', {
+      io.to(`user:${requestMessage.sender_id}`).emit('message:updated', {
         ...requestMessage,
         metadata: updatedMetadata
       });
-      io.to(`user_${approverId}`).emit('message:updated', {
+      io.to(`user:${approverId}`).emit('message:updated', {
         ...requestMessage,
         metadata: updatedMetadata
       });

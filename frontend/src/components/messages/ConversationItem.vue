@@ -5,7 +5,12 @@
     @click="$emit('click')"
   >
     <div class="conversation-header">
-      <h3 class="task-title" :class="{ 'unread': conversation.unread_count > 0 }">{{ conversationTitle }}</h3>
+      <h3 class="task-title" :class="{ 'unread': conversation.unread_count > 0 }">
+        {{ conversationTitle }}
+        <span v-if="hasBookingRequest" class="booking-badge" title="Booking Request">
+          <i class="fas fa-calendar-check"></i>
+        </span>
+      </h3>
       <span class="timestamp">{{ formatTime(conversation.last_message_time) }}</span>
     </div>
 
@@ -87,6 +92,16 @@ const otherUserName = computed(() => {
   }
 
   return 'Unknown User';
+});
+
+// Check if this conversation has a pending booking request
+const hasBookingRequest = computed(() => {
+  // Check if this conversation has pending booking requests
+  if (!props.conversation.item_id) return false;
+
+  // Check last message type
+  return props.conversation.last_message_type === 'booking_request' &&
+         props.conversation.unread_count > 0;
 });
 
 function formatTime(timestamp: string): string {
@@ -226,5 +241,24 @@ function formatTime(timestamp: string): string {
   min-width: 1.25rem;
   text-align: center;
   z-index: 1;
+}
+
+.booking-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  color: white;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(251, 191, 36, 0.3);
+  vertical-align: middle;
+}
+
+.booking-badge i {
+  font-size: 0.75rem;
 }
 </style>

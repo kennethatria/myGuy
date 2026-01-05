@@ -48,6 +48,7 @@ export interface ConversationSummary {
   task_description?: string
   task_status?: string
   last_message: string
+  last_message_type?: string
   last_message_time: string
   other_user_id: number
   other_user_name: string

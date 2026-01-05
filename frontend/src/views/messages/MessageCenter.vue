@@ -19,7 +19,7 @@
         
         <div class="conversations-list">
           <ConversationItem
-            v-for="conversation in chatStore.conversations"
+            v-for="conversation in sortedConversations"
             :key="conversation.task_id || conversation.application_id || conversation.item_id"
             :conversation="conversation"
             :active="chatStore.activeConversation ? ((chatStore.activeConversation.task_id === conversation.task_id) || (chatStore.activeConversation.application_id === conversation.application_id) || (chatStore.activeConversation.item_id === conversation.item_id)) : false"
@@ -56,7 +56,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue';
+import { onMounted, onUnmounted, computed } from 'vue';
+import { useRoute } from 'vue-router';
 import { useChatStore } from '@/stores/chat';
 import ConversationItem from '@/components/messages/ConversationItem.vue';
 import MessageThread from '@/components/messages/MessageThread.vue';
@@ -64,10 +65,48 @@ import DeletionWarningBanner from '@/components/shared/DeletionWarningBanner.vue
 import type { ConversationSummary } from '@/stores/messages';
 
 const chatStore = useChatStore();
+const route = useRoute();
 
-onMounted(() => {
+// Sort conversations to prioritize booking requests
+const sortedConversations = computed(() => {
+  const convs = [...chatStore.conversations];
+
+  return convs.sort((a, b) => {
+    // Priority 1: Booking requests (pending)
+    const aHasBooking = a.item_id && a.last_message_type === 'booking_request' && a.unread_count > 0;
+    const bHasBooking = b.item_id && b.last_message_type === 'booking_request' && b.unread_count > 0;
+
+    if (aHasBooking && !bHasBooking) return -1;
+    if (!aHasBooking && bHasBooking) return 1;
+
+    // Priority 2: Unread messages
+    if (a.unread_count > 0 && b.unread_count === 0) return -1;
+    if (a.unread_count === 0 && b.unread_count > 0) return 1;
+
+    // Priority 3: Most recent
+    return new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime();
+  });
+});
+
+onMounted(async () => {
   chatStore.connectSocket();
   chatStore.loadDeletionWarnings();
+
+  // Handle auto-opening conversations from query parameters
+  const itemId = route.query.itemId as string | undefined;
+  const taskId = route.query.taskId as string | undefined;
+  const conversationId = route.query.conversationId as string | undefined;
+
+  if (itemId) {
+    // Auto-join store conversation
+    await chatStore.joinStoreConversation(parseInt(itemId));
+  } else if (taskId) {
+    // Auto-join task conversation
+    await chatStore.joinConversation(parseInt(taskId));
+  } else if (conversationId) {
+    // Auto-join generic conversation
+    await chatStore.joinConversation(parseInt(conversationId));
+  }
 });
 
 onUnmounted(() => {

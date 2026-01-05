@@ -75,7 +75,85 @@ export const useChatStore = defineStore('chat', () => {
   // Store message methods
   async function joinStoreConversation(itemId: number) {
     if (!socket.value?.connected) await connectSocket();
+
+    // Wait briefly for conversations to load if empty
+    if (conversations.value.length === 0) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    // Try to find existing conversation
+    let conv = conversations.value.find(c => c.item_id === itemId);
+
+    if (!conv) {
+      // Conversation doesn't exist yet, create placeholder
+      try {
+        const response = await fetch(`${config.STORE_API_URL}/items/${itemId}`);
+        if (response.ok) {
+          const item = await response.json();
+
+          conv = {
+            item_id: itemId,
+            item_title: item.title,
+            last_message: '',
+            last_message_time: new Date().toISOString(),
+            other_user_id: item.seller_id,
+            other_user_name: item.seller?.name || item.seller?.username || 'Seller',
+            unread_count: 0,
+            conversation_type: 'store'
+          };
+
+          conversations.value.push(conv);
+        }
+      } catch (error) {
+        console.error('Failed to create conversation placeholder:', error);
+        return; // Exit if we can't create conversation
+      }
+    }
+
+    // Follow same logic as joinConversation
+    const previousConversation = activeConversation.value;
+
+    if (previousConversation && previousConversation.item_id !== itemId) {
+      const prevId = previousConversation.task_id || previousConversation.application_id || previousConversation.item_id;
+      if (previousConversation.item_id) {
+        socket.value?.emit('leave:conversation', { itemId: prevId });
+      }
+    }
+
+    activeConversation.value = conv;
     socket.value?.emit('join:conversation', { itemId });
+
+    // Load messages if not already loaded
+    const hasMessages = storeMessages.value.has(itemId);
+    if (!hasMessages) {
+      isLoadingMessages.value = true;
+      socket.value?.emit('messages:get', { itemId, limit: 20, offset: 0 });
+    }
+
+    // Mark as read
+    if (conv.unread_count > 0) {
+      socket.value?.emit('conversation:read', { itemId });
+    }
+  }
+
+  // Helper for modal: join with retry logic
+  async function joinStoreConversationWithRetry(itemId: number, maxRetries = 5): Promise<boolean> {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const conv = conversations.value.find(c => c.item_id === itemId);
+
+      if (conv) {
+        await joinStoreConversation(itemId);
+        return true;
+      }
+
+      // Wait with exponential backoff: 1s, 2s, 3s, 4s, 5s
+      await new Promise(resolve => setTimeout(resolve, (attempt + 1) * 1000));
+
+      // Refresh conversations list
+      socket.value?.emit('conversations:list');
+    }
+
+    return false; // Failed after all retries
   }
 
   async function sendStoreMessage(content: string, recipientId: number, itemId: number) {
@@ -196,6 +274,7 @@ export const useChatStore = defineStore('chat', () => {
         } else {
           // Update existing conversation
           existingConv.last_message = message.content;
+          existingConv.last_message_type = message.message_type;
           existingConv.last_message_time = message.created_at;
           if (message.sender_id !== authStore.user?.id) {
             existingConv.unread_count = (existingConv.unread_count || 0) + 1;
@@ -229,6 +308,7 @@ export const useChatStore = defineStore('chat', () => {
         } else {
           // Update existing conversation
           existingConv.last_message = message.content;
+          existingConv.last_message_type = message.message_type;
           existingConv.last_message_time = message.created_at;
         }
       } else {
@@ -875,6 +955,7 @@ export const useChatStore = defineStore('chat', () => {
     // Store message methods
     getStoreMessages,
     joinStoreConversation,
+    joinStoreConversationWithRetry,
     sendStoreMessage,
     
     // Actions

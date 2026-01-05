@@ -240,6 +240,18 @@
         />
       </div>
     </div>
+
+    <!-- Booking Confirmation Modal -->
+    <BookingConfirmationModal
+      v-if="item"
+      :is-open="showBookingConfirmationModal"
+      :item-id="item.id"
+      :item-title="item.title"
+      :item-image="item.images?.[0]"
+      :seller-id="item.seller_id"
+      :seller-name="item.seller?.name || item.seller?.username"
+      @close="showBookingConfirmationModal = false"
+    />
   </div>
 </template>
 
@@ -250,6 +262,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useChatStore } from '@/stores/chat';
 import { format } from 'date-fns';
 import ChatWindow from '@/components/ChatWindow.vue';
+import BookingConfirmationModal from '@/components/BookingConfirmationModal.vue';
 import config from '@/config';
 
 const route = useRoute();
@@ -274,6 +287,7 @@ const bookingRequest = ref(null);
 const bookingRequests = ref([]);
 const hasBookingRequest = ref(false);
 const loadingBookingRequest = ref(false);
+const showBookingConfirmationModal = ref(false);
 
 // Message indicators for owners
 const messageCount = ref(0);
@@ -463,8 +477,8 @@ async function sendBookingRequest() {
       bookingRequest.value = request;
       hasBookingRequest.value = true;
 
-      // Redirect to messages page to see the booking request
-      router.push('/messages');
+      // Show confirmation modal instead of redirect
+      showBookingConfirmationModal.value = true;
     } else {
       const error = await response.json();
       alert(error.error || 'Failed to send booking request');

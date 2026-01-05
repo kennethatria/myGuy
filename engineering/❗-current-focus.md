@@ -22,6 +22,7 @@ The following `P1` items are also critical for a successful MVP launch.
 - **Backend Filtering for Store Items:** To prevent performance collapse.
 - **Backend Testing Foundation:** To reduce regression risk.
 - **Transactional Bidding:** To ensure data integrity in auctions.
+- **Seller Name Display Bug:** Users cannot see seller names on store items (field mismatch: `full_name` vs `name`).
 
 For a full breakdown of all `P1`, `P2`, and `P3` items, please refer to the [MVP Roadmap](./01-proposed/ROADMAP-mvp-prioritization.md).
 
@@ -46,3 +47,31 @@ For a full breakdown of all `P1`, `P2`, and `P3` items, please refer to the [MVP
 - **Phase 2 (Before Production):** Standardize naming, consolidate types (~22 errors, 10-15 hours)
 - **Details:** See `01-proposed/TODO-typescript-errors.md`
 - **Root Causes:** Inconsistent snake_case/camelCase, missing null checks, duplicate type definitions
+
+---
+
+## 🎉 P2 Complete: "Book Now" Redirect Context Fix
+
+- **Status:** ✅ **COMPLETED** - January 5, 2026
+- **Problem:** After booking a store item, users redirected to `/messages` with no conversation auto-opened
+- **Solution:** Pass itemId in redirect URL, Message Center now handles query params to auto-open conversations
+- **Impact:** Seamless booking UX - users immediately see their booking conversation with the seller
+- **Details:** See `03-completed/FIXLOG-p2-booking-redirect-context.md`
+- **Related:** Completes the unified booking & messaging flow
+
+---
+
+## 🎉 P2 Complete: Enhanced Booking Request Flow
+
+- **Status:** ✅ **COMPLETED** - January 5, 2026
+- **Problem:** Buyers had no feedback after booking; sellers missed booking requests on individual item pages
+- **Solution:**
+  - Confirmation modal with embedded chat for buyers
+  - Golden badges and priority sorting for sellers in /messages
+  - Retry logic for async booking notifications
+  - Fixed WebSocket room name bug
+- **Impact:**
+  - Buyers: Immediate confirmation, ability to message with booking
+  - Sellers: Centralized booking view, no missed requests
+- **Details:** See `03-completed/FIXLOG-enhanced-booking-flow.md`
+- **Related:** Builds on P2 "Unified Booking & Messaging Flow"

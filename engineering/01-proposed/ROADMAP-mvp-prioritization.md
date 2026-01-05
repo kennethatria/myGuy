@@ -75,6 +75,19 @@ The items are sourced from the `TODO` and `ROADMAP` documents in this directory.
 -   **Action:** Review the backend bidding logic and ensure the read-validate-write process is wrapped in a database transaction.
 -   **Source:** `ROADMAP-store-service-improvements.md`
 
+### 4. Fix Seller Name Display and Profile Link
+-   **Problem:** Seller name not displayed on store item pages; shows empty space. Frontend attempts to access `item.seller.full_name` but Store Service API returns `name` field.
+-   **Impact:** Users cannot see who they're buying from - critical trust and transparency issue for marketplace. Generic "View Profile" link provides no context about whose profile they're viewing.
+-   **Root Cause:** Field name mismatch between Store Service API (`name`) and Frontend code (`full_name`). Three occurrences in `StoreItemView.vue:54, :585, :604`.
+-   **Secondary Issue:** Possible wrong profile display due to data seeding inconsistencies between Backend and Store Service user IDs.
+-   **Action:**
+    1. Update `StoreItemView.vue` to use `item.seller.name` instead of `item.seller.full_name` (add fallback to `username` if name is missing)
+    2. Verify and re-seed database ensuring Store Items are created by users with matching IDs in both services
+    3. Consider enhancing link label to "View [Name]'s Profile" for clarity
+-   **Source:** [INVESTIGATION-view-seller-link.md](./INVESTIGATION-view-seller-link.md)
+-   **Status:** 📋 Tracked, not started
+-   **Effort:** Low (simple field name change + data verification)
+
 ---
 
 ## P2: Recommended Before Launch
@@ -120,6 +133,38 @@ The items are sourced from the `TODO` and `ROADMAP` documents in this directory.
 -   **Source:** [TODO-typescript-errors.md](./TODO-typescript-errors.md)
 -   **Root Causes:** Inconsistent snake_case/camelCase, missing null checks, duplicate type definitions, missing type annotations
 -   **Status:** 📋 Tracked, not started
+
+### 4. Fix "Book Now" Redirect Context Loss ✅ **COMPLETED**
+-   **Problem:** After clicking "Book Now" on a store item, users are redirected to `/messages` without any context. The Message Center doesn't know which conversation to open, forcing users to manually search for the newly created booking conversation.
+-   **Impact:** Poor booking UX - buyers complete the booking action but land on an empty messages page with no indication of what happened. This undermines the unified booking flow completed in P2.
+-   **Root Cause:**
+    -   `StoreItemView.vue:467` performs a "fire-and-forget" redirect: `router.push('/messages')` with no query parameters
+    -   `MessageCenter.vue` has no logic to handle incoming intents (query params like `?conversationId=123` or `?itemId=789`)
+-   **Action:**
+    1. Modify `StoreItemView.vue` to pass context when redirecting (e.g., `router.push({ path: '/messages', query: { itemId: item.value.id } })`)
+    2. Update `MessageCenter.vue` to read query parameters in `onMounted` and auto-open the relevant conversation via `chatStore.joinStoreConversation(itemId)`
+-   **Source:** [INVESTIGATION-message-seller-functionality.md](./INVESTIGATION-message-seller-functionality.md)
+-   **Status:** ✅ **COMPLETED** - January 5, 2026
+-   **Details:** See `../03-completed/FIXLOG-p2-booking-redirect-context.md`
+-   **Related:** Complements P2 "Unified Booking & Messaging Flow" (completed Jan 4, 2026)
+
+### 5. Enhanced Booking Request Flow ✅ **COMPLETED**
+-   **Problem:** Buyers don't get immediate feedback after booking. Sellers must check individual item pages to see booking requests.
+-   **Impact:** Poor UX - buyers unsure if booking worked, sellers miss booking requests, lost sales opportunities.
+-   **Solution:**
+    1. Show confirmation modal with messaging after "Book Now"
+    2. Add visual badges and sort booking requests to top in /messages
+    3. Fix async race conditions in conversation joining
+    4. Fix backend room name bug preventing seller notifications
+-   **Features Implemented:**
+    - Booking confirmation modal with embedded chat
+    - Retry logic for handling async booking notifications
+    - Golden calendar badges for booking conversations
+    - 3-tier priority sorting (bookings → unread → recent)
+    - Fixed WebSocket room name mismatch bug
+-   **Status:** ✅ **COMPLETED** - January 5, 2026
+-   **Details:** See `../03-completed/FIXLOG-enhanced-booking-flow.md`
+-   **Related:** Builds on P2 "Unified Booking & Messaging Flow"
 
 ---
 
