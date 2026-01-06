@@ -137,7 +137,8 @@ function getImageUrl(imagePath: string): string {
   if (imagePath.startsWith('http')) {
     return imagePath;
   }
-  return `${config.STORE_API_URL}${imagePath}`;
+  // Use STORE_API_BASE_URL (without /api/v1) since uploads are served at root level
+  return `${config.STORE_API_BASE_URL}${imagePath}`;
 }
 
 async function handleApprove() {
@@ -173,12 +174,12 @@ function formatTime(timestamp: string): string {
 
 <style scoped>
 .booking-message {
-  margin: 1rem 0;
-  padding: 1rem;
+  margin: 0.5rem 0;
+  padding: 0.75rem;
   background: #f0f9ff;
-  border-left: 4px solid #0284c7;
-  border-radius: 0.5rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  border-left: 3px solid #0284c7;
+  border-radius: 0.375rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
 }
 
 .message-type-booking_approved {
@@ -192,9 +193,9 @@ function formatTime(timestamp: string): string {
 }
 
 .booking-icon {
-  font-size: 1.5rem;
+  font-size: 1.125rem;
   color: #0284c7;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 
 .message-type-booking_approved .booking-icon {
@@ -208,27 +209,27 @@ function formatTime(timestamp: string): string {
 .booking-content {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .booking-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
 }
 
 .booking-header h4 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: #111827;
 }
 
 .status-badge {
-  padding: 0.25rem 0.75rem;
+  padding: 0.125rem 0.5rem;
   border-radius: 9999px;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 600;
 }
 
@@ -249,17 +250,17 @@ function formatTime(timestamp: string): string {
 
 .item-details {
   display: flex;
-  gap: 1rem;
-  padding: 0.75rem;
+  gap: 0.625rem;
+  padding: 0.5rem;
   background: white;
-  border-radius: 0.375rem;
+  border-radius: 0.25rem;
 }
 
 .item-thumbnail {
-  width: 64px;
-  height: 64px;
+  width: 48px;
+  height: 48px;
   object-fit: cover;
-  border-radius: 0.375rem;
+  border-radius: 0.25rem;
   flex-shrink: 0;
 }
 
@@ -269,37 +270,37 @@ function formatTime(timestamp: string): string {
 }
 
 .item-title {
-  margin: 0 0 0.25rem 0;
+  margin: 0 0 0.125rem 0;
   font-weight: 600;
   color: #111827;
-  font-size: 0.9375rem;
+  font-size: 0.8125rem;
 }
 
 .requester {
   margin: 0;
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   color: #6b7280;
 }
 
 .booking-actions {
   display: flex;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
 }
 
 .booking-actions button {
   flex: 1;
-  padding: 0.625rem 1rem;
+  padding: 0.5rem 0.75rem;
   border: none;
-  border-radius: 0.375rem;
+  border-radius: 0.25rem;
   font-weight: 600;
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   cursor: pointer;
   transition: all 0.15s;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0.375rem;
 }
 
 .booking-actions button:disabled {
@@ -326,16 +327,16 @@ function formatTime(timestamp: string): string {
 }
 
 .booking-status {
-  margin-top: 0.5rem;
+  margin-top: 0.25rem;
 }
 
 .booking-status p {
   margin: 0;
-  padding: 0.625rem;
-  border-radius: 0.375rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.25rem;
   text-align: center;
   font-weight: 600;
-  font-size: 0.875rem;
+  font-size: 0.75rem;
 }
 
 .booking-status .approved {
@@ -354,34 +355,34 @@ function formatTime(timestamp: string): string {
 }
 
 .booking-status-update {
-  padding: 0.5rem;
+  padding: 0.25rem;
 }
 
 .booking-status-update p {
   margin: 0;
-  font-size: 0.9375rem;
+  font-size: 0.8125rem;
   color: #111827;
   font-weight: 500;
 }
 
 .timestamp {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: #9ca3af;
   text-align: right;
   display: block;
-  margin-top: 0.5rem;
+  margin-top: 0.25rem;
 }
 
 /* Mobile Responsive */
 @media (max-width: 768px) {
   .booking-message {
-    margin: 0.75rem 0;
-    padding: 0.875rem;
+    margin: 0.5rem 0;
+    padding: 0.625rem;
   }
 
   .item-thumbnail {
-    width: 56px;
-    height: 56px;
+    width: 40px;
+    height: 40px;
   }
 
   .booking-actions {

@@ -202,7 +202,12 @@ VITE_CHAT_API_URL=http://localhost:8082/api/v1
 VITE_CHAT_WS_URL=http://localhost:8082
 ```
 
-**CRITICAL:** `JWT_SECRET` must be identical across all services. `INTERNAL_API_KEY` must match between chat and store services for inter-service communication.
+**CRITICAL:**
+- `JWT_SECRET` must be identical across all services for authentication to work
+- `INTERNAL_API_KEY` must match between chat and store services for inter-service communication
+  - **Required for booking notifications**: Without this, booking requests won't appear in Messages
+  - Store service uses this to notify chat service when bookings are created
+  - Chat service validates this key before creating notification messages
 
 ---
 

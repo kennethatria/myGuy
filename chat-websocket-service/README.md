@@ -14,6 +14,7 @@ This real-time messaging microservice for the MyGuy platform handles WebSocket c
 8.  [REST API](#8-rest-api)
 9.  [Message Lifecycle](#9-message-lifecycle)
 10. [Security & Filtering](#10-security--filtering)
+11. [Troubleshooting & Common Issues](#11-troubleshooting--common-issues)
 
 ---
 
@@ -157,3 +158,79 @@ Authentication is performed by passing a JWT in the `auth.token` field upon conn
     -   Social media handles (`@username`)
     The original, unfiltered content is stored separately for auditing but is never exposed to clients.
 -   **Input Validation**: Message length and payload structure are validated.
+
+## 11. Troubleshooting & Common Issues
+
+### Service Won't Start
+
+**Symptom**: Service crashes immediately after migrations complete, or Docker container shows `Exited` status.
+
+**Common Causes**:
+
+1. **Module Import Errors**
+   - **Issue**: Incorrect import paths (e.g., `require('../db')` instead of `require('../config/database')`)
+   - **Fix**: Verify all imports point to existing modules with correct relative paths
+   - **Note**: Node 18+ has built-in `fetch` - don't import `node-fetch`
+
+2. **Middleware Export Mismatches**
+   - **Issue**: Importing non-existent exports (e.g., `authenticateJWT` vs `authenticateHTTP`)
+   - **Fix**: Check `src/middleware/auth.js` exports: `authenticateHTTP`, `authenticateSocket`, `verifyToken`
+
+3. **Docker Build Cache**
+   - **Issue**: Code changes not reflected in running container
+   - **Fix**: Always rebuild after code changes: `docker-compose up -d --build chat-websocket-service`
+
+**Debugging Steps**:
+```bash
+# Check service status
+docker-compose ps chat-websocket-service
+
+# View detailed logs
+docker-compose logs chat-websocket-service
+
+# Rebuild and restart
+docker-compose up -d --build chat-websocket-service
+```
+
+### Frontend Connection Errors
+
+**Symptom**: Browser console shows repeated WebSocket connection failures:
+```
+Chat connection attempt [N] failed: websocket error
+⚠️ Chat service unavailable after multiple connection attempts
+```
+
+**Causes & Solutions**:
+
+1. **Service Not Running**: Check `docker-compose ps` - ensure chat-websocket-service is `Up`
+2. **Wrong WebSocket URL**: Verify `VITE_CHAT_WS_URL=http://localhost:8082` in frontend `.env`
+3. **Invalid JWT Token**: Check browser localStorage for valid token, re-login if needed
+4. **CORS Issues**: Ensure `CLIENT_URL` environment variable matches frontend URL
+
+### Messages Not Saving
+
+**Symptom**: Messages appear in UI but don't persist after refresh.
+
+**Debugging**:
+```bash
+# Check database connection
+docker-compose exec postgres-db psql -U postgres -d my_guy_chat -c "SELECT COUNT(*) FROM messages;"
+
+# View recent messages
+docker-compose exec postgres-db psql -U postgres -d my_guy_chat -c "SELECT id, content, created_at FROM messages ORDER BY created_at DESC LIMIT 10;"
+```
+
+**Common Fixes**:
+- Verify `DATABASE_URL` points to `my_guy_chat` database
+- Check migration status: `npm run migrate`
+- Review service logs for database errors
+
+### For More Details
+
+See engineering documentation:
+- **Architecture**: [../engineering/02-reference/ARCH-chat-service-architecture.md](../engineering/02-reference/ARCH-chat-service-architecture.md)
+- **Recent Fixes**: [../engineering/03-completed/FIXLOG-chat-service-startup-failure.md](../engineering/03-completed/FIXLOG-chat-service-startup-failure.md)
+
+---
+
+**Last Updated**: January 5, 2026

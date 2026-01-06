@@ -40,8 +40,7 @@ func NotifyChatServiceAboutBooking(booking *models.BookingRequest, item *models.
 	// Get first image if available
 	var itemImage string
 	if len(item.Images) > 0 {
-		itemImage = item.Images[0]
-	}
+		        itemImage = item.Images[0].URL	}
 
 	payload := ChatNotificationPayload{
 		BookingID:  booking.ID,

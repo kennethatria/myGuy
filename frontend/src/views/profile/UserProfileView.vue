@@ -133,15 +133,9 @@ const formatDate = (dateString: string | null | undefined): string => {
 const loadUserData = async () => {
   loading.value = true
   error.value = ''
-  
+
   try {
-    // Check if viewing own profile and redirect
-    if (authStore.user && authStore.user.id === userId.value) {
-      router.replace('/profile')
-      return
-    }
-    
-    // Fetch user data
+    // Fetch user data (allow viewing own profile in public view)
     const userData = await usersStore.getUserById(userId.value)
     if (!userData) {
       throw new Error('User not found')

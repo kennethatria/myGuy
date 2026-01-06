@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bookingMessageService = require('../services/bookingMessageService');
-const { authenticateJWT } = require('../middleware/auth');
-const fetch = require('node-fetch');
+const { authenticateHTTP } = require('../middleware/auth');
 
 /**
  * Internal endpoint for store-service to notify chat about booking requests
@@ -49,7 +48,7 @@ router.post('/internal/booking-created', async (req, res) => {
  * Endpoint for handling booking actions from chat UI
  * User clicks approve/decline in the chat interface
  */
-router.post('/booking-action', authenticateJWT, async (req, res) => {
+router.post('/booking-action', authenticateHTTP, async (req, res) => {
   try {
     const { bookingId, action } = req.body; // action: 'approve' or 'decline'
     const userId = req.user.id;

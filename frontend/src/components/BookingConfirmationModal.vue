@@ -46,7 +46,7 @@
 
           <!-- Chat Section -->
           <div v-else-if="conversationReady" class="chat-section">
-            <h4>Send a message (optional)</h4>
+            <h4>Send a message to {{ sellerName }} (optional)</h4>
 
             <!-- Messages Preview -->
             <div v-if="messages.length > 0" class="messages-preview">
@@ -59,6 +59,12 @@
                 <div class="message-sender">{{ message.sender?.username || 'Unknown' }}</div>
                 <div class="message-content">{{ message.content }}</div>
               </div>
+            </div>
+
+            <!-- Empty state message -->
+            <div v-else class="no-messages-hint">
+              <i class="fas fa-comments"></i>
+              <p>Start the conversation! Ask about pickup details, condition, or anything else.</p>
             </div>
 
             <!-- Message Input -->
@@ -109,7 +115,7 @@ interface Props {
   isOpen: boolean;
   itemId: number;
   itemTitle: string;
-  itemImage?: string | null;
+  itemImage?: string | object | null;
   sellerId: number;
   sellerName: string;
 }
@@ -136,11 +142,31 @@ const currentUserId = computed(() => authStore.user?.id);
 
 const itemImageUrl = computed(() => {
   if (!props.itemImage) return '';
-  // Handle both full URLs and relative paths
-  if (props.itemImage.startsWith('http')) {
-    return props.itemImage;
+
+  // Handle object with url property (e.g., { url: '/uploads/...' })
+  if (typeof props.itemImage === 'object' && props.itemImage !== null) {
+    const imageObj = props.itemImage as any;
+    const url = imageObj.url || imageObj.path || '';
+    if (!url) return '';
+
+    // Check if it's a full URL
+    if (url.startsWith('http')) {
+      return url;
+    }
+    // Use STORE_API_BASE_URL (without /api/v1) for image paths
+    return `${config.STORE_API_BASE_URL}${url}`;
   }
-  return `${config.STORE_API_URL}${props.itemImage}`;
+
+  // Handle string (legacy format)
+  if (typeof props.itemImage === 'string') {
+    if (props.itemImage.startsWith('http')) {
+      return props.itemImage;
+    }
+    // Use STORE_API_BASE_URL (without /api/v1) for image paths
+    return `${config.STORE_API_BASE_URL}${props.itemImage}`;
+  }
+
+  return '';
 });
 
 // Methods
@@ -149,19 +175,32 @@ async function loadConversation() {
   error.value = null;
 
   try {
-    // Try to join conversation with retry logic
-    const success = await chatStore.joinStoreConversationWithRetry(props.itemId, 5);
+    // Try to join conversation (best effort - don't fail if it doesn't exist yet)
+    await chatStore.joinStoreConversationWithRetry(props.itemId, 2).catch(() => {
+      // Ignore errors - conversation might not exist yet, which is fine
+      console.log('No existing conversation found - user can still send messages');
+    });
 
-    if (success) {
-      // Load messages from store
-      messages.value = chatStore.getStoreMessages(props.itemId);
-      conversationReady.value = true;
-    } else {
-      error.value = 'Could not load conversation. The seller may not have received your request yet.';
-    }
+    // Try to load any existing messages (optional - won't fail if none exist)
+    const allMessages = chatStore.getStoreMessages(props.itemId);
+
+    // Only show messages between current user and seller (privacy filter)
+    messages.value = allMessages.filter(msg => {
+      const isFromCurrentUser = msg.sender_id === currentUserId.value;
+      const isToCurrentUser = msg.recipient_id === currentUserId.value;
+      const isFromSeller = msg.sender_id === props.sellerId;
+      const isToSeller = msg.recipient_id === props.sellerId;
+
+      // Include message if it's between current user and seller
+      return (isFromCurrentUser && isToSeller) || (isFromSeller && isToCurrentUser);
+    });
+
+    // Always set conversation as ready - user can send messages even if no history exists
+    conversationReady.value = true;
   } catch (err) {
-    console.error('Error loading conversation:', err);
-    error.value = 'Failed to load conversation. Please try again.';
+    console.error('Error loading messages:', err);
+    // Don't set error - still allow user to send messages
+    conversationReady.value = true;
   } finally {
     loading.value = false;
   }
@@ -186,8 +225,16 @@ async function sendMessage() {
     // Clear input after sending
     messageText.value = '';
 
-    // Refresh messages
-    messages.value = chatStore.getStoreMessages(props.itemId);
+    // Refresh messages with privacy filter
+    const allMessages = chatStore.getStoreMessages(props.itemId);
+    messages.value = allMessages.filter(msg => {
+      const isFromCurrentUser = msg.sender_id === currentUserId.value;
+      const isToCurrentUser = msg.recipient_id === currentUserId.value;
+      const isFromSeller = msg.sender_id === props.sellerId;
+      const isToSeller = msg.recipient_id === props.sellerId;
+
+      return (isFromCurrentUser && isToSeller) || (isFromSeller && isToCurrentUser);
+    });
   } catch (err) {
     console.error('Error sending message:', err);
     alert('Failed to send message. Please try again.');
@@ -390,6 +437,28 @@ watch(() => props.isOpen, (newValue) => {
   font-size: 1rem;
   font-weight: 600;
   color: #374151;
+}
+
+.no-messages-hint {
+  text-align: center;
+  padding: 2rem 1rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.no-messages-hint i {
+  font-size: 2rem;
+  color: #9ca3af;
+  margin-bottom: 0.5rem;
+}
+
+.no-messages-hint p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
 .messages-preview {

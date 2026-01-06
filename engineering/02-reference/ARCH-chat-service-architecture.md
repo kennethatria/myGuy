@@ -679,7 +679,22 @@ Make sure each service uses correct database:
 
 ---
 
+## Recent Updates
+
+### January 5, 2026: Service Startup Issues Resolved
+
+Fixed three critical module import failures that prevented the chat service from starting. See [FIXLOG-chat-service-startup-failure.md](../03-completed/FIXLOG-chat-service-startup-failure.md) for details:
+
+1. **Database import path**: Updated `bookingMessageService.js` to use correct path (`../config/database`)
+2. **node-fetch removal**: Removed unnecessary import (fetch is built-in to Node 18+)
+3. **Auth middleware name**: Fixed `authenticateJWT` → `authenticateHTTP` in `bookingNotifications.js`
+
+**Impact**: Chat service now starts successfully, restoring real-time messaging and booking notifications.
+
+---
+
 **Document Created:** January 2, 2026
+**Last Updated:** January 5, 2026
 **Architecture Pattern:** Microservices with Frontend Integration Layer
 **Authentication:** Shared JWT Secret (Decentralized)
 **Communication:** HTTP REST + WebSocket (Socket.IO)

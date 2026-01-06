@@ -3,14 +3,13 @@
     <!-- Thread Header -->
     <div class="thread-header">
       <div class="header-info">
-        <h2>{{ conversation.task_title }}</h2>
-        <p>{{ conversation.task_description }}</p>
+        <h2>{{ conversationTitle }}</h2>
+        <p v-if="conversationDescription">{{ conversationDescription }}</p>
       </div>
       <div class="header-meta">
-        <span class="task-status" :class="`status-${conversation.task_status}`">
+        <span v-if="conversation.task_status" class="task-status" :class="`status-${conversation.task_status}`">
           {{ conversation.task_status }}
         </span>
-        <span class="other-user">{{ conversation.other_user_name }}</span>
       </div>
     </div>
     
@@ -102,6 +101,29 @@ const messagesContainer = ref<HTMLElement>();
 const messageText = ref('');
 const isTyping = ref(false);
 const typingTimeout = ref<NodeJS.Timeout>();
+
+// Computed properties for conversation display
+const conversationTitle = computed(() => {
+  // Priority order: task > application > item
+  if (props.conversation.task_title) {
+    return props.conversation.task_title;
+  }
+  if (props.conversation.application_title) {
+    return props.conversation.application_title;
+  }
+  if (props.conversation.item_title) {
+    return props.conversation.item_title;
+  }
+  return 'Conversation';
+});
+
+const conversationDescription = computed(() => {
+  // Only show description for tasks
+  if (props.conversation.task_description) {
+    return props.conversation.task_description;
+  }
+  return '';
+});
 
 const typingText = computed(() => {
   if (props.typingUsers.length === 0) return '';

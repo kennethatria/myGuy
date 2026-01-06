@@ -53,8 +53,8 @@
             <div class="seller-details">
               <span class="seller-name">{{ item.seller.full_name }}</span>
               <div class="seller-actions">
-                <router-link 
-                  :to="{ name: 'user-profile', params: { id: item.seller.id } }"
+                <router-link
+                  :to="{ name: 'user-profile', params: { id: String(item.seller.id) } }"
                   class="view-profile"
                 >
                   View Profile
@@ -291,6 +291,7 @@ const showBookingConfirmationModal = ref(false);
 
 // Message indicators for owners
 const messageCount = ref(0);
+const hasUnreadMessages = ref(false);
 
 const userId = computed(() => authStore.user?.id);
 const itemId = computed(() => route.params.id);

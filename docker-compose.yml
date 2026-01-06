@@ -31,6 +31,9 @@ services:
       - JWT_SECRET=your-secret-key-here
       # Separate store database
       - DB_CONNECTION=host=postgres-db user=postgres password=mysecretpassword dbname=my_guy_store port=5432 sslmode=disable
+      # Chat service integration for booking notifications
+      - CHAT_API_URL=http://chat-websocket-service:8082/api/v1
+      - INTERNAL_API_KEY=your-internal-api-key-change-in-production
     volumes:
       - store-uploads:/app/uploads
     depends_on:
@@ -56,6 +59,8 @@ services:
       # API URLs for cross-service validation
       - MAIN_API_URL=http://api:8080/api/v1
       - STORE_API_URL=http://store-service:8081/api/v1
+      # Internal API key for secure inter-service communication
+      - INTERNAL_API_KEY=your-internal-api-key-change-in-production
     depends_on:
       postgres-db:
         condition: service_healthy
