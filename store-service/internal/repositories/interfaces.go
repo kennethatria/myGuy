@@ -39,6 +39,8 @@ type BookingRequestRepository interface {
 	Delete(id uint) error
 	UpdateChatNotificationStatus(bookingID uint, notified bool, attempts int) error
 	IncrementNotificationAttempts(bookingID uint) error
+	UpdateBuyerRating(id uint, rating int, review string) error
+	UpdateSellerRating(id uint, rating int, review string) error
 }
 
 type UserRepository interface {
@@ -48,4 +50,5 @@ type UserRepository interface {
 	GetByUsername(username string) (*models.User, error)
 	Update(user *models.User) error
 	UpsertFromJWT(userID uint, username, email, name string) (*models.User, error)
+	UpdateRating(userID uint, newRating float64) error
 }

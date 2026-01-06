@@ -81,3 +81,24 @@ func (r *userRepository) UpsertFromJWT(userID uint, username, email, name string
 
 	return &existingUser, nil
 }
+
+func (r *userRepository) UpdateRating(userID uint, newRating float64) error {
+	// Get current user
+	user, err := r.GetByID(userID)
+	if err != nil {
+		return err
+	}
+
+	// Calculate new average rating
+	totalRatings := float64(user.RatingCount) * user.Rating
+	newCount := user.RatingCount + 1
+	newAverage := (totalRatings + newRating) / float64(newCount)
+
+	// Update user with new rating
+	return r.db.Model(&models.User{}).
+		Where("id = ?", userID).
+		Updates(map[string]interface{}{
+			"rating":       newAverage,
+			"rating_count": newCount,
+		}).Error
+}

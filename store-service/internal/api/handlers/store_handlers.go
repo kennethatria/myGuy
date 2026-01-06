@@ -564,7 +564,7 @@ func (h *StoreHandler) RejectBookingRequest(c *gin.Context) {
 // GetUserBookingRequests retrieves all booking requests by a user
 func (h *StoreHandler) GetUserBookingRequests(c *gin.Context) {
 	userID := c.GetUint("userID")
-	
+
 	requests, err := h.service.GetUserBookingRequests(userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve booking requests"})
@@ -572,4 +572,144 @@ func (h *StoreHandler) GetUserBookingRequests(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, requests)
+}
+
+// ConfirmItemReceived allows buyer to confirm they received the item
+func (h *StoreHandler) ConfirmItemReceived(c *gin.Context) {
+	userID := c.GetUint("userID")
+
+	requestIDStr := c.Param("requestId")
+	requestID, err := strconv.Atoi(requestIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request ID"})
+		return
+	}
+
+	err = h.service.ConfirmItemReceived(uint(requestID), userID)
+	if err != nil {
+		if err.Error() == "booking request not found" {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "only the buyer can confirm receipt" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "booking must be approved before confirming receipt" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to confirm item received"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "item receipt confirmed"})
+}
+
+// ConfirmDelivery allows seller to confirm delivery is complete
+func (h *StoreHandler) ConfirmDelivery(c *gin.Context) {
+	userID := c.GetUint("userID")
+
+	requestIDStr := c.Param("requestId")
+	requestID, err := strconv.Atoi(requestIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request ID"})
+		return
+	}
+
+	err = h.service.ConfirmDelivery(uint(requestID), userID)
+	if err != nil {
+		if err.Error() == "booking request not found" {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "only the seller can confirm delivery" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "buyer must confirm receipt before seller can confirm delivery" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to confirm delivery"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "delivery confirmed"})
+}
+
+// SubmitBuyerRating allows buyer to rate the seller
+func (h *StoreHandler) SubmitBuyerRating(c *gin.Context) {
+	userID := c.GetUint("userID")
+
+	requestIDStr := c.Param("requestId")
+	requestID, err := strconv.Atoi(requestIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request ID"})
+		return
+	}
+
+	var req models.SubmitRatingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = h.service.SubmitBuyerRating(uint(requestID), userID, req.Rating, req.Review)
+	if err != nil {
+		if err.Error() == "booking request not found" {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "only the buyer can rate the seller" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "booking must be completed before rating" || err.Error() == "buyer has already rated this transaction" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to submit rating"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "rating submitted successfully"})
+}
+
+// SubmitSellerRating allows seller to rate the buyer
+func (h *StoreHandler) SubmitSellerRating(c *gin.Context) {
+	userID := c.GetUint("userID")
+
+	requestIDStr := c.Param("requestId")
+	requestID, err := strconv.Atoi(requestIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request ID"})
+		return
+	}
+
+	var req models.SubmitRatingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = h.service.SubmitSellerRating(uint(requestID), userID, req.Rating, req.Review)
+	if err != nil {
+		if err.Error() == "booking request not found" {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "only the seller can rate the buyer" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "booking must be completed before rating" || err.Error() == "seller has already rated this transaction" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to submit rating"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "rating submitted successfully"})
 }

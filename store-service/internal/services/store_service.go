@@ -12,13 +12,15 @@ type StoreService struct {
 	itemRepo        repositories.StoreItemRepository
 	bidRepo         repositories.BidRepository
 	bookingRepo     repositories.BookingRequestRepository
+	userRepo        repositories.UserRepository
 }
 
-func NewStoreService(itemRepo repositories.StoreItemRepository, bidRepo repositories.BidRepository, bookingRepo repositories.BookingRequestRepository) *StoreService {
+func NewStoreService(itemRepo repositories.StoreItemRepository, bidRepo repositories.BidRepository, bookingRepo repositories.BookingRequestRepository, userRepo repositories.UserRepository) *StoreService {
 	return &StoreService{
 		itemRepo:    itemRepo,
 		bidRepo:     bidRepo,
 		bookingRepo: bookingRepo,
+		userRepo:    userRepo,
 	}
 }
 
@@ -421,6 +423,142 @@ func (s *StoreService) RejectBookingRequest(requestID uint, ownerID uint) error 
 
 func (s *StoreService) GetUserBookingRequests(userID uint) ([]models.BookingRequest, error) {
 	return s.bookingRepo.GetByRequesterID(userID)
+}
+
+func (s *StoreService) ConfirmItemReceived(requestID uint, buyerID uint) error {
+	request, err := s.bookingRepo.GetByID(requestID)
+	if err != nil {
+		return err
+	}
+	if request == nil {
+		return errors.New("booking request not found")
+	}
+
+	// Only the requester (buyer) can confirm receipt
+	if request.RequesterID != buyerID {
+		return errors.New("only the buyer can confirm receipt")
+	}
+
+	// Must be in approved status
+	if request.Status != "approved" {
+		return errors.New("booking must be approved before confirming receipt")
+	}
+
+	return s.bookingRepo.UpdateStatus(requestID, "item_received")
+}
+
+func (s *StoreService) ConfirmDelivery(requestID uint, sellerID uint) error {
+	request, err := s.bookingRepo.GetByID(requestID)
+	if err != nil {
+		return err
+	}
+	if request == nil {
+		return errors.New("booking request not found")
+	}
+
+	// Get item to verify seller
+	item, err := s.itemRepo.GetByID(request.ItemID)
+	if err != nil {
+		return err
+	}
+
+	// Only the item owner (seller) can confirm delivery
+	if item.SellerID != sellerID {
+		return errors.New("only the seller can confirm delivery")
+	}
+
+	// Must be in item_received status
+	if request.Status != "item_received" {
+		return errors.New("buyer must confirm receipt before seller can confirm delivery")
+	}
+
+	return s.bookingRepo.UpdateStatus(requestID, "completed")
+}
+
+func (s *StoreService) SubmitBuyerRating(requestID uint, buyerID uint, rating int, review string) error {
+	request, err := s.bookingRepo.GetByID(requestID)
+	if err != nil {
+		return err
+	}
+	if request == nil {
+		return errors.New("booking request not found")
+	}
+
+	// Only the requester (buyer) can submit this rating
+	if request.RequesterID != buyerID {
+		return errors.New("only the buyer can rate the seller")
+	}
+
+	// Must be in completed status
+	if request.Status != "completed" {
+		return errors.New("booking must be completed before rating")
+	}
+
+	// Check if already rated
+	if request.BuyerRating != nil {
+		return errors.New("buyer has already rated this transaction")
+	}
+
+	// Update booking with rating
+	err = s.bookingRepo.UpdateBuyerRating(requestID, rating, review)
+	if err != nil {
+		return err
+	}
+
+	// Update seller's overall rating
+	if request.Item != nil {
+		err = s.userRepo.UpdateRating(request.Item.SellerID, float64(rating))
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *StoreService) SubmitSellerRating(requestID uint, sellerID uint, rating int, review string) error {
+	request, err := s.bookingRepo.GetByID(requestID)
+	if err != nil {
+		return err
+	}
+	if request == nil {
+		return errors.New("booking request not found")
+	}
+
+	// Get item to verify seller
+	item, err := s.itemRepo.GetByID(request.ItemID)
+	if err != nil {
+		return err
+	}
+
+	// Only the item owner (seller) can submit this rating
+	if item.SellerID != sellerID {
+		return errors.New("only the seller can rate the buyer")
+	}
+
+	// Must be in completed status
+	if request.Status != "completed" {
+		return errors.New("booking must be completed before rating")
+	}
+
+	// Check if already rated
+	if request.SellerRating != nil {
+		return errors.New("seller has already rated this transaction")
+	}
+
+	// Update booking with rating
+	err = s.bookingRepo.UpdateSellerRating(requestID, rating, review)
+	if err != nil {
+		return err
+	}
+
+	// Update buyer's overall rating
+	err = s.userRepo.UpdateRating(request.RequesterID, float64(rating))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Helper function to format price

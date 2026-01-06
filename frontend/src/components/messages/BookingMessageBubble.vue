@@ -27,7 +27,12 @@
           </div>
         </div>
 
-        <!-- Action Buttons (only show for seller if pending) -->
+        <!-- Display the user's message -->
+        <div v-if="message.content" class="booking-message-text">
+          <p>{{ message.content }}</p>
+        </div>
+
+        <!-- Action Buttons for Seller: Approve/Decline (pending status) -->
         <div
           v-if="!isOwnMessage && message.metadata?.status === 'pending'"
           class="booking-actions"
@@ -48,19 +53,138 @@
           </button>
         </div>
 
-        <!-- Status Message (if already decided) -->
-        <div v-else-if="message.metadata?.status !== 'pending'" class="booking-status">
-          <p v-if="message.metadata?.status === 'approved'" class="approved">
-            ✅ Booking approved
+        <!-- Action Button for Buyer: Confirm Receipt (approved status) -->
+        <div
+          v-else-if="isOwnMessage && message.metadata?.status === 'approved'"
+          class="booking-actions"
+        >
+          <button
+            @click="handleConfirmReceived"
+            class="btn-confirm-received"
+            :disabled="isProcessing"
+          >
+            <i class="fas fa-box-check"></i> I Received Item
+          </button>
+        </div>
+
+        <!-- Action Button for Seller: Confirm Delivery (item_received status) -->
+        <div
+          v-else-if="!isOwnMessage && message.metadata?.status === 'item_received'"
+          class="booking-actions"
+        >
+          <button
+            @click="handleConfirmDelivery"
+            class="btn-confirm-delivery"
+            :disabled="isProcessing"
+          >
+            <i class="fas fa-check-circle"></i> Confirm Delivery
+          </button>
+        </div>
+
+        <!-- Status Messages -->
+        <div v-else class="booking-status">
+          <!-- Pending: Waiting for seller -->
+          <p v-if="message.metadata?.status === 'pending' && isOwnMessage" class="pending">
+            ⏳ Waiting for seller response...
           </p>
-          <p v-else class="declined">
+
+          <!-- Approved: Waiting for buyer to receive -->
+          <p v-else-if="message.metadata?.status === 'approved' && !isOwnMessage" class="approved">
+            ✅ Booking approved - Waiting for buyer to confirm receipt
+          </p>
+
+          <!-- Item Received: Waiting for seller confirmation -->
+          <p v-else-if="message.metadata?.status === 'item_received' && isOwnMessage" class="item-received">
+            📦 Item received - Waiting for seller to confirm delivery
+          </p>
+
+          <!-- Completed -->
+          <p v-else-if="message.metadata?.status === 'completed'" class="completed">
+            ✅ Transaction completed!
+          </p>
+
+          <!-- Declined -->
+          <p v-else-if="message.metadata?.status === 'rejected'" class="declined">
             ❌ Booking declined
           </p>
         </div>
 
-        <!-- Pending status for sender -->
-        <div v-else-if="isOwnMessage" class="booking-status">
-          <p class="pending">⏳ Waiting for seller response...</p>
+        <!-- Rating Section (only show when completed) -->
+        <div v-if="message.metadata?.status === 'completed'" class="rating-section">
+          <!-- Buyer's Rating of Seller -->
+          <div v-if="isOwnMessage && !hasRated" class="rating-input">
+            <h5>Rate your experience with the seller</h5>
+            <div class="star-rating">
+              <span
+                v-for="star in 5"
+                :key="star"
+                @click="selectRating(star)"
+                @mouseenter="hoverRating = star"
+                @mouseleave="hoverRating = 0"
+                class="star"
+                :class="{ filled: star <= (hoverRating || selectedRating) }"
+              >
+                ★
+              </span>
+            </div>
+            <textarea
+              v-model="reviewText"
+              placeholder="Share your experience (optional)"
+              class="review-input"
+              rows="2"
+            ></textarea>
+            <button
+              @click="submitRating"
+              :disabled="!selectedRating || isProcessing"
+              class="btn-submit-rating"
+            >
+              Submit Rating
+            </button>
+          </div>
+
+          <!-- Seller's Rating of Buyer -->
+          <div v-else-if="!isOwnMessage && !hasRated" class="rating-input">
+            <h5>Rate your experience with the buyer</h5>
+            <div class="star-rating">
+              <span
+                v-for="star in 5"
+                :key="star"
+                @click="selectRating(star)"
+                @mouseenter="hoverRating = star"
+                @mouseleave="hoverRating = 0"
+                class="star"
+                :class="{ filled: star <= (hoverRating || selectedRating) }"
+              >
+                ★
+              </span>
+            </div>
+            <textarea
+              v-model="reviewText"
+              placeholder="Share your experience (optional)"
+              class="review-input"
+              rows="2"
+            ></textarea>
+            <button
+              @click="submitRating"
+              :disabled="!selectedRating || isProcessing"
+              class="btn-submit-rating"
+            >
+              Submit Rating
+            </button>
+          </div>
+
+          <!-- Display Submitted Rating -->
+          <div v-else-if="hasRated" class="rating-display">
+            <div class="rating-submitted">
+              <span class="rating-label">{{ isOwnMessage ? 'You rated:' : 'They rated you:' }}</span>
+              <div class="star-display">
+                <span v-for="star in 5" :key="star" class="star" :class="{ filled: star <= displayedRating }">
+                  ★
+                </span>
+              </div>
+              <p v-if="displayedReview" class="review-text">{{ displayedReview }}</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -86,11 +210,16 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  bookingAction: [bookingId: number, action: 'approve' | 'decline'];
+  bookingAction: [bookingId: number, action: 'approve' | 'decline' | 'confirm-received' | 'confirm-delivery' | 'rate-seller' | 'rate-buyer', rating?: number, review?: string];
 }>();
 
 const userStore = useUserStore();
 const isProcessing = ref(false);
+
+// Rating state
+const selectedRating = ref(0);
+const hoverRating = ref(0);
+const reviewText = ref('');
 
 const senderName = computed(() => {
   if (props.message.sender?.username) {
@@ -115,6 +244,10 @@ const iconClass = computed(() => {
       return 'fas fa-check-circle';
     case 'booking_declined':
       return 'fas fa-times-circle';
+    case 'booking_item_received':
+      return 'fas fa-box-check';
+    case 'booking_completed':
+      return 'fas fa-check-double';
     default:
       return 'fas fa-info-circle';
   }
@@ -124,13 +257,44 @@ const statusText = computed(() => {
   const status = props.message.metadata?.status;
   if (status === 'pending') return 'Pending';
   if (status === 'approved') return 'Approved';
-  if (status === 'declined') return 'Declined';
+  if (status === 'rejected') return 'Declined';
+  if (status === 'item_received') return 'Item Received';
+  if (status === 'completed') return 'Completed';
   return '';
 });
 
 const statusBadgeClass = computed(() => {
   const status = props.message.metadata?.status;
   return `status-badge status-${status}`;
+});
+
+// Check if user has already rated
+const hasRated = computed(() => {
+  if (props.isOwnMessage) {
+    // Buyer checking if they rated the seller
+    return props.message.metadata?.buyer_rating !== undefined && props.message.metadata?.buyer_rating !== null;
+  } else {
+    // Seller checking if they rated the buyer
+    return props.message.metadata?.seller_rating !== undefined && props.message.metadata?.seller_rating !== null;
+  }
+});
+
+// Get the rating to display
+const displayedRating = computed(() => {
+  if (props.isOwnMessage) {
+    return props.message.metadata?.buyer_rating || 0;
+  } else {
+    return props.message.metadata?.seller_rating || 0;
+  }
+});
+
+// Get the review to display
+const displayedReview = computed(() => {
+  if (props.isOwnMessage) {
+    return props.message.metadata?.buyer_review || '';
+  } else {
+    return props.message.metadata?.seller_review || '';
+  }
 });
 
 function getImageUrl(imagePath: string): string {
@@ -152,6 +316,37 @@ async function handleDecline() {
   if (!props.message.metadata?.booking_id) return;
   isProcessing.value = true;
   emit('bookingAction', props.message.metadata.booking_id, 'decline');
+}
+
+async function handleConfirmReceived() {
+  if (!props.message.metadata?.booking_id) return;
+  isProcessing.value = true;
+  emit('bookingAction', props.message.metadata.booking_id, 'confirm-received');
+}
+
+async function handleConfirmDelivery() {
+  if (!props.message.metadata?.booking_id) return;
+  isProcessing.value = true;
+  emit('bookingAction', props.message.metadata.booking_id, 'confirm-delivery');
+}
+
+function selectRating(rating: number) {
+  selectedRating.value = rating;
+}
+
+async function submitRating() {
+  if (!props.message.metadata?.booking_id || !selectedRating.value) return;
+
+  isProcessing.value = true;
+  const action = props.isOwnMessage ? 'rate-seller' : 'rate-buyer';
+
+  emit(
+    'bookingAction',
+    props.message.metadata.booking_id,
+    action,
+    selectedRating.value,
+    reviewText.value
+  );
 }
 
 function formatTime(timestamp: string): string {
@@ -248,6 +443,21 @@ function formatTime(timestamp: string): string {
   color: #991b1b;
 }
 
+.status-rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.status-item_received {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.status-completed {
+  background: #d1fae5;
+  color: #065f46;
+}
+
 .item-details {
   display: flex;
   gap: 0.625rem;
@@ -282,6 +492,21 @@ function formatTime(timestamp: string): string {
   color: #6b7280;
 }
 
+.booking-message-text {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: white;
+  border-radius: 0.25rem;
+  border-left: 2px solid #0284c7;
+}
+
+.booking-message-text p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #374151;
+  line-height: 1.5;
+}
+
 .booking-actions {
   display: flex;
   gap: 0.5rem;
@@ -289,8 +514,7 @@ function formatTime(timestamp: string): string {
 }
 
 .booking-actions button {
-  flex: 1;
-  padding: 0.5rem 0.75rem;
+  padding: 0.375rem 0.625rem;
   border: none;
   border-radius: 0.25rem;
   font-weight: 600;
@@ -301,6 +525,7 @@ function formatTime(timestamp: string): string {
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
+  min-width: 90px;
 }
 
 .booking-actions button:disabled {
@@ -324,6 +549,144 @@ function formatTime(timestamp: string): string {
 
 .btn-decline:hover:not(:disabled) {
   background: #dc2626;
+}
+
+.btn-confirm-received {
+  background: #3b82f6;
+  color: white;
+}
+
+.btn-confirm-received:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.btn-confirm-delivery {
+  background: #10b981;
+  color: white;
+}
+
+.btn-confirm-delivery:hover:not(:disabled) {
+  background: #059669;
+}
+
+/* Rating Section */
+.rating-section {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: #f8fafc;
+  border-radius: 0.375rem;
+  border: 1px solid #e2e8f0;
+}
+
+.rating-input h5 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.star-rating {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.star {
+  font-size: 2rem;
+  color: #d1d5db;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.star.filled {
+  color: #fbbf24;
+}
+
+.star:hover {
+  transform: scale(1.1);
+}
+
+.review-input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-family: inherit;
+  resize: vertical;
+  margin-bottom: 0.5rem;
+}
+
+.review-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  ring: 2px;
+  ring-color: #3b82f6;
+}
+
+.btn-submit-rating {
+  padding: 0.5rem 1rem;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 0.375rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  width: 100%;
+}
+
+.btn-submit-rating:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.btn-submit-rating:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rating-display {
+  padding: 0.5rem;
+}
+
+.rating-submitted {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rating-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.star-display {
+  display: flex;
+  gap: 0.125rem;
+}
+
+.star-display .star {
+  font-size: 1.25rem;
+  color: #d1d5db;
+  cursor: default;
+}
+
+.star-display .star.filled {
+  color: #fbbf24;
+}
+
+.review-text {
+  margin: 0;
+  padding: 0.5rem;
+  background: white;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+  font-style: italic;
 }
 
 .booking-status {
@@ -352,6 +715,16 @@ function formatTime(timestamp: string): string {
 .booking-status .pending {
   background: #fef3c7;
   color: #92400e;
+}
+
+.booking-status .item-received {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.booking-status .completed {
+  background: #d1fae5;
+  color: #065f46;
 }
 
 .booking-status-update {

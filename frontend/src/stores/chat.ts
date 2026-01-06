@@ -904,16 +904,31 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function handleBookingAction(bookingId: number, action: 'approve' | 'decline') {
+  async function handleBookingAction(
+    bookingId: number,
+    action: 'approve' | 'decline' | 'confirm-received' | 'confirm-delivery' | 'rate-seller' | 'rate-buyer',
+    rating?: number,
+    review?: string
+  ) {
     try {
       const chatApiUrl = config.CHAT_API_URL;
+      const body: any = { bookingId, action };
+
+      // Add rating data if it's a rating action
+      if (rating !== undefined) {
+        body.rating = rating;
+      }
+      if (review !== undefined) {
+        body.review = review;
+      }
+
       const response = await fetch(`${chatApiUrl}/booking-action`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${authStore.token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ bookingId, action })
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {
@@ -922,7 +937,7 @@ export const useChatStore = defineStore('chat', () => {
       }
 
       // The WebSocket will receive the updated message automatically
-      console.log(`✓ Booking ${action}d successfully`);
+      console.log(`✓ Booking action ${action} completed successfully`);
     } catch (error) {
       console.error(`Failed to ${action} booking:`, error);
       throw error;

@@ -21,6 +21,7 @@ type ChatNotificationPayload struct {
 	ItemImage  string `json:"itemImage,omitempty"`
 	BuyerID    uint   `json:"buyerId"`
 	SellerID   uint   `json:"sellerId"`
+	Message    string `json:"message,omitempty"`
 }
 
 // NotifyChatServiceAboutBooking sends a notification to the chat service about a new booking request
@@ -49,6 +50,7 @@ func NotifyChatServiceAboutBooking(booking *models.BookingRequest, item *models.
 		ItemImage:  itemImage,
 		BuyerID:    booking.RequesterID,
 		SellerID:   item.SellerID,
+		Message:    booking.Message,
 	}
 
 	payloadBytes, err := json.Marshal(payload)

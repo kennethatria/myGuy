@@ -63,8 +63,12 @@ type BookingRequest struct {
 	Item                     *StoreItem     `json:"item,omitempty" gorm:"foreignKey:ItemID"`
 	RequesterID              uint           `json:"requester_id" gorm:"not null"`
 	Requester                *User          `json:"requester,omitempty" gorm:"foreignKey:RequesterID"`
-	Status                   string         `json:"status" gorm:"default:'pending'"` // pending, approved, rejected
+	Status                   string         `json:"status" gorm:"default:'pending'"` // pending, approved, rejected, item_received, completed
 	Message                  string         `json:"message"`
+	BuyerRating              *int           `json:"buyer_rating,omitempty"` // Buyer's rating of seller (1-5)
+	BuyerReview              string         `json:"buyer_review,omitempty"`
+	SellerRating             *int           `json:"seller_rating,omitempty"` // Seller's rating of buyer (1-5)
+	SellerReview             string         `json:"seller_review,omitempty"`
 	ChatNotified             bool           `json:"-" gorm:"default:false"`
 	NotificationAttempts     int            `json:"-" gorm:"default:0"`
 	LastNotificationAttempt  *time.Time     `json:"-"`
@@ -106,6 +110,11 @@ type CreateBidRequest struct {
 
 type CreateBookingRequestRequest struct {
 	Message string `json:"message,omitempty"`
+}
+
+type SubmitRatingRequest struct {
+	Rating int    `json:"rating" binding:"required,min=1,max=5"`
+	Review string `json:"review,omitempty"`
 }
 
 type StoreItemFilter struct {

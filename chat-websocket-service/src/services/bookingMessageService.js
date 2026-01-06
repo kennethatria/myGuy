@@ -10,6 +10,7 @@ async function createBookingRequestMessage({
   itemImage,
   buyerId,
   sellerId,
+  message,
   io
 }) {
   try {
@@ -30,7 +31,7 @@ async function createBookingRequestMessage({
         sellerId,
         itemId,
         'booking_request',
-        `Booking request for ${itemTitle}`,
+        message || `Booking request for ${itemTitle}`,
         JSON.stringify({
           booking_id: bookingId,
           item_id: itemId,
@@ -41,15 +42,15 @@ async function createBookingRequestMessage({
       ]
     );
 
-    const message = result.rows[0];
+    const createdMessage = result.rows[0];
 
     // Emit to seller via WebSocket
     if (io) {
-      io.to(`user:${sellerId}`).emit('message:new', message);
+      io.to(`user:${sellerId}`).emit('message:new', createdMessage);
       console.log(`📋 Booking request message sent to seller ${sellerId} for item ${itemId}`);
     }
 
-    return message;
+    return createdMessage;
   } catch (error) {
     console.error('Error creating booking request message:', error);
     throw error;
@@ -90,10 +91,25 @@ async function updateBookingMessageStatus(bookingId, status, approverId, io) {
     );
 
     // Create a new system message for the status change
-    const messageType = status === 'approved' ? 'booking_approved' : 'booking_declined';
-    const content = status === 'approved'
-      ? `Booking approved ✅. You can now discuss pickup details.`
-      : `Booking request was declined.`;
+    let messageType;
+    let content;
+
+    if (status === 'approved') {
+      messageType = 'booking_approved';
+      content = 'Booking approved ✅. You can now discuss pickup details.';
+    } else if (status === 'rejected') {
+      messageType = 'booking_declined';
+      content = 'Booking request was declined.';
+    } else if (status === 'item_received') {
+      messageType = 'booking_item_received';
+      content = '📦 Buyer confirmed they received the item.';
+    } else if (status === 'completed') {
+      messageType = 'booking_completed';
+      content = '✅ Transaction completed! Both parties have confirmed.';
+    } else {
+      messageType = 'booking_status_update';
+      content = `Booking status updated to: ${status}`;
+    }
 
     const statusResult = await db.query(
       `INSERT INTO messages (

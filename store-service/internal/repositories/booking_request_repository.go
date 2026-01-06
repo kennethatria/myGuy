@@ -83,3 +83,21 @@ func (r *bookingRequestRepository) IncrementNotificationAttempts(bookingID uint)
 			"last_notification_attempt": gorm.Expr("NOW()"),
 		}).Error
 }
+
+func (r *bookingRequestRepository) UpdateBuyerRating(id uint, rating int, review string) error {
+	return r.db.Model(&models.BookingRequest{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"buyer_rating": rating,
+			"buyer_review": review,
+		}).Error
+}
+
+func (r *bookingRequestRepository) UpdateSellerRating(id uint, rating int, review string) error {
+	return r.db.Model(&models.BookingRequest{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"seller_rating": rating,
+			"seller_review": review,
+		}).Error
+}

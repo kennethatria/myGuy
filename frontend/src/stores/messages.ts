@@ -12,13 +12,17 @@ export interface Message {
   sender_id: number
   recipient_id: number
   content: string
-  message_type: 'text' | 'booking_request' | 'booking_approved' | 'booking_declined' | 'system_alert'
+  message_type: 'text' | 'booking_request' | 'booking_approved' | 'booking_declined' | 'booking_item_received' | 'booking_completed' | 'system_alert'
   metadata?: {
     booking_id?: number
     item_id?: number
     item_title?: string
     item_image?: string
-    status?: 'pending' | 'approved' | 'declined'
+    status?: 'pending' | 'approved' | 'rejected' | 'item_received' | 'completed'
+    buyer_rating?: number
+    buyer_review?: string
+    seller_rating?: number
+    seller_review?: string
   }
   is_read: boolean
   read_at?: string
