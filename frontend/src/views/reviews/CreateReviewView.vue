@@ -29,6 +29,7 @@
           </div>
 
           <ReviewForm 
+            :key="taskId"
             :task-id="taskId"
             :reviewed-user-id="reviewedUserId"
             @review-submitted="handleReviewSubmitted"
@@ -142,7 +143,7 @@ const checkCanReview = async () => {
   canReview.value = true
 }
 
-const handleReviewSubmitted = async (review: any) => {
+const handleReviewSubmitted = async () => {
   // Navigate back to task detail
   router.push(`/tasks/${taskId.value}`)
 }

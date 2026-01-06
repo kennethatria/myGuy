@@ -318,6 +318,7 @@ export const useChatStore = defineStore('chat', () => {
     });
     
     socket.value.on('message:edited', handleMessageEdited);
+    socket.value.on('message:updated', handleMessageUpdated);
     socket.value.on('message:deleted', handleMessageDeleted);
     socket.value.on('message:read', handleMessageRead);
     socket.value.on('message:filtered', handleMessageFiltered);
@@ -395,7 +396,7 @@ export const useChatStore = defineStore('chat', () => {
   function handleMessageEdited(message: Message) {
     const conversationId = message.task_id || message.application_id || message.item_id;
     if (!conversationId) return;
-    
+
     const conversationMessages = messages.value.get(conversationId) || [];
     const index = conversationMessages.findIndex(m => m.id === message.id);
     if (index !== -1) {
@@ -403,7 +404,33 @@ export const useChatStore = defineStore('chat', () => {
       messages.value.set(conversationId, [...conversationMessages]);
     }
   }
-  
+
+  function handleMessageUpdated(message: Message) {
+    // Handle booking status updates and other message updates
+    const conversationId = message.task_id || message.application_id || message.store_item_id;
+    if (!conversationId) return;
+
+    // Update in regular messages map
+    const conversationMessages = messages.value.get(conversationId) || [];
+    const index = conversationMessages.findIndex(m => m.id === message.id);
+    if (index !== -1) {
+      conversationMessages[index] = { ...conversationMessages[index], ...message };
+      messages.value.set(conversationId, [...conversationMessages]);
+    }
+
+    // Also update in store messages if it's a store item
+    if (message.store_item_id) {
+      const storeMessageList = storeMessages.value.get(message.store_item_id) || [];
+      const storeIndex = storeMessageList.findIndex(m => m.id === message.id);
+      if (storeIndex !== -1) {
+        storeMessageList[storeIndex] = { ...storeMessageList[storeIndex], ...message };
+        storeMessages.value.set(message.store_item_id, [...storeMessageList]);
+      }
+    }
+
+    console.log('✅ Message updated:', message.id, 'metadata:', message.metadata);
+  }
+
   function handleMessageDeleted({ messageId }: { messageId: number }) {
     messages.value.forEach((conversationMessages, conversationId) => {
       const index = conversationMessages.findIndex(m => m.id === messageId);

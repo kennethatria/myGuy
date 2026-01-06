@@ -273,6 +273,7 @@ class MessageService {
           m.recipient_id,
           m.content,
           m.message_type,
+          m.metadata,
           m.is_read,
           m.created_at,
           m.updated_at,

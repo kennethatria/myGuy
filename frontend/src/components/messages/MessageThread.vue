@@ -144,8 +144,13 @@ function isBookingMessage(message: Message): boolean {
   return ['booking_request', 'booking_approved', 'booking_declined'].includes(message.message_type);
 }
 
-function handleBookingAction(bookingId: number, action: 'approve' | 'decline') {
-  emit('booking-action', bookingId, action);
+function handleBookingAction(
+  bookingId: number,
+  action: 'approve' | 'decline' | 'confirm-received' | 'confirm-delivery' | 'rate-seller' | 'rate-buyer',
+  rating?: number,
+  review?: string
+) {
+  emit('booking-action', bookingId, action, rating, review);
 }
 
 function sendMessage() {

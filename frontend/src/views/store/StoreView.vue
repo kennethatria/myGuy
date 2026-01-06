@@ -565,8 +565,8 @@ async function createItem() {
     
     if (newItem.value.is_auction) {
       // Clean and validate starting bid
-      let startingBidStr = String(newItem.value.starting_bid || '0').replace(/[^0-9.]/g, '');
-      let bidIncrementStr = String(newItem.value.bid_increment || '1000').replace(/[^0-9.]/g, '');
+      const startingBidStr = String(newItem.value.starting_bid || '0').replace(/[^0-9.]/g, '');
+      const bidIncrementStr = String(newItem.value.bid_increment || '1000').replace(/[^0-9.]/g, '');
       
       let startingBid = parseFloat(startingBidStr) || 0;
       let bidIncrement = parseFloat(bidIncrementStr) || 1000;
@@ -584,7 +584,7 @@ async function createItem() {
       jsonPayload.min_bid_increment = bidIncrement; // Use correct model field name
     } else {
       // Clean and validate price
-      let priceStr = String(newItem.value.price || '0').replace(/[^0-9.]/g, '');
+      const priceStr = String(newItem.value.price || '0').replace(/[^0-9.]/g, '');
       let price = parseFloat(priceStr) || 0;
       
       // Ensure positive value and round to integer
@@ -607,7 +607,7 @@ async function createItem() {
     
     // If images are selected, use FormData to include them
     let requestBody;
-    let requestHeaders = {
+    const requestHeaders = {
       'Authorization': `Bearer ${localStorage.getItem('token')}`
     };
     

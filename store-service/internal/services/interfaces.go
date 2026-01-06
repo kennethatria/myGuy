@@ -18,7 +18,11 @@ type StoreServiceInterface interface {
 	CreateBookingRequest(itemID uint, requesterID uint, message string) (*models.BookingRequest, error)
 	GetBookingRequestByItem(itemID uint, userID uint) (*models.BookingRequest, error)
 	GetAllBookingRequestsByItem(itemID uint, userID uint) ([]models.BookingRequest, error)
-	ApproveBookingRequest(requestID uint, ownerID uint) error
-	RejectBookingRequest(requestID uint, ownerID uint) error
+	ApproveBookingRequest(requestID uint, ownerID uint) (*models.BookingRequest, error)
+	RejectBookingRequest(requestID uint, ownerID uint) (*models.BookingRequest, error)
 	GetUserBookingRequests(userID uint) ([]models.BookingRequest, error)
+	ConfirmItemReceived(requestID uint, buyerID uint) (*models.BookingRequest, error)
+	ConfirmDelivery(requestID uint, sellerID uint) (*models.BookingRequest, error)
+	SubmitBuyerRating(requestID uint, buyerID uint, rating int, review string) (*models.BookingRequest, error)
+	SubmitSellerRating(requestID uint, sellerID uint, rating int, review string) (*models.BookingRequest, error)
 }

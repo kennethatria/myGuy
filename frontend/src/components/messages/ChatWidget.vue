@@ -184,8 +184,13 @@ function isBookingMessage(message: Message): boolean {
   return ['booking_request', 'booking_approved', 'booking_declined'].includes(message.message_type);
 }
 
-function handleBookingAction(bookingId: number, action: 'approve' | 'decline') {
-  chatStore.handleBookingAction(bookingId, action);
+function handleBookingAction(
+  bookingId: number,
+  action: 'approve' | 'decline' | 'confirm-received' | 'confirm-delivery' | 'rate-seller' | 'rate-buyer',
+  rating?: number,
+  review?: string
+) {
+  chatStore.handleBookingAction(bookingId, action, rating, review);
 }
 
 function sendMessage() {

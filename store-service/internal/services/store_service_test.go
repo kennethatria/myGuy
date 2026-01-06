@@ -172,18 +172,89 @@ func (m *MockBookingRequestRepository) Delete(id uint) error {
 	return args.Error(0)
 }
 
+func (m *MockBookingRequestRepository) UpdateChatNotificationStatus(bookingID uint, notified bool, attempts int) error {
+	args := m.Called(bookingID, notified, attempts)
+	return args.Error(0)
+}
+
+func (m *MockBookingRequestRepository) IncrementNotificationAttempts(bookingID uint) error {
+	args := m.Called(bookingID)
+	return args.Error(0)
+}
+
+func (m *MockBookingRequestRepository) UpdateBuyerRating(id uint, rating int, review string) error {
+	args := m.Called(id, rating, review)
+	return args.Error(0)
+}
+
+func (m *MockBookingRequestRepository) UpdateSellerRating(id uint, rating int, review string) error {
+	args := m.Called(id, rating, review)
+	return args.Error(0)
+}
+
+type MockUserRepository struct {
+	mock.Mock
+}
+
+func (m *MockUserRepository) Create(user *models.User) error {
+	args := m.Called(user)
+	return args.Error(0)
+}
+
+func (m *MockUserRepository) GetByID(id uint) (*models.User, error) {
+	args := m.Called(id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.User), args.Error(1)
+}
+
+func (m *MockUserRepository) GetByEmail(email string) (*models.User, error) {
+	args := m.Called(email)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.User), args.Error(1)
+}
+
+func (m *MockUserRepository) GetByUsername(username string) (*models.User, error) {
+	args := m.Called(username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.User), args.Error(1)
+}
+
+func (m *MockUserRepository) Update(user *models.User) error {
+	args := m.Called(user)
+	return args.Error(0)
+}
+
+func (m *MockUserRepository) UpsertFromJWT(userID uint, username, email, name string) (*models.User, error) {
+	args := m.Called(userID, username, email, name)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.User), args.Error(1)
+}
+
+func (m *MockUserRepository) UpdateRating(userID uint, newRating float64) error {
+	args := m.Called(userID, newRating)
+	return args.Error(0)
+}
+
 func setupService() (*StoreService, *MockStoreItemRepository, *MockBidRepository, *MockBookingRequestRepository) {
 	itemRepo := new(MockStoreItemRepository)
 	bidRepo := new(MockBidRepository)
 	bookingRepo := new(MockBookingRequestRepository)
-	service := NewStoreService(itemRepo, bidRepo, bookingRepo)
+	userRepo := new(MockUserRepository)
+	service := NewStoreService(itemRepo, bidRepo, bookingRepo, userRepo)
 	return service, itemRepo, bidRepo, bookingRepo
 }
 
 func TestCreateItem(t *testing.T) {
-	service, itemRepo, _, _ := setupService()
-
 	t.Run("successful fixed price item creation", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		req := models.CreateStoreItemRequest{
 			Title:       "Test Item",
 			Description: "Test Description",
@@ -211,6 +282,7 @@ func TestCreateItem(t *testing.T) {
 	})
 
 	t.Run("successful bidding item creation", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		bidDeadline := time.Now().Add(24 * time.Hour)
 		req := models.CreateStoreItemRequest{
 			Title:           "Auction Item",
@@ -238,6 +310,7 @@ func TestCreateItem(t *testing.T) {
 	})
 
 	t.Run("invalid fixed price", func(t *testing.T) {
+		service, _, _, _ := setupService()
 		req := models.CreateStoreItemRequest{
 			Title:      "Test Item",
 			PriceType:  "fixed",
@@ -252,6 +325,7 @@ func TestCreateItem(t *testing.T) {
 	})
 
 	t.Run("invalid starting bid", func(t *testing.T) {
+		service, _, _, _ := setupService()
 		req := models.CreateStoreItemRequest{
 			Title:       "Test Item",
 			PriceType:   "bidding",
@@ -266,6 +340,7 @@ func TestCreateItem(t *testing.T) {
 	})
 
 	t.Run("bid deadline in the past", func(t *testing.T) {
+		service, _, _, _ := setupService()
 		pastDeadline := time.Now().Add(-1 * time.Hour)
 		req := models.CreateStoreItemRequest{
 			Title:       "Test Item",
@@ -282,6 +357,7 @@ func TestCreateItem(t *testing.T) {
 	})
 
 	t.Run("default min bid increment", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		req := models.CreateStoreItemRequest{
 			Title:       "Test Item",
 			PriceType:   "bidding",
@@ -298,6 +374,7 @@ func TestCreateItem(t *testing.T) {
 	})
 
 	t.Run("repository error", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		req := models.CreateStoreItemRequest{
 			Title:      "Test Item",
 			PriceType:  "fixed",
@@ -316,9 +393,8 @@ func TestCreateItem(t *testing.T) {
 }
 
 func TestGetItem(t *testing.T) {
-	service, itemRepo, _, _ := setupService()
-
 	t.Run("successful get item", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		expectedItem := &models.StoreItem{
 			ID:       1,
 			Title:    "Test Item",
@@ -336,6 +412,7 @@ func TestGetItem(t *testing.T) {
 	})
 
 	t.Run("item not found", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		itemRepo.On("GetByID", uint(999)).Return(nil, gorm.ErrRecordNotFound)
 
 		item, err := service.GetItem(999)
@@ -348,9 +425,8 @@ func TestGetItem(t *testing.T) {
 }
 
 func TestGetItems(t *testing.T) {
-	service, itemRepo, _, _ := setupService()
-
 	t.Run("successful get items", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		filter := models.StoreItemFilter{
 			Search:   "test",
 			Category: "electronics",
@@ -375,6 +451,7 @@ func TestGetItems(t *testing.T) {
 	})
 
 	t.Run("repository error", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		filter := models.StoreItemFilter{Page: 1, PerPage: 10}
 
 		itemRepo.On("ExpireOldBidItems").Return(nil)
@@ -391,9 +468,8 @@ func TestGetItems(t *testing.T) {
 }
 
 func TestUpdateItem(t *testing.T) {
-	service, itemRepo, _, _ := setupService()
-
 	t.Run("successful update", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		existingItem := &models.StoreItem{
 			ID:       1,
 			Title:    "Original Title",
@@ -418,6 +494,7 @@ func TestUpdateItem(t *testing.T) {
 	})
 
 	t.Run("item not found", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		req := models.UpdateStoreItemRequest{
 			Title: "Updated Title",
 		}
@@ -433,6 +510,7 @@ func TestUpdateItem(t *testing.T) {
 	})
 
 	t.Run("unauthorized update", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		existingItem := &models.StoreItem{
 			ID:       1,
 			Title:    "Original Title",
@@ -455,6 +533,7 @@ func TestUpdateItem(t *testing.T) {
 	})
 
 	t.Run("cannot update inactive item", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		existingItem := &models.StoreItem{
 			ID:       1,
 			Title:    "Original Title",
@@ -477,6 +556,7 @@ func TestUpdateItem(t *testing.T) {
 	})
 
 	t.Run("update with images", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		existingItem := &models.StoreItem{
 			ID:       1,
 			Title:    "Original Title",
@@ -502,9 +582,8 @@ func TestUpdateItem(t *testing.T) {
 }
 
 func TestDeleteItem(t *testing.T) {
-	service, itemRepo, _, _ := setupService()
-
 	t.Run("successful delete", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		existingItem := &models.StoreItem{
 			ID:       1,
 			Title:    "Test Item",
@@ -522,6 +601,7 @@ func TestDeleteItem(t *testing.T) {
 	})
 
 	t.Run("item not found", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		itemRepo.On("GetByID", uint(999)).Return(nil, gorm.ErrRecordNotFound)
 
 		err := service.DeleteItem(999, 1)
@@ -532,6 +612,7 @@ func TestDeleteItem(t *testing.T) {
 	})
 
 	t.Run("unauthorized delete", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		existingItem := &models.StoreItem{
 			ID:       1,
 			Title:    "Test Item",
@@ -549,6 +630,7 @@ func TestDeleteItem(t *testing.T) {
 	})
 
 	t.Run("cannot delete inactive item", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		existingItem := &models.StoreItem{
 			ID:       1,
 			Title:    "Test Item",
@@ -567,9 +649,8 @@ func TestDeleteItem(t *testing.T) {
 }
 
 func TestPlaceBid(t *testing.T) {
-	service, itemRepo, bidRepo, _ := setupService()
-
 	t.Run("successful first bid", func(t *testing.T) {
+		service, itemRepo, bidRepo, _ := setupService()
 		item := &models.StoreItem{
 			ID:              1,
 			Title:           "Auction Item",
@@ -611,6 +692,7 @@ func TestPlaceBid(t *testing.T) {
 	})
 
 	t.Run("successful higher bid", func(t *testing.T) {
+		service, itemRepo, bidRepo, _ := setupService()
 		item := &models.StoreItem{
 			ID:              1,
 			Title:           "Auction Item",
@@ -641,6 +723,7 @@ func TestPlaceBid(t *testing.T) {
 	})
 
 	t.Run("item not found", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		req := models.CreateBidRequest{Amount: 110.0}
 
 		itemRepo.On("GetByID", uint(999)).Return(nil, gorm.ErrRecordNotFound)
@@ -654,6 +737,7 @@ func TestPlaceBid(t *testing.T) {
 	})
 
 	t.Run("not bidding item", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		item := &models.StoreItem{
 			ID:        1,
 			Title:     "Fixed Price Item",
@@ -675,6 +759,7 @@ func TestPlaceBid(t *testing.T) {
 	})
 
 	t.Run("inactive item", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		item := &models.StoreItem{
 			ID:        1,
 			Title:     "Auction Item",
@@ -696,6 +781,7 @@ func TestPlaceBid(t *testing.T) {
 	})
 
 	t.Run("cannot bid on own item", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		item := &models.StoreItem{
 			ID:        1,
 			Title:     "Auction Item",
@@ -717,6 +803,7 @@ func TestPlaceBid(t *testing.T) {
 	})
 
 	t.Run("bid amount too low", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		item := &models.StoreItem{
 			ID:              1,
 			Title:           "Auction Item",
@@ -741,6 +828,7 @@ func TestPlaceBid(t *testing.T) {
 	})
 
 	t.Run("bidding ended", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		pastDeadline := time.Now().Add(-1 * time.Hour)
 		item := &models.StoreItem{
 			ID:              1,
@@ -769,9 +857,8 @@ func TestPlaceBid(t *testing.T) {
 }
 
 func TestAcceptBid(t *testing.T) {
-	service, itemRepo, bidRepo, _ := setupService()
-
 	t.Run("successful accept bid", func(t *testing.T) {
+		service, itemRepo, bidRepo, _ := setupService()
 		item := &models.StoreItem{
 			ID:       1,
 			Title:    "Auction Item",
@@ -801,6 +888,7 @@ func TestAcceptBid(t *testing.T) {
 	})
 
 	t.Run("item not found", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		itemRepo.On("GetByID", uint(999)).Return(nil, gorm.ErrRecordNotFound)
 
 		err := service.AcceptBid(999, 1, 1)
@@ -811,6 +899,7 @@ func TestAcceptBid(t *testing.T) {
 	})
 
 	t.Run("unauthorized seller", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		item := &models.StoreItem{
 			ID:       1,
 			Title:    "Auction Item",
@@ -828,6 +917,7 @@ func TestAcceptBid(t *testing.T) {
 	})
 
 	t.Run("bid not found", func(t *testing.T) {
+		service, itemRepo, bidRepo, _ := setupService()
 		item := &models.StoreItem{
 			ID:       1,
 			Title:    "Auction Item",
@@ -847,6 +937,7 @@ func TestAcceptBid(t *testing.T) {
 	})
 
 	t.Run("bid belongs to different item", func(t *testing.T) {
+		service, itemRepo, bidRepo, _ := setupService()
 		item := &models.StoreItem{
 			ID:       1,
 			Title:    "Auction Item",
@@ -875,9 +966,8 @@ func TestAcceptBid(t *testing.T) {
 }
 
 func TestPurchaseItem(t *testing.T) {
-	service, itemRepo, _, _ := setupService()
-
 	t.Run("successful purchase", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		item := &models.StoreItem{
 			ID:         1,
 			Title:      "Fixed Price Item",
@@ -897,6 +987,7 @@ func TestPurchaseItem(t *testing.T) {
 	})
 
 	t.Run("item not found", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		itemRepo.On("GetByID", uint(999)).Return(nil, gorm.ErrRecordNotFound)
 
 		err := service.PurchaseItem(999, 1)
@@ -907,6 +998,7 @@ func TestPurchaseItem(t *testing.T) {
 	})
 
 	t.Run("bidding item only", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		item := &models.StoreItem{
 			ID:        1,
 			Title:     "Auction Item",
@@ -925,6 +1017,7 @@ func TestPurchaseItem(t *testing.T) {
 	})
 
 	t.Run("inactive item", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		item := &models.StoreItem{
 			ID:        1,
 			Title:     "Fixed Price Item",
@@ -943,6 +1036,7 @@ func TestPurchaseItem(t *testing.T) {
 	})
 
 	t.Run("cannot purchase own item", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		item := &models.StoreItem{
 			ID:        1,
 			Title:     "Fixed Price Item",
@@ -962,9 +1056,8 @@ func TestPurchaseItem(t *testing.T) {
 }
 
 func TestGetItemBids(t *testing.T) {
-	service, _, bidRepo, _ := setupService()
-
 	t.Run("successful get item bids", func(t *testing.T) {
+		service, _, bidRepo, _ := setupService()
 		expectedBids := []models.Bid{
 			{ID: 1, ItemID: 1, BidderID: 1, Amount: 150.0, Status: "active"},
 			{ID: 2, ItemID: 1, BidderID: 2, Amount: 120.0, Status: "outbid"},
@@ -980,6 +1073,7 @@ func TestGetItemBids(t *testing.T) {
 	})
 
 	t.Run("repository error", func(t *testing.T) {
+		service, _, bidRepo, _ := setupService()
 		bidRepo.On("GetByItemID", uint(1)).Return([]models.Bid{}, errors.New("database error"))
 
 		bids, err := service.GetItemBids(1)
@@ -992,9 +1086,8 @@ func TestGetItemBids(t *testing.T) {
 }
 
 func TestGetUserListings(t *testing.T) {
-	service, itemRepo, _, _ := setupService()
-
 	t.Run("successful get user listings", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		expectedItems := []models.StoreItem{
 			{ID: 1, Title: "My Item 1", SellerID: 1, Status: "active"},
 			{ID: 2, Title: "My Item 2", SellerID: 1, Status: "sold"},
@@ -1010,6 +1103,7 @@ func TestGetUserListings(t *testing.T) {
 	})
 
 	t.Run("repository error", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		itemRepo.On("GetBySellerID", uint(1)).Return([]models.StoreItem{}, errors.New("database error"))
 
 		items, err := service.GetUserListings(1)
@@ -1022,9 +1116,8 @@ func TestGetUserListings(t *testing.T) {
 }
 
 func TestGetUserPurchases(t *testing.T) {
-	service, itemRepo, _, _ := setupService()
-
 	t.Run("successful get user purchases", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		expectedItems := []models.StoreItem{
 			{ID: 1, Title: "Purchased Item 1", SellerID: 2, Status: "sold"},
 			{ID: 2, Title: "Purchased Item 2", SellerID: 3, Status: "sold"},
@@ -1040,6 +1133,7 @@ func TestGetUserPurchases(t *testing.T) {
 	})
 
 	t.Run("repository error", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		itemRepo.On("GetByBuyerID", uint(1)).Return([]models.StoreItem{}, errors.New("database error"))
 
 		items, err := service.GetUserPurchases(1)
@@ -1052,9 +1146,8 @@ func TestGetUserPurchases(t *testing.T) {
 }
 
 func TestGetUserBids(t *testing.T) {
-	service, _, bidRepo, _ := setupService()
-
 	t.Run("successful get user bids", func(t *testing.T) {
+		service, _, bidRepo, _ := setupService()
 		expectedBids := []models.Bid{
 			{ID: 1, ItemID: 1, BidderID: 1, Amount: 150.0, Status: "active"},
 			{ID: 2, ItemID: 2, BidderID: 1, Amount: 120.0, Status: "outbid"},
@@ -1070,6 +1163,7 @@ func TestGetUserBids(t *testing.T) {
 	})
 
 	t.Run("repository error", func(t *testing.T) {
+		service, _, bidRepo, _ := setupService()
 		bidRepo.On("GetByBidderID", uint(1)).Return([]models.Bid{}, errors.New("database error"))
 
 		bids, err := service.GetUserBids(1)
@@ -1082,9 +1176,8 @@ func TestGetUserBids(t *testing.T) {
 }
 
 func TestCreateBookingRequest(t *testing.T) {
-	service, itemRepo, _, bookingRepo := setupService()
-
 	t.Run("successful booking request", func(t *testing.T) {
+		service, itemRepo, _, bookingRepo := setupService()
 		item := &models.StoreItem{
 			ID:       1,
 			Title:    "Test Item",
@@ -1104,6 +1197,7 @@ func TestCreateBookingRequest(t *testing.T) {
 		bookingRepo.On("GetByItemAndRequester", uint(1), uint(1)).Return(nil, gorm.ErrRecordNotFound)
 		bookingRepo.On("Create", mock.AnythingOfType("*models.BookingRequest")).Return(nil)
 		bookingRepo.On("GetByID", uint(0)).Return(expectedRequest, nil)
+		bookingRepo.On("IncrementNotificationAttempts", mock.AnythingOfType("uint")).Return(nil).Maybe()
 
 		request, err := service.CreateBookingRequest(1, 1, "I'd like to book this item")
 
@@ -1115,6 +1209,7 @@ func TestCreateBookingRequest(t *testing.T) {
 	})
 
 	t.Run("item not found", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		itemRepo.On("GetByID", uint(999)).Return(nil, gorm.ErrRecordNotFound)
 
 		request, err := service.CreateBookingRequest(999, 1, "Message")
@@ -1126,6 +1221,7 @@ func TestCreateBookingRequest(t *testing.T) {
 	})
 
 	t.Run("item not available", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		item := &models.StoreItem{
 			ID:       1,
 			Title:    "Test Item",
@@ -1144,6 +1240,7 @@ func TestCreateBookingRequest(t *testing.T) {
 	})
 
 	t.Run("cannot book own item", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		item := &models.StoreItem{
 			ID:       1,
 			Title:    "Test Item",
@@ -1162,6 +1259,7 @@ func TestCreateBookingRequest(t *testing.T) {
 	})
 
 	t.Run("duplicate booking request", func(t *testing.T) {
+		service, itemRepo, _, bookingRepo := setupService()
 		item := &models.StoreItem{
 			ID:       1,
 			Title:    "Test Item",
@@ -1190,9 +1288,8 @@ func TestCreateBookingRequest(t *testing.T) {
 }
 
 func TestApproveBookingRequest(t *testing.T) {
-	service, _, _, bookingRepo := setupService()
-
 	t.Run("successful approval", func(t *testing.T) {
+		service, _, _, bookingRepo := setupService()
 		request := &models.BookingRequest{
 			ID:          1,
 			ItemID:      1,
@@ -1203,27 +1300,44 @@ func TestApproveBookingRequest(t *testing.T) {
 				SellerID: 1,
 			},
 		}
+		approvedRequest := &models.BookingRequest{
+			ID:          1,
+			ItemID:      1,
+			RequesterID: 2,
+			Status:      "approved",
+			Item: &models.StoreItem{
+				ID:       1,
+				SellerID: 1,
+			},
+		}
 
-		bookingRepo.On("GetByID", uint(1)).Return(request, nil)
+		bookingRepo.On("GetByID", uint(1)).Return(request, nil).Once()
+		bookingRepo.On("GetAllByItemID", uint(1)).Return([]models.BookingRequest{*request}, nil)
 		bookingRepo.On("UpdateStatus", uint(1), "approved").Return(nil)
+		bookingRepo.On("GetByID", uint(1)).Return(approvedRequest, nil).Once()
 
-		err := service.ApproveBookingRequest(1, 1)
+		result, err := service.ApproveBookingRequest(1, 1)
 
 		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, "approved", result.Status)
 		bookingRepo.AssertExpectations(t)
 	})
 
 	t.Run("request not found", func(t *testing.T) {
+		service, _, _, bookingRepo := setupService()
 		bookingRepo.On("GetByID", uint(999)).Return(nil, gorm.ErrRecordNotFound)
 
-		err := service.ApproveBookingRequest(999, 1)
+		result, err := service.ApproveBookingRequest(999, 1)
 
 		assert.Error(t, err)
+		assert.Nil(t, result)
 		assert.Equal(t, gorm.ErrRecordNotFound, err)
 		bookingRepo.AssertExpectations(t)
 	})
 
 	t.Run("unauthorized", func(t *testing.T) {
+		service, _, _, bookingRepo := setupService()
 		request := &models.BookingRequest{
 			ID:          1,
 			ItemID:      1,
@@ -1237,14 +1351,16 @@ func TestApproveBookingRequest(t *testing.T) {
 
 		bookingRepo.On("GetByID", uint(1)).Return(request, nil)
 
-		err := service.ApproveBookingRequest(1, 1)
+		result, err := service.ApproveBookingRequest(1, 1)
 
 		assert.Error(t, err)
+		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "unauthorized")
 		bookingRepo.AssertExpectations(t)
 	})
 
 	t.Run("request not pending", func(t *testing.T) {
+		service, _, _, bookingRepo := setupService()
 		request := &models.BookingRequest{
 			ID:          1,
 			ItemID:      1,
@@ -1258,18 +1374,18 @@ func TestApproveBookingRequest(t *testing.T) {
 
 		bookingRepo.On("GetByID", uint(1)).Return(request, nil)
 
-		err := service.ApproveBookingRequest(1, 1)
+		result, err := service.ApproveBookingRequest(1, 1)
 
 		assert.Error(t, err)
+		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "not pending")
 		bookingRepo.AssertExpectations(t)
 	})
 }
 
 func TestRejectBookingRequest(t *testing.T) {
-	service, _, _, bookingRepo := setupService()
-
 	t.Run("successful rejection", func(t *testing.T) {
+		service, _, _, bookingRepo := setupService()
 		request := &models.BookingRequest{
 			ID:          1,
 			ItemID:      1,
@@ -1280,17 +1396,31 @@ func TestRejectBookingRequest(t *testing.T) {
 				SellerID: 1,
 			},
 		}
+		rejectedRequest := &models.BookingRequest{
+			ID:          1,
+			ItemID:      1,
+			RequesterID: 2,
+			Status:      "rejected",
+			Item: &models.StoreItem{
+				ID:       1,
+				SellerID: 1,
+			},
+		}
 
-		bookingRepo.On("GetByID", uint(1)).Return(request, nil)
+		bookingRepo.On("GetByID", uint(1)).Return(request, nil).Once()
 		bookingRepo.On("UpdateStatus", uint(1), "rejected").Return(nil)
+		bookingRepo.On("GetByID", uint(1)).Return(rejectedRequest, nil).Once()
 
-		err := service.RejectBookingRequest(1, 1)
+		result, err := service.RejectBookingRequest(1, 1)
 
 		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, "rejected", result.Status)
 		bookingRepo.AssertExpectations(t)
 	})
 
 	t.Run("unauthorized", func(t *testing.T) {
+		service, _, _, bookingRepo := setupService()
 		request := &models.BookingRequest{
 			ID:          1,
 			ItemID:      1,
@@ -1304,18 +1434,18 @@ func TestRejectBookingRequest(t *testing.T) {
 
 		bookingRepo.On("GetByID", uint(1)).Return(request, nil)
 
-		err := service.RejectBookingRequest(1, 1)
+		result, err := service.RejectBookingRequest(1, 1)
 
 		assert.Error(t, err)
+		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "unauthorized")
 		bookingRepo.AssertExpectations(t)
 	})
 }
 
 func TestGetBookingRequestByItem(t *testing.T) {
-	service, itemRepo, _, bookingRepo := setupService()
-
 	t.Run("successful get as owner", func(t *testing.T) {
+		service, itemRepo, _, bookingRepo := setupService()
 		item := &models.StoreItem{
 			ID:       1,
 			SellerID: 1,
@@ -1340,6 +1470,7 @@ func TestGetBookingRequestByItem(t *testing.T) {
 	})
 
 	t.Run("successful get as requester", func(t *testing.T) {
+		service, itemRepo, _, bookingRepo := setupService()
 		item := &models.StoreItem{
 			ID:       1,
 			SellerID: 2,
@@ -1364,6 +1495,7 @@ func TestGetBookingRequestByItem(t *testing.T) {
 	})
 
 	t.Run("item not found", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
 		itemRepo.On("GetByID", uint(999)).Return(nil, gorm.ErrRecordNotFound)
 
 		request, err := service.GetBookingRequestByItem(999, 1)
@@ -1376,9 +1508,8 @@ func TestGetBookingRequestByItem(t *testing.T) {
 }
 
 func TestGetUserBookingRequests(t *testing.T) {
-	service, _, _, bookingRepo := setupService()
-
 	t.Run("successful get user booking requests", func(t *testing.T) {
+		service, _, _, bookingRepo := setupService()
 		expectedRequests := []models.BookingRequest{
 			{ID: 1, ItemID: 1, RequesterID: 1, Status: "pending"},
 			{ID: 2, ItemID: 2, RequesterID: 1, Status: "approved"},
@@ -1394,6 +1525,7 @@ func TestGetUserBookingRequests(t *testing.T) {
 	})
 
 	t.Run("repository error", func(t *testing.T) {
+		service, _, _, bookingRepo := setupService()
 		bookingRepo.On("GetByRequesterID", uint(1)).Return([]models.BookingRequest{}, errors.New("database error"))
 
 		requests, err := service.GetUserBookingRequests(1)

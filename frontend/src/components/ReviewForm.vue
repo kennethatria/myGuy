@@ -115,6 +115,7 @@ const handleSubmit = async () => {
   }
   
   loading.value = true
+  console.log('Submitting review for task:', props.taskId);
   
   try {
     const review = await reviewsStore.createReview(props.taskId, {
@@ -123,12 +124,14 @@ const handleSubmit = async () => {
       reviewedUserId: props.reviewedUserId
     })
     
+    console.log('Review submitted successfully:', review);
     emit('review-submitted', review)
     
     // Reset form
     rating.value = 0
     comment.value = ''
   } catch (err) {
+    console.error('Failed to submit review:', err);
     error.value = err instanceof Error ? err.message : 'Failed to submit review'
   } finally {
     loading.value = false

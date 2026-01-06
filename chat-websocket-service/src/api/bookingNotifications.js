@@ -115,12 +115,13 @@ router.post('/booking-action', authenticateHTTP, async (req, res) => {
     // Get io instance from app
     const io = req.app.get('io');
 
-    // Update chat message status
+    // Update chat message status (pass full booking object for ratings)
     await bookingMessageService.updateBookingMessageStatus(
       bookingId,
       booking.status,
       userId,
-      io
+      io,
+      booking
     );
 
     res.json({ success: true, booking });

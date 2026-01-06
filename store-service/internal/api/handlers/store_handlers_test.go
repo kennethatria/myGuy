@@ -120,14 +120,20 @@ func (m *MockStoreService) GetAllBookingRequestsByItem(itemID uint, userID uint)
 	return args.Get(0).([]models.BookingRequest), args.Error(1)
 }
 
-func (m *MockStoreService) ApproveBookingRequest(requestID uint, ownerID uint) error {
+func (m *MockStoreService) ApproveBookingRequest(requestID uint, ownerID uint) (*models.BookingRequest, error) {
 	args := m.Called(requestID, ownerID)
-	return args.Error(0)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.BookingRequest), args.Error(1)
 }
 
-func (m *MockStoreService) RejectBookingRequest(requestID uint, ownerID uint) error {
+func (m *MockStoreService) RejectBookingRequest(requestID uint, ownerID uint) (*models.BookingRequest, error) {
 	args := m.Called(requestID, ownerID)
-	return args.Error(0)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.BookingRequest), args.Error(1)
 }
 
 func (m *MockStoreService) GetUserBookingRequests(userID uint) ([]models.BookingRequest, error) {
@@ -804,7 +810,8 @@ func TestApproveBookingRequest(t *testing.T) {
 	router := setupTestRouter(handler)
 
 	t.Run("successful approval", func(t *testing.T) {
-		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(nil)
+		booking := &models.BookingRequest{Status: "approved"}
+		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(booking, nil)
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/approve", nil)
@@ -816,7 +823,7 @@ func TestApproveBookingRequest(t *testing.T) {
 	})
 
 	t.Run("unauthorized", func(t *testing.T) {
-		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(errors.New("unauthorized: you are not the owner of this item"))
+		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(nil, errors.New("unauthorized: you are not the owner of this item"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/approve", nil)
@@ -837,7 +844,7 @@ func TestApproveBookingRequest(t *testing.T) {
 	})
 
 	t.Run("booking request not pending", func(t *testing.T) {
-		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(errors.New("booking request is not pending"))
+		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(nil, errors.New("booking request is not pending"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/approve", nil)
@@ -849,7 +856,7 @@ func TestApproveBookingRequest(t *testing.T) {
 	})
 
 	t.Run("service error", func(t *testing.T) {
-		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(errors.New("database error"))
+		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(nil, errors.New("database error"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/approve", nil)
@@ -867,7 +874,8 @@ func TestRejectBookingRequest(t *testing.T) {
 	router := setupTestRouter(handler)
 
 	t.Run("successful rejection", func(t *testing.T) {
-		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(nil)
+		booking := &models.BookingRequest{Status: "rejected"}
+		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(booking, nil)
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/reject", nil)
@@ -879,7 +887,7 @@ func TestRejectBookingRequest(t *testing.T) {
 	})
 
 	t.Run("unauthorized", func(t *testing.T) {
-		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(errors.New("unauthorized: you are not the owner of this item"))
+		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(nil, errors.New("unauthorized: you are not the owner of this item"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/reject", nil)
@@ -900,7 +908,7 @@ func TestRejectBookingRequest(t *testing.T) {
 	})
 
 	t.Run("booking request not pending", func(t *testing.T) {
-		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(errors.New("booking request is not pending"))
+		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(nil, errors.New("booking request is not pending"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/reject", nil)
@@ -912,7 +920,7 @@ func TestRejectBookingRequest(t *testing.T) {
 	})
 
 	t.Run("service error", func(t *testing.T) {
-		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(errors.New("database error"))
+		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(nil, errors.New("database error"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/reject", nil)

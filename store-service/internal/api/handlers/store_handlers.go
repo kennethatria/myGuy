@@ -508,7 +508,7 @@ func (h *StoreHandler) GetAllBookingRequests(c *gin.Context) {
 // ApproveBookingRequest approves a booking request
 func (h *StoreHandler) ApproveBookingRequest(c *gin.Context) {
 	userID := c.GetUint("userID")
-	
+
 	requestIDStr := c.Param("requestId")
 	requestID, err := strconv.Atoi(requestIDStr)
 	if err != nil {
@@ -516,7 +516,7 @@ func (h *StoreHandler) ApproveBookingRequest(c *gin.Context) {
 		return
 	}
 
-	err = h.service.ApproveBookingRequest(uint(requestID), userID)
+	booking, err := h.service.ApproveBookingRequest(uint(requestID), userID)
 	if err != nil {
 		if err.Error() == "unauthorized: you are not the owner of this item" {
 			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
@@ -530,13 +530,13 @@ func (h *StoreHandler) ApproveBookingRequest(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "booking request approved successfully"})
+	c.JSON(http.StatusOK, booking)
 }
 
 // RejectBookingRequest rejects a booking request
 func (h *StoreHandler) RejectBookingRequest(c *gin.Context) {
 	userID := c.GetUint("userID")
-	
+
 	requestIDStr := c.Param("requestId")
 	requestID, err := strconv.Atoi(requestIDStr)
 	if err != nil {
@@ -544,7 +544,7 @@ func (h *StoreHandler) RejectBookingRequest(c *gin.Context) {
 		return
 	}
 
-	err = h.service.RejectBookingRequest(uint(requestID), userID)
+	booking, err := h.service.RejectBookingRequest(uint(requestID), userID)
 	if err != nil {
 		if err.Error() == "unauthorized: you are not the owner of this item" {
 			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
@@ -558,7 +558,7 @@ func (h *StoreHandler) RejectBookingRequest(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "booking request rejected successfully"})
+	c.JSON(http.StatusOK, booking)
 }
 
 // GetUserBookingRequests retrieves all booking requests by a user
@@ -585,7 +585,7 @@ func (h *StoreHandler) ConfirmItemReceived(c *gin.Context) {
 		return
 	}
 
-	err = h.service.ConfirmItemReceived(uint(requestID), userID)
+	booking, err := h.service.ConfirmItemReceived(uint(requestID), userID)
 	if err != nil {
 		if err.Error() == "booking request not found" {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -603,7 +603,7 @@ func (h *StoreHandler) ConfirmItemReceived(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "item receipt confirmed"})
+	c.JSON(http.StatusOK, booking)
 }
 
 // ConfirmDelivery allows seller to confirm delivery is complete
@@ -617,7 +617,7 @@ func (h *StoreHandler) ConfirmDelivery(c *gin.Context) {
 		return
 	}
 
-	err = h.service.ConfirmDelivery(uint(requestID), userID)
+	booking, err := h.service.ConfirmDelivery(uint(requestID), userID)
 	if err != nil {
 		if err.Error() == "booking request not found" {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -635,7 +635,7 @@ func (h *StoreHandler) ConfirmDelivery(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "delivery confirmed"})
+	c.JSON(http.StatusOK, booking)
 }
 
 // SubmitBuyerRating allows buyer to rate the seller
@@ -655,7 +655,7 @@ func (h *StoreHandler) SubmitBuyerRating(c *gin.Context) {
 		return
 	}
 
-	err = h.service.SubmitBuyerRating(uint(requestID), userID, req.Rating, req.Review)
+	booking, err := h.service.SubmitBuyerRating(uint(requestID), userID, req.Rating, req.Review)
 	if err != nil {
 		if err.Error() == "booking request not found" {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -673,7 +673,7 @@ func (h *StoreHandler) SubmitBuyerRating(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "rating submitted successfully"})
+	c.JSON(http.StatusOK, booking)
 }
 
 // SubmitSellerRating allows seller to rate the buyer
@@ -693,7 +693,7 @@ func (h *StoreHandler) SubmitSellerRating(c *gin.Context) {
 		return
 	}
 
-	err = h.service.SubmitSellerRating(uint(requestID), userID, req.Rating, req.Review)
+	booking, err := h.service.SubmitSellerRating(uint(requestID), userID, req.Rating, req.Review)
 	if err != nil {
 		if err.Error() == "booking request not found" {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -711,5 +711,5 @@ func (h *StoreHandler) SubmitSellerRating(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "rating submitted successfully"})
+	c.JSON(http.StatusOK, booking)
 }

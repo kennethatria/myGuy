@@ -60,7 +60,7 @@ async function createBookingRequestMessage({
 /**
  * Update booking message status and create status update message
  */
-async function updateBookingMessageStatus(bookingId, status, approverId, io) {
+async function updateBookingMessageStatus(bookingId, status, approverId, io, bookingData = null) {
   try {
     // Find the original booking request message
     const findResult = await db.query(
@@ -77,11 +77,27 @@ async function updateBookingMessageStatus(bookingId, status, approverId, io) {
 
     const requestMessage = findResult.rows[0];
 
-    // Update the original message metadata
+    // Update the original message metadata with status and ratings
     const updatedMetadata = {
       ...requestMessage.metadata,
       status: status
     };
+
+    // If we have booking data with ratings, include them in metadata
+    if (bookingData) {
+      if (bookingData.buyer_rating !== undefined && bookingData.buyer_rating !== null) {
+        updatedMetadata.buyer_rating = bookingData.buyer_rating;
+      }
+      if (bookingData.buyer_review !== undefined && bookingData.buyer_review !== null) {
+        updatedMetadata.buyer_review = bookingData.buyer_review;
+      }
+      if (bookingData.seller_rating !== undefined && bookingData.seller_rating !== null) {
+        updatedMetadata.seller_rating = bookingData.seller_rating;
+      }
+      if (bookingData.seller_review !== undefined && bookingData.seller_review !== null) {
+        updatedMetadata.seller_review = bookingData.seller_review;
+      }
+    }
 
     await db.query(
       `UPDATE messages
