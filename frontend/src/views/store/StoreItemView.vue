@@ -59,8 +59,14 @@
                 >
                   View Profile
                 </router-link>
-                <button 
-                  v-if="item.seller.id !== userId"
+                <!-- Show transaction complete badge if booking is completed/item received -->
+                <div v-if="item.seller.id !== userId && hasCompletedBooking" class="transaction-complete-badge">
+                  <i class="fas fa-check-circle"></i>
+                  Transaction Complete
+                </div>
+                <!-- Only show message button if not own item and transaction not complete -->
+                <button
+                  v-else-if="item.seller.id !== userId"
                   @click="openStoreChat"
                   class="btn btn-outline btn-sm message-btn"
                 >
@@ -97,8 +103,8 @@
               <!-- Booking Request Section -->
               <div v-if="item.seller.id !== userId && item.status === 'active'" class="booking-section">
                 <div v-if="!hasBookingRequest" class="booking-request">
-                  <button 
-                    @click="sendBookingRequest" 
+                  <button
+                    @click="sendBookingRequest"
                     :disabled="loadingBookingRequest"
                     class="btn btn-primary btn-large"
                     data-testid="booking-request-btn"
@@ -116,7 +122,7 @@
                       <p>Waiting for the owner to respond</p>
                     </div>
                   </div>
-                  
+
                   <div v-else-if="bookingStatus === 'approved'" class="status-approved">
                     <i class="fas fa-check-circle"></i>
                     <div>
@@ -124,7 +130,23 @@
                       <p>You can now message the owner to coordinate pickup/delivery</p>
                     </div>
                   </div>
-                  
+
+                  <div v-else-if="bookingStatus === 'item_received'" class="status-item-received">
+                    <i class="fas fa-box-check"></i>
+                    <div>
+                      <p><strong>Item Received</strong></p>
+                      <p>Waiting for seller to confirm delivery. Go to Messages to complete the transaction.</p>
+                    </div>
+                  </div>
+
+                  <div v-else-if="bookingStatus === 'completed'" class="status-completed">
+                    <i class="fas fa-check-double"></i>
+                    <div>
+                      <p><strong>Transaction Completed!</strong></p>
+                      <p>This transaction has been completed. You can rate your experience in Messages.</p>
+                    </div>
+                  </div>
+
                   <div v-else-if="bookingStatus === 'rejected'" class="status-rejected">
                     <i class="fas fa-times-circle"></i>
                     <div>
@@ -307,6 +329,13 @@ const bookingStatus = computed(() => {
   return bookingRequest.value?.status || null;
 });
 
+const hasCompletedBooking = computed(() => {
+  if (!bookingRequest.value) return false;
+  const status = bookingRequest.value.status;
+  // Consider booking complete when item is received or fully completed
+  return status === 'completed' || status === 'item_received';
+});
+
 async function loadItem() {
   try {
     loading.value = true;
@@ -459,7 +488,7 @@ async function placeBid() {
 // Booking request functions
 async function sendBookingRequest() {
   if (!item.value || loadingBookingRequest.value) return;
-  
+
   loadingBookingRequest.value = true;
   try {
     const response = await fetch(`${config.STORE_API_URL}/items/${itemId.value}/booking-request`, {
@@ -472,7 +501,7 @@ async function sendBookingRequest() {
         message: `I'm interested in booking this item: ${item.value.title}`
       })
     });
-    
+
     if (response.ok) {
       const request = await response.json();
       bookingRequest.value = request;
@@ -854,6 +883,24 @@ onMounted(() => {
   font-size: 0.875rem;
 }
 
+.transaction-complete-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #10b981;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.transaction-complete-badge i {
+  font-size: 0.875rem;
+  color: #10b981;
+}
+
 .price-section {
   margin-bottom: 2rem;
 }
@@ -1217,6 +1264,7 @@ onMounted(() => {
 }
 
 .booking-info {
+  text-align: center;
   font-size: 0.875rem;
   color: #6b7280;
   margin-top: 0.5rem;
@@ -1256,9 +1304,29 @@ onMounted(() => {
   gap: 0.75rem;
 }
 
+.status-item-received {
+  background: #dbeafe;
+  border-color: #3b82f6;
+  color: #1e40af;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.status-completed {
+  background: #d1fae5;
+  border-color: #10b981;
+  color: #065f46;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
 .status-pending i,
 .status-approved i,
-.status-rejected i {
+.status-rejected i,
+.status-item-received i,
+.status-completed i {
   font-size: 1.25rem;
   margin-top: 0.125rem;
 }

@@ -106,53 +106,74 @@ async function updateBookingMessageStatus(bookingId, status, approverId, io, boo
       [JSON.stringify(updatedMetadata), requestMessage.id]
     );
 
-    // Create a new system message for the status change
-    let messageType;
-    let content;
-
-    if (status === 'approved') {
-      messageType = 'booking_approved';
-      content = 'Booking approved ✅. You can now discuss pickup details.';
-    } else if (status === 'rejected') {
-      messageType = 'booking_declined';
-      content = 'Booking request was declined.';
-    } else if (status === 'item_received') {
-      messageType = 'booking_item_received';
-      content = '📦 Buyer confirmed they received the item.';
-    } else if (status === 'completed') {
-      messageType = 'booking_completed';
-      content = '✅ Transaction completed! Both parties have confirmed.';
-    } else {
-      messageType = 'booking_status_update';
-      content = `Booking status updated to: ${status}`;
-    }
-
-    const statusResult = await db.query(
-      `INSERT INTO messages (
-        sender_id,
-        recipient_id,
-        store_item_id,
-        message_type,
-        content,
-        metadata,
-        created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
-      RETURNING *`,
-      [
-        approverId,
-        requestMessage.sender_id,
-        requestMessage.store_item_id,
-        messageType,
-        content,
-        JSON.stringify({
-          booking_id: bookingId,
-          item_id: requestMessage.metadata.item_id,
-          status: status
-        })
-      ]
+    // Check if a status message for this booking and status already exists
+    // This prevents duplicate messages if the function is called multiple times
+    const existingStatusMessage = await db.query(
+      `SELECT * FROM messages
+       WHERE store_item_id = $1
+       AND metadata->>'booking_id' = $2
+       AND metadata->>'status' = $3
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [requestMessage.store_item_id, bookingId.toString(), status]
     );
 
-    const statusMessage = statusResult.rows[0];
+    let statusMessage;
+
+    // If a status message already exists for this status, reuse it instead of creating duplicate
+    if (existingStatusMessage.rows.length > 0) {
+      statusMessage = existingStatusMessage.rows[0];
+      console.log(`ℹ️ Status message already exists for booking ${bookingId} status ${status} - skipping duplicate creation`);
+    } else {
+      // Create a new system message for the status change
+      let messageType;
+      let content;
+
+      if (status === 'approved') {
+        messageType = 'booking_approved';
+        content = 'Booking approved ✅. You can now discuss pickup details.';
+      } else if (status === 'rejected') {
+        messageType = 'booking_declined';
+        content = 'Booking request was declined.';
+      } else if (status === 'item_received') {
+        messageType = 'booking_item_received';
+        content = '📦 Buyer confirmed they received the item.';
+      } else if (status === 'completed') {
+        messageType = 'booking_completed';
+        content = '✅ Transaction completed! Both parties have confirmed.';
+      } else {
+        messageType = 'booking_status_update';
+        content = `Booking status updated to: ${status}`;
+      }
+
+      const statusResult = await db.query(
+        `INSERT INTO messages (
+          sender_id,
+          recipient_id,
+          store_item_id,
+          message_type,
+          content,
+          metadata,
+          created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        RETURNING *`,
+        [
+          approverId,
+          requestMessage.sender_id,
+          requestMessage.store_item_id,
+          messageType,
+          content,
+          JSON.stringify({
+            booking_id: bookingId,
+            item_id: requestMessage.metadata.item_id,
+            status: status
+          })
+        ]
+      );
+
+      statusMessage = statusResult.rows[0];
+      console.log(`✅ Created new status message for booking ${bookingId} status ${status}`);
+    }
 
     // Emit to both users via WebSocket
     if (io) {

@@ -199,7 +199,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
 import { useUserStore } from '@/stores/user';
 import config from '@/config';
 import type { Message } from '@/stores/messages';
@@ -215,6 +215,7 @@ const emit = defineEmits<{
 
 const userStore = useUserStore();
 const isProcessing = ref(false);
+const processingTimeout = ref<number | null>(null);
 
 // Rating state
 const selectedRating = ref(0);
@@ -297,6 +298,25 @@ const displayedReview = computed(() => {
   }
 });
 
+// Processing state management
+function resetProcessing() {
+  isProcessing.value = false;
+  if (processingTimeout.value) {
+    clearTimeout(processingTimeout.value);
+    processingTimeout.value = null;
+  }
+}
+
+function startProcessing() {
+  isProcessing.value = true;
+
+  // Fallback: reset after 10 seconds if no response
+  processingTimeout.value = window.setTimeout(() => {
+    console.warn('Booking action timeout - resetting processing state');
+    resetProcessing();
+  }, 10000);
+}
+
 function getImageUrl(imagePath: string): string {
   if (imagePath.startsWith('http')) {
     return imagePath;
@@ -307,26 +327,25 @@ function getImageUrl(imagePath: string): string {
 
 async function handleApprove() {
   if (!props.message.metadata?.booking_id) return;
-  isProcessing.value = true;
+  startProcessing();
   emit('bookingAction', props.message.metadata.booking_id, 'approve');
-  // Note: isProcessing will be reset when the response comes back via WebSocket
 }
 
 async function handleDecline() {
   if (!props.message.metadata?.booking_id) return;
-  isProcessing.value = true;
+  startProcessing();
   emit('bookingAction', props.message.metadata.booking_id, 'decline');
 }
 
 async function handleConfirmReceived() {
   if (!props.message.metadata?.booking_id) return;
-  isProcessing.value = true;
+  startProcessing();
   emit('bookingAction', props.message.metadata.booking_id, 'confirm-received');
 }
 
 async function handleConfirmDelivery() {
   if (!props.message.metadata?.booking_id) return;
-  isProcessing.value = true;
+  startProcessing();
   emit('bookingAction', props.message.metadata.booking_id, 'confirm-delivery');
 }
 
@@ -337,7 +356,7 @@ function selectRating(rating: number) {
 async function submitRating() {
   if (!props.message.metadata?.booking_id || !selectedRating.value) return;
 
-  isProcessing.value = true;
+  startProcessing();
   const action = props.isOwnMessage ? 'rate-seller' : 'rate-buyer';
 
   emit(
@@ -365,6 +384,32 @@ function formatTime(timestamp: string): string {
 
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
+
+// Watch for message metadata changes to detect completion
+watch(
+  () => props.message.metadata,
+  (newMetadata, oldMetadata) => {
+    // If action completed (status changed or rating added), reset processing state
+    if (isProcessing.value) {
+      const statusChanged = newMetadata?.status !== oldMetadata?.status;
+      const buyerRatingAdded = newMetadata?.buyer_rating && !oldMetadata?.buyer_rating;
+      const sellerRatingAdded = newMetadata?.seller_rating && !oldMetadata?.seller_rating;
+
+      if (statusChanged || buyerRatingAdded || sellerRatingAdded) {
+        console.log('Booking action completed - resetting processing state');
+        resetProcessing();
+      }
+    }
+  },
+  { deep: true }
+);
+
+// Cleanup on unmount
+onUnmounted(() => {
+  if (processingTimeout.value) {
+    clearTimeout(processingTimeout.value);
+  }
+});
 </script>
 
 <style scoped>

@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const db = require('../config/database');
 const bookingMessageService = require('../services/bookingMessageService');
 const { authenticateHTTP } = require('../middleware/auth');
 
@@ -115,14 +116,70 @@ router.post('/booking-action', authenticateHTTP, async (req, res) => {
     // Get io instance from app
     const io = req.app.get('io');
 
-    // Update chat message status (pass full booking object for ratings)
-    await bookingMessageService.updateBookingMessageStatus(
-      bookingId,
-      booking.status,
-      userId,
-      io,
-      booking
-    );
+    // For rating actions, only update metadata without creating duplicate status messages
+    // Since ratings don't change the booking status (it stays 'completed'),
+    // we don't need to create another "Transaction completed" message
+    if (action === 'rate-seller' || action === 'rate-buyer') {
+      // Find the original booking request message
+      const findResult = await db.query(
+        `SELECT * FROM messages
+         WHERE message_type = 'booking_request'
+         AND metadata->>'booking_id' = $1
+         LIMIT 1`,
+        [bookingId.toString()]
+      );
+
+      if (findResult.rows.length > 0) {
+        const requestMessage = findResult.rows[0];
+
+        // Update metadata with ratings
+        const updatedMetadata = {
+          ...requestMessage.metadata,
+          status: booking.status
+        };
+
+        // Add rating data to metadata
+        if (booking.buyer_rating !== undefined && booking.buyer_rating !== null) {
+          updatedMetadata.buyer_rating = booking.buyer_rating;
+        }
+        if (booking.buyer_review !== undefined && booking.buyer_review !== null) {
+          updatedMetadata.buyer_review = booking.buyer_review;
+        }
+        if (booking.seller_rating !== undefined && booking.seller_rating !== null) {
+          updatedMetadata.seller_rating = booking.seller_rating;
+        }
+        if (booking.seller_review !== undefined && booking.seller_review !== null) {
+          updatedMetadata.seller_review = booking.seller_review;
+        }
+
+        // Update the message metadata
+        await db.query(
+          `UPDATE messages SET metadata = $1 WHERE id = $2`,
+          [JSON.stringify(updatedMetadata), requestMessage.id]
+        );
+
+        // Emit update to both users (buyer and seller)
+        const updatedMessage = { ...requestMessage, metadata: updatedMetadata };
+        io.to(`user:${requestMessage.sender_id}`).emit('message:updated', updatedMessage);
+
+        // Get seller ID from the booking/item
+        if (booking.item && booking.item.seller_id) {
+          io.to(`user:${booking.item.seller_id}`).emit('message:updated', updatedMessage);
+        }
+
+        console.log(`✅ Rating submitted for booking ${bookingId} - metadata updated without duplicate status message`);
+      }
+    } else {
+      // For non-rating actions (approve, decline, confirm-received, confirm-delivery),
+      // create status message as normal
+      await bookingMessageService.updateBookingMessageStatus(
+        bookingId,
+        booking.status,
+        userId,
+        io,
+        booking
+      );
+    }
 
     res.json({ success: true, booking });
   } catch (error) {

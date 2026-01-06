@@ -225,16 +225,10 @@ async function sendMessage() {
     // Clear input after sending
     messageText.value = '';
 
-    // Refresh messages with privacy filter
-    const allMessages = chatStore.getStoreMessages(props.itemId);
-    messages.value = allMessages.filter(msg => {
-      const isFromCurrentUser = msg.sender_id === currentUserId.value;
-      const isToCurrentUser = msg.recipient_id === currentUserId.value;
-      const isFromSeller = msg.sender_id === props.sellerId;
-      const isToSeller = msg.recipient_id === props.sellerId;
-
-      return (isFromCurrentUser && isToSeller) || (isFromSeller && isToCurrentUser);
-    });
+    // Close modal after successfully sending message
+    setTimeout(() => {
+      close();
+    }, 500); // Small delay so user sees the message was sent
   } catch (err) {
     console.error('Error sending message:', err);
     alert('Failed to send message. Please try again.');
@@ -269,6 +263,25 @@ watch(() => props.isOpen, (newValue) => {
     loadConversation();
   }
 });
+
+// Watch for new messages from the store and update local messages
+watch(
+  () => chatStore.getStoreMessages(props.itemId),
+  (allMessages) => {
+    if (!props.isOpen) return;
+
+    // Filter messages between current user and seller (privacy filter)
+    messages.value = allMessages.filter(msg => {
+      const isFromCurrentUser = msg.sender_id === currentUserId.value;
+      const isToCurrentUser = msg.recipient_id === currentUserId.value;
+      const isFromSeller = msg.sender_id === props.sellerId;
+      const isToSeller = msg.recipient_id === props.sellerId;
+
+      return (isFromCurrentUser && isToSeller) || (isFromSeller && isToCurrentUser);
+    });
+  },
+  { deep: true }
+);
 </script>
 
 <style scoped>
