@@ -20,7 +20,7 @@
 The following `P1` items are also critical for a successful MVP launch.
 
 - **Backend Filtering for Store Items:** ✅ **COMPLETED** - January 18, 2026. Implemented server-side filtering, sorting, and pagination in StoreView.vue.
-- **Backend Testing Foundation:** ✅ Foundation established (Mocks + TaskService init). Continuing to expand coverage.
+- **Backend Testing Foundation:** ✅ **COMPLETED** - January 18, 2026. Service layer at 93.7% coverage (108 test cases). See `03-completed/FIXLOG-backend-testing-foundation.md`.
 - **Transactional Bidding:** ✅ **FIXED** - Implemented DB transactions and row locking for atomic bidding.
 - **Seller Name Display Bug:** ✅ **FIXED** - Updated frontend to handle correct field name (`name` vs `full_name`).
 
@@ -77,3 +77,20 @@ For a full breakdown of all `P1`, `P2`, and `P3` items, please refer to the [MVP
   - Sellers: Centralized booking view, no missed requests
 - **Details:** See `03-completed/FIXLOG-enhanced-booking-flow.md`
 - **Related:** Builds on P2 "Unified Booking & Messaging Flow"
+
+---
+
+## 🎉 P2 Complete: Database Performance Indexes
+
+- **Status:** ✅ **COMPLETED** - January 18, 2026
+- **Problem:** Database missing key indexes on foreign key columns and common query filters, risking performance degradation under load
+- **Solution:** Added comprehensive GORM index tags to all model structs across backend and store-service:
+  - **Backend (my_guy):** 13 indexes on tasks, applications, reviews tables
+  - **Store Service (my_guy_store):** 14 indexes on store_items, item_images, bids, booking_requests tables
+  - **Chat Service (my_guy_chat):** Already well-indexed (no changes needed)
+- **Impact:**
+  - Foreign key JOINs now use indexed lookups
+  - Filter queries avoid full table scans
+  - Unique composite index prevents duplicate reviews
+- **Details:** See `03-completed/FIXLOG-database-indexes.md`
+- **Deployment:** Indexes auto-created by GORM on service startup

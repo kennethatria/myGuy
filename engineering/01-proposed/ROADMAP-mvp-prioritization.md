@@ -57,17 +57,22 @@ The items are sourced from the `TODO` and `ROADMAP` documents in this directory.
 
 *These issues will lead to a broken or confusing user experience. They are critical for a successful user test.*
 
-### 1. Implement Backend Filtering for Store Items
+### 1. Implement Backend Filtering for Store Items ✅ **COMPLETED**
 -   **Problem:** The store page fetches all items and filters them on the client-side.
 -   **Impact:** The page will be extremely slow and memory-intensive with even a moderate number of items, making the marketplace unusable.
 -   **Action:** Modify the frontend to send filter parameters to the backend API and handle the filtered results. Implement pagination at the same time.
 -   **Source:** `TODO-frontend-store-service-integration.md`
+-   **Status:** ✅ **COMPLETED** - January 18, 2026
+-   **Details:** See `../03-completed/FIXLOG-typescript-errors-and-store-filtering.md`
 
-### 2. Add Backend Testing Foundation
+### 2. Add Backend Testing Foundation ✅ **COMPLETED**
 -   **Problem:** The main `backend` service has zero test coverage.
 -   **Impact:** There is a very high risk of regressions and uncaught bugs in core business logic (tasks, applications, user management). A single change could break the platform without warning.
 -   **Action:** Implement a basic testing suite for the main backend, focusing first on critical paths like user authentication and task creation.
 -   **Source:** `ADR-backend-testing-strategy.md`
+-   **Status:** ✅ **COMPLETED** - January 18, 2026
+-   **Coverage:** Service layer at 93.7% (108 test cases for UserService, TaskService, ReviewService)
+-   **Details:** See `../03-completed/FIXLOG-backend-testing-foundation.md`
 
 ### 3. Ensure Transactional Bidding
 -   **Problem:** The bidding logic may be vulnerable to race conditions.
@@ -115,13 +120,18 @@ The items are sourced from the `TODO` and `ROADMAP` documents in this directory.
 -   **Eliminated:** 193 lines of duplicated chat code
 -   **Details:** See `../03-completed/FIXLOG-p1-p2-chat-refactoring.md`
 
-### 2. Address Backend Scalability & Performance
+### 2. Address Backend Scalability & Performance (Partial)
 -   **Problem:** The chat service cannot scale beyond a single instance, and the database may be missing key indexes.
 -   **Impact:** The system may face performance issues under moderate load.
 -   **Action:**
-    -   (Chat) Plan for integrating a Redis adapter for Socket.IO.
-    -   (Chat & Store) Review and add necessary database indexes to foreign key columns and common query filters.
+    -   (Chat) Plan for integrating a Redis adapter for Socket.IO. **📋 Pending**
+    -   (Chat & Store) Review and add necessary database indexes to foreign key columns and common query filters. ✅ **COMPLETED**
 -   **Source:** `TODO-chat-functionality-review.md`, `ROADMAP-store-service-improvements.md`
+-   **Database Indexes Status:** ✅ **COMPLETED** - January 18, 2026
+    -   Backend: 13 indexes on tasks, applications, reviews tables
+    -   Store Service: 14 indexes on store_items, item_images, bids, booking_requests tables
+    -   Chat Service: Already well-indexed (no changes needed)
+    -   **Details:** See `../03-completed/FIXLOG-database-indexes.md`
 
 ### 3. Resolve TypeScript Type Errors
 -   **Problem:** 62 pre-existing TypeScript type errors across 10 frontend files (App.vue, TaskDetailView, StoreItemView, etc.).

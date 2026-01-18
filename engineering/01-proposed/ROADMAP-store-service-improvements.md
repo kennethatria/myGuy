@@ -26,11 +26,14 @@ This document outlines potential future improvements for the `store-service` to 
 
 ## 3. Performance Optimizations
 
--   **Comprehensive Database Indexing**
-    -   **Current State:** The `GET /items` endpoint supports many filter parameters, but not all are necessarily indexed.
-    -   **Suggestion:** Add composite database indexes for common filter combinations to prevent performance degradation as the data grows. For example:
-        -   `CREATE INDEX idx_items_filters ON store_items (category, status, price_type);`
-        -   For text search, implement PostgreSQL's full-text search (`tsvector` and `tsquery`) for much faster and more relevant results than `ILIKE`.
+-   **Comprehensive Database Indexing** ✅ **COMPLETED**
+    -   **Status:** ✅ **COMPLETED** - January 18, 2026
+    -   **Implementation:** Added GORM index tags to all model structs covering:
+        -   Foreign keys: `seller_id`, `buyer_id`, `item_id`, `bidder_id`, `requester_id`
+        -   Common filters: `status`, `category`, `price_type`, `condition`, `bid_deadline`
+        -   Sorting columns: `created_at`, `fixed_price`
+    -   **Details:** See `../03-completed/FIXLOG-database-indexes.md`
+    -   **Future Enhancement:** For text search, consider implementing PostgreSQL's full-text search (`tsvector` and `tsquery`) for faster and more relevant results than `ILIKE`.
 
 -   **Offload Image Serving to a CDN**
     -   **Current State:** The Go service serves static image files directly from its filesystem.
