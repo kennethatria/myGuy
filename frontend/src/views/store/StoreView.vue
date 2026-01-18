@@ -14,6 +14,7 @@
     </div>
 
     <div v-else>
+      <!-- Main Filters Section -->
       <div class="filters-section">
         <input
           v-model="searchQuery"
@@ -40,6 +41,72 @@
           <option value="fair">Fair</option>
           <option value="poor">Poor</option>
         </select>
+        <button @click="showAdvancedFilters = !showAdvancedFilters" class="btn btn-outline filter-toggle">
+          <span v-if="showAdvancedFilters">Hide Filters</span>
+          <span v-else>More Filters</span>
+        </button>
+      </div>
+
+      <!-- Advanced Filters (Collapsible) -->
+      <div v-if="showAdvancedFilters" class="advanced-filters">
+        <div class="filter-row">
+          <div class="filter-group">
+            <label>Price Type</label>
+            <select v-model="priceTypeFilter" @change="filterItems" class="filter-select">
+              <option value="">All Types</option>
+              <option value="fixed">Fixed Price</option>
+              <option value="bidding">Auction</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Min Price (UGX)</label>
+            <input
+              v-model.number="minPriceFilter"
+              type="number"
+              min="0"
+              placeholder="0"
+              class="filter-input"
+              @change="filterItems"
+            />
+          </div>
+          <div class="filter-group">
+            <label>Max Price (UGX)</label>
+            <input
+              v-model.number="maxPriceFilter"
+              type="number"
+              min="0"
+              placeholder="Any"
+              class="filter-input"
+              @change="filterItems"
+            />
+          </div>
+          <div class="filter-group">
+            <label>Sort By</label>
+            <select v-model="sortBy" class="filter-select">
+              <option value="created_at">Newest First</option>
+              <option value="price">Price</option>
+              <option value="title">Name</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Order</label>
+            <select v-model="sortOrder" class="filter-select">
+              <option value="desc">Descending</option>
+              <option value="asc">Ascending</option>
+            </select>
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button @click="resetFilters" class="btn btn-secondary btn-sm">Reset All Filters</button>
+        </div>
+      </div>
+
+      <!-- Results Info -->
+      <div v-if="totalItems > 0" class="results-info">
+        <p>
+          Showing {{ (currentPage - 1) * perPage + 1 }} - {{ Math.min(currentPage * perPage, totalItems) }}
+          of {{ totalItems }} items
+        </p>
       </div>
 
       <div v-if="filteredItems.length === 0" class="empty-state">
@@ -58,9 +125,9 @@
     <div v-else class="items-grid">
       <div v-for="item in filteredItems" :key="item.id || item.title || Math.random()" class="item-card">
         <div class="item-image">
-          <img 
-            v-if="item.images && item.images.length > 0" 
-            :src="config.STORE_API_BASE_URL + item.images[0].url" 
+          <img
+            v-if="item.images && item.images.length > 0"
+            :src="config.STORE_API_BASE_URL + item.images[0].url"
             :alt="item.title || 'Item image'"
             @error="handleImageError"
           />
@@ -81,10 +148,10 @@
             <span class="condition">{{ item.condition || 'Unknown' }}</span>
           </div>
           <div class="item-price">
-            <span v-if="item.is_auction" class="auction-label">
+            <span v-if="item.is_auction || item.price_type === 'bidding'" class="auction-label">
               Current Bid: UGX {{ formatCurrency(item.current_bid || item.starting_bid || 0) }}
             </span>
-            <span v-else>UGX {{ formatCurrency(item.price || 0) }}</span>
+            <span v-else>UGX {{ formatCurrency(item.fixed_price || item.price || 0) }}</span>
           </div>
           <div class="item-actions">
             <button @click="viewItem(item)" class="btn btn-sm btn-outline">
@@ -94,6 +161,49 @@
         </div>
       </div>
     </div>
+
+    <!-- Pagination -->
+    <nav v-if="totalPages > 1" class="pagination-container">
+      <ul class="pagination">
+        <li class="page-item" :class="{ disabled: currentPage === 1 }">
+          <button class="page-link" @click="prevPage" :disabled="currentPage === 1">
+            Previous
+          </button>
+        </li>
+
+        <li v-if="currentPage > 2" class="page-item">
+          <button class="page-link" @click="goToPage(1)">1</button>
+        </li>
+        <li v-if="currentPage > 3" class="page-item disabled">
+          <span class="page-link">...</span>
+        </li>
+
+        <li v-if="currentPage > 1" class="page-item">
+          <button class="page-link" @click="goToPage(currentPage - 1)">{{ currentPage - 1 }}</button>
+        </li>
+
+        <li class="page-item active">
+          <button class="page-link">{{ currentPage }}</button>
+        </li>
+
+        <li v-if="currentPage < totalPages" class="page-item">
+          <button class="page-link" @click="goToPage(currentPage + 1)">{{ currentPage + 1 }}</button>
+        </li>
+
+        <li v-if="currentPage < totalPages - 2" class="page-item disabled">
+          <span class="page-link">...</span>
+        </li>
+        <li v-if="currentPage < totalPages - 1" class="page-item">
+          <button class="page-link" @click="goToPage(totalPages)">{{ totalPages }}</button>
+        </li>
+
+        <li class="page-item" :class="{ disabled: currentPage === totalPages }">
+          <button class="page-link" @click="nextPage" :disabled="currentPage === totalPages">
+            Next
+          </button>
+        </li>
+      </ul>
+    </nav>
     </div>
 
     <!-- Create Item Modal -->
@@ -366,21 +476,81 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import { debounce } from 'lodash-es';
 import config from '@/config';
+
+// Type definitions
+interface StoreItemImage {
+  id: number;
+  url: string;
+}
+
+interface Seller {
+  id: number;
+  username: string;
+  name?: string;
+}
+
+interface StoreItem {
+  id: number;
+  title: string;
+  description: string;
+  category: string;
+  condition: string;
+  status: string;
+  price_type: string;
+  fixed_price?: number;
+  starting_bid?: number;
+  current_bid?: number;
+  bid_increment?: number;
+  price?: number;
+  is_auction?: boolean;
+  seller_id: number;
+  seller?: Seller;
+  images?: StoreItemImage[];
+  created_at: string;
+}
+
+interface PaginatedResponse {
+  items: StoreItem[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+interface SelectedImage {
+  file: File;
+  preview: string;
+}
 
 const router = useRouter();
 
-const items = ref([]);
+// Store items state
+const items = ref<StoreItem[]>([]);
+const totalItems = ref(0);
+const currentPage = ref(1);
+const perPage = ref(12);
+const totalPages = computed(() => Math.ceil(totalItems.value / perPage.value));
+
+// Filter state
 const searchQuery = ref('');
 const categoryFilter = ref('');
 const conditionFilter = ref('');
+const priceTypeFilter = ref('');
+const minPriceFilter = ref<number | null>(null);
+const maxPriceFilter = ref<number | null>(null);
+const sortBy = ref('created_at');
+const sortOrder = ref('desc');
+
+// UI state
 const showCreateModal = ref(false);
-const selectedImages = ref([]);
+const selectedImages = ref<SelectedImage[]>([]);
 const currentStep = ref(1);
 const isSubmitting = ref(false);
 const isLoading = ref(true);
+const showAdvancedFilters = ref(false);
 const formErrors = ref({
   title: '',
   description: '',
@@ -400,83 +570,159 @@ const newItem = ref({
   bid_increment: '1000'
 });
 
-const filteredItems = computed(() => {
-  // Ensure items.value is always an array before filtering
-  if (!Array.isArray(items.value)) {
-    return [];
-  }
-  
-  return items.value.filter(item => {
-    // Add null checks for item properties
-    if (!item || typeof item !== 'object') {
-      return false;
-    }
-    
-    const itemTitle = item.title || '';
-    const itemDescription = item.description || '';
-    const itemCategory = item.category || '';
-    const itemCondition = item.condition || '';
-    
-    const matchesSearch = !searchQuery.value || 
-      itemTitle.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      itemDescription.toLowerCase().includes(searchQuery.value.toLowerCase());
-    
-    const matchesCategory = !categoryFilter.value || itemCategory === categoryFilter.value;
-    const matchesCondition = !conditionFilter.value || itemCondition === conditionFilter.value;
-    
-    return matchesSearch && matchesCategory && matchesCondition;
-  });
+// Items are now loaded from backend with filters applied, so no client-side filtering needed
+const filteredItems = computed(() => items.value);
+
+// Check if any filters are active
+const hasActiveFilters = computed(() => {
+  return searchQuery.value || categoryFilter.value || conditionFilter.value ||
+         priceTypeFilter.value || minPriceFilter.value !== null || maxPriceFilter.value !== null;
 });
 
+// Build query parameters for backend API
+function buildQueryParams(): URLSearchParams {
+  const params = new URLSearchParams();
+
+  // Search
+  if (searchQuery.value) {
+    params.append('search', searchQuery.value);
+  }
+
+  // Category filter
+  if (categoryFilter.value) {
+    params.append('category', categoryFilter.value);
+  }
+
+  // Condition filter
+  if (conditionFilter.value) {
+    params.append('condition', conditionFilter.value);
+  }
+
+  // Price type filter (fixed or bidding)
+  if (priceTypeFilter.value) {
+    params.append('price_type', priceTypeFilter.value);
+  }
+
+  // Price range filters
+  if (minPriceFilter.value !== null && minPriceFilter.value > 0) {
+    params.append('min_price', String(minPriceFilter.value));
+  }
+  if (maxPriceFilter.value !== null && maxPriceFilter.value > 0) {
+    params.append('max_price', String(maxPriceFilter.value));
+  }
+
+  // Sorting
+  params.append('sort_by', sortBy.value);
+  params.append('sort_order', sortOrder.value);
+
+  // Pagination
+  params.append('page', String(currentPage.value));
+  params.append('per_page', String(perPage.value));
+
+  // Only active items
+  params.append('status', 'active');
+
+  return params;
+}
+
 async function loadItems() {
+  isLoading.value = true;
+
   try {
-    // Ensure items is always an array during loading
-    if (!Array.isArray(items.value)) {
-      items.value = [];
-    }
-    
-    const response = await fetch(`${config.STORE_API_URL}/items`, {
+    const params = buildQueryParams();
+    const url = `${config.STORE_API_URL}/items?${params.toString()}`;
+
+    console.log('Fetching items with URL:', url);
+
+    const response = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`
       }
     });
-    
+
     if (response.ok) {
-      const data = await response.json();
+      const data: PaginatedResponse = await response.json();
       console.log('Store API response:', data);
-      
+
       // Backend returns {items: [...], total: X, page: Y, per_page: Z}
-      // Extract the items array from the response with extensive safety checks
-      let extractedItems = [];
-      
       if (data && typeof data === 'object') {
-        if (Array.isArray(data.items)) {
-          extractedItems = data.items;
-        } else if (Array.isArray(data)) {
-          extractedItems = data;
+        items.value = Array.isArray(data.items) ? data.items : [];
+        totalItems.value = data.total || 0;
+
+        // Update current page if returned from backend
+        if (data.page) {
+          currentPage.value = data.page;
         }
+      } else {
+        items.value = [];
+        totalItems.value = 0;
       }
-      
-      // Validate each item has required properties
-      const validItems = extractedItems.filter(item => 
-        item && 
-        typeof item === 'object' && 
-        (item.id !== undefined || item.title !== undefined)
-      );
-      
-      items.value = validItems;
-      console.log(`Loaded ${validItems.length} valid items`);
+
+      console.log(`Loaded ${items.value.length} items (total: ${totalItems.value})`);
     } else {
       console.error('Failed to load items:', response.status, response.statusText);
-      items.value = []; // Set to empty array on error
+      items.value = [];
+      totalItems.value = 0;
     }
   } catch (error) {
     console.error('Error loading items:', error);
-    items.value = []; // Set to empty array on error
+    items.value = [];
+    totalItems.value = 0;
   } finally {
     isLoading.value = false;
   }
 }
+
+// Debounced search function
+const debouncedSearch = debounce(() => {
+  currentPage.value = 1; // Reset to first page on new search
+  loadItems();
+}, 300);
+
+// Apply filters (resets to page 1)
+function applyFilters() {
+  currentPage.value = 1;
+  loadItems();
+}
+
+// Reset all filters
+function resetFilters() {
+  searchQuery.value = '';
+  categoryFilter.value = '';
+  conditionFilter.value = '';
+  priceTypeFilter.value = '';
+  minPriceFilter.value = null;
+  maxPriceFilter.value = null;
+  sortBy.value = 'created_at';
+  sortOrder.value = 'desc';
+  currentPage.value = 1;
+  loadItems();
+}
+
+// Pagination functions
+function goToPage(page: number) {
+  if (page < 1 || page > totalPages.value) return;
+  currentPage.value = page;
+  loadItems();
+}
+
+function nextPage() {
+  if (currentPage.value < totalPages.value) {
+    goToPage(currentPage.value + 1);
+  }
+}
+
+function prevPage() {
+  if (currentPage.value > 1) {
+    goToPage(currentPage.value - 1);
+  }
+}
+
+// Watch for sort changes
+watch([sortBy, sortOrder], () => {
+  currentPage.value = 1;
+  loadItems();
+});
 
 // Debug function to analyze all form data
 function debugFormData(data) {
@@ -832,11 +1078,11 @@ function viewItem(item) {
 }
 
 function searchItems() {
-  // Debounce search if needed
+  debouncedSearch();
 }
 
 function filterItems() {
-  // Additional filter logic if needed
+  applyFilters();
 }
 
 function formatCurrency(amount) {
@@ -1509,26 +1755,149 @@ onMounted(() => {
   border-color: #9ca3af;
 }
 
+/* Advanced Filters */
+.advanced-filters {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.filter-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-group label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+.filter-input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: #4F46E5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.filter-toggle {
+  white-space: nowrap;
+}
+
+.filter-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Results Info */
+.results-info {
+  margin-bottom: 1rem;
+}
+
+.results-info p {
+  color: #6b7280;
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+/* Pagination */
+.pagination-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.pagination {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 0.25rem;
+}
+
+.page-item {
+  display: flex;
+}
+
+.page-link {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #e5e7eb;
+  background: white;
+  color: #374151;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+
+.page-link:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.page-item.active .page-link {
+  background: #4F46E5;
+  border-color: #4F46E5;
+  color: white;
+}
+
+.page-item.disabled .page-link {
+  color: #9ca3af;
+  cursor: not-allowed;
+  background: #f9fafb;
+}
+
+.page-item:first-child .page-link {
+  border-radius: 0.375rem 0 0 0.375rem;
+}
+
+.page-item:last-child .page-link {
+  border-radius: 0 0.375rem 0.375rem 0;
+}
+
+.btn-sm {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.875rem;
+}
+
 /* Responsive improvements */
 @media (max-width: 768px) {
   .form-row {
     grid-template-columns: 1fr;
   }
-  
+
   .pricing-type-selector {
     grid-template-columns: 1fr;
   }
-  
+
   .modal-actions {
     flex-direction: column;
     gap: 1rem;
   }
-  
+
   .action-left, .action-right {
     width: 100%;
     justify-content: center;
   }
-  
+
   .progress-steps {
     flex-direction: column;
     gap: 1rem;

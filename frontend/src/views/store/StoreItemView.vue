@@ -51,7 +51,7 @@
           <div class="seller-info">
             <h3>Seller</h3>
             <div class="seller-details">
-              <span class="seller-name">{{ item.seller.full_name }}</span>
+              <span class="seller-name">{{ item.seller.name || item.seller.full_name || item.seller.username }}</span>
               <div class="seller-actions">
                 <router-link
                   :to="{ name: 'user-profile', params: { id: String(item.seller.id) } }"
@@ -238,7 +238,7 @@
         <h3>Bid History</h3>
         <div class="bid-list">
           <div v-for="bid in bids" :key="bid.id" class="bid-item">
-            <span class="bidder">{{ bid.bidder.full_name }}</span>
+            <span class="bidder">{{ bid.bidder?.name || bid.bidder?.full_name || bid.bidder?.username || 'Unknown Bidder' }}</span>
             <span class="bid-amount">UGX {{ formatCurrency(bid.amount) }}</span>
             <span class="bid-time">{{ formatDate(bid.created_at) }}</span>
           </div>
@@ -287,13 +287,80 @@ import ChatWindow from '@/components/ChatWindow.vue';
 import BookingConfirmationModal from '@/components/BookingConfirmationModal.vue';
 import config from '@/config';
 
+// Type definitions
+interface StoreItemImage {
+  id: number;
+  url: string;
+}
+
+interface Seller {
+  id: number;
+  username: string;
+  name?: string;
+  full_name?: string;
+}
+
+interface StoreItem {
+  id: number;
+  title: string;
+  description: string;
+  category: string;
+  condition: string;
+  status: string;
+  price_type: string;
+  fixed_price?: number;
+  starting_bid?: number;
+  current_bid?: number;
+  bid_increment?: number;
+  bid_count?: number;
+  price?: number;
+  is_auction?: boolean;
+  seller_id: number;
+  seller: Seller;
+  images?: StoreItemImage[];
+  created_at: string;
+  updated_at: string;
+}
+
+interface Bidder {
+  id: number;
+  username: string;
+  name?: string;
+  full_name?: string;
+}
+
+interface Bid {
+  id: number;
+  amount: number;
+  bidder_id: number;
+  bidder?: Bidder;
+  created_at: string;
+}
+
+interface Requester {
+  id: number;
+  username: string;
+  name?: string;
+}
+
+interface BookingRequest {
+  id: number;
+  item_id: number;
+  requester_id: number;
+  requester?: Requester;
+  status: string;
+  message?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 const chatStore = useChatStore();
 
-const item = ref(null);
-const bids = ref([]);
+const item = ref<StoreItem | null>(null);
+const bids = ref<Bid[]>([]);
 const loading = ref(true);
 const error = ref('');
 const bidAmount = ref('');
@@ -301,12 +368,12 @@ const selectedImage = ref('');
 
 // Chat-related variables (simplified - ChatWindow handles messaging)
 const showChatModal = ref(false);
-const chatRecipientId = ref(null);
+const chatRecipientId = ref<number | null>(null);
 const chatRecipientName = ref('');
 
 // Booking-related variables
-const bookingRequest = ref(null);
-const bookingRequests = ref([]);
+const bookingRequest = ref<BookingRequest | null>(null);
+const bookingRequests = ref<BookingRequest[]>([]);
 const hasBookingRequest = ref(false);
 const loadingBookingRequest = ref(false);
 const showBookingConfirmationModal = ref(false);
@@ -380,7 +447,7 @@ async function loadItem() {
     }
   } catch (err) {
     console.error('Error loading item:', err);
-    error.value = err.message;
+    error.value = err instanceof Error ? err.message : 'Failed to load item';
   } finally {
     loading.value = false;
   }
@@ -626,7 +693,7 @@ function formatMessageTime(dateString: string): string {
 function openStoreChat() {
   // Set recipient info and show modal - ChatWindow handles socket connection and loading messages
   chatRecipientId.value = item.value.seller.id;
-  chatRecipientName.value = item.value.seller.full_name || item.value.seller.username;
+  chatRecipientName.value = item.value.seller.name || item.value.seller.full_name || item.value.seller.username;
   showChatModal.value = true;
 }
 
@@ -645,7 +712,7 @@ function openStoreChatWithUser(recipientId: number) {
 function openGeneralStoreChat() {
   // For owners to view all messages about their item - use seller as recipient
   chatRecipientId.value = item.value.seller.id;
-  chatRecipientName.value = item.value.seller.full_name || item.value.seller.username;
+  chatRecipientName.value = item.value.seller.name || item.value.seller.full_name || item.value.seller.username;
   showChatModal.value = true;
 }
 

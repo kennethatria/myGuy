@@ -285,13 +285,13 @@ const activeFilterCount = computed(() => {
 
 const visiblePages = computed(() => {
   if (!paginatedResult.value) return []
-  
+
   const total = paginatedResult.value.total_pages
   const current = currentPage.value
   const delta = 2
-  const range = []
-  const rangeWithDots = []
-  let l
+  const range: number[] = []
+  const rangeWithDots: (number | string)[] = []
+  let l: number | undefined
 
   for (let i = 1; i <= total; i++) {
     if (i === 1 || i === total || (i >= current - delta && i <= current + delta)) {
@@ -300,7 +300,7 @@ const visiblePages = computed(() => {
   }
 
   range.forEach((i) => {
-    if (l) {
+    if (l !== undefined) {
       if (i - l === 2) {
         rangeWithDots.push(l + 1)
       } else if (i - l !== 1) {

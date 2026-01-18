@@ -29,6 +29,14 @@ func (m *MockStoreItemRepository) GetByID(id uint) (*models.StoreItem, error) {
 	return args.Get(0).(*models.StoreItem), args.Error(1)
 }
 
+func (m *MockStoreItemRepository) GetByIDForUpdate(id uint) (*models.StoreItem, error) {
+	args := m.Called(id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.StoreItem), args.Error(1)
+}
+
 func (m *MockStoreItemRepository) GetAll(filter models.StoreItemFilter) ([]models.StoreItem, int64, error) {
 	args := m.Called(filter)
 	return args.Get(0).([]models.StoreItem), args.Get(1).(int64), args.Error(2)
@@ -248,7 +256,7 @@ func setupService() (*StoreService, *MockStoreItemRepository, *MockBidRepository
 	bidRepo := new(MockBidRepository)
 	bookingRepo := new(MockBookingRequestRepository)
 	userRepo := new(MockUserRepository)
-	service := NewStoreService(itemRepo, bidRepo, bookingRepo, userRepo)
+	service := NewStoreService(nil, itemRepo, bidRepo, bookingRepo, userRepo)
 	return service, itemRepo, bidRepo, bookingRepo
 }
 
@@ -676,7 +684,7 @@ func TestPlaceBid(t *testing.T) {
 			Status:   "active",
 		}
 
-		itemRepo.On("GetByID", uint(1)).Return(item, nil)
+		itemRepo.On("GetByIDForUpdate", uint(1)).Return(item, nil)
 		bidRepo.On("Create", mock.AnythingOfType("*models.Bid")).Return(nil)
 		itemRepo.On("Update", mock.AnythingOfType("*models.StoreItem")).Return(nil)
 		bidRepo.On("MarkOutbidBids", uint(1), uint(0)).Return(nil)
@@ -708,7 +716,7 @@ func TestPlaceBid(t *testing.T) {
 			Amount: 120.0,
 		}
 
-		itemRepo.On("GetByID", uint(1)).Return(item, nil)
+		itemRepo.On("GetByIDForUpdate", uint(1)).Return(item, nil)
 		bidRepo.On("Create", mock.AnythingOfType("*models.Bid")).Return(nil)
 		itemRepo.On("Update", mock.AnythingOfType("*models.StoreItem")).Return(nil)
 		bidRepo.On("MarkOutbidBids", uint(1), uint(0)).Return(nil)
@@ -726,7 +734,7 @@ func TestPlaceBid(t *testing.T) {
 		service, itemRepo, _, _ := setupService()
 		req := models.CreateBidRequest{Amount: 110.0}
 
-		itemRepo.On("GetByID", uint(999)).Return(nil, gorm.ErrRecordNotFound)
+		itemRepo.On("GetByIDForUpdate", uint(999)).Return(nil, gorm.ErrRecordNotFound)
 
 		bid, err := service.PlaceBid(999, 1, req)
 
@@ -748,7 +756,7 @@ func TestPlaceBid(t *testing.T) {
 
 		req := models.CreateBidRequest{Amount: 110.0}
 
-		itemRepo.On("GetByID", uint(1)).Return(item, nil)
+		itemRepo.On("GetByIDForUpdate", uint(1)).Return(item, nil)
 
 		bid, err := service.PlaceBid(1, 1, req)
 
@@ -770,7 +778,7 @@ func TestPlaceBid(t *testing.T) {
 
 		req := models.CreateBidRequest{Amount: 110.0}
 
-		itemRepo.On("GetByID", uint(1)).Return(item, nil)
+		itemRepo.On("GetByIDForUpdate", uint(1)).Return(item, nil)
 
 		bid, err := service.PlaceBid(1, 1, req)
 
@@ -792,7 +800,7 @@ func TestPlaceBid(t *testing.T) {
 
 		req := models.CreateBidRequest{Amount: 110.0}
 
-		itemRepo.On("GetByID", uint(1)).Return(item, nil)
+		itemRepo.On("GetByIDForUpdate", uint(1)).Return(item, nil)
 
 		bid, err := service.PlaceBid(1, 1, req)
 
@@ -817,7 +825,7 @@ func TestPlaceBid(t *testing.T) {
 
 		req := models.CreateBidRequest{Amount: 110.0} // Same as current bid
 
-		itemRepo.On("GetByID", uint(1)).Return(item, nil)
+		itemRepo.On("GetByIDForUpdate", uint(1)).Return(item, nil)
 
 		bid, err := service.PlaceBid(1, 1, req)
 
@@ -844,7 +852,7 @@ func TestPlaceBid(t *testing.T) {
 
 		req := models.CreateBidRequest{Amount: 110.0}
 
-		itemRepo.On("GetByID", uint(1)).Return(item, nil)
+		itemRepo.On("GetByIDForUpdate", uint(1)).Return(item, nil)
 		itemRepo.On("UpdateStatus", uint(1), "expired").Return(nil)
 
 		bid, err := service.PlaceBid(1, 1, req)

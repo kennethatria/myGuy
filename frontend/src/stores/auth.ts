@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import config from '@/config'
 import { useUserStore } from './user'
 
@@ -126,6 +126,9 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  // Computed property to check if user is authenticated
+  const isAuthenticated = computed(() => user.value !== null && token.value !== null)
+
   // Initialize auth state
   if (token.value) {
     checkAuth().catch(console.error)
@@ -134,6 +137,7 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     user,
     token,
+    isAuthenticated,
     login,
     register,
     logout,

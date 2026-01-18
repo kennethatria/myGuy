@@ -46,13 +46,13 @@
                 {{ creator.username }}
               </router-link>
             </p>
-            <p v-else>{{ task.createdBy ? 'User ' + task.createdBy : 'Unknown User' }}</p>
+            <p v-else>{{ task.created_by ? 'User ' + task.created_by : 'Unknown User' }}</p>
           </div>
           <div>
             <h4 class="font-medium text-sm text-gray">Deadline</h4>
             <p>{{ formatDate(task.deadline) }}</p>
           </div>
-          <div v-if="task.assignedTo || task.assignee || assignee">
+          <div v-if="task.assigned_to || task.assignee || assignee">
             <h4 class="font-medium text-sm text-gray">Assigned to</h4>
             <p v-if="task.assignee && task.assignee.username">
               <router-link 
@@ -70,7 +70,7 @@
                 {{ assignee.username }}
               </router-link>
             </p>
-            <p v-else>{{ task.assignedTo ? 'User ' + task.assignedTo : 'Not assigned' }}</p>
+            <p v-else>{{ task.assigned_to ? 'User ' + task.assigned_to : 'Not assigned' }}</p>
           </div>
           <div v-if="task.fee">
             <h4 class="font-medium text-sm text-gray">Fee</h4>
@@ -132,7 +132,7 @@
             <div class="chat-header-badges">
               <div class="chat-status">
                 <span v-if="task?.status === 'open'" class="status-badge status-open">Open for Applications</span>
-                <span v-else-if="task?.status === 'assigned'" class="status-badge status-assigned">Task Assigned</span>
+                <span v-else-if="task?.status === 'in_progress'" class="status-badge status-assigned">Task Assigned</span>
                 <span v-else-if="task?.status === 'completed'" class="status-badge status-completed">Completed</span>
               </div>
               <div class="privacy-indicator">
@@ -254,13 +254,16 @@ interface Task {
 
 interface Application {
   id: number
+  task_id: number
+  applicant_id: number
   applicant: {
     id: number
     username: string
   }
-  proposedFee: number
+  proposed_fee: number
   status: 'pending' | 'accepted' | 'declined'
   message?: string
+  created_at: string
 }
 
 const task = ref<Task | null>(null)
@@ -326,7 +329,7 @@ const canReview = computed(() => {
   const userId = authStore.user.id
   return (
     task.value.status === 'completed' &&
-    (task.value.createdBy === userId || task.value.assignedTo === userId)
+    (task.value.created_by === userId || task.value.assigned_to === userId)
   )
 })
 

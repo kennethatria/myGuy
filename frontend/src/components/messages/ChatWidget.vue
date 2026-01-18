@@ -127,7 +127,7 @@ const activeConversation = ref<ConversationSummary | null>(null);
 const messageText = ref('');
 const messagesArea = ref<HTMLElement>();
 const isTyping = ref(false);
-const typingTimeout = ref<NodeJS.Timeout>();
+const typingTimeout = ref<ReturnType<typeof setTimeout>>();
 
 // Get last active conversation from localStorage
 const lastConversationId = localStorage.getItem('lastActiveConversation');

@@ -45,7 +45,7 @@ func main() {
 	userRepo := repositories.NewUserRepository(db)
 
 	// Initialize services
-	storeService := services.NewStoreService(itemRepo, bidRepo, bookingRepo, userRepo)
+	storeService := services.NewStoreService(db, itemRepo, bidRepo, bookingRepo, userRepo)
 
 	// Initialize handlers
 	storeHandler := handlers.NewStoreHandler(storeService)

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type storeItemRepository struct {
@@ -23,6 +24,17 @@ func (r *storeItemRepository) Create(item *models.StoreItem) error {
 func (r *storeItemRepository) GetByID(id uint) (*models.StoreItem, error) {
 	var item models.StoreItem
 	err := r.db.Preload("Seller").Preload("Images", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
+	}).Preload("Bids", "status = ?", "active").First(&item, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (r *storeItemRepository) GetByIDForUpdate(id uint) (*models.StoreItem, error) {
+	var item models.StoreItem
+	err := r.db.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("Seller").Preload("Images", func(db *gorm.DB) *gorm.DB {
 		return db.Order("\"order\" ASC")
 	}).Preload("Bids", "status = ?", "active").First(&item, id).Error
 	if err != nil {

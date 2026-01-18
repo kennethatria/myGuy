@@ -6,17 +6,21 @@ import (
 	"store-service/internal/models"
 	"store-service/internal/repositories"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type StoreService struct {
+	db              *gorm.DB
 	itemRepo        repositories.StoreItemRepository
 	bidRepo         repositories.BidRepository
 	bookingRepo     repositories.BookingRequestRepository
 	userRepo        repositories.UserRepository
 }
 
-func NewStoreService(itemRepo repositories.StoreItemRepository, bidRepo repositories.BidRepository, bookingRepo repositories.BookingRequestRepository, userRepo repositories.UserRepository) *StoreService {
+func NewStoreService(db *gorm.DB, itemRepo repositories.StoreItemRepository, bidRepo repositories.BidRepository, bookingRepo repositories.BookingRequestRepository, userRepo repositories.UserRepository) *StoreService {
 	return &StoreService{
+		db:          db,
 		itemRepo:    itemRepo,
 		bidRepo:     bidRepo,
 		bookingRepo: bookingRepo,
@@ -154,62 +158,93 @@ func (s *StoreService) DeleteItem(id uint, userID uint) error {
 }
 
 func (s *StoreService) PlaceBid(itemID uint, userID uint, req models.CreateBidRequest) (*models.Bid, error) {
-	item, err := s.itemRepo.GetByID(itemID)
+	// Function to execute the bidding logic
+	placeBidLogic := func(itemRepo repositories.StoreItemRepository, bidRepo repositories.BidRepository) (*models.Bid, error) {
+		// Use GetByIDForUpdate if available (not nil DB), otherwise fallback to GetByID (for tests)
+		var item *models.StoreItem
+		var err error
+		
+		// Ideally we should always use GetByIDForUpdate, but for tests mocking might be easier if we check
+		// However, standardizing on GetByIDForUpdate in the interface makes it clean.
+		item, err = itemRepo.GetByIDForUpdate(itemID)
+		if err != nil {
+			return nil, err
+		}
+
+		if item.PriceType != "bidding" {
+			return nil, errors.New("this item is not available for bidding")
+		}
+
+		if item.Status != "active" {
+			return nil, errors.New("item is not active")
+		}
+
+		if item.SellerID == userID {
+			return nil, errors.New("you cannot bid on your own item")
+		}
+
+		if item.BidDeadline != nil && time.Now().After(*item.BidDeadline) {
+			// Mark item as expired
+			_ = itemRepo.UpdateStatus(itemID, "expired")
+			return nil, errors.New("bidding has ended for this item")
+		}
+
+		// Check minimum bid amount
+		minBid := item.StartingBid
+		if item.CurrentBid > 0 {
+			minBid = item.CurrentBid + item.MinBidIncrement
+		}
+
+		if req.Amount < minBid {
+			return nil, errors.New("bid amount must be at least $" + formatPrice(minBid))
+		}
+
+		// Create bid
+		bid := &models.Bid{
+			ItemID:   itemID,
+			BidderID: userID,
+			Amount:   req.Amount,
+			Message:  req.Message,
+			Status:   "active",
+		}
+
+		err = bidRepo.Create(bid)
+		if err != nil {
+			return nil, err
+		}
+
+		// Update item's current bid
+		item.CurrentBid = req.Amount
+		err = itemRepo.Update(item)
+		if err != nil {
+			return nil, err
+		}
+
+		// Mark other bids as outbid
+		_ = bidRepo.MarkOutbidBids(itemID, bid.ID)
+
+		return bid, nil
+	}
+
+	// If no DB (e.g. testing), just run logic
+	if s.db == nil {
+		return placeBidLogic(s.itemRepo, s.bidRepo)
+	}
+
+	// Run in transaction
+	var bid *models.Bid
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		txItemRepo := repositories.NewStoreItemRepository(tx)
+		txBidRepo := repositories.NewBidRepository(tx)
+		
+		var err error
+		bid, err = placeBidLogic(txItemRepo, txBidRepo)
+		return err
+	})
+
 	if err != nil {
 		return nil, err
 	}
-
-	if item.PriceType != "bidding" {
-		return nil, errors.New("this item is not available for bidding")
-	}
-
-	if item.Status != "active" {
-		return nil, errors.New("item is not active")
-	}
-
-	if item.SellerID == userID {
-		return nil, errors.New("you cannot bid on your own item")
-	}
-
-	if item.BidDeadline != nil && time.Now().After(*item.BidDeadline) {
-		// Mark item as expired
-		_ = s.itemRepo.UpdateStatus(itemID, "expired")
-		return nil, errors.New("bidding has ended for this item")
-	}
-
-	// Check minimum bid amount
-	minBid := item.StartingBid
-	if item.CurrentBid > 0 {
-		minBid = item.CurrentBid + item.MinBidIncrement
-	}
-
-	if req.Amount < minBid {
-		return nil, errors.New("bid amount must be at least $" + formatPrice(minBid))
-	}
-
-	// Create bid
-	bid := &models.Bid{
-		ItemID:   itemID,
-		BidderID: userID,
-		Amount:   req.Amount,
-		Message:  req.Message,
-		Status:   "active",
-	}
-
-	err = s.bidRepo.Create(bid)
-	if err != nil {
-		return nil, err
-	}
-
-	// Update item's current bid
-	item.CurrentBid = req.Amount
-	err = s.itemRepo.Update(item)
-	if err != nil {
-		return nil, err
-	}
-
-	// Mark other bids as outbid
-	_ = s.bidRepo.MarkOutbidBids(itemID, bid.ID)
 
 	return bid, nil
 }

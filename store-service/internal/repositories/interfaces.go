@@ -7,6 +7,7 @@ import (
 type StoreItemRepository interface {
 	Create(item *models.StoreItem) error
 	GetByID(id uint) (*models.StoreItem, error)
+	GetByIDForUpdate(id uint) (*models.StoreItem, error)
 	GetAll(filter models.StoreItemFilter) ([]models.StoreItem, int64, error)
 	Update(item *models.StoreItem) error
 	Delete(id uint) error

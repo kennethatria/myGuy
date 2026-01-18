@@ -100,7 +100,7 @@ const authStore = useAuthStore();
 const messagesContainer = ref<HTMLElement>();
 const messageText = ref('');
 const isTyping = ref(false);
-const typingTimeout = ref<NodeJS.Timeout>();
+const typingTimeout = ref<ReturnType<typeof setTimeout>>();
 
 // Computed properties for conversation display
 const conversationTitle = computed(() => {

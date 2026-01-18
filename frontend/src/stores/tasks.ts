@@ -260,8 +260,8 @@ export const useTasksStore = defineStore('tasks', () => {
       // Add extra safety check: only include tasks that actually have assignedTo matching user ID
       const currentUserId = authStore.user?.id;
       if (currentUserId) {
-        assignedTasks.value = assignedTasksData.filter(task => {
-          const isActuallyAssigned = task.assigned_to === currentUserId || 
+        assignedTasks.value = assignedTasksData.filter((task: Task & { assigned_to?: number }) => {
+          const isActuallyAssigned = task.assigned_to === currentUserId ||
                                      (typeof task.assigned_to === 'string' && task.assigned_to === String(currentUserId));
           
           if (!isActuallyAssigned) {
