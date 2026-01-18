@@ -10,34 +10,34 @@ type StoreItem struct {
 	ID              uint           `json:"id" gorm:"primaryKey"`
 	Title           string         `json:"title" gorm:"not null"`
 	Description     string         `json:"description"`
-	SellerID        uint           `json:"seller_id" gorm:"not null"`
+	SellerID        uint           `json:"seller_id" gorm:"not null;index:idx_store_items_seller_id"`
 	Seller          *User          `json:"seller,omitempty" gorm:"foreignKey:SellerID"`
-	PriceType       string         `json:"price_type" gorm:"not null"` // "fixed" or "bidding"
-	FixedPrice      float64        `json:"fixed_price,omitempty"`
+	PriceType       string         `json:"price_type" gorm:"not null;index:idx_store_items_price_type"` // "fixed" or "bidding"
+	FixedPrice      float64        `json:"fixed_price,omitempty" gorm:"index:idx_store_items_fixed_price"`
 	StartingBid     float64        `json:"starting_bid,omitempty"`
 	CurrentBid      float64        `json:"current_bid,omitempty"`
 	MinBidIncrement float64        `json:"min_bid_increment,omitempty"`
-	BidDeadline     *time.Time     `json:"bid_deadline,omitempty"`
-	Status          string         `json:"status" gorm:"default:'active'"` // active, sold, expired, cancelled
-	Category        string         `json:"category"`
+	BidDeadline     *time.Time     `json:"bid_deadline,omitempty" gorm:"index:idx_store_items_bid_deadline"`
+	Status          string         `json:"status" gorm:"default:'active';index:idx_store_items_status"` // active, sold, expired, cancelled
+	Category        string         `json:"category" gorm:"index:idx_store_items_category"`
 	Images          []ItemImage    `json:"images" gorm:"foreignKey:ItemID"`
-	Condition       string         `json:"condition"` // new, like-new, good, fair, poor
+	Condition       string         `json:"condition" gorm:"index:idx_store_items_condition"` // new, like-new, good, fair, poor
 	Location        string         `json:"location"`
 	ShippingInfo    string         `json:"shipping_info"`
-	BuyerID         *uint          `json:"buyer_id,omitempty"`
+	BuyerID         *uint          `json:"buyer_id,omitempty" gorm:"index:idx_store_items_buyer_id"`
 	SoldAt          *time.Time     `json:"sold_at,omitempty"`
 	Bids            []Bid          `json:"bids,omitempty" gorm:"foreignKey:ItemID"`
 	BidCount        int            `json:"bid_count" gorm:"-"`
 	IsAuction       bool           `json:"is_auction" gorm:"-"`
 	Price           float64        `json:"price" gorm:"-"`
-	CreatedAt       time.Time      `json:"created_at"`
+	CreatedAt       time.Time      `json:"created_at" gorm:"index:idx_store_items_created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
 	DeletedAt       gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 type ItemImage struct {
 	ID        uint           `json:"id" gorm:"primaryKey"`
-	ItemID    uint           `json:"item_id" gorm:"not null"`
+	ItemID    uint           `json:"item_id" gorm:"not null;index:idx_item_images_item_id"`
 	URL       string         `json:"url" gorm:"not null"`
 	Order     int            `json:"order" gorm:"default:0"`
 	CreatedAt time.Time      `json:"created_at"`
@@ -46,33 +46,33 @@ type ItemImage struct {
 
 type Bid struct {
 	ID        uint           `json:"id" gorm:"primaryKey"`
-	ItemID    uint           `json:"item_id" gorm:"not null"`
+	ItemID    uint           `json:"item_id" gorm:"not null;index:idx_bids_item_id"`
 	Item      StoreItem      `json:"item,omitempty" gorm:"foreignKey:ItemID"`
-	BidderID  uint           `json:"bidder_id" gorm:"not null"`
+	BidderID  uint           `json:"bidder_id" gorm:"not null;index:idx_bids_bidder_id"`
 	Amount    float64        `json:"amount" gorm:"not null"`
 	Message   string         `json:"message"`
-	Status    string         `json:"status" gorm:"default:'active'"` // active, outbid, won, cancelled
-	CreatedAt time.Time      `json:"created_at"`
+	Status    string         `json:"status" gorm:"default:'active';index:idx_bids_status"` // active, outbid, won, cancelled
+	CreatedAt time.Time      `json:"created_at" gorm:"index:idx_bids_created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 type BookingRequest struct {
 	ID                       uint           `json:"id" gorm:"primaryKey"`
-	ItemID                   uint           `json:"item_id" gorm:"not null"`
+	ItemID                   uint           `json:"item_id" gorm:"not null;index:idx_booking_requests_item_id"`
 	Item                     *StoreItem     `json:"item,omitempty" gorm:"foreignKey:ItemID"`
-	RequesterID              uint           `json:"requester_id" gorm:"not null"`
+	RequesterID              uint           `json:"requester_id" gorm:"not null;index:idx_booking_requests_requester_id"`
 	Requester                *User          `json:"requester,omitempty" gorm:"foreignKey:RequesterID"`
-	Status                   string         `json:"status" gorm:"default:'pending'"` // pending, approved, rejected, item_received, completed
+	Status                   string         `json:"status" gorm:"default:'pending';index:idx_booking_requests_status"` // pending, approved, rejected, item_received, completed
 	Message                  string         `json:"message"`
 	BuyerRating              *int           `json:"buyer_rating,omitempty"` // Buyer's rating of seller (1-5)
 	BuyerReview              string         `json:"buyer_review,omitempty"`
 	SellerRating             *int           `json:"seller_rating,omitempty"` // Seller's rating of buyer (1-5)
 	SellerReview             string         `json:"seller_review,omitempty"`
-	ChatNotified             bool           `json:"-" gorm:"default:false"`
+	ChatNotified             bool           `json:"-" gorm:"default:false;index:idx_booking_requests_chat_notified"`
 	NotificationAttempts     int            `json:"-" gorm:"default:0"`
 	LastNotificationAttempt  *time.Time     `json:"-"`
-	CreatedAt                time.Time      `json:"created_at"`
+	CreatedAt                time.Time      `json:"created_at" gorm:"index:idx_booking_requests_created_at"`
 	UpdatedAt                time.Time      `json:"updated_at"`
 	DeletedAt                gorm.DeletedAt `json:"-" gorm:"index"`
 }
