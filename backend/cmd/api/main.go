@@ -77,6 +77,9 @@ func main() {
 			"time": time.Now().Format(time.RFC3339),
 		})
 	})
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
 	r.GET("/api/v1/server-time", handler.GetServerTime)
 	r.POST("/api/v1/register", handler.Register)
 	r.POST("/api/v1/login", handler.Login)

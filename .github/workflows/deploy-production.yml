@@ -155,6 +155,8 @@ jobs:
         TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD_PRODUCTION }}
         TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
         TF_VAR_environment: ${{ env.ENVIRONMENT }}
+        TF_VAR_ssl_cert: ${{ secrets.SSL_CERT }}
+        TF_VAR_ssl_key: ${{ secrets.SSL_KEY }}
         AWS_ACCESS_KEY_ID: ${{ secrets.LINODE_OBJECT_STORAGE_ACCESS_KEY }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.LINODE_OBJECT_STORAGE_SECRET_KEY }}
       run: |

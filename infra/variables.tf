@@ -20,6 +20,20 @@ variable "environment" {
   }
 }
 
+variable "ssl_cert" {
+  description = "SSL Certificate content"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "ssl_key" {
+  description = "SSL Private Key content"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 # Linode Configuration
 variable "linode_region" {
   description = "Linode region for deployment"

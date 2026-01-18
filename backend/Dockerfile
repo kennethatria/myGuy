@@ -1,4 +1,4 @@
-FROM golang:1.21-alpine
+FROM golang:1.24-alpine
 
 WORKDIR /app
 
@@ -24,7 +24,6 @@ WORKDIR /app
 
 # Copy the binary from builder
 COPY --from=0 /app/main .
-COPY --from=0 /app/.env .
 
 # Make the binary executable
 RUN chmod +x ./main

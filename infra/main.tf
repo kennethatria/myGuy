@@ -220,8 +220,8 @@ resource "linode_nodebalancer_config" "https" {
   stickiness      = "none"
   algorithm       = "roundrobin"
   
-  ssl_cert = file("${path.module}/ssl/cert.pem")
-  ssl_key  = file("${path.module}/ssl/private.key")
+  ssl_cert = var.ssl_cert
+  ssl_key  = var.ssl_key
 }
 
 resource "linode_nodebalancer_node" "app" {
