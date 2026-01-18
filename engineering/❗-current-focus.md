@@ -94,3 +94,21 @@ For a full breakdown of all `P1`, `P2`, and `P3` items, please refer to the [MVP
   - Unique composite index prevents duplicate reviews
 - **Details:** See `03-completed/FIXLOG-database-indexes.md`
 - **Deployment:** Indexes auto-created by GORM on service startup
+
+---
+
+## 🎉 P2 Complete: Redis Adapter for Socket.IO (Multi-Instance Chat)
+
+- **Status:** ✅ **COMPLETED** - January 18, 2026
+- **Problem:** Chat service could not scale beyond a single instance - WebSocket state not shared across instances
+- **Solution:** Implemented `@socket.io/redis-adapter` for horizontal scaling:
+  - Optional Redis configuration via `REDIS_URL` or `REDIS_HOST` environment variables
+  - Graceful fallback to in-memory adapter if Redis not configured
+  - Redis health status exposed via `/health` endpoint
+  - Redis service added to `docker-compose.yml`
+- **Impact:**
+  - Chat service can now run multiple instances behind a load balancer
+  - Messages and room state shared across all instances via Redis pub/sub
+  - Eliminates single point of failure for real-time messaging
+- **Details:** See `03-completed/FIXLOG-redis-socket-adapter.md`
+- **Configuration:** Set `REDIS_URL=redis://host:6379/0` to enable multi-instance mode

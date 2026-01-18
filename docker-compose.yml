@@ -61,8 +61,12 @@ services:
       - STORE_API_URL=http://store-service:8081/api/v1
       # Internal API key for secure inter-service communication
       - INTERNAL_API_KEY=your-internal-api-key-change-in-production
+      # Redis for horizontal scaling (optional - enables multi-instance mode)
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       postgres-db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       api:
         condition: service_started
@@ -70,6 +74,22 @@ services:
         condition: service_started
     networks:
       - myguy-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - myguy-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # Optional: Redis persistence configuration
+    command: redis-server --appendonly yes
 
   postgres-db:
     image: postgres:15-alpine
@@ -96,6 +116,7 @@ services:
 volumes:
   postgres-data:
   store-uploads:
+  redis-data:
 
 networks:
   myguy-network:

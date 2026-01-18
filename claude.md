@@ -17,6 +17,7 @@ MyGuy is a microservices-based task marketplace platform where users can post ta
 | **Chat Service** | Node.js (Express + Socket.IO) | 8082 | `my_guy_chat` | Real-time WebSocket messaging service |
 | **Frontend** | Vue 3 + TypeScript (Vite) | 5173 | - | Single-page application |
 | **Database** | PostgreSQL 15 | 5432 (exposed as 5433) | - | Shared database server with multiple databases |
+| **Redis** | Redis 7 | 6379 | - | Optional: Socket.IO adapter for multi-instance chat scaling |
 
 ---
 
@@ -87,8 +88,8 @@ go run cmd/api/main.go
 # Build
 go build -o backend cmd/api/main.go
 
-# Note: Currently 0% test coverage - TOP PRIORITY
-# See: engineering/01-proposed/ADR-backend-testing-strategy.md
+# Testing: Service layer at 93.7% coverage (108 test cases)
+# See: engineering/03-completed/FIXLOG-backend-testing-foundation.md
 ```
 
 ### Store Service (Go - THE BLUEPRINT)
@@ -192,6 +193,15 @@ CLIENT_URL=http://localhost:5173
 MAIN_API_URL=http://localhost:8080/api/v1
 STORE_API_URL=http://localhost:8081/api/v1
 INTERNAL_API_KEY=your-internal-api-key-change-in-production
+
+# Redis (optional - enables multi-instance horizontal scaling)
+# If not set, falls back to in-memory adapter (single instance only)
+REDIS_URL=redis://localhost:6379/0
+# Or use individual settings:
+# REDIS_HOST=localhost
+# REDIS_PORT=6379
+# REDIS_PASSWORD=
+# REDIS_DB=0
 ```
 
 ### Frontend
@@ -378,8 +388,11 @@ npm run type-check  # TypeScript type checking (currently 62 errors tracked)
 
 ### Recent Implementations (January 2026)
 - **✅ P0 Complete:** Core messaging UX (user enrichment, conversation titles)
+- **✅ P1 Complete:** Backend testing foundation (93.7% service coverage)
 - **✅ P2 Complete:** Unified booking & messaging flow (backend + frontend)
-- **📋 Tracked:** 62 TypeScript type errors (see `TODO-typescript-errors.md`)
+- **✅ P2 Complete:** TypeScript type errors resolved (62 errors fixed)
+- **✅ P2 Complete:** Database performance indexes (27 indexes across all services)
+- **✅ P2 Complete:** Redis adapter for Socket.IO (enables multi-instance chat scaling)
 
 ---
 

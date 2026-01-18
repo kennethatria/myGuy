@@ -10,6 +10,7 @@ const { authenticateSocket, authenticateHTTP } = require('./middleware/auth');
 const SocketHandlers = require('./handlers/socketHandlers');
 const messageService = require('./services/messageService');
 const schedulerService = require('./services/schedulerService');
+const { configureRedisAdapter, getRedisHealth } = require('./config/redis');
 
 // Initialize Express app
 const app = express();
@@ -43,7 +44,7 @@ io.on('connection', (socket) => {
 
 // HTTP API Routes
 
-// Health check (enhanced with migration status and service info)
+// Health check (enhanced with migration status, Redis status, and service info)
 app.get('/health', async (req, res) => {
   const health = {
     status: 'ok',
@@ -52,6 +53,7 @@ app.get('/health', async (req, res) => {
     uptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
     database: 'unknown',
+    redis: 'unknown',
     migrations: {
       status: 'unknown',
       count: 0,
@@ -96,6 +98,10 @@ app.get('/health', async (req, res) => {
         activeUsers: parseInt(tablesResult.rows[0].active_users)
       };
     }
+
+    // Check Redis status
+    const redisHealth = await getRedisHealth();
+    health.redis = redisHealth;
 
   } catch (error) {
     logger.error('Health check failed:', error);
@@ -495,9 +501,17 @@ const startServer = async () => {
     // Run database migrations
     await runMigration();
 
+    // Configure Redis adapter for horizontal scaling (if Redis is configured)
+    const redisConfigured = await configureRedisAdapter(io);
+    if (redisConfigured) {
+      logger.info('Multi-instance mode enabled via Redis adapter');
+    } else {
+      logger.info('Single-instance mode (set REDIS_URL or REDIS_HOST to enable multi-instance)');
+    }
+
     httpServer.listen(PORT, () => {
       logger.info(`Chat WebSocket service running on port ${PORT}`);
-      
+
       // Initialize scheduler
       schedulerService.init();
     });

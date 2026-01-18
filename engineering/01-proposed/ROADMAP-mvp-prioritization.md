@@ -120,14 +120,20 @@ The items are sourced from the `TODO` and `ROADMAP` documents in this directory.
 -   **Eliminated:** 193 lines of duplicated chat code
 -   **Details:** See `../03-completed/FIXLOG-p1-p2-chat-refactoring.md`
 
-### 2. Address Backend Scalability & Performance (Partial)
+### 2. Address Backend Scalability & Performance ✅ **COMPLETED**
 -   **Problem:** The chat service cannot scale beyond a single instance, and the database may be missing key indexes.
 -   **Impact:** The system may face performance issues under moderate load.
 -   **Action:**
-    -   (Chat) Plan for integrating a Redis adapter for Socket.IO. **📋 Pending**
+    -   (Chat) Plan for integrating a Redis adapter for Socket.IO. ✅ **COMPLETED**
     -   (Chat & Store) Review and add necessary database indexes to foreign key columns and common query filters. ✅ **COMPLETED**
 -   **Source:** `TODO-chat-functionality-review.md`, `ROADMAP-store-service-improvements.md`
--   **Database Indexes Status:** ✅ **COMPLETED** - January 18, 2026
+-   **Status:** ✅ **COMPLETED** - January 18, 2026
+-   **Redis Adapter:** Implemented `@socket.io/redis-adapter` for horizontal scaling
+    -   Optional configuration via `REDIS_URL` or `REDIS_HOST`
+    -   Graceful fallback to in-memory adapter if Redis not configured
+    -   Redis service added to docker-compose.yml
+    -   **Details:** See `../03-completed/FIXLOG-redis-socket-adapter.md`
+-   **Database Indexes:**
     -   Backend: 13 indexes on tasks, applications, reviews tables
     -   Store Service: 14 indexes on store_items, item_images, bids, booking_requests tables
     -   Chat Service: Already well-indexed (no changes needed)
