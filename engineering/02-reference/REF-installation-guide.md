@@ -123,12 +123,7 @@ services:
     environment:
       - PORT=8080
       - JWT_SECRET=${JWT_SECRET}
-      - DB_HOST=postgres-db
-      - DB_PORT=5432
-      - DB_USER=postgres
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=my_guy
-      - DB_SSL_MODE=disable
+      - DB_CONNECTION=host=postgres-db user=postgres password=${DB_PASSWORD} dbname=my_guy port=5432 sslmode=disable
     depends_on:
       postgres-db:
         condition: service_healthy
@@ -363,12 +358,7 @@ npm run build
 ```env
 PORT=8080
 JWT_SECRET=your-secure-jwt-secret
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=myguy
-DB_PASSWORD=your-db-password
-DB_NAME=my_guy
-DB_SSL_MODE=disable
+DB_CONNECTION=host=localhost user=myguy password=your-db-password dbname=my_guy port=5432 sslmode=disable
 ```
 
 ### Store Service (`/opt/myguy/store-service/.env`)
