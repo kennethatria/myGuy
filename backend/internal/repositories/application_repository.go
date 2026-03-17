@@ -23,9 +23,6 @@ func (r *GormApplicationRepository) GetByID(ctx context.Context, id uint) (*mode
 	err := r.db.WithContext(ctx).
 		Preload("Applicant").
 		Preload("Task").
-		Preload("Messages").
-		Preload("Messages.Sender").
-		Preload("Messages.Recipient").
 		First(&application, id).Error
 	if err != nil {
 		return nil, err
