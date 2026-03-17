@@ -8,15 +8,16 @@ import (
 	"testing"
 	"time"
 
+	"myguy/internal/middleware"
+	"myguy/internal/models"
+	"myguy/internal/services"
+	"myguy/tests"
+
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
-	"myguy/internal/middleware"
-	"myguy/internal/models"
-	"myguy/internal/services"
-	"myguy/tests"
 )
 
 func hashPassword(password string) string {
@@ -154,7 +155,7 @@ func TestHandler_Login(t *testing.T) {
 
 func TestHandler_GetProfile(t *testing.T) {
 	router, handler, mockUserRepo, _, _, _ := setupTestRouter()
-	
+
 	router.Use(func(c *gin.Context) {
 		c.Set("userID", uint(1))
 		c.Next()
@@ -185,7 +186,7 @@ func TestHandler_GetProfile(t *testing.T) {
 
 func TestHandler_CreateTask(t *testing.T) {
 	router, handler, _, mockTaskRepo, _, _ := setupTestRouter()
-	
+
 	router.Use(func(c *gin.Context) {
 		c.Set("userID", uint(1))
 		c.Next()
@@ -270,15 +271,15 @@ func TestHandler_GetTask(t *testing.T) {
 }
 
 func TestHandler_UpdateTask(t *testing.T) {
-	router, handler, _, mockTaskRepo, _, _ := setupTestRouter()
-	router.Use(func(c *gin.Context) {
-		c.Set("userID", uint(1))
-		c.Next()
-	})
-	router.PUT("/tasks/:id", handler.UpdateTask)
-
 	t.Run("successful update", func(t *testing.T) {
-		task := &models.Task{ID: 1, CreatedBy: 1, Title: "Old Title"}
+		router, handler, _, mockTaskRepo, _, _ := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", uint(1))
+			c.Next()
+		})
+		router.PUT("/tasks/:id", handler.UpdateTask)
+
+		task := &models.Task{ID: 1, CreatedBy: 1}
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
 		mockTaskRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Task")).Return(nil)
 
@@ -296,7 +297,14 @@ func TestHandler_UpdateTask(t *testing.T) {
 	})
 
 	t.Run("unauthorized update", func(t *testing.T) {
-		task := &models.Task{ID: 1, CreatedBy: 2, Title: "Old Title"}
+		router, handler, _, mockTaskRepo, _, _ := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", uint(1))
+			c.Next()
+		})
+		router.PUT("/tasks/:id", handler.UpdateTask)
+
+		task := &models.Task{ID: 1, CreatedBy: 2}
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
 
 		deadline := time.Now().Add(48 * time.Hour).Format(time.RFC3339)
@@ -313,14 +321,14 @@ func TestHandler_UpdateTask(t *testing.T) {
 }
 
 func TestHandler_DeleteTask(t *testing.T) {
-	router, handler, _, mockTaskRepo, _, _ := setupTestRouter()
-	router.Use(func(c *gin.Context) {
-		c.Set("userID", uint(1))
-		c.Next()
-	})
-	router.DELETE("/tasks/:id", handler.DeleteTask)
-
 	t.Run("successful delete", func(t *testing.T) {
+		router, handler, _, mockTaskRepo, _, _ := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", uint(1))
+			c.Next()
+		})
+		router.DELETE("/tasks/:id", handler.DeleteTask)
+
 		task := &models.Task{ID: 1, CreatedBy: 1}
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
 		mockTaskRepo.On("Delete", mock.Anything, uint(1)).Return(nil)
@@ -335,6 +343,13 @@ func TestHandler_DeleteTask(t *testing.T) {
 	})
 
 	t.Run("not found", func(t *testing.T) {
+		router, handler, _, mockTaskRepo, _, _ := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", uint(1))
+			c.Next()
+		})
+		router.DELETE("/tasks/:id", handler.DeleteTask)
+
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(nil, gorm.ErrRecordNotFound)
 
 		req, _ := http.NewRequest(http.MethodDelete, "/tasks/1", nil)
@@ -525,17 +540,17 @@ func TestHandler_GetUserTasks(t *testing.T) {
 }
 
 func TestHandler_RespondToApplication(t *testing.T) {
-	router, handler, _, mockTaskRepo, _, mockAppRepo := setupTestRouter()
-	router.Use(func(c *gin.Context) {
-		c.Set("userID", uint(1))
-		c.Next()
-	})
-	router.POST("/tasks/:id/applications/:applicationId/respond", handler.RespondToApplication)
-
 	t.Run("successful respond - accept", func(t *testing.T) {
+		router, handler, _, mockTaskRepo, _, mockAppRepo := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", uint(1))
+			c.Next()
+		})
+		router.POST("/tasks/:id/applications/:applicationId/respond", handler.RespondToApplication)
+
 		task := &models.Task{ID: 1, CreatedBy: 1}
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
-		mockAppRepo.On("GetByID", mock.Anything, uint(10)).Return(&models.Application{ID: 10, TaskID: 1}, nil)
+		mockAppRepo.On("GetByID", mock.Anything, uint(10)).Return(&models.Application{ID: 10, TaskID: 1, ApplicantID: 2, ProposedFee: 100, Status: "pending"}, nil)
 		mockTaskRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Task")).Return(nil)
 		mockAppRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Application")).Return(nil)
 
@@ -551,9 +566,16 @@ func TestHandler_RespondToApplication(t *testing.T) {
 	})
 
 	t.Run("successful respond - decline", func(t *testing.T) {
+		router, handler, _, mockTaskRepo, _, mockAppRepo := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", uint(1))
+			c.Next()
+		})
+		router.POST("/tasks/:id/applications/:applicationId/respond", handler.RespondToApplication)
+
 		task := &models.Task{ID: 1, CreatedBy: 1}
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
-		mockAppRepo.On("GetByID", mock.Anything, uint(10)).Return(&models.Application{ID: 10, TaskID: 1}, nil)
+		mockAppRepo.On("GetByID", mock.Anything, uint(10)).Return(&models.Application{ID: 10, TaskID: 1, ApplicantID: 2, ProposedFee: 100, Status: "pending"}, nil)
 		mockAppRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Application")).Return(nil)
 
 		reqBody := respondToApplicationRequest{Status: "declined"}
@@ -577,8 +599,7 @@ func TestHandler_UpdateProfile(t *testing.T) {
 	router.PUT("/user/profile", handler.UpdateProfile)
 
 	t.Run("successful update profile", func(t *testing.T) {
-		user := &models.User{ID: 1, FullName: "Old Name", Email: "old@example.com"}
-		mockUserRepo.On("GetByID", mock.Anything, uint(1)).Return(user, nil)
+		mockUserRepo.On("GetByID", mock.Anything, uint(1)).Return(&models.User{ID: 1, Email: "old@example.com"}, nil)
 		mockUserRepo.On("GetByEmail", mock.Anything, "new@example.com").Return(nil, gorm.ErrRecordNotFound)
 		mockUserRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.User")).Return(nil)
 
@@ -596,14 +617,14 @@ func TestHandler_UpdateProfile(t *testing.T) {
 }
 
 func TestHandler_GetAssignedTasks(t *testing.T) {
-	router, handler, _, mockTaskRepo, _, _ := setupTestRouter()
-	router.Use(func(c *gin.Context) {
-		c.Set("userID", uint(1))
-		c.Next()
-	})
-	router.GET("/user/assigned-tasks", handler.GetAssignedTasks)
-
 	t.Run("successful get assigned tasks", func(t *testing.T) {
+		router, handler, _, mockTaskRepo, _, _ := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", uint(1))
+			c.Next()
+		})
+		router.GET("/user/assigned-tasks", handler.GetAssignedTasks)
+
 		mockTaskRepo.On("ListByUser", mock.Anything, uint(1), "assigned").Return([]models.Task{}, nil)
 
 		req, _ := http.NewRequest(http.MethodGet, "/user/assigned-tasks", nil)
@@ -616,6 +637,13 @@ func TestHandler_GetAssignedTasks(t *testing.T) {
 	})
 
 	t.Run("exclude self assigned", func(t *testing.T) {
+		router, handler, _, mockTaskRepo, _, _ := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", uint(1))
+			c.Next()
+		})
+		router.GET("/user/assigned-tasks", handler.GetAssignedTasks)
+
 		tasks := []models.Task{
 			{ID: 1, CreatedBy: 1}, // Self-assigned
 			{ID: 2, CreatedBy: 2}, // Assigned from others
@@ -652,7 +680,7 @@ func TestHandler_GetUserByID(t *testing.T) {
 	})
 
 	t.Run("user not found", func(t *testing.T) {
-		mockUserRepo.On("GetByID", mock.Anything, uint(99)).Return(nil, services.ErrUserNotFound)
+		mockUserRepo.On("GetByID", mock.Anything, uint(99)).Return(nil, gorm.ErrRecordNotFound)
 
 		req, _ := http.NewRequest(http.MethodGet, "/users/99", nil)
 		resp := httptest.NewRecorder()
