@@ -357,11 +357,11 @@ func TestGetItem(t *testing.T) {
 }
 
 func TestGetItems(t *testing.T) {
-	mockService := new(MockStoreService)
-	handler := NewStoreHandler(mockService)
-	router := setupTestRouter(handler)
-
 	t.Run("successful get items", func(t *testing.T) {
+		mockService := new(MockStoreService)
+		handler := NewStoreHandler(mockService)
+		router := setupTestRouter(handler)
+
 		items := []models.StoreItem{
 			{ID: 1, Title: "Item 1", SellerID: 1, Status: "active"},
 			{ID: 2, Title: "Item 2", SellerID: 2, Status: "active"},
@@ -379,6 +379,10 @@ func TestGetItems(t *testing.T) {
 	})
 
 	t.Run("with filters", func(t *testing.T) {
+		mockService := new(MockStoreService)
+		handler := NewStoreHandler(mockService)
+		router := setupTestRouter(handler)
+
 		items := []models.StoreItem{
 			{ID: 1, Title: "Electronics Item", SellerID: 1, Status: "active"},
 		}
@@ -395,6 +399,10 @@ func TestGetItems(t *testing.T) {
 	})
 
 	t.Run("service error", func(t *testing.T) {
+		mockService := new(MockStoreService)
+		handler := NewStoreHandler(mockService)
+		router := setupTestRouter(handler)
+
 		mockService.On("GetItems", mock.AnythingOfType("models.StoreItemFilter")).Return([]models.StoreItem{}, int64(0), errors.New("service error"))
 
 		w := httptest.NewRecorder()
