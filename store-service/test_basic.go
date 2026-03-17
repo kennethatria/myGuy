@@ -38,9 +38,10 @@ func main() {
 	itemRepo := repositories.NewStoreItemRepository(db)
 	bidRepo := repositories.NewBidRepository(db)
 	bookingRepo := repositories.NewBookingRequestRepository(db)
+	userRepo := repositories.NewUserRepository(db)
 	
 	// Initialize service
-	storeService := services.NewStoreService(itemRepo, bidRepo, bookingRepo)
+	storeService := services.NewStoreService(db, itemRepo, bidRepo, bookingRepo, userRepo)
 
 	// Test 1: Create a fixed price item
 	fmt.Println("=== Test 1: Create Fixed Price Item ===")

@@ -27,7 +27,7 @@ func setupBookingTestDB() (*gorm.DB, error) {
 		{ID: 2, Username: "user2", Email: "user2@example.com"},
 		{ID: 3, Username: "user3", Email: "user3@example.com"},
 	}
-	
+
 	for _, user := range users {
 		db.Create(&user)
 	}
@@ -38,7 +38,7 @@ func setupBookingTestDB() (*gorm.DB, error) {
 		{ID: 2, Title: "Bookable Item 2", SellerID: 2, Status: "active"},
 		{ID: 3, Title: "Sold Item", SellerID: 1, Status: "sold"},
 	}
-	
+
 	for _, item := range items {
 		db.Create(&item)
 	}
@@ -49,7 +49,7 @@ func setupBookingTestDB() (*gorm.DB, error) {
 func TestBookingRequestRepository_Create(t *testing.T) {
 	db, err := setupBookingTestDB()
 	assert.NoError(t, err)
-	
+
 	repo := NewBookingRequestRepository(db)
 
 	t.Run("successful create booking request", func(t *testing.T) {
@@ -98,7 +98,7 @@ func TestBookingRequestRepository_Create(t *testing.T) {
 func TestBookingRequestRepository_GetByID(t *testing.T) {
 	db, err := setupBookingTestDB()
 	assert.NoError(t, err)
-	
+
 	repo := NewBookingRequestRepository(db)
 
 	// Create test booking request
@@ -135,7 +135,7 @@ func TestBookingRequestRepository_GetByID(t *testing.T) {
 func TestBookingRequestRepository_GetByItemID(t *testing.T) {
 	db, err := setupBookingTestDB()
 	assert.NoError(t, err)
-	
+
 	repo := NewBookingRequestRepository(db)
 
 	// Create test booking requests
@@ -179,7 +179,7 @@ func TestBookingRequestRepository_GetByItemID(t *testing.T) {
 func TestBookingRequestRepository_GetByItemAndRequester(t *testing.T) {
 	db, err := setupBookingTestDB()
 	assert.NoError(t, err)
-	
+
 	repo := NewBookingRequestRepository(db)
 
 	// Create test booking requests
@@ -244,7 +244,7 @@ func TestBookingRequestRepository_GetByItemAndRequester(t *testing.T) {
 func TestBookingRequestRepository_GetByRequesterID(t *testing.T) {
 	db, err := setupBookingTestDB()
 	assert.NoError(t, err)
-	
+
 	repo := NewBookingRequestRepository(db)
 
 	// Create test booking requests
@@ -263,7 +263,7 @@ func TestBookingRequestRepository_GetByRequesterID(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Len(t, requests, 2)
-		
+
 		// Check that all requests belong to requester 2
 		for _, request := range requests {
 			assert.Equal(t, uint(2), request.RequesterID)
@@ -297,7 +297,7 @@ func TestBookingRequestRepository_GetByRequesterID(t *testing.T) {
 func TestBookingRequestRepository_UpdateStatus(t *testing.T) {
 	db, err := setupBookingTestDB()
 	assert.NoError(t, err)
-	
+
 	repo := NewBookingRequestRepository(db)
 
 	// Create test booking request
@@ -313,7 +313,7 @@ func TestBookingRequestRepository_UpdateStatus(t *testing.T) {
 		err := repo.UpdateStatus(testRequest.ID, "approved")
 
 		assert.NoError(t, err)
-		
+
 		// Verify the status update
 		var updated models.BookingRequest
 		db.First(&updated, testRequest.ID)
@@ -324,7 +324,7 @@ func TestBookingRequestRepository_UpdateStatus(t *testing.T) {
 		err := repo.UpdateStatus(testRequest.ID, "rejected")
 
 		assert.NoError(t, err)
-		
+
 		// Verify the status update
 		var updated models.BookingRequest
 		db.First(&updated, testRequest.ID)
@@ -335,7 +335,7 @@ func TestBookingRequestRepository_UpdateStatus(t *testing.T) {
 		err := repo.UpdateStatus(testRequest.ID, "pending")
 
 		assert.NoError(t, err)
-		
+
 		// Verify the status update
 		var updated models.BookingRequest
 		db.First(&updated, testRequest.ID)
@@ -351,32 +351,32 @@ func TestBookingRequestRepository_UpdateStatus(t *testing.T) {
 }
 
 func TestBookingRequestRepository_Delete(t *testing.T) {
-	db, err := setupBookingTestDB()
-	assert.NoError(t, err)
-	
-	repo := NewBookingRequestRepository(db)
-
-	// Create test booking requests
-	testRequests := []models.BookingRequest{
-		{ItemID: 1, RequesterID: 2, Status: "pending", Message: "Request to be deleted"},
-		{ItemID: 2, RequesterID: 3, Status: "approved", Message: "Request to keep"},
-	}
-
-	for _, request := range testRequests {
-		db.Create(&request)
-	}
-
 	t.Run("successful delete", func(t *testing.T) {
-		err := repo.Delete(testRequests[0].ID)
+		db, err := setupBookingTestDB()
+		assert.NoError(t, err)
+
+		repo := NewBookingRequestRepository(db)
+
+		// Create test booking requests
+		testRequests := []models.BookingRequest{
+			{ItemID: 1, RequesterID: 2, Status: "pending", Message: "Request to be deleted"},
+			{ItemID: 2, RequesterID: 3, Status: "approved", Message: "Request to keep"},
+		}
+
+		for i := range testRequests {
+			db.Create(&testRequests[i])
+		}
+
+		err = repo.Delete(testRequests[0].ID)
 
 		assert.NoError(t, err)
-		
+
 		// Verify the request is deleted (soft delete)
 		var deleted models.BookingRequest
 		result := db.First(&deleted, testRequests[0].ID)
 		assert.Error(t, result.Error)
 		assert.Equal(t, gorm.ErrRecordNotFound, result.Error)
-		
+
 		// Verify other requests are not affected
 		var remaining models.BookingRequest
 		result = db.First(&remaining, testRequests[1].ID)
@@ -385,15 +385,37 @@ func TestBookingRequestRepository_Delete(t *testing.T) {
 	})
 
 	t.Run("delete non-existent booking request", func(t *testing.T) {
-		err := repo.Delete(9999)
+		db, err := setupBookingTestDB()
+		assert.NoError(t, err)
+
+		repo := NewBookingRequestRepository(db)
+
+		err = repo.Delete(9999)
 
 		// GORM doesn't return error for deleting non-existent records
 		assert.NoError(t, err)
 	})
 
 	t.Run("delete already deleted request", func(t *testing.T) {
+		db, err := setupBookingTestDB()
+		assert.NoError(t, err)
+
+		repo := NewBookingRequestRepository(db)
+
+		// Create test booking requests
+		testRequests := []models.BookingRequest{
+			{ItemID: 1, RequesterID: 2, Status: "pending", Message: "Request to be deleted"},
+		}
+
+		for i := range testRequests {
+			db.Create(&testRequests[i])
+		}
+
 		// Try to delete the same request again
-		err := repo.Delete(testRequests[0].ID)
+		err = repo.Delete(testRequests[0].ID)
+		assert.NoError(t, err)
+
+		err = repo.Delete(testRequests[0].ID)
 
 		// GORM doesn't return error for deleting already deleted records
 		assert.NoError(t, err)
@@ -403,7 +425,7 @@ func TestBookingRequestRepository_Delete(t *testing.T) {
 func TestBookingRequestRepository_Integration(t *testing.T) {
 	db, err := setupBookingTestDB()
 	assert.NoError(t, err)
-	
+
 	repo := NewBookingRequestRepository(db)
 
 	t.Run("complete booking request workflow", func(t *testing.T) {
@@ -464,14 +486,19 @@ func TestBookingRequestRepository_Integration(t *testing.T) {
 	})
 
 	t.Run("multiple requests per item", func(t *testing.T) {
+		db, err := setupBookingTestDB()
+		assert.NoError(t, err)
+
+		repo := NewBookingRequestRepository(db)
+
 		// Create multiple requests for the same item
 		requests := []models.BookingRequest{
 			{ItemID: 1, RequesterID: 2, Status: "pending", Message: "First request"},
 			{ItemID: 1, RequesterID: 3, Status: "pending", Message: "Second request"},
 		}
 
-		for _, request := range requests {
-			err := repo.Create(&request)
+		for i := range requests {
+			err := repo.Create(&requests[i])
 			assert.NoError(t, err)
 		}
 
@@ -487,10 +514,12 @@ func TestBookingRequestRepository_Integration(t *testing.T) {
 		// Get by item and specific requester
 		request2, err := repo.GetByItemAndRequester(1, 2)
 		assert.NoError(t, err)
+		assert.NotNil(t, request2)
 		assert.Equal(t, uint(2), request2.RequesterID)
 
 		request3, err := repo.GetByItemAndRequester(1, 3)
 		assert.NoError(t, err)
+		assert.NotNil(t, request3)
 		assert.Equal(t, uint(3), request3.RequesterID)
 
 		// Approve one and reject the other
@@ -511,6 +540,11 @@ func TestBookingRequestRepository_Integration(t *testing.T) {
 	})
 
 	t.Run("get all requests by item ID", func(t *testing.T) {
+		db, err := setupBookingTestDB()
+		assert.NoError(t, err)
+
+		repo := NewBookingRequestRepository(db)
+
 		// Create multiple requests for the same item
 		requests := []models.BookingRequest{
 			{ItemID: 2, RequesterID: 1, Status: "pending", Message: "Request 1"},

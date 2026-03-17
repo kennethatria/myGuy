@@ -52,7 +52,8 @@ func (r *storeItemRepository) GetAll(filter models.StoreItemFilter) ([]models.St
 	// Apply filters
 	if filter.Search != "" {
 		searchPattern := "%" + filter.Search + "%"
-		query = query.Where("title ILIKE ? OR description ILIKE ?", searchPattern, searchPattern)
+		// SQLite doesn't support ILIKE, use LIKE with LOWER for case-insensitive search
+		query = query.Where("LOWER(title) LIKE LOWER(?) OR LOWER(description) LIKE LOWER(?)", searchPattern, searchPattern)
 	}
 
 	if filter.Category != "" {
