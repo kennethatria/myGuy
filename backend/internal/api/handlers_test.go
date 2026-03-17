@@ -77,6 +77,26 @@ func TestHandler_Register(t *testing.T) {
 		assert.Equal(t, uint(1), user.ID)
 		mockUserRepo.AssertExpectations(t)
 	})
+
+	t.Run("email already exists", func(t *testing.T) {
+		reqBody := registerRequest{
+			Username: "testuser",
+			Email:    "exists@example.com",
+			Password: "password123",
+			FullName: "Test User",
+		}
+
+		mockUserRepo.On("GetByEmail", mock.Anything, reqBody.Email).Return(&models.User{ID: 1}, nil)
+
+		body, _ := json.Marshal(reqBody)
+		req, _ := http.NewRequest(http.MethodPost, "/register", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusBadRequest, resp.Code)
+	})
 }
 
 func TestHandler_Login(t *testing.T) {
@@ -111,6 +131,24 @@ func TestHandler_Login(t *testing.T) {
 		json.Unmarshal(resp.Body.Bytes(), &result)
 		assert.NotNil(t, result["token"])
 		mockUserRepo.AssertExpectations(t)
+	})
+
+	t.Run("invalid credentials", func(t *testing.T) {
+		reqBody := loginRequest{
+			Email:    "test@example.com",
+			Password: "wrongpassword",
+		}
+
+		mockUserRepo.On("GetByEmail", mock.Anything, reqBody.Email).Return(nil, gorm.ErrRecordNotFound)
+
+		body, _ := json.Marshal(reqBody)
+		req, _ := http.NewRequest(http.MethodPost, "/login", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusUnauthorized, resp.Code)
 	})
 }
 
@@ -178,6 +216,24 @@ func TestHandler_CreateTask(t *testing.T) {
 		assert.Equal(t, http.StatusCreated, resp.Code)
 		mockTaskRepo.AssertExpectations(t)
 	})
+
+	t.Run("invalid deadline", func(t *testing.T) {
+		reqBody := createTaskRequest{
+			Title:       "Test Task",
+			Description: "Description",
+			Fee:         100.0,
+			Deadline:    "invalid-date",
+		}
+
+		body, _ := json.Marshal(reqBody)
+		req, _ := http.NewRequest(http.MethodPost, "/tasks", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusBadRequest, resp.Code)
+	})
 }
 
 func TestHandler_GetTask(t *testing.T) {
@@ -199,6 +255,17 @@ func TestHandler_GetTask(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.Code)
 		mockTaskRepo.AssertExpectations(t)
+	})
+
+	t.Run("task not found", func(t *testing.T) {
+		mockTaskRepo.On("GetByID", mock.Anything, uint(999)).Return(nil, gorm.ErrRecordNotFound)
+
+		req, _ := http.NewRequest(http.MethodGet, "/tasks/999", nil)
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusNotFound, resp.Code)
 	})
 }
 
@@ -227,6 +294,22 @@ func TestHandler_UpdateTask(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.Code)
 		mockTaskRepo.AssertExpectations(t)
 	})
+
+	t.Run("unauthorized update", func(t *testing.T) {
+		task := &models.Task{ID: 1, CreatedBy: 2, Title: "Old Title"}
+		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
+
+		deadline := time.Now().Add(48 * time.Hour).Format(time.RFC3339)
+		reqBody := createTaskRequest{Title: "New Title", Description: "New Desc", Fee: 200, Deadline: deadline}
+		body, _ := json.Marshal(reqBody)
+		req, _ := http.NewRequest(http.MethodPut, "/tasks/1", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusForbidden, resp.Code)
+	})
 }
 
 func TestHandler_DeleteTask(t *testing.T) {
@@ -249,6 +332,17 @@ func TestHandler_DeleteTask(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.Code)
 		mockTaskRepo.AssertExpectations(t)
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(nil, gorm.ErrRecordNotFound)
+
+		req, _ := http.NewRequest(http.MethodDelete, "/tasks/1", nil)
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusNotFound, resp.Code)
 	})
 }
 
@@ -275,6 +369,18 @@ func TestHandler_UpdateTaskStatus(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.Code)
 		mockTaskRepo.AssertExpectations(t)
+	})
+
+	t.Run("invalid status", func(t *testing.T) {
+		reqBody := gin.H{"status": "invalid"}
+		body, _ := json.Marshal(reqBody)
+		req, _ := http.NewRequest(http.MethodPatch, "/tasks/1/status", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusBadRequest, resp.Code)
 	})
 }
 
@@ -443,6 +549,23 @@ func TestHandler_RespondToApplication(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.Code)
 	})
+
+	t.Run("successful respond - decline", func(t *testing.T) {
+		task := &models.Task{ID: 1, CreatedBy: 1}
+		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
+		mockAppRepo.On("GetByID", mock.Anything, uint(10)).Return(&models.Application{ID: 10, TaskID: 1}, nil)
+		mockAppRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Application")).Return(nil)
+
+		reqBody := respondToApplicationRequest{Status: "declined"}
+		body, _ := json.Marshal(reqBody)
+		req, _ := http.NewRequest(http.MethodPost, "/tasks/1/applications/10/respond", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusOK, resp.Code)
+	})
 }
 
 func TestHandler_UpdateProfile(t *testing.T) {
@@ -469,5 +592,89 @@ func TestHandler_UpdateProfile(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.Code)
 		mockUserRepo.AssertExpectations(t)
+	})
+}
+
+func TestHandler_GetAssignedTasks(t *testing.T) {
+	router, handler, _, mockTaskRepo, _, _ := setupTestRouter()
+	router.Use(func(c *gin.Context) {
+		c.Set("userID", uint(1))
+		c.Next()
+	})
+	router.GET("/user/assigned-tasks", handler.GetAssignedTasks)
+
+	t.Run("successful get assigned tasks", func(t *testing.T) {
+		mockTaskRepo.On("ListByUser", mock.Anything, uint(1), "assigned").Return([]models.Task{}, nil)
+
+		req, _ := http.NewRequest(http.MethodGet, "/user/assigned-tasks", nil)
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusOK, resp.Code)
+		mockTaskRepo.AssertExpectations(t)
+	})
+
+	t.Run("exclude self assigned", func(t *testing.T) {
+		tasks := []models.Task{
+			{ID: 1, CreatedBy: 1}, // Self-assigned
+			{ID: 2, CreatedBy: 2}, // Assigned from others
+		}
+		mockTaskRepo.On("ListByUser", mock.Anything, uint(1), "assigned").Return(tasks, nil)
+
+		req, _ := http.NewRequest(http.MethodGet, "/user/assigned-tasks?exclude_self_assigned=true", nil)
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusOK, resp.Code)
+		var result []models.Task
+		json.Unmarshal(resp.Body.Bytes(), &result)
+		assert.Equal(t, 1, len(result))
+		assert.Equal(t, uint(2), result[0].ID)
+	})
+}
+
+func TestHandler_GetUserByID(t *testing.T) {
+	router, handler, mockUserRepo, _, _, _ := setupTestRouter()
+	router.GET("/users/:id", handler.GetUserByID)
+
+	t.Run("successful get user", func(t *testing.T) {
+		user := &models.User{ID: 1, Username: "testuser"}
+		mockUserRepo.On("GetByID", mock.Anything, uint(1)).Return(user, nil)
+
+		req, _ := http.NewRequest(http.MethodGet, "/users/1", nil)
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusOK, resp.Code)
+	})
+
+	t.Run("user not found", func(t *testing.T) {
+		mockUserRepo.On("GetByID", mock.Anything, uint(99)).Return(nil, services.ErrUserNotFound)
+
+		req, _ := http.NewRequest(http.MethodGet, "/users/99", nil)
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusNotFound, resp.Code)
+	})
+}
+
+func TestHandler_GetUserReviews(t *testing.T) {
+	router, handler, _, _, mockReviewRepo, _ := setupTestRouter()
+	router.GET("/users/:id/reviews", handler.GetUserReviews)
+
+	t.Run("successful get reviews", func(t *testing.T) {
+		mockReviewRepo.On("ListByUser", mock.Anything, uint(1)).Return([]models.Review{}, nil)
+
+		req, _ := http.NewRequest(http.MethodGet, "/users/1/reviews", nil)
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusOK, resp.Code)
 	})
 }
