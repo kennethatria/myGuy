@@ -3,3 +3,9 @@ node_modules
 **/.claude/settings.local.json
 
 go1.21.0.linux-amd64.tar.gz
+
+go
+
+# Go workspace files
+go.work
+go.work.sum
