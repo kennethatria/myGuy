@@ -37,7 +37,7 @@ func setupIntegrationTestDB() (*gorm.DB, error) {
 		{ID: 2, Username: "buyer1", Email: "buyer1@example.com", Name: "Buyer One"},
 		{ID: 3, Username: "bidder1", Email: "bidder1@example.com", Name: "Bidder One"},
 	}
-	
+
 	for _, user := range users {
 		db.Create(&user)
 	}
@@ -47,28 +47,29 @@ func setupIntegrationTestDB() (*gorm.DB, error) {
 
 func setupIntegrationTestRouter(db *gorm.DB) *gin.Engine {
 	gin.SetMode(gin.TestMode)
-	
+
 	// Initialize repositories
 	itemRepo := repositories.NewStoreItemRepository(db)
 	bidRepo := repositories.NewBidRepository(db)
 	bookingRepo := repositories.NewBookingRequestRepository(db)
-	
+	userRepo := repositories.NewUserRepository(db)
+
 	// Initialize service
-	storeService := services.NewStoreService(itemRepo, bidRepo, bookingRepo)
-	
+	storeService := services.NewStoreService(db, itemRepo, bidRepo, bookingRepo, userRepo)
+
 	// Initialize handler
 	storeHandler := handlers.NewStoreHandler(storeService)
-	
+
 	// Setup router
 	router := gin.New()
-	
+
 	// Auth middleware mock
 	router.Use(func(c *gin.Context) {
 		userID := c.GetHeader("X-User-ID")
 		if userID == "" {
 			userID = "1" // Default to user 1
 		}
-		
+
 		switch userID {
 		case "1":
 			c.Set("userID", uint(1))
@@ -93,7 +94,7 @@ func setupIntegrationTestRouter(db *gorm.DB) *gin.Engine {
 		}
 		c.Next()
 	})
-	
+
 	api := router.Group("/api/v1")
 	{
 		api.POST("/items", storeHandler.CreateItem)
@@ -114,14 +115,14 @@ func setupIntegrationTestRouter(db *gorm.DB) *gin.Engine {
 		api.POST("/booking-requests/:requestId/reject", storeHandler.RejectBookingRequest)
 		api.GET("/user/booking-requests", storeHandler.GetUserBookingRequests)
 	}
-	
+
 	return router
 }
 
 func TestIntegration_ItemLifecycle(t *testing.T) {
 	db, err := setupIntegrationTestDB()
 	assert.NoError(t, err)
-	
+
 	router := setupIntegrationTestRouter(db)
 
 	var itemID uint
@@ -145,7 +146,7 @@ func TestIntegration_ItemLifecycle(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusCreated, w.Code)
-		
+
 		var response models.StoreItem
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -153,7 +154,7 @@ func TestIntegration_ItemLifecycle(t *testing.T) {
 		assert.Equal(t, req.PriceType, response.PriceType)
 		assert.Equal(t, req.FixedPrice, response.FixedPrice)
 		assert.Equal(t, uint(1), response.SellerID)
-		
+
 		itemID = response.ID
 	})
 
@@ -164,7 +165,7 @@ func TestIntegration_ItemLifecycle(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response models.StoreItem
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -187,7 +188,7 @@ func TestIntegration_ItemLifecycle(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response models.StoreItem
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -212,7 +213,7 @@ func TestIntegration_ItemLifecycle(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response models.StoreItem
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -240,7 +241,7 @@ func TestIntegration_ItemLifecycle(t *testing.T) {
 func TestIntegration_BiddingLifecycle(t *testing.T) {
 	db, err := setupIntegrationTestDB()
 	assert.NoError(t, err)
-	
+
 	router := setupIntegrationTestRouter(db)
 
 	var itemID uint
@@ -267,18 +268,18 @@ func TestIntegration_BiddingLifecycle(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusCreated, w.Code)
-		
+
 		var response models.StoreItem
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Equal(t, req.Title, response.Title)
 		assert.Equal(t, req.PriceType, response.PriceType)
 		assert.Equal(t, req.StartingBid, response.StartingBid)
-		
+
 		itemID = response.ID
 	})
 
-	var firstBidID, secondBidID uint
+	var secondBidID uint
 
 	t.Run("Place first bid", func(t *testing.T) {
 		bidReq := models.CreateBidRequest{
@@ -295,15 +296,13 @@ func TestIntegration_BiddingLifecycle(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusCreated, w.Code)
-		
+
 		var response models.Bid
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Equal(t, bidReq.Amount, response.Amount)
 		assert.Equal(t, bidReq.Message, response.Message)
 		assert.Equal(t, uint(2), response.BidderID)
-		
-		firstBidID = response.ID
 	})
 
 	t.Run("Place higher bid", func(t *testing.T) {
@@ -321,13 +320,13 @@ func TestIntegration_BiddingLifecycle(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusCreated, w.Code)
-		
+
 		var response models.Bid
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Equal(t, bidReq.Amount, response.Amount)
 		assert.Equal(t, uint(3), response.BidderID)
-		
+
 		secondBidID = response.ID
 	})
 
@@ -338,12 +337,12 @@ func TestIntegration_BiddingLifecycle(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response []models.Bid
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Len(t, response, 2)
-		
+
 		// Should be ordered by amount DESC
 		assert.True(t, response[0].Amount >= response[1].Amount)
 	})
@@ -365,7 +364,7 @@ func TestIntegration_BiddingLifecycle(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response models.StoreItem
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -393,7 +392,7 @@ func TestIntegration_BiddingLifecycle(t *testing.T) {
 func TestIntegration_BookingLifecycle(t *testing.T) {
 	db, err := setupIntegrationTestDB()
 	assert.NoError(t, err)
-	
+
 	router := setupIntegrationTestRouter(db)
 
 	var itemID uint
@@ -417,7 +416,7 @@ func TestIntegration_BookingLifecycle(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusCreated, w.Code)
-		
+
 		var response models.StoreItem
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -440,14 +439,14 @@ func TestIntegration_BookingLifecycle(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusCreated, w.Code)
-		
+
 		var response models.BookingRequest
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Equal(t, bookingReq.Message, response.Message)
 		assert.Equal(t, uint(2), response.RequesterID)
 		assert.Equal(t, "pending", response.Status)
-		
+
 		requestID = response.ID
 	})
 
@@ -459,7 +458,7 @@ func TestIntegration_BookingLifecycle(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response models.BookingRequest
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -474,7 +473,7 @@ func TestIntegration_BookingLifecycle(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response models.BookingRequest
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -499,7 +498,7 @@ func TestIntegration_BookingLifecycle(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response models.BookingRequest
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -514,7 +513,7 @@ func TestIntegration_BookingLifecycle(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response []models.BookingRequest
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -526,11 +525,11 @@ func TestIntegration_BookingLifecycle(t *testing.T) {
 func TestIntegration_BookingRequestEdgeCases(t *testing.T) {
 	db, err := setupIntegrationTestDB()
 	assert.NoError(t, err)
-	
+
 	router := setupIntegrationTestRouter(db)
-	
+
 	var itemID uint
-	
+
 	// Create a test item
 	t.Run("Create item for edge case testing", func(t *testing.T) {
 		item := models.CreateStoreItemRequest{
@@ -551,7 +550,7 @@ func TestIntegration_BookingRequestEdgeCases(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusCreated, w.Code)
-		
+
 		var response models.StoreItem
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -566,7 +565,7 @@ func TestIntegration_BookingRequestEdgeCases(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response map[string]interface{}
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -627,12 +626,12 @@ func TestIntegration_BookingRequestEdgeCases(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response map[string]interface{}
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.NotNil(t, response["booking_request"])
-		
+
 		bookingRequest := response["booking_request"].(map[string]interface{})
 		assert.Equal(t, "First booking request", bookingRequest["message"])
 		assert.Equal(t, "pending", bookingRequest["status"])
@@ -658,7 +657,7 @@ func TestIntegration_BookingRequestEdgeCases(t *testing.T) {
 func TestIntegration_ItemFiltering(t *testing.T) {
 	db, err := setupIntegrationTestDB()
 	assert.NoError(t, err)
-	
+
 	router := setupIntegrationTestRouter(db)
 
 	// Create multiple test items
@@ -709,12 +708,12 @@ func TestIntegration_ItemFiltering(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response map[string]interface{}
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Equal(t, float64(3), response["total"])
-		
+
 		items := response["items"].([]interface{})
 		assert.Len(t, items, 3)
 	})
@@ -726,12 +725,12 @@ func TestIntegration_ItemFiltering(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response map[string]interface{}
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Equal(t, float64(2), response["total"])
-		
+
 		items := response["items"].([]interface{})
 		assert.Len(t, items, 2)
 	})
@@ -743,7 +742,7 @@ func TestIntegration_ItemFiltering(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response map[string]interface{}
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -757,7 +756,7 @@ func TestIntegration_ItemFiltering(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response map[string]interface{}
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -771,7 +770,7 @@ func TestIntegration_ItemFiltering(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response map[string]interface{}
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -785,14 +784,14 @@ func TestIntegration_ItemFiltering(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response map[string]interface{}
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Equal(t, float64(3), response["total"])
 		assert.Equal(t, float64(1), response["page"])
 		assert.Equal(t, float64(2), response["per_page"])
-		
+
 		items := response["items"].([]interface{})
 		assert.Len(t, items, 2)
 	})
@@ -801,7 +800,7 @@ func TestIntegration_ItemFiltering(t *testing.T) {
 func TestIntegration_UserSpecificEndpoints(t *testing.T) {
 	db, err := setupIntegrationTestDB()
 	assert.NoError(t, err)
-	
+
 	router := setupIntegrationTestRouter(db)
 
 	// Create test items and transactions
@@ -856,12 +855,12 @@ func TestIntegration_UserSpecificEndpoints(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response []models.StoreItem
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Len(t, response, 2)
-		
+
 		for _, item := range response {
 			assert.Equal(t, uint(1), item.SellerID)
 		}
@@ -890,7 +889,7 @@ func TestIntegration_UserSpecificEndpoints(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response []models.Bid
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
@@ -916,7 +915,7 @@ func TestIntegration_UserSpecificEndpoints(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response []models.StoreItem
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)

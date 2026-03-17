@@ -63,6 +63,11 @@ func (m *MockUserRepository) UpsertFromJWT(userID uint, username, email, name st
 	return args.Get(0).(*models.User), args.Error(1)
 }
 
+func (m *MockUserRepository) UpdateRating(userID uint, newRating float64) error {
+	args := m.Called(userID, newRating)
+	return args.Error(0)
+}
+
 func TestJWTAuthMiddleware_ValidateToken(t *testing.T) {
 	secretKey := "test-secret-key"
 	middleware := NewJWTAuthMiddleware(secretKey, nil)
@@ -149,7 +154,7 @@ func TestJWTAuthMiddleware_ValidateToken(t *testing.T) {
 
 func TestJWTAuthMiddleware_AuthRequired(t *testing.T) {
 	secretKey := "test-secret-key"
-	
+
 	t.Run("successful authentication with user sync", func(t *testing.T) {
 		mockUserRepo := new(MockUserRepository)
 		middleware := NewJWTAuthMiddleware(secretKey, mockUserRepo)
@@ -188,7 +193,7 @@ func TestJWTAuthMiddleware_AuthRequired(t *testing.T) {
 			username := c.GetString("username")
 			email := c.GetString("userEmail")
 			name := c.GetString("userName")
-			
+
 			c.JSON(http.StatusOK, gin.H{
 				"userID":   userID,
 				"username": username,
@@ -305,7 +310,7 @@ func TestJWTAuthMiddleware_AuthRequired(t *testing.T) {
 
 func TestJWTAuthMiddleware_NewJWTAuthMiddleware(t *testing.T) {
 	secretKey := "test-secret"
-	
+
 	t.Run("without user repository", func(t *testing.T) {
 		middleware := NewJWTAuthMiddleware(secretKey, nil)
 		assert.NotNil(t, middleware)

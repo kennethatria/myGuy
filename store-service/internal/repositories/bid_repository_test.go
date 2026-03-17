@@ -27,7 +27,7 @@ func setupBidTestDB() (*gorm.DB, error) {
 		{ID: 2, Username: "user2", Email: "user2@example.com"},
 		{ID: 3, Username: "user3", Email: "user3@example.com"},
 	}
-	
+
 	for _, user := range users {
 		db.Create(&user)
 	}
@@ -37,7 +37,7 @@ func setupBidTestDB() (*gorm.DB, error) {
 		{ID: 1, Title: "Auction Item 1", SellerID: 1, PriceType: "bidding", StartingBid: 100.0, Status: "active"},
 		{ID: 2, Title: "Auction Item 2", SellerID: 2, PriceType: "bidding", StartingBid: 50.0, Status: "active"},
 	}
-	
+
 	for _, item := range items {
 		db.Create(&item)
 	}
@@ -48,7 +48,7 @@ func setupBidTestDB() (*gorm.DB, error) {
 func TestBidRepository_Create(t *testing.T) {
 	db, err := setupBidTestDB()
 	assert.NoError(t, err)
-	
+
 	repo := NewBidRepository(db)
 
 	t.Run("successful create bid", func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestBidRepository_Create(t *testing.T) {
 func TestBidRepository_GetByID(t *testing.T) {
 	db, err := setupBidTestDB()
 	assert.NoError(t, err)
-	
+
 	repo := NewBidRepository(db)
 
 	// Create test bid
@@ -136,7 +136,7 @@ func TestBidRepository_GetByID(t *testing.T) {
 func TestBidRepository_GetByItemID(t *testing.T) {
 	db, err := setupBidTestDB()
 	assert.NoError(t, err)
-	
+
 	repo := NewBidRepository(db)
 
 	// Create test bids
@@ -156,12 +156,12 @@ func TestBidRepository_GetByItemID(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Len(t, bids, 3)
-		
+
 		// Check that all bids belong to item 1
 		for _, bid := range bids {
 			assert.Equal(t, uint(1), bid.ItemID)
 		}
-		
+
 		// Check that bids are ordered by amount DESC
 		assert.True(t, bids[0].Amount >= bids[1].Amount)
 		assert.True(t, bids[1].Amount >= bids[2].Amount)
@@ -186,7 +186,7 @@ func TestBidRepository_GetByItemID(t *testing.T) {
 func TestBidRepository_GetByBidderID(t *testing.T) {
 	db, err := setupBidTestDB()
 	assert.NoError(t, err)
-	
+
 	repo := NewBidRepository(db)
 
 	// Create test bids
@@ -205,7 +205,7 @@ func TestBidRepository_GetByBidderID(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Len(t, bids, 2)
-		
+
 		// Check that all bids belong to bidder 2
 		for _, bid := range bids {
 			assert.Equal(t, uint(2), bid.BidderID)
@@ -231,7 +231,7 @@ func TestBidRepository_GetByBidderID(t *testing.T) {
 func TestBidRepository_GetHighestBidForItem(t *testing.T) {
 	db, err := setupBidTestDB()
 	assert.NoError(t, err)
-	
+
 	repo := NewBidRepository(db)
 
 	// Create test bids
@@ -259,7 +259,7 @@ func TestBidRepository_GetHighestBidForItem(t *testing.T) {
 	t.Run("no active bids for item", func(t *testing.T) {
 		// Mark all bids for item 1 as outbid
 		db.Model(&models.Bid{}).Where("item_id = ?", 1).Update("status", "outbid")
-		
+
 		bid, err := repo.GetHighestBidForItem(1)
 
 		assert.Error(t, err)
@@ -279,7 +279,7 @@ func TestBidRepository_GetHighestBidForItem(t *testing.T) {
 func TestBidRepository_UpdateBidStatus(t *testing.T) {
 	db, err := setupBidTestDB()
 	assert.NoError(t, err)
-	
+
 	repo := NewBidRepository(db)
 
 	// Create test bid
@@ -295,7 +295,7 @@ func TestBidRepository_UpdateBidStatus(t *testing.T) {
 		err := repo.UpdateBidStatus(testBid.ID, "won")
 
 		assert.NoError(t, err)
-		
+
 		// Verify the status update
 		var updated models.Bid
 		db.First(&updated, testBid.ID)
@@ -306,7 +306,7 @@ func TestBidRepository_UpdateBidStatus(t *testing.T) {
 		err := repo.UpdateBidStatus(testBid.ID, "outbid")
 
 		assert.NoError(t, err)
-		
+
 		// Verify the status update
 		var updated models.Bid
 		db.First(&updated, testBid.ID)
@@ -322,37 +322,37 @@ func TestBidRepository_UpdateBidStatus(t *testing.T) {
 }
 
 func TestBidRepository_MarkOutbidBids(t *testing.T) {
-	db, err := setupBidTestDB()
-	assert.NoError(t, err)
-	
-	repo := NewBidRepository(db)
-
-	// Create test bids
-	testBids := []models.Bid{
-		{ItemID: 1, BidderID: 2, Amount: 110.0, Status: "active"},
-		{ItemID: 1, BidderID: 3, Amount: 115.0, Status: "active"},
-		{ItemID: 1, BidderID: 2, Amount: 120.0, Status: "active"}, // This will be the winning bid
-		{ItemID: 2, BidderID: 3, Amount: 60.0, Status: "active"},  // Different item
-	}
-
-	for _, bid := range testBids {
-		db.Create(&bid)
-	}
-
-	winningBidID := testBids[2].ID
-
 	t.Run("successful mark outbid bids", func(t *testing.T) {
-		err := repo.MarkOutbidBids(1, winningBidID)
+		db, err := setupBidTestDB()
+		assert.NoError(t, err)
+
+		repo := NewBidRepository(db)
+
+		// Create test bids
+		testBids := []models.Bid{
+			{ItemID: 1, BidderID: 2, Amount: 110.0, Status: "active"},
+			{ItemID: 1, BidderID: 3, Amount: 115.0, Status: "active"},
+			{ItemID: 1, BidderID: 2, Amount: 120.0, Status: "active"}, // This will be the winning bid
+			{ItemID: 2, BidderID: 3, Amount: 60.0, Status: "active"},  // Different item
+		}
+
+		for i := range testBids {
+			db.Create(&testBids[i])
+		}
+
+		winningBidID := testBids[2].ID
+
+		err = repo.MarkOutbidBids(1, winningBidID)
 
 		assert.NoError(t, err)
-		
+
 		// Verify that other bids for item 1 are marked as outbid
 		var bids []models.Bid
 		db.Where("item_id = ?", 1).Find(&bids)
-		
+
 		outbidCount := 0
 		activeCount := 0
-		
+
 		for _, bid := range bids {
 			if bid.ID == winningBidID {
 				assert.Equal(t, "active", bid.Status)
@@ -362,10 +362,10 @@ func TestBidRepository_MarkOutbidBids(t *testing.T) {
 				outbidCount++
 			}
 		}
-		
+
 		assert.Equal(t, 2, outbidCount)
 		assert.Equal(t, 1, activeCount)
-		
+
 		// Verify that bids for other items are not affected
 		var otherBids []models.Bid
 		db.Where("item_id = ?", 2).Find(&otherBids)
@@ -374,21 +374,42 @@ func TestBidRepository_MarkOutbidBids(t *testing.T) {
 	})
 
 	t.Run("mark outbid for non-existent item", func(t *testing.T) {
-		err := repo.MarkOutbidBids(999, 1)
+		db, err := setupBidTestDB()
+		assert.NoError(t, err)
+
+		repo := NewBidRepository(db)
+
+		err = repo.MarkOutbidBids(999, 1)
 
 		// GORM doesn't return error for updating non-existent records
 		assert.NoError(t, err)
 	})
 
 	t.Run("mark outbid with non-existent winning bid", func(t *testing.T) {
-		err := repo.MarkOutbidBids(1, 9999)
+		db, err := setupBidTestDB()
+		assert.NoError(t, err)
+
+		repo := NewBidRepository(db)
+
+		// Create test bids
+		testBids := []models.Bid{
+			{ItemID: 1, BidderID: 2, Amount: 110.0, Status: "active"},
+			{ItemID: 1, BidderID: 3, Amount: 115.0, Status: "active"},
+			{ItemID: 1, BidderID: 2, Amount: 120.0, Status: "active"},
+		}
+
+		for i := range testBids {
+			db.Create(&testBids[i])
+		}
+
+		err = repo.MarkOutbidBids(1, 9999)
 
 		assert.NoError(t, err)
-		
+
 		// All bids for item 1 should be marked as outbid
 		var bids []models.Bid
 		db.Where("item_id = ?", 1).Find(&bids)
-		
+
 		for _, bid := range bids {
 			assert.Equal(t, "outbid", bid.Status)
 		}
@@ -398,7 +419,7 @@ func TestBidRepository_MarkOutbidBids(t *testing.T) {
 func TestBidRepository_GetActiveBidsForItem(t *testing.T) {
 	db, err := setupBidTestDB()
 	assert.NoError(t, err)
-	
+
 	repo := NewBidRepository(db)
 
 	// Create test bids
@@ -419,13 +440,13 @@ func TestBidRepository_GetActiveBidsForItem(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Len(t, bids, 2)
-		
+
 		// Check that all returned bids are active
 		for _, bid := range bids {
 			assert.Equal(t, uint(1), bid.ItemID)
 			assert.Equal(t, "active", bid.Status)
 		}
-		
+
 		// Check that bids are ordered by amount DESC
 		assert.True(t, bids[0].Amount >= bids[1].Amount)
 	})
@@ -433,7 +454,7 @@ func TestBidRepository_GetActiveBidsForItem(t *testing.T) {
 	t.Run("no active bids for item", func(t *testing.T) {
 		// Mark all active bids for item 1 as outbid
 		db.Model(&models.Bid{}).Where("item_id = ? AND status = ?", 1, "active").Update("status", "outbid")
-		
+
 		bids, err := repo.GetActiveBidsForItem(1)
 
 		assert.NoError(t, err)

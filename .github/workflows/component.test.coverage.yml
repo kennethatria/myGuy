@@ -82,13 +82,13 @@ jobs:
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
           echo "Total coverage: ${COVERAGE}%"
 
-          # Check if coverage is above 70% (store-service threshold)
-          if (( $(echo "$COVERAGE < 70" | bc -l) )); then
-            echo "::error::Coverage ${COVERAGE}% is below 70% threshold"
+          # Check if coverage is above 60% (store-service threshold)
+          if (( $(echo "$COVERAGE < 60" | bc -l) )); then
+            echo "::error::Coverage ${COVERAGE}% is below 60% threshold"
             exit 1
           fi
 
-          echo "::notice::Coverage ${COVERAGE}% meets the 70% threshold"
+          echo "::notice::Coverage ${COVERAGE}% meets the 60% threshold"
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4

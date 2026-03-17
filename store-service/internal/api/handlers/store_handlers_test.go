@@ -4,15 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"store-service/internal/models"
-	"store-service/internal/services"
-	"strconv"
 	"testing"
 	"time"
 
@@ -141,10 +137,42 @@ func (m *MockStoreService) GetUserBookingRequests(userID uint) ([]models.Booking
 	return args.Get(0).([]models.BookingRequest), args.Error(1)
 }
 
+func (m *MockStoreService) ConfirmItemReceived(requestID uint, buyerID uint) (*models.BookingRequest, error) {
+	args := m.Called(requestID, buyerID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.BookingRequest), args.Error(1)
+}
+
+func (m *MockStoreService) ConfirmDelivery(requestID uint, sellerID uint) (*models.BookingRequest, error) {
+	args := m.Called(requestID, sellerID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.BookingRequest), args.Error(1)
+}
+
+func (m *MockStoreService) SubmitBuyerRating(requestID uint, buyerID uint, rating int, review string) (*models.BookingRequest, error) {
+	args := m.Called(requestID, buyerID, rating, review)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.BookingRequest), args.Error(1)
+}
+
+func (m *MockStoreService) SubmitSellerRating(requestID uint, sellerID uint, rating int, review string) (*models.BookingRequest, error) {
+	args := m.Called(requestID, sellerID, rating, review)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.BookingRequest), args.Error(1)
+}
+
 func setupTestRouter(handler *StoreHandler) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	
+
 	// Middleware to set user context (simulating JWT middleware)
 	router.Use(func(c *gin.Context) {
 		c.Set("userID", uint(1))
@@ -153,7 +181,7 @@ func setupTestRouter(handler *StoreHandler) *gin.Engine {
 		c.Set("userName", "Test User")
 		c.Next()
 	})
-	
+
 	api := router.Group("/api/v1")
 	{
 		api.POST("/items", handler.CreateItem)
@@ -175,7 +203,7 @@ func setupTestRouter(handler *StoreHandler) *gin.Engine {
 		api.POST("/booking-requests/:requestId/reject", handler.RejectBookingRequest)
 		api.GET("/user/booking-requests", handler.GetUserBookingRequests)
 	}
-	
+
 	return router
 }
 
@@ -231,8 +259,8 @@ func TestCreateItem(t *testing.T) {
 
 	t.Run("service error", func(t *testing.T) {
 		req := models.CreateStoreItemRequest{
-			Title:     "Test Item",
-			PriceType: "fixed",
+			Title:      "Test Item",
+			PriceType:  "fixed",
 			FixedPrice: 100.0,
 		}
 
@@ -975,12 +1003,12 @@ func TestGetUserBookingRequests(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response []models.BookingRequest
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Empty(t, response)
-		
+
 		mockService.AssertExpectations(t)
 	})
 }
@@ -1125,12 +1153,12 @@ func TestGetBookingRequest(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response map[string]interface{}
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.NotNil(t, response["booking_request"])
-		
+
 		mockService.AssertExpectations(t)
 	})
 
@@ -1143,12 +1171,12 @@ func TestGetBookingRequest(t *testing.T) {
 		router.ServeHTTP(w, httpReq)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response map[string]interface{}
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Nil(t, response["booking_request"])
-		
+
 		mockService.AssertExpectations(t)
 	})
 
@@ -1219,7 +1247,7 @@ func TestGetAllBookingRequests(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response struct {
 			BookingRequests []models.BookingRequest `json:"booking_requests"`
 		}
@@ -1273,7 +1301,7 @@ func TestGetAllBookingRequests(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response struct {
 			BookingRequests []models.BookingRequest `json:"booking_requests"`
 		}
