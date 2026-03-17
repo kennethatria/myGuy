@@ -168,8 +168,11 @@ function openMessageCenter() {
 
 function selectConversation(conversation: ConversationSummary) {
   activeConversation.value = conversation;
-  chatStore.joinConversation(conversation.task_id);
-  localStorage.setItem('lastActiveConversation', conversation.task_id.toString());
+  const taskId = conversation.task_id || conversation.application_id || conversation.item_id;
+  if (taskId) {
+    chatStore.joinConversation(taskId);
+    localStorage.setItem('lastActiveConversation', String(taskId));
+  }
 }
 
 function backToList() {

@@ -420,14 +420,14 @@ const loadTaskData = async () => {
     console.log('Task data loaded successfully:', task.value);
     
     // Try to load user info for task creator and assignee
-    if (task.value.created_by && (!task.value.creator || !task.value.creator.username)) {
+    if (task.value?.created_by && (!task.value?.creator || !task.value?.creator.username)) {
       try {
         console.log(`Fetching creator info for user ID ${task.value.created_by}`);
         const creatorData = await usersStore.getUserById(Number(task.value.created_by));
         if (creatorData) {
           creator.value = creatorData;
           // Also update the task creator for consistency
-          if (!task.value.creator) {
+          if (task.value && !task.value.creator) {
             task.value.creator = creatorData;
           }
         }
@@ -436,14 +436,14 @@ const loadTaskData = async () => {
       }
     }
     
-    if (task.value.assigned_to && (!task.value.assignee || !task.value.assignee.username)) {
+    if (task.value?.assigned_to && (!task.value?.assignee || !task.value?.assignee.username)) {
       try {
         console.log(`Fetching assignee info for user ID ${task.value.assigned_to}`);
         const assigneeData = await usersStore.getUserById(Number(task.value.assigned_to));
         if (assigneeData) {
           assignee.value = assigneeData;
           // Also update the task assignee for consistency
-          if (!task.value.assignee) {
+          if (task.value && !task.value.assignee) {
             task.value.assignee = assigneeData;
           }
         }

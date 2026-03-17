@@ -71,7 +71,7 @@ func (r *bookingRequestRepository) UpdateChatNotificationStatus(bookingID uint, 
 		Updates(map[string]interface{}{
 			"chat_notified":             notified,
 			"notification_attempts":     attempts,
-			"last_notification_attempt": gorm.Expr("NOW()"),
+			"last_notification_attempt": gorm.Expr("CURRENT_TIMESTAMP"),
 		}).Error
 }
 
@@ -80,7 +80,7 @@ func (r *bookingRequestRepository) IncrementNotificationAttempts(bookingID uint)
 		Where("id = ?", bookingID).
 		Updates(map[string]interface{}{
 			"notification_attempts":     gorm.Expr("notification_attempts + 1"),
-			"last_notification_attempt": gorm.Expr("NOW()"),
+			"last_notification_attempt": gorm.Expr("CURRENT_TIMESTAMP"),
 		}).Error
 }
 

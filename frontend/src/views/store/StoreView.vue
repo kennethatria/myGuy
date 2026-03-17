@@ -725,7 +725,7 @@ watch([sortBy, sortOrder], () => {
 });
 
 // Debug function to analyze all form data
-function debugFormData(data) {
+function debugFormData(data: Record<string, unknown>) {
   console.log('=== COMPREHENSIVE FORM DEBUG ===');
   
   for (const [key, value] of Object.entries(data)) {
@@ -853,8 +853,8 @@ async function createItem() {
     
     // If images are selected, use FormData to include them
     let requestBody;
-    const requestHeaders = {
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
+    const requestHeaders: Record<string, string> = {
+      'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
     };
     
     if (selectedImages.value.length > 0) {
@@ -864,8 +864,9 @@ async function createItem() {
       
       // Add all JSON fields to FormData
       Object.keys(jsonPayload).forEach(key => {
-        if (jsonPayload[key] !== undefined && jsonPayload[key] !== null) {
-          formData.append(key, String(jsonPayload[key]));
+        const payload = jsonPayload as Record<string, unknown>;
+        if (payload[key] !== undefined && payload[key] !== null) {
+          formData.append(key, String(payload[key]));
         }
       });
       
@@ -944,7 +945,7 @@ function handleImageSelect(event) {
   event.target.value = '';
 }
 
-function removeImage(index) {
+function removeImage(index: number) {
   selectedImages.value.splice(index, 1);
 }
 
@@ -1028,8 +1029,9 @@ function clearErrors() {
   };
 }
 
-function sanitizeNumberInput(field, event) {
-  const value = event.target.value;
+function sanitizeNumberInput(field: string, event: Event) {
+  const target = event.target as HTMLInputElement;
+  const value = target.value;
   
   // Remove any non-numeric characters except decimal point
   const sanitized = value.replace(/[^0-9.]/g, '');
@@ -1042,7 +1044,8 @@ function sanitizeNumberInput(field, event) {
   }
   
   // Update the field value
-  newItem.value[field] = finalValue;
+  const item = newItem.value as Record<string, unknown>;
+  item[field] = finalValue;
   
   console.log(`Sanitized ${field}: "${value}" -> "${finalValue}"`);
 }
@@ -1069,9 +1072,10 @@ function cancelCreateItem() {
   resetForm();
 }
 
-function viewItem(item) {
-  if (item && item.id) {
-    router.push({ name: 'store-item', params: { id: item.id } });
+function viewItem(item: unknown) {
+  const i = item as any;
+  if (i && i.id) {
+    router.push({ name: 'store-item', params: { id: i.id } });
   } else {
     console.error('Cannot view item: Invalid item or missing ID', item);
   }
@@ -1085,7 +1089,7 @@ function filterItems() {
   applyFilters();
 }
 
-function formatCurrency(amount) {
+function formatCurrency(amount: unknown) {
   // Add safety check for null/undefined values
   const safeAmount = Number(amount) || 0;
   return new Intl.NumberFormat('en-UG', {
@@ -1094,11 +1098,12 @@ function formatCurrency(amount) {
   }).format(safeAmount);
 }
 
-function handleImageError(event) {
-  console.warn('Failed to load image:', event.target.src);
+function handleImageError(event: Event) {
+  const target = event.target as HTMLImageElement;
+  console.warn('Failed to load image:', target.src);
   // Hide the broken image and show placeholder
-  event.target.style.display = 'none';
-  const placeholder = event.target.parentElement.querySelector('.image-placeholder');
+  target.style.display = 'none';
+  const placeholder = target.parentElement?.querySelector('.image-placeholder') as HTMLElement | null;
   if (placeholder) {
     placeholder.style.display = 'flex';
   }
