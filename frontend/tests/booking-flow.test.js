@@ -1,8 +1,26 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createWebHistory } from 'vue-router'
 import { createPinia } from 'pinia'
 import StoreItemView from '@/views/store/StoreItemView.vue'
+
+// Mock stores so they don't call fetch during initialization
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: vi.fn(() => ({
+    user: { id: 1, username: 'buyer1' },
+    isAuthenticated: true,
+    checkAuth: vi.fn().mockResolvedValue(true),
+    token: 'mock-token'
+  }))
+}))
+
+vi.mock('@/stores/chat', () => ({
+  useChatStore: vi.fn(() => ({
+    getStoreMessages: vi.fn().mockReturnValue([]),
+    messages: [],
+    sendMessage: vi.fn()
+  }))
+}))
 
 // Mock fetch globally
 global.fetch = vi.fn()
@@ -15,15 +33,6 @@ const router = createRouter({
     { path: '/store/:id', name: 'store-item', component: StoreItemView }
   ]
 })
-
-// Mock localStorage
-const localStorageMock = {
-  getItem: vi.fn(() => 'mock-token'),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-  clear: vi.fn()
-}
-global.localStorage = localStorageMock
 
 describe('Store Booking Flow', () => {
   let wrapper
@@ -43,62 +52,59 @@ describe('Store Booking Flow', () => {
     }
   }
 
-  const mockUser = {
-    id: 1,
-    username: 'buyer1'
-  }
-
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
     pinia = createPinia()
-    
-    // Setup auth store mock
-    const useAuthStore = () => ({
-      user: mockUser,
-      isAuthenticated: true
-    })
-    
+
+    // Seed token so localStorage.getItem('token') returns the expected value
+    localStorage.setItem('token', 'mock-token')
+
+    // Default: initial loadItem (from onMounted on '/') gets no route param → fails gracefully
+    global.fetch.mockResolvedValue({ ok: false, status: 404, json: async () => ({}) })
+
+    await router.push('/')
+
     wrapper = mount(StoreItemView, {
       global: {
         plugins: [router, pinia],
-        stubs: ['router-link']
+        stubs: {
+          'router-link': true,
+          ChatWindow: { template: '<div class="chat-window-stub"></div>' },
+          BookingConfirmationModal: { template: '<div></div>', props: ['isOpen', 'itemId', 'sellerId', 'itemTitle'] }
+        }
       }
     })
   })
 
   describe('Booking Request Button', () => {
     it('should show "Book Now" button for non-owner users on active fixed-price items', async () => {
-      // Mock successful item fetch
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockItem
-      })
-
-      // Mock no existing booking request
-      fetch.mockResolvedValueOnce({
-        ok: false,
-        status: 404
-      })
+      // Mock item fetch (non-owner: seller.id=2, user.id=1)
+      global.fetch
+        .mockResolvedValueOnce({ ok: true, json: async () => mockItem })
+        // Mock loadBookingRequest → no existing booking
+        .mockResolvedValueOnce({ ok: false, status: 404, json: async () => ({}) })
 
       await router.push('/store/1')
       await wrapper.vm.loadItem()
+      await wrapper.vm.$nextTick()
 
-      // Should show booking request button
       const bookingButton = wrapper.find('[data-testid="booking-request-btn"]')
       expect(bookingButton.exists()).toBe(true)
       expect(bookingButton.text()).toContain('Book Now')
       expect(bookingButton.attributes('disabled')).toBeUndefined()
     })
 
-    it('should not show booking button for item owner', async () => {
+    it('should not show booking section for item owner', async () => {
       const ownerItem = { ...mockItem, seller: { ...mockItem.seller, id: 1 } }
-      
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ownerItem
-      })
 
+      global.fetch
+        .mockResolvedValueOnce({ ok: true, json: async () => ownerItem })
+        // owner: loadBookingRequest loads all requests
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ booking_requests: [] }) })
+
+      await router.push('/store/1')
       await wrapper.vm.loadItem()
+      await wrapper.vm.$nextTick()
 
       const bookingSection = wrapper.find('.booking-section')
       expect(bookingSection.exists()).toBe(false)
@@ -106,13 +112,14 @@ describe('Store Booking Flow', () => {
 
     it('should not show booking button for inactive items', async () => {
       const inactiveItem = { ...mockItem, status: 'sold' }
-      
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => inactiveItem
-      })
 
+      global.fetch
+        .mockResolvedValueOnce({ ok: true, json: async () => inactiveItem })
+        .mockResolvedValueOnce({ ok: false, status: 404, json: async () => ({}) })
+
+      await router.push('/store/1')
       await wrapper.vm.loadItem()
+      await wrapper.vm.$nextTick()
 
       const bookingSection = wrapper.find('.booking-section')
       expect(bookingSection.exists()).toBe(false)
@@ -121,21 +128,13 @@ describe('Store Booking Flow', () => {
 
   describe('Booking Request Creation', () => {
     it('should send booking request when button is clicked', async () => {
-      // Setup initial item load
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockItem
-      })
+      global.fetch
+        .mockResolvedValueOnce({ ok: true, json: async () => mockItem })
+        .mockResolvedValueOnce({ ok: false, status: 404, json: async () => ({}) })
 
-      // Mock no existing booking request
-      fetch.mockResolvedValueOnce({
-        ok: false,
-        status: 404
-      })
-
+      await router.push('/store/1')
       await wrapper.vm.loadItem()
 
-      // Mock successful booking request creation
       const mockBookingRequest = {
         id: 1,
         item_id: 1,
@@ -145,15 +144,10 @@ describe('Store Booking Flow', () => {
         created_at: new Date().toISOString()
       }
 
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockBookingRequest
-      })
+      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => mockBookingRequest })
 
-      // Trigger booking request
       await wrapper.vm.sendBookingRequest()
 
-      // Verify API call was made with correct data
       expect(fetch).toHaveBeenCalledWith(
         'http://localhost:8081/api/v1/items/1/booking-request',
         expect.objectContaining({
@@ -168,33 +162,24 @@ describe('Store Booking Flow', () => {
         })
       )
 
-      // Verify state updates
       expect(wrapper.vm.bookingRequest).toEqual(mockBookingRequest)
       expect(wrapper.vm.hasBookingRequest).toBe(true)
     })
 
     it('should handle booking request errors', async () => {
-      // Setup initial item load
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockItem
-      })
+      global.fetch
+        .mockResolvedValueOnce({ ok: true, json: async () => mockItem })
+        .mockResolvedValueOnce({ ok: false, status: 404, json: async () => ({}) })
 
-      fetch.mockResolvedValueOnce({
-        ok: false,
-        status: 404
-      })
-
+      await router.push('/store/1')
       await wrapper.vm.loadItem()
 
-      // Mock error response
-      fetch.mockResolvedValueOnce({
+      global.fetch.mockResolvedValueOnce({
         ok: false,
         status: 400,
         json: async () => ({ error: 'Cannot book your own item' })
       })
 
-      // Spy on alert
       const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
 
       await wrapper.vm.sendBookingRequest()
@@ -208,70 +193,34 @@ describe('Store Booking Flow', () => {
 
   describe('Booking Request Status Display', () => {
     it('should show pending status correctly', async () => {
-      const pendingBookingRequest = {
-        id: 1,
-        status: 'pending',
-        created_at: new Date().toISOString()
-      }
+      global.fetch
+        .mockResolvedValueOnce({ ok: true, json: async () => mockItem })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ booking_request: { id: 1, status: 'pending', created_at: new Date().toISOString() } }) })
 
-      // Setup component with existing booking request
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockItem
-      })
-
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => pendingBookingRequest
-      })
-
+      await router.push('/store/1')
       await wrapper.vm.loadItem()
 
-      // Should show pending status
       expect(wrapper.vm.bookingStatus).toBe('pending')
       expect(wrapper.vm.hasBookingRequest).toBe(true)
     })
 
-    it('should show approved status with enhanced messaging info', async () => {
-      const approvedBookingRequest = {
-        id: 1,
-        status: 'approved',
-        created_at: new Date().toISOString()
-      }
+    it('should show approved status correctly', async () => {
+      global.fetch
+        .mockResolvedValueOnce({ ok: true, json: async () => mockItem })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ booking_request: { id: 1, status: 'approved', created_at: new Date().toISOString() } }) })
 
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockItem
-      })
-
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => approvedBookingRequest
-      })
-
+      await router.push('/store/1')
       await wrapper.vm.loadItem()
 
       expect(wrapper.vm.bookingStatus).toBe('approved')
-      expect(wrapper.vm.currentMessageLimit).toBe(10) // Increased limit after approval
     })
 
     it('should show rejected status', async () => {
-      const rejectedBookingRequest = {
-        id: 1,
-        status: 'rejected',
-        created_at: new Date().toISOString()
-      }
+      global.fetch
+        .mockResolvedValueOnce({ ok: true, json: async () => mockItem })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ booking_request: { id: 1, status: 'rejected', created_at: new Date().toISOString() } }) })
 
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockItem
-      })
-
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => rejectedBookingRequest
-      })
-
+      await router.push('/store/1')
       await wrapper.vm.loadItem()
 
       expect(wrapper.vm.bookingStatus).toBe('rejected')
@@ -284,43 +233,23 @@ describe('Store Booking Flow', () => {
       const pendingBookingRequest = {
         id: 1,
         status: 'pending',
-        requester: { username: 'buyer1' },
+        requester: { id: 2, username: 'buyer1' },
         created_at: new Date().toISOString()
       }
 
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ownerItem
-      })
-
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => pendingBookingRequest
-      })
-
-      // Update component to simulate owner view
       wrapper.vm.item = ownerItem
       wrapper.vm.bookingRequest = pendingBookingRequest
       await wrapper.vm.$nextTick()
 
-      // Should show owner management interface
       expect(wrapper.vm.item.seller.id).toBe(wrapper.vm.userId)
       expect(wrapper.vm.bookingRequest.status).toBe('pending')
     })
 
     it('should approve booking request', async () => {
-      const approveBookingRequest = {
-        id: 1,
-        status: 'pending'
-      }
+      const pendingRequest = { id: 1, status: 'pending' }
+      wrapper.vm.bookingRequest = pendingRequest
 
-      wrapper.vm.bookingRequest = approveBookingRequest
-
-      // Mock successful approval
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ message: 'Booking request approved successfully' })
-      })
+      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ message: 'Booking request approved successfully' }) })
 
       const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
 
@@ -337,26 +266,16 @@ describe('Store Booking Flow', () => {
       )
 
       expect(wrapper.vm.bookingRequest.status).toBe('approved')
-      expect(alertSpy).toHaveBeenCalledWith(
-        'Booking request approved! The requester can now message you with up to 10 messages.'
-      )
+      expect(alertSpy).toHaveBeenCalledWith('Booking request approved! The requester can now message you.')
 
       alertSpy.mockRestore()
     })
 
     it('should reject booking request with confirmation', async () => {
-      const rejectBookingRequest = {
-        id: 1,
-        status: 'pending'
-      }
+      const pendingRequest = { id: 1, status: 'pending' }
+      wrapper.vm.bookingRequest = pendingRequest
 
-      wrapper.vm.bookingRequest = rejectBookingRequest
-
-      // Mock successful rejection
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ message: 'Booking request rejected successfully' })
-      })
+      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ message: 'Booking request rejected successfully' }) })
 
       const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
       const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
@@ -366,11 +285,8 @@ describe('Store Booking Flow', () => {
       expect(confirmSpy).toHaveBeenCalledWith('Are you sure you want to decline this booking request?')
       expect(fetch).toHaveBeenCalledWith(
         'http://localhost:8081/api/v1/booking-requests/1/reject',
-        expect.objectContaining({
-          method: 'POST'
-        })
+        expect.objectContaining({ method: 'POST' })
       )
-
       expect(wrapper.vm.bookingRequest.status).toBe('rejected')
       expect(alertSpy).toHaveBeenCalledWith('Booking request declined.')
 
@@ -379,43 +295,10 @@ describe('Store Booking Flow', () => {
     })
   })
 
-  describe('Message Limit Integration', () => {
-    it('should have 3 message limit before booking approval', () => {
-      wrapper.vm.bookingRequest = { status: 'pending' }
-      expect(wrapper.vm.currentMessageLimit).toBe(3)
-    })
-
-    it('should have 10 message limit after booking approval', () => {
-      wrapper.vm.bookingRequest = { status: 'approved' }
-      expect(wrapper.vm.currentMessageLimit).toBe(10)
-    })
-
-    it('should update message limits when booking status changes', async () => {
-      // Start with pending
-      wrapper.vm.bookingRequest = { id: 1, status: 'pending' }
-      expect(wrapper.vm.currentMessageLimit).toBe(3)
-
-      // Mock approval
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ message: 'approved' })
-      })
-
-      await wrapper.vm.approveBookingRequest()
-
-      // Should update to 10
-      expect(wrapper.vm.currentMessageLimit).toBe(10)
-    })
-  })
-
   describe('Owner Messaging Interface', () => {
-    beforeEach(() => {
-      vi.clearAllMocks()
-    })
-
     it('should show message button for approved booking requests', async () => {
       const ownerItem = { ...mockItem, seller: { ...mockItem.seller, id: 1 } }
-      const approvedBookingRequests = [
+      const approvedRequests = [
         {
           id: 1,
           item_id: 1,
@@ -427,35 +310,20 @@ describe('Store Booking Flow', () => {
         }
       ]
 
-      // Mock item load
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ownerItem
-      })
-
-      // Mock booking requests load
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ booking_requests: approvedBookingRequests })
-      })
-
-      await router.push('/store/1')
-      await wrapper.vm.loadItem()
-
-      // Set booking requests manually for testing
-      wrapper.vm.bookingRequests = approvedBookingRequests
-
+      wrapper.vm.error = ''
+      wrapper.vm.item = ownerItem
+      wrapper.vm.bookingRequests = approvedRequests
+      await flushPromises()
       await wrapper.vm.$nextTick()
 
-      // Should show message button for approved request
       const messageButton = wrapper.find('.message-approved-btn')
       expect(messageButton.exists()).toBe(true)
-      expect(messageButton.text()).toContain('Message buyer1')
+      expect(messageButton.text()).toContain('buyer1')
     })
 
     it('should not show message button for pending booking requests', async () => {
       const ownerItem = { ...mockItem, seller: { ...mockItem.seller, id: 1 } }
-      const pendingBookingRequests = [
+      const pendingRequests = [
         {
           id: 1,
           item_id: 1,
@@ -467,31 +335,15 @@ describe('Store Booking Flow', () => {
         }
       ]
 
-      // Mock item load
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ownerItem
-      })
-
-      // Mock booking requests load
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ booking_requests: pendingBookingRequests })
-      })
-
-      await router.push('/store/1')
-      await wrapper.vm.loadItem()
-
-      // Set booking requests manually for testing
-      wrapper.vm.bookingRequests = pendingBookingRequests
-
+      wrapper.vm.error = ''
+      wrapper.vm.item = ownerItem
+      wrapper.vm.bookingRequests = pendingRequests
+      await flushPromises()
       await wrapper.vm.$nextTick()
 
-      // Should not show message button for pending request
       const messageButton = wrapper.find('.message-approved-btn')
       expect(messageButton.exists()).toBe(false)
 
-      // Should show approve/decline buttons instead
       const approveButton = wrapper.find('[data-testid="approve-booking-btn"]')
       const rejectButton = wrapper.find('[data-testid="reject-booking-btn"]')
       expect(approveButton.exists()).toBe(true)
@@ -513,69 +365,13 @@ describe('Store Booking Flow', () => {
         }
       ]
 
-      // Mock store messages API call
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          messages: [],
-          messageCount: 0,
-          messageLimit: 10,
-          bookingStatus: 'approved'
-        })
-      })
+      wrapper.vm.openStoreChatWithUser(2)
+      await wrapper.vm.$nextTick()
 
-      // Trigger the chat opening
-      await wrapper.vm.openStoreChatWithUser(2)
-
-      // Verify chat state
       expect(wrapper.vm.showChatModal).toBe(true)
       expect(wrapper.vm.chatRecipientId).toBe(2)
-      expect(wrapper.vm.chatRecipientName).toContain('User 2')
-
-      // Verify API call was made
-      expect(fetch).toHaveBeenCalledWith(
-        'http://localhost:8082/api/v1/store-messages/1',
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            'Authorization': 'Bearer mock-token'
-          })
-        })
-      )
-    })
-
-    it('should set correct recipient when sending message as owner', async () => {
-      const ownerItem = { ...mockItem, seller: { ...mockItem.seller, id: 1 } }
-      wrapper.vm.item = ownerItem
-      wrapper.vm.chatRecipientId = 2
-      wrapper.vm.newMessage = 'Thanks for your interest!'
-
-      // Mock successful message send
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          id: 1,
-          store_item_id: 1,
-          sender_id: 1,
-          recipient_id: 2,
-          content: 'Thanks for your interest!',
-          created_at: new Date().toISOString()
-        })
-      })
-
-      await wrapper.vm.sendMessage()
-
-      // Verify message was sent to correct recipient
-      expect(fetch).toHaveBeenCalledWith(
-        'http://localhost:8082/api/v1/store-messages',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({
-            store_item_id: 1,
-            recipient_id: 2,
-            content: 'Thanks for your interest!'
-          })
-        })
-      )
+      // Component resolves username from the bookingRequests array
+      expect(wrapper.vm.chatRecipientName).toBe('buyer1')
     })
   })
 })

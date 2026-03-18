@@ -406,7 +406,8 @@ const hasCompletedBooking = computed(() => {
 async function loadItem() {
   try {
     loading.value = true;
-    
+    error.value = '';
+
     // Validate itemId
     if (!itemId.value || isNaN(Number(itemId.value))) {
       throw new Error('Invalid item ID');
