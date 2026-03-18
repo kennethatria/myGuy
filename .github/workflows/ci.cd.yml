@@ -94,7 +94,9 @@ jobs:
     secrets: inherit
 
   run-scorecard:
-    permissions: read-all
+    permissions: 
+      security-events: write
+      id-token: write
     if: ${{ needs.context.outputs.isRelease == 'true' }}
     needs: [context]
     uses: ./.github/workflows/component.security.scorecard.yml
