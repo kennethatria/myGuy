@@ -60,41 +60,62 @@ jobs:
     if: ${{ needs.context.outputs.isPullRequest == 'true' }}
     uses: ./.github/workflows/component.build.commit.lint.yml
 
-  # static-code-analysis:
-  #   needs: [context]
-  #   if: ${{ needs.context.outputs.isPullRequest == 'true' }}
-  #   uses: ./.github/workflows/component.security.codeql.yml
-
   test-code-coverage:
     needs: [context, standards]
     if: ${{ needs.context.outputs.isPullRequest == 'true' }}
     uses: ./.github/workflows/component.build.test.code.coverage.yml
     secrets: inherit
 
-  # static-code-analysis:
-  #   needs: [context]
-  #   if: ${{ needs.context.outputs.isPullRequest == 'true' }}
-  #   uses: ./.github/workflows/component.security.codeql.yml
+  static-code-analysis:
+    needs: [context]
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+      attestations: read
+    if: ${{ needs.context.outputs.isPullRequest == 'true' }}
+    uses: ./.github/workflows/component.security.codeql.yml
 
-  # release:
-  #   permissions:
-  #     contents: write
-  #     pull-requests: write
-  #     issues: write
-  #   if: ${{ needs.context.outputs.isRelease == 'true' }}
-  #   needs: [context]
-  #   uses: ./.github/workflows/component.build.please.release.yml
-  #   secrets: inherit
+  release:
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    if: ${{ needs.context.outputs.isRelease == 'true' }}
+    needs: [context]
+    uses: ./.github/workflows/component.build.please.release.yml
+    secrets: inherit
 
-  # generate-sbom:
-  #   permissions:
-  #     contents: write
-  #     pull-requests: write
-  #     issues: write
-  #   if: ${{ needs.context.outputs.isRelease == 'true' }}
-  #   needs: [context]
-  #   uses: ./.github/workflows/component.build.generate.sbom.yml
-  #   secrets: inherit  
+  generate-sbom:
+    permissions:
+      contents: write
+    if: ${{ needs.context.outputs.isRelease == 'true' }}
+    needs: [context]
+    uses: ./.github/workflows/component.build.generate.sbom.yml
+    secrets: inherit
+
+  run-scorecard:
+    permissions: 
+      security-events: write
+      id-token: write
+      actions: read
+      artifact-metadata: read
+      attestations: read
+      checks: read
+      contents: read
+      deployments: read
+      discussions: read
+      issues: read
+      models: read
+      packages: read
+      pages: read
+      pull-requests: read
+      repository-projects: read
+      statuses: read
+    if: ${{ needs.context.outputs.isRelease == 'true' }}
+    needs: [context]
+    uses: ./.github/workflows/component.security.scorecard.yml
+    secrets: inherit  
     
 #   update-deployment-template:
 #     permissions:
