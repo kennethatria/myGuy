@@ -91,6 +91,13 @@ jobs:
     if: ${{ needs.context.outputs.isRelease == 'true' }}
     needs: [context]
     uses: ./.github/workflows/component.build.generate.sbom.yml
+    secrets: inherit
+
+  run-scorecard:
+    permissions: read-all
+    if: ${{ needs.context.outputs.isRelease == 'true' }}
+    needs: [context]
+    uses: ./.github/workflows/component.security.scorecard.yml
     secrets: inherit  
     
 #   update-deployment-template:
