@@ -200,7 +200,7 @@
           class="page-item"
           :class="{ active: page === currentPage }"
         >
-          <button class="page-link" @click="goToPage(page)">
+          <button class="page-link" @click="typeof page === 'number' && goToPage(page)">
             {{ page }}
           </button>
         </li>
@@ -222,7 +222,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { format } from 'date-fns'
-import { useTasksStore } from '@/stores/tasks'
 import { useAuthStore } from '@/stores/auth'
 import { debounce } from 'lodash-es'
 import config from '@/config'
@@ -248,7 +247,6 @@ interface PaginatedResult {
   total_pages: number
 }
 
-const tasksStore = useTasksStore()
 const authStore = useAuthStore()
 
 // State

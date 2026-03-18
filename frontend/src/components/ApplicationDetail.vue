@@ -12,7 +12,7 @@
           </router-link>
         </h3>
         <div class="application-meta">
-          <span class="proposed-fee">UGX {{ formatCurrency(application.proposed_fee || application.proposedFee) }}</span>
+          <span class="proposed-fee">UGX {{ formatCurrency(application.proposed_fee) }}</span>
           <span class="status-badge" :class="`status-${application.status}`">
             {{ application.status }}
           </span>
@@ -55,11 +55,11 @@
             v-for="message in messages" 
             :key="message.id"
             class="message-item"
-            :class="{ 'own-message': message.senderId === currentUserId }"
+            :class="{ 'own-message': message.sender_id === currentUserId }"
           >
             <div class="message-header">
               <strong>{{ message.sender?.username || 'Unknown' }}</strong>
-              <span class="message-time">{{ formatTime(message.createdAt) }}</span>
+              <span class="message-time">{{ formatTime(message.created_at) }}</span>
             </div>
             <div class="message-content">
               {{ message.content }}
@@ -118,11 +118,11 @@ interface Application {
 
 interface Message {
   id: number
-  senderId: number
-  recipientId: number
+  sender_id: number
+  recipient_id: number
   content: string
-  createdAt: string
-  isRead: boolean
+  created_at: string
+  is_read: boolean
   sender?: {
     id: number
     username: string
@@ -156,7 +156,7 @@ const sendingMessage = ref(false)
 
 const currentUserId = computed(() => authStore.user?.id)
 const isTaskOwner = computed(() => currentUserId.value === props.taskOwnerId)
-const isApplicant = computed(() => currentUserId.value === (props.application.applicant_id || props.application.applicantId))
+const isApplicant = computed(() => currentUserId.value === props.application.applicant_id)
 
 const canSendMessage = computed(() => {
   return (isTaskOwner.value || isApplicant.value) && props.application.status === 'pending'
@@ -173,7 +173,7 @@ const formatDate = (date: string | undefined) => {
   if (!date) return 'Unknown date'
   try {
     return format(new Date(date), 'MMM d, yyyy')
-  } catch (error) {
+  } catch {
     console.error('Invalid date:', date)
     return 'Invalid date'
   }
@@ -185,12 +185,12 @@ const formatTime = (date: string | undefined) => {
     const messageDate = new Date(date)
     const now = new Date()
     const diffInHours = (now.getTime() - messageDate.getTime()) / (1000 * 60 * 60)
-    
+
     if (diffInHours < 24) {
       return formatDistanceToNow(messageDate, { addSuffix: true })
     }
     return format(messageDate, 'MMM d, h:mm a')
-  } catch (error) {
+  } catch {
     console.error('Invalid date for time:', date)
     return 'Invalid time'
   }

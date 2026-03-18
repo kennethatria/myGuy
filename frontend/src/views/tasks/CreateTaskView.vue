@@ -406,7 +406,7 @@ const handleSubmit = async () => {
     await router.push({ name: 'tasks' })
   } catch (error) {
     console.error('Failed to create task:', error)
-    formError.value = error.message || 'Failed to create gig. Please try again.'
+    formError.value = error instanceof Error ? error.message : 'Failed to create gig. Please try again.'
   } finally {
     isSubmitting.value = false
   }

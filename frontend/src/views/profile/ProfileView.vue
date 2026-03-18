@@ -119,7 +119,6 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { format } from 'date-fns'
 import config from '@/config'
 import { useAuthStore } from '@/stores/auth'
 import { useReviewsStore } from '@/stores/reviews'
@@ -136,14 +135,26 @@ interface Profile {
 
 interface Review {
   id: number
-  reviewer: {
+  taskId: number
+  reviewerId: number
+  reviewedUserId: number
+  rating: number
+  comment: string
+  created_at: string
+  reviewer?: {
     id: number
     username: string
     fullName?: string
   }
-  rating: number
-  comment: string
-  created_at: string
+  reviewedUser?: {
+    id: number
+    username: string
+    fullName?: string
+  }
+  task?: {
+    id: number
+    title: string
+  }
 }
 
 const profile = ref<Profile>({
@@ -168,23 +179,6 @@ const formErrors = ref({
   fullName: '',
   bio: ''
 })
-
-const formatDate = (date: string | null | undefined) => {
-  if (!date) {
-    return 'Unknown'
-  }
-  
-  try {
-    const dateObj = new Date(date)
-    if (isNaN(dateObj.getTime())) {
-      return 'Unknown'
-    }
-    return format(dateObj, 'MMM dd, yyyy')
-  } catch (error) {
-    console.warn('Invalid date format:', date)
-    return 'Unknown'
-  }
-}
 
 const fetchProfileData = async () => {
   const authStore = useAuthStore()
@@ -313,7 +307,7 @@ const handleSubmit = async () => {
       try {
         const errorData = await response.json()
         throw new Error(errorData.error || 'Failed to update profile')
-      } catch (parseError) {
+      } catch {
         // If JSON parsing fails, use status text
         throw new Error(`Failed to update profile: ${response.statusText}`)
       }

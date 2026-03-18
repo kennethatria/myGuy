@@ -360,21 +360,21 @@ export const useTasksStore = defineStore('tasks', () => {
         try {
           const errorData = JSON.parse(errorText);
           throw new Error(errorData.error || 'Failed to apply for task');
-        } catch (e) {
+        } catch {
           throw new Error(`Failed to apply for task: ${response.status} ${response.statusText}`);
         }
       }
-      
+
       // Check if response has content
       const responseText = await response.text();
       if (!responseText) {
         // API returned empty response but it was successful
         return { success: true };
       }
-      
+
       try {
         return JSON.parse(responseText);
-      } catch (e) {
+      } catch {
         console.warn('Could not parse response as JSON:', responseText);
         return { success: true };
       }

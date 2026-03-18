@@ -106,11 +106,6 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
 
-interface User {
-  username: string
-  email: string
-  fullName: string
-}
 
 const router = useRouter()
 const authStore = useAuthStore()

@@ -104,7 +104,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useChatStore } from '@/stores/chat';
 import { useAuthStore } from '@/stores/auth';
@@ -145,7 +145,7 @@ const itemImageUrl = computed(() => {
 
   // Handle object with url property (e.g., { url: '/uploads/...' })
   if (typeof props.itemImage === 'object' && props.itemImage !== null) {
-    const imageObj = props.itemImage as any;
+    const imageObj = props.itemImage as { url?: string; path?: string };
     const url = imageObj.url || imageObj.path || '';
     if (!url) return '';
 

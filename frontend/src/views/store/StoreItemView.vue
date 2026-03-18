@@ -212,11 +212,11 @@
                 
                 <div v-else-if="request.status === 'approved'" class="booking-approved">
                   <p class="approved-text">✓ Approved - You can now coordinate via messages</p>
-                  <button 
-                    @click="openStoreChatWithUser(request.requester.id)" 
+                  <button
+                    @click="openStoreChatWithUser(request.requester!.id)"
                     class="btn btn-primary btn-sm message-approved-btn"
                   >
-                    <i class="fas fa-comment"></i> Message {{ request.requester.username }}
+                    <i class="fas fa-comment"></i> Message {{ request.requester?.username }}
                   </button>
                 </div>
                 
@@ -279,10 +279,9 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useChatStore } from '@/stores/chat';
-import { format } from 'date-fns';
 import ChatWindow from '@/components/ChatWindow.vue';
 import BookingConfirmationModal from '@/components/BookingConfirmationModal.vue';
 import config from '@/config';
@@ -355,7 +354,6 @@ interface BookingRequest {
 }
 
 const route = useRoute();
-const router = useRouter();
 const authStore = useAuthStore();
 const chatStore = useChatStore();
 
@@ -387,8 +385,8 @@ const itemId = computed(() => route.params.id);
 
 const minBidAmount = computed(() => {
   if (!item.value?.is_auction) return 0;
-  const currentBid = item.value.current_bid || item.value.starting_bid;
-  return currentBid + item.value.bid_increment;
+  const currentBid = item.value.current_bid ?? item.value.starting_bid ?? 0;
+  return currentBid + (item.value.bid_increment ?? 0);
 });
 
 // Booking computed properties
@@ -435,15 +433,15 @@ async function loadItem() {
     item.value = await response.json();
     console.log('Item loaded successfully:', item.value);
     
-    if (item.value.is_auction) {
+    if (item.value?.is_auction) {
       await loadBids();
     }
-    
+
     // Load booking request if user is involved
     await loadBookingRequest();
-    
+
     // Check for messages if user is the owner
-    if (item.value.seller.id === userId.value) {
+    if (item.value?.seller.id === userId.value) {
       await checkForMessages();
     }
   } catch (err) {
@@ -548,7 +546,7 @@ async function placeBid() {
       const error = await response.json();
       alert(error.error || 'Failed to place bid');
     }
-  } catch (err) {
+  } catch {
     alert('Error placing bid');
   }
 }
@@ -655,11 +653,11 @@ async function rejectBookingRequest(request = bookingRequest.value) {
   }
 }
 
-function formatCurrency(amount: number): string {
+function formatCurrency(amount: number | undefined): string {
   return new Intl.NumberFormat('en-UG', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(amount ?? 0);
 }
 
 function formatDate(dateString: string): string {
@@ -681,18 +679,10 @@ function formatDate(dateString: string): string {
   return date.toLocaleDateString();
 }
 
-function formatMessageTime(dateString: string): string {
-  try {
-    const date = new Date(dateString);
-    return format(date, 'MMM d, h:mm a');
-  } catch (error) {
-    return 'Unknown time';
-  }
-}
-
 // Chat functions (simplified - ChatWindow component now handles messaging logic)
 function openStoreChat() {
   // Set recipient info and show modal - ChatWindow handles socket connection and loading messages
+  if (!item.value) return;
   chatRecipientId.value = item.value.seller.id;
   chatRecipientName.value = item.value.seller.name || item.value.seller.full_name || item.value.seller.username;
   showChatModal.value = true;
@@ -704,7 +694,7 @@ function closeChatModal() {
 
 function openStoreChatWithUser(recipientId: number) {
   // For sellers messaging a specific buyer
-  const requester = bookingRequests.value.find(req => req.requester.id === recipientId);
+  const requester = bookingRequests.value.find(req => req.requester?.id === recipientId);
   chatRecipientId.value = recipientId;
   chatRecipientName.value = requester?.requester?.username || `User ${recipientId}`;
   showChatModal.value = true;
@@ -712,6 +702,7 @@ function openStoreChatWithUser(recipientId: number) {
 
 function openGeneralStoreChat() {
   // For owners to view all messages about their item - use seller as recipient
+  if (!item.value) return;
   chatRecipientId.value = item.value.seller.id;
   chatRecipientName.value = item.value.seller.name || item.value.seller.full_name || item.value.seller.username;
   showChatModal.value = true;

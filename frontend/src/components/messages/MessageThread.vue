@@ -93,7 +93,7 @@ const emit = defineEmits<{
   'load-more': [];
   'typing-start': [];
   'typing-stop': [];
-  'booking-action': [bookingId: number, action: 'approve' | 'decline'];
+  'booking-action': [bookingId: number, action: 'approve' | 'decline' | 'confirm-received' | 'confirm-delivery' | 'rate-seller' | 'rate-buyer', rating?: number, review?: string];
 }>();
 
 const authStore = useAuthStore();

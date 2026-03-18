@@ -162,7 +162,7 @@ function formatMessageTime(timestamp: string): string {
     } else {
       return format(date, 'MMM d, h:mm a');
     }
-  } catch (e) {
+  } catch {
     return timestamp;
   }
 }

@@ -183,20 +183,6 @@ import { useRouter } from 'vue-router'
 import { useTasksStore } from '@/stores/tasks'
 import { useAuthStore } from '@/stores/auth'
 
-interface Task {
-  id: number,
-  title: string,
-  description: string,
-  status: 'open' | 'in_progress' | 'completed',
-  deadline: string,
-  fee?: number,
-  creator?: {
-    username: string
-  },
-  rating?: number,
-  application_count?: number
-}
-
 interface Stats {
   createdTasks: number,
   assignedTasks: number,
@@ -282,12 +268,13 @@ const fetchDashboardData = async () => {
       tasksStore.fetchUserTasks(),
       tasksStore.fetchAssignedTasks()
     ])
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Failed to fetch dashboard data:', err)
-    
+
     // Check if it's an authentication error
-    if (err.message && err.message.includes('log in again')) {
-      error.value = err.message
+    const errMessage = err instanceof Error ? err.message : ''
+    if (errMessage && errMessage.includes('log in again')) {
+      error.value = errMessage
     } else {
       error.value = 'Failed to load dashboard data. Please try again later.'
     }
