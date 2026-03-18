@@ -72,6 +72,7 @@ jobs:
       actions: read
       contents: read
       security-events: write
+      attestations: read
     if: ${{ needs.context.outputs.isPullRequest == 'true' }}
     uses: ./.github/workflows/component.security.codeql.yml
 
@@ -97,6 +98,20 @@ jobs:
     permissions: 
       security-events: write
       id-token: write
+      actions: read
+      artifact-metadata: read
+      attestations: read
+      checks: read
+      contents: read
+      deployments: read
+      discussions: read
+      issues: read
+      models: read
+      packages: read
+      pages: read
+      pull-requests: read
+      repository-projects: read
+      statuses: read
     if: ${{ needs.context.outputs.isRelease == 'true' }}
     needs: [context]
     uses: ./.github/workflows/component.security.scorecard.yml
