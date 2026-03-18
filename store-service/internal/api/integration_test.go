@@ -478,10 +478,12 @@ func TestIntegration_BookingLifecycle(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, w.Code)
 
-		var response models.BookingRequest
-		err := json.Unmarshal(w.Body.Bytes(), &response)
+		var wrapper struct {
+			BookingRequest models.BookingRequest `json:"booking_request"`
+		}
+		err := json.Unmarshal(w.Body.Bytes(), &wrapper)
 		require.NoError(t, err)
-		assert.Equal(t, requestID, response.ID)
+		assert.Equal(t, requestID, wrapper.BookingRequest.ID)
 	})
 
 	t.Run("Get booking request as requester", func(t *testing.T) {
@@ -493,10 +495,12 @@ func TestIntegration_BookingLifecycle(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, w.Code)
 
-		var response models.BookingRequest
-		err := json.Unmarshal(w.Body.Bytes(), &response)
+		var wrapper struct {
+			BookingRequest models.BookingRequest `json:"booking_request"`
+		}
+		err := json.Unmarshal(w.Body.Bytes(), &wrapper)
 		require.NoError(t, err)
-		assert.Equal(t, requestID, response.ID)
+		assert.Equal(t, requestID, wrapper.BookingRequest.ID)
 	})
 
 	t.Run("Approve booking request", func(t *testing.T) {
@@ -833,11 +837,13 @@ func TestIntegration_UserSpecificEndpoints(t *testing.T) {
 				Title:      "User 1 Item 1",
 				PriceType:  "fixed",
 				FixedPrice: 100.0,
+				Condition:  "new",
 			},
 			{
 				Title:      "User 1 Item 2",
 				PriceType:  "fixed",
 				FixedPrice: 200.0,
+				Condition:  "new",
 			},
 		}
 
@@ -857,6 +863,7 @@ func TestIntegration_UserSpecificEndpoints(t *testing.T) {
 			Title:       "Auction Item",
 			PriceType:   "bidding",
 			StartingBid: 50.0,
+			Condition:   "good",
 		}
 
 		jsonData, _ := json.Marshal(bidItem)
