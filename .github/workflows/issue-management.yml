@@ -1,0 +1,239 @@
+name: Issue Based Deployment
+run-name: "GCP deployments triggered by Issue"
+permissions:
+  issues: write
+  contents: read
+  id-token: write
+on:
+  workflow_dispatch:
+#   issues:
+#     types: [opened]
+
+jobs:
+  issue-processing:
+    runs-on: linux-small-runner
+    outputs:
+      version: ${{ steps.validate-inputs.outputs.version }}
+      environment: ${{ steps.validate-inputs.outputs.environment }}
+    steps:
+      - name: Generate GitHub App token
+        uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+      
+      - id: get-environment
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          ISSUE_BODY=$(gh issue view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json body --jq '.body')
+          ENV_VALUE=$(echo "$ISSUE_BODY" | tr -d '[:space:]' | awk -F '###Environment|###' '{print $3}')
+          echo "raw_result=$ENV_VALUE" >> "$GITHUB_OUTPUT"
+      
+      - id: get-version
+        env: 
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          ISSUE_BODY=$(gh issue view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json body --jq '.body')
+          VERSION_VALUE=$(echo "$ISSUE_BODY" | tr -d '[:space:]' | awk -F '###Version|###' '{print $2}' | sed 's/^[vV]//')
+          echo "raw_result=$VERSION_VALUE" >> "$GITHUB_OUTPUT"
+      
+      - id: validate-inputs
+        env:
+          ENVIRONMENT: ${{ steps.get-environment.outputs.raw_result }}
+          VERSION: ${{ steps.get-version.outputs.raw_result }}
+        run: |
+          # Validate environment - only allow specific values
+          case "$ENVIRONMENT" in
+            dev|cae|prd)
+              echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Error: Invalid environment. Must be dev, cae, or prd"
+              exit 1
+              ;;
+          esac
+          
+          # Validate version format - must match semver
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          else
+            echo "Error: Invalid version format. Expected X.Y.Z"
+            exit 1
+          fi
+      
+      - name: Post deployment start comment
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ENVIRONMENT: ${{ steps.validate-inputs.outputs.environment }}
+          VERSION: ${{ steps.validate-inputs.outputs.version }}
+        run: |
+          MESSAGE=$(cat <<'TEMPLATE'
+          🚀 **Deployment in Progress!** 🚀
+
+          Hello team! The deployment has taken off! 🌐💼
+
+          **Environment:** %s
+          **Version:** v%s
+
+          🕰️ **Current Status:**  
+          Deployment in progress – the code is riding the cloud highways! 🌩️💨
+
+          📦 **Deployment Checklist:**  
+          - [x] Engines ignited! 🔥  
+          - [x] Code on the move! 🚛  
+          - [ ] Success incoming! 🏁
+
+          Stay tuned, and let's make this deployment soar! 🎈💫
+
+          Your trusty deploy-bot 🤖
+          TEMPLATE
+          )
+          
+          FORMATTED_MESSAGE=$(printf "$MESSAGE" "$ENVIRONMENT" "$VERSION")
+          
+          gh issue comment ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} \
+            --body "$FORMATTED_MESSAGE"
+      
+      - name: Update issue title
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ENVIRONMENT: ${{ steps.validate-inputs.outputs.environment }}
+          VERSION: ${{ steps.validate-inputs.outputs.version }}
+        run: |
+          printf -v TITLE "🚀 Deployment of v%s In Progress: %s 🚀" \
+            "$VERSION" \
+            "$ENVIRONMENT"
+          
+          gh issue edit ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} \
+            --title "$TITLE"
+
+  push-image:
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    needs: [issue-processing]
+    uses: ./.github/workflows/component.build.push.yml
+    with:
+      environment: ${{ needs.issue-processing.outputs.environment }}
+      image_targets: serving
+      push_serving: true
+      push_retrain: false
+      version_tag: "v${{ needs.issue-processing.outputs.version }}"
+    secrets: inherit
+
+  redeploy-cloudrun-image:
+    needs: [push-image, issue-processing]
+    uses: ./.github/workflows/component.deploy.cloud.run.yml
+    with:
+      environment: ${{ needs.issue-processing.outputs.environment }}
+      image_name: ${{ needs.push-image.outputs.serving_image }}
+      image_tag: "v${{ needs.issue-processing.outputs.version }}"
+    secrets: inherit
+
+  close-issue:
+    if: always()
+    needs: [redeploy-cloudrun-image, issue-processing]
+    runs-on: linux-small-runner
+    steps:
+    #   - name: Generate GitHub App token
+    #     uses: actions/create-github-app-token@v2
+    #     id: app-token
+    #     with:
+    #       app-id: ${{ secrets.GH_APP_ID }}
+    #       private-key: ${{ secrets.GH_PRIVATE_KEY }}
+    #       owner: ${{ github.repository_owner }}
+    #       repositories: ###
+      
+      - if: needs.redeploy-cloudrun-image.result == 'success'
+        name: Close Issue successfully
+        env: 
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ENVIRONMENT: ${{ needs.issue-processing.outputs.environment }}
+          VERSION: ${{ needs.issue-processing.outputs.version }}
+        run: |
+          MESSAGE=$(cat <<'TEMPLATE'
+          🎉 **Deployment Successful!** 🎉
+
+          We did it, team! The deployment crossed the finish line with flying colors! 🏁✨
+
+          **Environment:** %s
+          **Version:** v%s
+
+          ✅ **Final Checklist:**  
+          - [x] Engines ignited! 🔥  
+          - [x] Code on the move! 🚛  
+          - [x] Success achieved! 🎉
+
+          Take a moment to celebrate – another job well done! 🎈🍾
+
+          Your friendly deploy-bot 🤖
+          TEMPLATE
+          )
+          
+          FORMATTED_MESSAGE=$(printf "$MESSAGE" "$ENVIRONMENT" "$VERSION")
+          
+          gh issue comment ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} \
+            --edit-last \
+            --body "$FORMATTED_MESSAGE"
+          
+          printf -v TITLE "🎉 Deployment of v%s to %s was successful 🎉" \
+            "$VERSION" \
+            "$ENVIRONMENT"
+          
+          gh issue edit ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} \
+            --title "$TITLE"
+          
+          gh issue close ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} \
+            --reason "completed"
+      
+      - if: needs.redeploy-cloudrun-image.result != 'success'
+        name: Notify requestor of failure
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ENVIRONMENT: ${{ needs.issue-processing.outputs.environment }}
+          VERSION: ${{ needs.issue-processing.outputs.version }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          MESSAGE=$(cat <<'TEMPLATE'
+          💥 **Deployment Failed!** 💥
+
+          Uh-oh, team – looks like the deployment hit a snag! 🛑⚠️
+
+          **Environment:** %s
+          **Version:** v%s
+
+          🚨 **Final Checklist:**  
+          - [x] Engines ignited! 🔥  
+          - [x] Code on the move! 🚛  
+          - [ ] Success missed! 😞
+
+          Hey @%s, looks like we need some troubleshooting! 🛠️ Let's fix it and try again. 💪✨
+
+          Your steadfast deploy-bot 🤖
+          TEMPLATE
+          )
+          
+          FORMATTED_MESSAGE=$(printf "$MESSAGE" "$ENVIRONMENT" "$VERSION" "$ACTOR")
+          
+          gh issue comment ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} \
+            --edit-last \
+            --body "$FORMATTED_MESSAGE"
+          
+          printf -v TITLE "💥 Deployment of v%s to %s Failed 💥" \
+            "$VERSION" \
+            "$ENVIRONMENT"
+          
+          gh issue edit ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} \
+            --title "$TITLE"

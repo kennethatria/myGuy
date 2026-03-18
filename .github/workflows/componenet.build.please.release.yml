@@ -1,0 +1,22 @@
+---
+name: release-please
+
+concurrency:
+  group: please-release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+    workflow_call:
+
+permissions:
+    contents: write
+    pull-requests: write
+    issues: write
+
+jobs:
+    release-please:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445
+              with:
+                  release-type: simple

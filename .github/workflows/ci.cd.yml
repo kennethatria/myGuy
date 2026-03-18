@@ -1,0 +1,118 @@
+---
+    name: Continous integration & deployment pipeline
+    run-name: Continous integration & deployment pipeline - ${{ github.event_name }} - ${{ github.ref }}
+        
+    env:
+      RELEASE_BRANCH: refs/heads/main
+        
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+        
+    on:
+      push:
+        branches:
+          - main
+        paths-ignore:
+          - '.github/ISSUE_TEMPLATE/**'
+      pull_request:
+        
+    jobs:
+      context:
+        runs-on: ubuntu-latest
+        outputs:
+          isRelease: ${{ steps.is.outputs.release }}
+          isPullRequest: ${{ steps.is.outputs.pr }}
+        steps:
+          - id: is
+            name: set variables
+            run: |
+              {
+                echo release=${{ github.ref == env.RELEASE_BRANCH && github.event_name == 'push' }}
+                echo pr=${{ github.event_name == 'pull_request' }}
+              } >> "$GITHUB_OUTPUT"
+          - name: create summary
+            run: |
+
+                  isRelease=$([[ "${{ steps.is.outputs.release }}" == "true" ]] && echo "✅" || echo "❌")
+                  isPullRequest=$([[ "${{ steps.is.outputs.pr }}" == "true" ]] && echo "✅" || echo "❌")
+            
+                  table_header="| Variable | Value |"
+                  table_separator="|---|---|"
+                  table_row1="| isRelease | ${{ steps.is.outputs.release }} |"
+                  table_row2="| IsPullRequest | ${{ steps.is.outputs.pr }} |"
+                  table_row3="| github.event_name | ${{ github.event_name }} |"
+                  table_row4="| github.ref | ${{ github.ref }} |"
+        
+                  # Write to GitHub Step Summary
+                  {
+                    echo "## Pull Request Summary"
+                    echo "$table_header"
+                    echo "$table_separator"
+                    echo "$table_row1"
+                    echo "$table_row2"
+                    echo "$table_row3"
+                    echo "$table_row4"
+                  } >> "$GITHUB_STEP_SUMMARY"
+        
+      standards:
+        needs: [context]
+        if: ${{ needs.context.outputs.isPullRequest == 'true' }}
+        uses: ./.github/workflows/component.commit.lint.yml
+
+      code-quality:
+        needs: [context]
+        if: ${{ needs.context.outputs.isPullRequest == 'true' }}
+        uses: ./.github/workflows/component.code.quality.yml
+
+      test-code-coverage:
+        needs: [context]
+        if: ${{ needs.context.outputs.isPullRequest == 'true' }}
+        uses: ./.github/workflows/component.test.code.coverage.yml
+        secrets: inherit
+
+      release:
+        permissions:
+          contents: write
+          pull-requests: write
+          issues: write
+        if: ${{ needs.context.outputs.isRelease == 'true' }}
+        needs: [context]
+        uses: ./.github/workflows/component.release.yml
+        secrets: inherit  
+        
+      update-deployment-template:
+        permissions:
+          contents: write
+          pull-requests: write
+          issues: write
+          id-token: write
+        if: ${{ needs.context.outputs.isRelease == 'true' }}
+        needs: [release, context]
+        uses: ./.github/workflows/component.update.app.version.yml
+        secrets: inherit
+
+      build-push-image:
+        permissions:
+          contents: write
+          pull-requests: write
+          id-token: write
+        if: ${{ needs.context.outputs.isRelease == 'true' && needs.update-deployment-template.outputs.version_updated == 'true'}}
+        needs: [context, release, update-deployment-template]
+        uses: ./.github/workflows/component.build.push.yml
+        with:
+          environment: dev
+          image_targets: serving
+          push_serving: true
+          push_retrain: true
+        secrets: inherit
+
+      redeploy-cloudrun-image:
+        needs: [context, build-push-image]
+        if: ${{ needs.context.outputs.isRelease == 'true' }}
+        uses: ./.github/workflows/component.deploy.cloud.run.yml
+        with:
+          environment: dev
+          image_name: europe-west4-docker.pkg.dev/afkl-pasml-n100/gar-pasml-api-dev-google-ew4-n100-d01/pasml-api-serve
+          image_tag: "latest"
+        secrets: inherit
