@@ -60,10 +60,10 @@
         if: ${{ needs.context.outputs.isPullRequest == 'true' }}
         uses: ./.github/workflows/component.build.commit.lint.yml
 
-    #   code-quality:
-    #     needs: [context]
-    #     if: ${{ needs.context.outputs.isPullRequest == 'true' }}
-    #     uses: ./.github/workflows/component.code.quality.yml
+      static-code-analysis:
+        needs: [context]
+        if: ${{ needs.context.outputs.isPullRequest == 'true' }}
+        uses: ./.github/workflows/component.security.codeql.yml
 
       test-code-coverage:
         needs: [context]
