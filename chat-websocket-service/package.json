@@ -38,5 +38,28 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "collectCoverage": true,
+    "collectCoverageFrom": [
+      "src/utils/contentFilter.js",
+      "src/middleware/auth.js",
+      "src/services/messageService.js",
+      "src/services/validationService.js",
+      "src/services/bookingMessageService.js",
+      "src/api/bookingNotifications.js"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "lines": 70,
+        "functions": 70,
+        "statements": 70,
+        "branches": 60
+      }
+    },
+    "testPathIgnorePatterns": [
+      "/node_modules/"
+    ]
   }
 }
