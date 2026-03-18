@@ -60,11 +60,6 @@ jobs:
     if: ${{ needs.context.outputs.isPullRequest == 'true' }}
     uses: ./.github/workflows/component.build.commit.lint.yml
 
-  # static-code-analysis:
-  #   needs: [context]
-  #   if: ${{ needs.context.outputs.isPullRequest == 'true' }}
-  #   uses: ./.github/workflows/component.security.codeql.yml
-
   test-code-coverage:
     needs: [context, standards]
     if: ${{ needs.context.outputs.isPullRequest == 'true' }}
@@ -73,6 +68,10 @@ jobs:
 
   static-code-analysis:
     needs: [context]
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     if: ${{ needs.context.outputs.isPullRequest == 'true' }}
     uses: ./.github/workflows/component.security.codeql.yml
 
