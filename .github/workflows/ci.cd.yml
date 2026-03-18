@@ -78,7 +78,7 @@ jobs:
       issues: write
     if: ${{ needs.context.outputs.isRelease == 'true' }}
     needs: [context]
-    uses: ./.github/workflows/component.build.release.please.yml
+    uses: ./.github/workflows/component.build.please.release.yml
     secrets: inherit
 
   generate-sbom:
