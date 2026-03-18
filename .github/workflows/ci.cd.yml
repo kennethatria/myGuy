@@ -71,30 +71,28 @@ jobs:
     uses: ./.github/workflows/component.build.test.code.coverage.yml
     secrets: inherit
 
-  # static-code-analysis:
-  #   needs: [context]
-  #   if: ${{ needs.context.outputs.isPullRequest == 'true' }}
-  #   uses: ./.github/workflows/component.security.codeql.yml
+  static-code-analysis:
+    needs: [context]
+    if: ${{ needs.context.outputs.isPullRequest == 'true' }}
+    uses: ./.github/workflows/component.security.codeql.yml
 
-  # release:
-  #   permissions:
-  #     contents: write
-  #     pull-requests: write
-  #     issues: write
-  #   if: ${{ needs.context.outputs.isRelease == 'true' }}
-  #   needs: [context]
-  #   uses: ./.github/workflows/component.build.please.release.yml
-  #   secrets: inherit
+  release:
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    if: ${{ needs.context.outputs.isRelease == 'true' }}
+    needs: [context]
+    uses: ./.github/workflows/component.build.please.release.yml
+    secrets: inherit
 
-  # generate-sbom:
-  #   permissions:
-  #     contents: write
-  #     pull-requests: write
-  #     issues: write
-  #   if: ${{ needs.context.outputs.isRelease == 'true' }}
-  #   needs: [context]
-  #   uses: ./.github/workflows/component.build.generate.sbom.yml
-  #   secrets: inherit  
+  generate-sbom:
+    permissions:
+      contents: write
+    if: ${{ needs.context.outputs.isRelease == 'true' }}
+    needs: [context]
+    uses: ./.github/workflows/component.build.generate.sbom.yml
+    secrets: inherit  
     
 #   update-deployment-template:
 #     permissions:
