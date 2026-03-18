@@ -55,21 +55,20 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { format } from 'date-fns'
 import { useUsersStore } from '@/stores/users'
 import { useReviewsStore } from '@/stores/reviews'
-import { useAuthStore } from '@/stores/auth'
 import ReviewList from '@/components/ReviewList.vue'
 
 interface User {
   id: number
   username: string
-  email: string
+  email?: string
   fullName?: string
   bio?: string
   averageRating?: number
-  created_at: string
+  created_at?: string
 }
 
 interface Review {
@@ -92,10 +91,8 @@ interface Review {
 }
 
 const route = useRoute()
-const router = useRouter()
 const usersStore = useUsersStore()
 const reviewsStore = useReviewsStore()
-const authStore = useAuthStore()
 
 const user = ref<User | null>(null)
 const reviews = ref<Review[]>([])
@@ -124,7 +121,7 @@ const formatDate = (dateString: string | null | undefined): string => {
       return 'Unknown'
     }
     return format(date, 'MMMM yyyy')
-  } catch (error) {
+  } catch {
     console.warn('Invalid date format:', dateString)
     return 'Unknown'
   }

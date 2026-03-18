@@ -76,7 +76,7 @@ interface FormErrors {
 
 const props = defineProps<Props>()
 const emit = defineEmits<{
-  'review-submitted': [review: any]
+  'review-submitted': [review: Record<string, unknown>]
   'cancel': []
 }>()
 

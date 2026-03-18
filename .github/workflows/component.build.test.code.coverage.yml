@@ -7,6 +7,8 @@ jobs:
   backend-tests:
     name: Backend Tests (Go)
     runs-on: ubuntu-latest
+    env:
+      GOWORK: off
 
     steps:
       - name: Checkout code
@@ -15,7 +17,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.25'
           cache-dependency-path: backend/go.sum
 
       - name: Download dependencies
@@ -52,6 +54,8 @@ jobs:
   store-service-tests:
     name: Store Service Tests (Go)
     runs-on: ubuntu-latest
+    env:
+      GOWORK: off
 
     steps:
       - name: Checkout code
@@ -60,7 +64,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.25'
           cache-dependency-path: store-service/go.sum
 
       - name: Download dependencies
@@ -168,7 +172,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.25'
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

@@ -76,8 +76,8 @@
               v-else
               :message="message"
               :is-own-message="isOwnMessage(message)"
-              @edit="editMessage"
-              @delete="deleteMessage"
+              @edit="(content: string) => editMessage(message.id, content)"
+              @delete="() => deleteMessage(message.id)"
             />
           </template>
           
@@ -135,7 +135,7 @@ if (lastConversationId && chatStore.conversations.length > 0) {
   const conv = chatStore.conversations.find(c => c.task_id === parseInt(lastConversationId));
   if (conv) {
     activeConversation.value = conv;
-    chatStore.joinConversation(conv.task_id);
+    chatStore.joinConversation(conv.task_id!);
   }
 }
 
@@ -145,12 +145,16 @@ const recentConversations = computed(() => {
 
 const messages = computed(() => {
   if (!activeConversation.value) return [];
-  return chatStore.messages.get(activeConversation.value.task_id) || [];
+  const convId = activeConversation.value.task_id ?? activeConversation.value.application_id ?? activeConversation.value.item_id;
+  if (convId === undefined) return [];
+  return chatStore.messages.get(convId) || [];
 });
 
 const typingUsers = computed(() => {
   if (!activeConversation.value) return [];
-  return chatStore.typingUsers.get(activeConversation.value.task_id) || [];
+  const convId = activeConversation.value.task_id ?? activeConversation.value.application_id ?? activeConversation.value.item_id;
+  if (convId === undefined) return [];
+  return chatStore.typingUsers.get(convId) || [];
 });
 
 function toggleWidget() {

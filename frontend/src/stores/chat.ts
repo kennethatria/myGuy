@@ -30,7 +30,7 @@ export const useChatStore = defineStore('chat', () => {
   const isLoadingMessages = ref(false);
   const hasMoreMessages = ref<Map<number, boolean>>(new Map());
   const totalMessageCounts = ref<Map<number, number>>(new Map());
-  const deletionWarnings = ref<any[]>([]);
+  const deletionWarnings = ref<{ id: number; task_id: number; task_title: string; deletion_scheduled_at: string }[]>([]);
   
   // Computed
   const totalUnreadCount = computed(() => {
@@ -109,6 +109,9 @@ export const useChatStore = defineStore('chat', () => {
         return; // Exit if we can't create conversation
       }
     }
+
+    // If conv is still undefined (e.g., response was not ok), exit early
+    if (!conv) return;
 
     // Follow same logic as joinConversation
     const previousConversation = activeConversation.value;
@@ -224,7 +227,7 @@ export const useChatStore = defineStore('chat', () => {
       }
     });
 
-    socket.value.on('connect_error', (error: any) => {
+    socket.value.on('connect_error', (error: Error) => {
       reconnectAttempts.value++;
       console.warn(`Chat connection attempt ${reconnectAttempts.value} failed:`, error.message);
       connectionError.value = error.message;
@@ -236,7 +239,7 @@ export const useChatStore = defineStore('chat', () => {
       }
     });
 
-    socket.value.on('error', (error: any) => {
+    socket.value.on('error', (error: Error) => {
       console.error('WebSocket error:', error);
       connectionError.value = error?.message || 'Unknown error';
 
@@ -453,7 +456,7 @@ export const useChatStore = defineStore('chat', () => {
     });
   }
   
-  function handleMessageFiltered({ messageId, warning }: { messageId: number; warning: string }) {
+  function handleMessageFiltered({ warning }: { messageId?: number; warning: string }) {
     // Show warning to user
     alert(warning);
   }
@@ -664,7 +667,7 @@ export const useChatStore = defineStore('chat', () => {
     });
   }
   
-  function handleConversationMarkedRead({ taskId, applicationId, itemId, count }: { taskId?: number; applicationId?: number; itemId?: number; count: number }) {
+  function handleConversationMarkedRead({ taskId, applicationId, itemId }: { taskId?: number; applicationId?: number; itemId?: number; count?: number }) {
     const conversationId = taskId || applicationId || itemId;
     if (!conversationId) return;
     
@@ -694,7 +697,7 @@ export const useChatStore = defineStore('chat', () => {
     typingUsers.value.set(conversationId, users.filter(u => u.userId !== userId));
   }
   
-  function handleUserLastSeen({ userId, lastSeen }: { userId: number; lastSeen: string }) {
+  function handleUserLastSeen({ userId }: { userId: number; lastSeen?: string }) {
     // Update user's last seen in conversations
     conversations.value.forEach(conv => {
       if (conv.other_user_id === userId) {
@@ -939,7 +942,7 @@ export const useChatStore = defineStore('chat', () => {
   ) {
     try {
       const chatApiUrl = config.CHAT_API_URL;
-      const body: any = { bookingId, action };
+      const body: { bookingId: number; action: string; rating?: number; review?: string } = { bookingId, action };
 
       // Add rating data if it's a rating action
       if (rating !== undefined) {

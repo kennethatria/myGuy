@@ -573,12 +573,6 @@ const newItem = ref({
 // Items are now loaded from backend with filters applied, so no client-side filtering needed
 const filteredItems = computed(() => items.value);
 
-// Check if any filters are active
-const hasActiveFilters = computed(() => {
-  return searchQuery.value || categoryFilter.value || conditionFilter.value ||
-         priceTypeFilter.value || minPriceFilter.value !== null || maxPriceFilter.value !== null;
-});
-
 // Build query parameters for backend API
 function buildQueryParams(): URLSearchParams {
   const params = new URLSearchParams();
@@ -801,7 +795,16 @@ async function createItem() {
     });
     
     // Prepare JSON payload - match CreateStoreItemRequest model
-    const jsonPayload = {
+    const jsonPayload: {
+      title: string;
+      description: string;
+      category: string;
+      condition: string;
+      price_type: string;
+      starting_bid?: number;
+      min_bid_increment?: number;
+      fixed_price?: number;
+    } = {
       title: title,
       description: description,
       category: category,
@@ -908,7 +911,7 @@ async function createItem() {
       let errorData;
       try {
         errorData = JSON.parse(errorText);
-      } catch (e) {
+      } catch {
         errorData = { error: errorText || 'Failed to create item listing' };
       }
       
@@ -923,26 +926,27 @@ async function createItem() {
   }
 }
 
-function handleImageSelect(event) {
-  const files = Array.from(event.target.files);
+function handleImageSelect(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
   const remainingSlots = 3 - selectedImages.value.length;
   const filesToAdd = files.slice(0, remainingSlots);
-  
-  filesToAdd.forEach(file => {
+
+  filesToAdd.forEach((file: File) => {
     if (file.type.startsWith('image/')) {
       const reader = new FileReader();
       reader.onload = (e) => {
         selectedImages.value.push({
           file: file,
-          preview: e.target.result
+          preview: e.target?.result as string
         });
       };
       reader.readAsDataURL(file);
     }
   });
-  
+
   // Reset input
-  event.target.value = '';
+  input.value = '';
 }
 
 function removeImage(index: number) {
@@ -1073,7 +1077,7 @@ function cancelCreateItem() {
 }
 
 function viewItem(item: unknown) {
-  const i = item as any;
+  const i = item as { id?: number | string };
   if (i && i.id) {
     router.push({ name: 'store-item', params: { id: i.id } });
   } else {

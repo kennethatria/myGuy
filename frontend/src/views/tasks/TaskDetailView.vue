@@ -98,7 +98,7 @@
           </button>
           <button
             v-if="canReview"
-            @click="() => router.push(`/reviews/create/${task.id}`)"
+            @click="() => router.push(`/reviews/create/${task!.id}`)"
             class="btn btn-primary"
           >
             Leave Review
@@ -206,7 +206,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watchEffect } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/stores/auth'
@@ -271,8 +271,8 @@ const applications = ref<Application[]>([])
 const hasReviewed = ref(false)
 const isLoading = ref(true)
 const error = ref('')
-const creator = ref<any>(null)
-const assignee = ref<any>(null)
+const creator = ref<{ id: number; username: string; fullName?: string } | null>(null)
+const assignee = ref<{ id: number; username: string; fullName?: string } | null>(null)
 
 const statusClasses = {
   open: 'badge-open',
@@ -416,7 +416,7 @@ const loadTaskData = async () => {
       return;
     }
     
-    task.value = taskData;
+    task.value = taskData as unknown as Task;
     console.log('Task data loaded successfully:', task.value);
     
     // Try to load user info for task creator and assignee
@@ -464,13 +464,13 @@ const loadTaskData = async () => {
         applicationsData = []; // Ensure we have an empty array at minimum
       }
     }
-    applications.value = applicationsData || [];
+    applications.value = (applicationsData || []) as unknown as Application[];
     console.log(`Loaded ${applications.value.length} applications`);
 
     // Messages are loaded by ChatWindow component via useChatStore
 
     // Check if the current user has already reviewed this task
-    if (task.value.status === 'completed' && authStore.user) {
+    if (task.value?.status === 'completed' && authStore.user) {
       try {
         hasReviewed.value = await reviewsStore.hasReviewedTask(taskId);
       } catch (err) {
@@ -512,8 +512,8 @@ const handleApplicationSubmit = async (data: { proposedFee: number; message: str
     showApplicationModal.value = false
     
     // Refresh applications list
-    applications.value = await tasksStore.getTaskApplications(task.value.id)
-    
+    applications.value = await tasksStore.getTaskApplications(task.value.id) as unknown as Application[]
+
     // Show success message
     alert('Application submitted successfully!')
   } catch (error) {
@@ -551,7 +551,7 @@ const handleAcceptApplication = async (applicationId: number) => {
     task.value.status = 'in_progress'
     
     // Refresh applications list
-    applications.value = await tasksStore.getTaskApplications(task.value.id)
+    applications.value = await tasksStore.getTaskApplications(task.value.id) as unknown as Application[]
   } catch (error) {
     console.error('Failed to accept application:', error)
     alert('Failed to accept application. Please try again.')
@@ -565,7 +565,7 @@ const handleDeclineApplication = async (applicationId: number) => {
     await tasksStore.respondToApplication(task.value.id, applicationId, 'declined')
     
     // Refresh applications list
-    applications.value = await tasksStore.getTaskApplications(task.value.id)
+    applications.value = await tasksStore.getTaskApplications(task.value.id) as unknown as Application[]
   } catch (error) {
     console.error('Failed to decline application:', error)
     alert('Failed to decline application. Please try again.')

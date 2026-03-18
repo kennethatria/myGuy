@@ -87,7 +87,7 @@ export const useMessagesStore = defineStore('messages', () => {
       console.log(`Fetched ${data.length} messages for task ${taskId}`);
       
       // Ensure all messages have the required properties
-      const validatedData = data.map((msg: any) => ({
+      const validatedData = data.map((msg: Record<string, unknown>) => ({
         ...msg,
         id: msg.id || Math.random(), // Ensure ID exists
         sender: msg.sender || { id: 0, username: 'Unknown User' }, // Ensure sender exists
@@ -208,7 +208,7 @@ export const useMessagesStore = defineStore('messages', () => {
       const data = await response.json();
       console.log(`Fetched ${data.length} messages for store item ${itemId}`);
       
-      const validatedData = data.map((msg: any) => ({
+      const validatedData = data.map((msg: Record<string, unknown>) => ({
         ...msg,
         id: msg.id || Math.random(),
         sender: msg.sender || { id: 0, username: 'Unknown User' },

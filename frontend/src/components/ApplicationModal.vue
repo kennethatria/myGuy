@@ -182,7 +182,7 @@ const formatCurrency = (amount: number) => {
   }).format(amount)
 }
 
-const handleBackdropClick = (e: MouseEvent) => {
+const handleBackdropClick = () => {
   // Close modal when clicking outside
   close()
 }

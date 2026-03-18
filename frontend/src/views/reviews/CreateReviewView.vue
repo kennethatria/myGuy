@@ -22,7 +22,7 @@
 
         <div v-else>
           <div class="task-info mb-4">
-            <h2>Review for Task: {{ task.title }}</h2>
+            <h2>Review for Task: {{ task?.title }}</h2>
             <p class="text-muted">
               You are reviewing: <strong>{{ reviewedUserName }}</strong>
             </p>
@@ -56,7 +56,16 @@ const authStore = useAuthStore()
 const reviewsStore = useReviewsStore()
 
 const taskId = computed(() => Number(route.params.taskId))
-const task = ref<any>(null)
+const task = ref<{
+  id: number;
+  title?: string;
+  status?: string;
+  created_by?: number;
+  createdBy?: number;
+  assignedTo?: number;
+  creator?: { id: number; username: string };
+  assignee?: { id: number; username: string };
+} | null>(null)
 const loading = ref(true)
 const error = ref('')
 const canReview = ref(false)
@@ -64,8 +73,8 @@ const reviewError = ref('')
 
 const currentUserId = computed(() => authStore.user?.id)
 
-const reviewedUserId = computed(() => {
-  if (!task.value || !currentUserId.value) return null
+const reviewedUserId = computed((): number | undefined => {
+  if (!task.value || !currentUserId.value) return undefined
   
   // If current user is the task creator, they review the assignee
   if (task.value.createdBy === currentUserId.value) {
@@ -77,7 +86,7 @@ const reviewedUserId = computed(() => {
     return task.value.createdBy
   }
   
-  return null
+  return undefined
 })
 
 const reviewedUserName = computed(() => {

@@ -192,7 +192,7 @@ const handleSearch = () => {
   }
 }
 
-const isActiveRoute = (item: any) => {
+const isActiveRoute = (item: { name: string }) => {
   return route.name === item.name
 }
 

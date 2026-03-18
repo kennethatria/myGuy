@@ -23,7 +23,7 @@ const patterns = {
 const filterContent = (content) => {
   if (!content || typeof content !== 'string') {
     return {
-      filtered: content || '',
+      filtered: '',
       removed: [],
       hasRemovedContent: false
     };
