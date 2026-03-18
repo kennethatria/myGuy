@@ -39,6 +39,10 @@ func setupIntegrationTestDB(t *testing.T) (*gorm.DB, error) {
 		return nil, err
 	}
 	
+	// Limit to a single connection to prevent SQLite "table is locked" errors
+	// when test functions run concurrently within the same package.
+	sqlDB.SetMaxOpenConns(1)
+
 	// We don't close it until the end of the test function
 	t.Cleanup(func() {
 		sqlDB.Close()
