@@ -2,9 +2,6 @@ name: 'Recreate Staging Environment'
 
 on:
   workflow_call:
-#   pull_request:
-#     branches: [ main ]
-#     types: [ reopened ]
 
 env:
   TF_VERSION: '1.6.0'

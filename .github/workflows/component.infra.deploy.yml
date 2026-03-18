@@ -1,20 +1,7 @@
 name: Deploy
 
 on:
-  # push:
-  #   branches: [main]
-  #   tags:
-  #     - 'v*'
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Deployment environment'
-        required: true
-        default: 'staging'
-        type: choice
-        options:
-          - staging
-          - production
+  workflow_call:
 
 env:
   REGISTRY: ghcr.io
