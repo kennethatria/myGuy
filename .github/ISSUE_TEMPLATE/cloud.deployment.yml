@@ -1,0 +1,32 @@
+name: Cloud Deployments
+description: Infra deployments to Cloud.
+title: " MyGuy Deployment"
+labels:
+  - build
+  - deployments
+projects:
+  - bpsscsefa-bpssc-pasml
+assignees:
+  - octocat
+body:
+  - type: dropdown
+    id: version
+    attributes:
+      label: Version
+      description: Select the version to deploy
+      options: []
+      default: 0
+    validations:
+      required: true
+  - type: dropdown
+    id: env
+    attributes:
+      label: Environment
+      description: What environment would you like to deploy to?
+      options:
+        - dev
+        - cae
+        - prd
+      default: 0
+    validations:
+      required: true
