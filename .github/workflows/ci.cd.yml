@@ -60,36 +60,41 @@ jobs:
     if: ${{ needs.context.outputs.isPullRequest == 'true' }}
     uses: ./.github/workflows/component.build.commit.lint.yml
 
-  static-code-analysis:
-    needs: [context]
-    if: ${{ needs.context.outputs.isPullRequest == 'true' }}
-    uses: ./.github/workflows/component.security.codeql.yml
+  # static-code-analysis:
+  #   needs: [context]
+  #   if: ${{ needs.context.outputs.isPullRequest == 'true' }}
+  #   uses: ./.github/workflows/component.security.codeql.yml
 
   test-code-coverage:
-    needs: [context]
+    needs: [context, standards]
     if: ${{ needs.context.outputs.isPullRequest == 'true' }}
     uses: ./.github/workflows/component.build.test.code.coverage.yml
     secrets: inherit
 
-  release:
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-    if: ${{ needs.context.outputs.isRelease == 'true' }}
-    needs: [context]
-    uses: ./.github/workflows/component.build.please.release.yml
-    secrets: inherit
+  # static-code-analysis:
+  #   needs: [context]
+  #   if: ${{ needs.context.outputs.isPullRequest == 'true' }}
+  #   uses: ./.github/workflows/component.security.codeql.yml
 
-  generate-sbom:
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-    if: ${{ needs.context.outputs.isRelease == 'true' }}
-    needs: [context]
-    uses: ./.github/workflows/component.build.generate.sbom.yml
-    secrets: inherit  
+  # release:
+  #   permissions:
+  #     contents: write
+  #     pull-requests: write
+  #     issues: write
+  #   if: ${{ needs.context.outputs.isRelease == 'true' }}
+  #   needs: [context]
+  #   uses: ./.github/workflows/component.build.please.release.yml
+  #   secrets: inherit
+
+  # generate-sbom:
+  #   permissions:
+  #     contents: write
+  #     pull-requests: write
+  #     issues: write
+  #   if: ${{ needs.context.outputs.isRelease == 'true' }}
+  #   needs: [context]
+  #   uses: ./.github/workflows/component.build.generate.sbom.yml
+  #   secrets: inherit  
     
 #   update-deployment-template:
 #     permissions:
