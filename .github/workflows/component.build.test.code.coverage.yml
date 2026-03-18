@@ -7,6 +7,8 @@ jobs:
   backend-tests:
     name: Backend Tests (Go)
     runs-on: ubuntu-latest
+    env:
+      GOWORK: off
 
     steps:
       - name: Checkout code
@@ -52,6 +54,8 @@ jobs:
   store-service-tests:
     name: Store Service Tests (Go)
     runs-on: ubuntu-latest
+    env:
+      GOWORK: off
 
     steps:
       - name: Checkout code
