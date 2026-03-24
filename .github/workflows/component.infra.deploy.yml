@@ -178,7 +178,7 @@ jobs:
 
       - name: Notify deployment
         if: always()
-        uses: slackapi/slack-github-action@v1.25.0
+        uses: slackapi/slack-github-action@v3.0.1
         with:
           payload: |
             {
@@ -253,7 +253,7 @@ jobs:
 
       - name: Notify deployment
         if: always()
-        uses: slackapi/slack-github-action@v1.25.0
+        uses: slackapi/slack-github-action@v3.0.1
         with:
           payload: |
             {
