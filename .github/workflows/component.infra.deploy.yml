@@ -44,7 +44,7 @@ jobs:
       # Backend
       - name: Extract metadata (Backend)
         id: meta-backend
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/backend
           tags: |
@@ -65,7 +65,7 @@ jobs:
       # Store Service
       - name: Extract metadata (Store)
         id: meta-store
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/store-service
           tags: |
@@ -86,7 +86,7 @@ jobs:
       # Chat Service
       - name: Extract metadata (Chat)
         id: meta-chat
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/chat-websocket-service
           tags: |
@@ -107,7 +107,7 @@ jobs:
       # Frontend
       - name: Extract metadata (Frontend)
         id: meta-frontend
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/frontend
           tags: |
