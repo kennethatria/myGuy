@@ -38,28 +38,24 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
 
-      - name: Update inventory with server IP
-        run: |
-          sed -i "s/; xxx.xxx.xxx.1.*/\${{ secrets.SERVER_IP }} ansible_user=${{ secrets.SERVER_USER }} ansible_ssh_private_key_file=~\/.ssh\/id_rsa/" \
-            configuration_management/inventory.ini
-
       - name: Run site playbook (install dependencies)
         run: |
           ansible-playbook \
             -i configuration_management/inventory.ini \
             configuration_management/site.yml \
-            -e "target=myhosts"
+            -e "target=myhosts" \
+            --become
 
       - name: Run deploy playbook
-        env:
-          REPO_URL: ${{ secrets.REPO_URL }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          DB_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
         run: |
           ansible-playbook \
             -i configuration_management/inventory.ini \
-            configuration_management/deploy.yml
+            configuration_management/deploy.yml \
+            -e "target=myhosts" \
+            -e "repo_url=${{ secrets.REPO_URL }}" \
+            -e "jwt_secret=${{ secrets.JWT_SECRET }}" \
+            -e "db_password=${{ secrets.POSTGRES_PASSWORD }}" \
+            -e "internal_api_key=${{ secrets.INTERNAL_API_KEY }}"
 
       - name: Cleanup SSH key
         if: always()
