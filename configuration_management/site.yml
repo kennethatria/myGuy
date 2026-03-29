@@ -1,0 +1,23 @@
+# site.yml - Install dev tools on the local machine
+
+---
+- name: Configure development environment
+  hosts: "{{ target | default('local') }}"
+  become: yes
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install Podman, Node.js, and dependencies
+      apt:
+        name:
+          - podman
+          - docker-compose
+          - git
+          - curl
+          - nodejs
+          - npm
+        state: present
