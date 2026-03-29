@@ -59,7 +59,7 @@ jobs:
         TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
         TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
         TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
-        TF_VAR_environment: ${{ env.ENVIRONMENT }}
+        TF_VAR_environment: ${{ github.event.inputs.environment || 'staging' }}
         AWS_ACCESS_KEY_ID: ${{ secrets.LINODE_OBJECT_STORAGE_ACCESS_KEY }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.LINODE_OBJECT_STORAGE_SECRET_KEY }}
       run: |
@@ -141,7 +141,7 @@ jobs:
         TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
         TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
         TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
-        TF_VAR_environment: ${{ env.ENVIRONMENT }}
+        TF_VAR_environment: ${{ github.event.inputs.environment || 'staging' }}
         AWS_ACCESS_KEY_ID: ${{ secrets.LINODE_OBJECT_STORAGE_ACCESS_KEY }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.LINODE_OBJECT_STORAGE_SECRET_KEY }}
       run: |

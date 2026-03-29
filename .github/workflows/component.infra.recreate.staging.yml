@@ -12,7 +12,8 @@ jobs:
   recreate-staging:
     name: 'Recreate Staging Environment'
     runs-on: ubuntu-latest
-    
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+
     defaults:
       run:
         working-directory: infra
@@ -82,6 +83,7 @@ jobs:
   deploy-application:
     name: 'Deploy Application to Recreated Staging'
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
     needs: [recreate-staging]
     
     steps:
