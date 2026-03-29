@@ -4,7 +4,7 @@ variable "provider_token" {
     sensitive   = true
 }
 
-variable "ssh_key" {
+variable "authorized_keys" {
     type        = string
     description = "ssh key"
     sensitive   = true

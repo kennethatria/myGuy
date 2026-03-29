@@ -4,6 +4,6 @@ resource "linode_instance" "my_guy_instance" {
   tags            = ["dev"]
   region          = "eu-central"
   type            = "g6-nanode-1"
-  authorized_keys = [var.ssh_key]
+  authorized_keys = [var.authorized_keys]
   root_pass       = var.root_password
 }

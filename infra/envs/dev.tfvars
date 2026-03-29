@@ -1,3 +1,3 @@
 provider_token=""
-ssh_key=""
+authorized_keys=""
 root_password=""
