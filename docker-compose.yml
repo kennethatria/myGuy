@@ -10,8 +10,7 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - DB_CONNECTION=host=postgres-db user=postgres password=${DB_PASSWORD} dbname=my_guy port=5432 sslmode=disable
     depends_on:
-      postgres-db:
-        condition: service_healthy
+      - postgres-db
     networks:
       - myguy-network
 
@@ -32,8 +31,7 @@ services:
     volumes:
       - store-uploads:/app/uploads
     depends_on:
-      postgres-db:
-        condition: service_healthy
+      - postgres-db
     networks:
       - myguy-network
 
@@ -59,14 +57,10 @@ services:
       # Redis for horizontal scaling (optional - enables multi-instance mode)
       - REDIS_URL=redis://redis:6379/0
     depends_on:
-      postgres-db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      api:
-        condition: service_started
-      store-service:
-        condition: service_started
+      - postgres-db
+      - redis
+      - api
+      - store-service
     networks:
       - myguy-network
 
