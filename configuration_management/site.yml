@@ -1,4 +1,4 @@
-# site.yml - Install dev tools on the local machine
+# site.yml - Install dev tools on the remote server
 
 ---
 - name: Configure development environment
@@ -7,17 +7,22 @@
 
   tasks:
     - name: Update apt cache
-      apt:
+      ansible.builtin.apt:
         update_cache: yes
         cache_valid_time: 3600
 
-    - name: Install Podman, Node.js, and dependencies
-      apt:
+    - name: Install Podman
+      ansible.builtin.apt:
+        name: podman
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install Node.js and dependencies
+      ansible.builtin.apt:
         name:
-          - podman
-          - docker-compose
           - git
           - curl
           - nodejs
           - npm
+          - docker-compose
         state: present

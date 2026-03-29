@@ -2,7 +2,7 @@
 
 ---
 - name: Deploy myGuy application
-  hosts: myhosts
+  hosts: "{{ target | default('myhosts') }}"
   become: yes
 
   vars:
@@ -14,49 +14,6 @@
     internal_api_key: "{{ lookup('env', 'INTERNAL_API_KEY') }}"
 
   tasks:
-    # --- System Dependencies ---
-
-    - name: Update apt cache
-      apt:
-        update_cache: yes
-        cache_valid_time: 3600
-
-    - name: Install system dependencies
-      apt:
-        name:
-          - git
-          - curl
-          - ca-certificates
-          - gnupg
-          - lsb-release
-        state: present
-
-    - name: Add Docker GPG key
-      apt_key:
-        url: https://download.docker.com/linux/ubuntu/gpg
-        state: present
-
-    - name: Add Docker repository
-      apt_repository:
-        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_lsb.codename }} stable"
-        state: present
-
-    - name: Install Docker Engine and Compose plugin
-      apt:
-        name:
-          - docker-ce
-          - docker-ce-cli
-          - containerd.io
-          - docker-compose-plugin
-        state: present
-        update_cache: yes
-
-    - name: Ensure Docker service is running and enabled
-      service:
-        name: docker
-        state: started
-        enabled: yes
-
     # --- Application Setup ---
 
     - name: Create application directory
@@ -89,21 +46,19 @@
 
     # --- Deploy ---
 
-    - name: Pull latest Docker images
-      community.docker.docker_compose_v2:
-        project_src: "{{ app_dir }}"
-        pull: always
-        state: present
+    - name: Pull images from Docker Hub
+      command: podman compose pull
+      args:
+        chdir: "{{ app_dir }}"
       environment:
         JWT_SECRET: "{{ jwt_secret }}"
         DB_PASSWORD: "{{ db_password }}"
         INTERNAL_API_KEY: "{{ internal_api_key }}"
 
     - name: Start application stack
-      community.docker.docker_compose_v2:
-        project_src: "{{ app_dir }}"
-        state: present
-        recreate: auto
+      command: podman compose up -d --force-recreate
+      args:
+        chdir: "{{ app_dir }}"
       environment:
         JWT_SECRET: "{{ jwt_secret }}"
         DB_PASSWORD: "{{ db_password }}"
@@ -113,13 +68,12 @@
 
     - name: Wait for backend API to be healthy
       uri:
-        url: "http://localhost:8080/api/v1/health"
+        url: "http://localhost:8080/health"
         status_code: 200
       register: health_check
       retries: 10
       delay: 6
       until: health_check.status == 200
-      ignore_errors: yes
 
     - name: Report deployment status
       debug:
