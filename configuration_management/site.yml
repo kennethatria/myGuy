@@ -25,4 +25,5 @@
           - nodejs
           - npm
           - docker-compose
+          - nginx
         state: present
