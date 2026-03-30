@@ -1,0 +1,46 @@
+asset:
+  name: "myGuy Platform"
+  description: >
+    A microservices-based task marketplace platform where users can post tasks,
+    apply for tasks, communicate in real-time, and buy/sell items via a store
+    with fixed-price and auction bidding.
+  internet_facing: True
+  authn_type: "JWT"
+  data_classification: "CONFIDENTIAL"
+
+repositories:
+  - name: "myGuy"
+    local_path: "/data"
+
+config:
+  # NOTE: If the tool does not recognise "google" as a provider,
+  # check the Let's Threat Model docs/source for the correct identifier.
+  llm_provider: "google_genai"
+  context_window: 30000
+  max_output_tokens: 8192
+  categorization_agent_llm: "gemini-2.0-flash"
+  review_agent_llm: "gemini-2.0-flash"
+  threat_model_agent_llm: "gemini-2.0-flash"
+  report_agent_llm: "gemini-2.0-flash"
+  categorize_only: False
+
+exclude_patterns:
+  - "**/.git/**"
+  - "**/node_modules/**"
+  - "**/vendor/**"
+  - "engineering/**"
+  - "demo/**"
+  - "**/*_test.go"
+  - "**/__tests__/**"
+  - "**/testdata/**"
+  - "**/*.md"
+  - "infra/.terraform/**"
+  - .claude
+  - .github
+  - .env
+  - .git
+  - venv
+  - __pycache__
+  - tests
+  - report
+  - assets
