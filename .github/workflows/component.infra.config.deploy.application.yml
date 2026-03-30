@@ -1,0 +1,62 @@
+name: Deploy Application
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - cae
+          - prd
+
+jobs:
+  deploy:
+    name: Run Ansible Deploy Playbook
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Ansible
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ansible
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+
+      - name: Run site playbook (install dependencies)
+        run: |
+          ansible-playbook \
+            -i configuration_management/inventory.ini \
+            configuration_management/site.yml \
+            -e "target=myhosts" \
+            --become
+
+      - name: Run deploy playbook
+        run: |
+          ansible-playbook \
+            -i configuration_management/inventory.ini \
+            configuration_management/deploy.yml \
+            -e "target=myhosts" \
+            -e "repo_url=${{ secrets.REPO_URL }}" \
+            -e "jwt_secret=${{ secrets.JWT_SECRET }}" \
+            -e "db_password=${{ secrets.POSTGRES_PASSWORD }}" \
+            -e "internal_api_key=${{ secrets.INTERNAL_API_KEY }}"
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_rsa

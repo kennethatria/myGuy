@@ -12,7 +12,8 @@ jobs:
   destroy-staging:
     name: 'Destroy Staging Environment'
     runs-on: ubuntu-latest
-    
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+
     defaults:
       run:
         working-directory: infra
@@ -96,6 +97,7 @@ jobs:
   terraform-deploy:
     name: 'Deploy Infrastructure'
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
     needs: [destroy-staging]
     if: always() && (github.event.inputs.deploy_infrastructure == 'true' || contains(github.event.head_commit.modified, 'infra/'))
     
@@ -171,6 +173,7 @@ jobs:
   deploy-application:
     name: 'Deploy Application'
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
     needs: [destroy-staging, terraform-deploy]
     if: always() && (needs.terraform-deploy.result == 'success' || needs.terraform-deploy.result == 'skipped')
     

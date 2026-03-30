@@ -17,6 +17,7 @@ jobs:
   build-push-api:
     name: API Service
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,8 +37,10 @@ jobs:
           tags: ${{ env.REGISTRY }}/myguy-api:latest
 
   build-push-store-service:
+    needs: build-push-api
     name: Store Service
     runs-on: ubuntu-latest
+    environment: dev
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,8 +60,10 @@ jobs:
           tags: ${{ env.REGISTRY }}/myguy-store-service:latest
 
   build-push-chat-service:
+    needs: build-push-store-service
     name: Chat Websocket Service
     runs-on: ubuntu-latest
+    environment: dev
     steps:
       - name: Checkout
         uses: actions/checkout@v4

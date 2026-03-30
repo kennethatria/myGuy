@@ -9,3 +9,14 @@ go
 # Go workspace files
 go.work
 go.work.sum
+
+.env
+
+infra/.terraform/
+infra/*.md
+
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+
+.DS_Store
