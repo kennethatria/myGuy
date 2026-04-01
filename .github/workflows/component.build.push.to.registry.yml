@@ -9,6 +9,7 @@ on:
   #     - 'store-service/**'
   #     - 'chat-websocket-service/**'
   workflow_dispatch:
+  workflow_call:
 
 env:
   REGISTRY: ${{ vars.REGISTRY }}

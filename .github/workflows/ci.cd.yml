@@ -115,7 +115,17 @@ jobs:
     if: ${{ needs.context.outputs.isRelease == 'true' }}
     needs: [context]
     uses: ./.github/workflows/component.security.scorecard.yml
-    secrets: inherit  
+    secrets: inherit
+
+  deploy-images-to-repository:
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    if: ${{ needs.context.outputs.isRelease == 'true' }}
+    needs: [context, release]
+    uses: ./.github/workflows/component.build.push.to.registry.yml
+    secrets: inherit
     
 #   update-deployment-template:
 #     permissions:
