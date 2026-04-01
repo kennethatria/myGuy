@@ -84,7 +84,7 @@
 
             - job_name: falco
               static_configs:
-                - targets: ['{{ instance_vpc_ip }}:9376']
+                - targets: ['{{ instance_vpc_ip }}:8765']
                   labels:
                     instance: app
 

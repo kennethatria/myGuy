@@ -80,10 +80,10 @@ resource "linode_firewall" "my_firewall" {
   }
 
   inbound {
-    label    = "allow-falco-exporter-from-vpc"
+    label    = "allow-falco-metrics-from-vpc"
     action   = "ACCEPT"
     protocol = "TCP"
-    ports    = "9376"
+    ports    = "8765"
     ipv4     = ["10.0.0.0/24"]
   }
 
