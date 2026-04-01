@@ -126,39 +126,13 @@ jobs:
     needs: [context, release]
     uses: ./.github/workflows/component.build.push.to.registry.yml
     secrets: inherit
-    
-#   update-deployment-template:
-#     permissions:
-#       contents: write
-#       pull-requests: write
-#       issues: write
-#       id-token: write
-#     if: ${{ needs.context.outputs.isRelease == 'true' }}
-#     needs: [release, context]
-#     uses: ./.github/workflows/component.update.app.version.yml
-#     secrets: inherit
 
-#   build-push-image:
-#     permissions:
-#       contents: write
-#       pull-requests: write
-#       id-token: write
-#     if: ${{ needs.context.outputs.isRelease == 'true' && needs.update-deployment-template.outputs.version_updated == 'true'}}
-#     needs: [context, release, update-deployment-template]
-#     uses: ./.github/workflows/component.build.push.yml
-#     with:
-#       environment: dev
-#       image_targets: serving
-#       push_serving: true
-#       push_retrain: true
-#     secrets: inherit
-
-#   redeploy-cloudrun-image:
-#     needs: [context, build-push-image]
-#     if: ${{ needs.context.outputs.isRelease == 'true' }}
-#     uses: ./.github/workflows/component.deploy.cloud.run.yml
-#     with:
-#       environment: dev
-#       image_name: europe-west4-docker.pkg.dev/afkl-pasml-n100/gar-pasml-api-dev-google-ew4-n100-d01/pasml-api-serve
-#       image_tag: "latest"
-#     secrets: inherit
+  deploy-infra:
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    if: ${{ needs.context.outputs.isRelease == 'true' }}
+    needs: [context, release]
+    uses: ./.github/workflows/component.infra.tf.deploy.yml
+    secrets: inherit
