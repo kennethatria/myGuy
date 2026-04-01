@@ -1,4 +1,4 @@
-name: Deploy Application
+name: Run ansible to deploy application
 
 on:
   workflow_call:
