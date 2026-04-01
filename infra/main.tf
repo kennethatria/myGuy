@@ -50,6 +50,29 @@ resource "linode_nodebalancer_node" "main" {
   }
 }
 
+resource "linode_nodebalancer_config" "https" {
+  nodebalancer_id = linode_nodebalancer.main.id
+  port            = 443
+  protocol        = "tcp"
+  check           = "connection"
+  check_attempts  = 3
+  check_timeout   = 10
+  check_interval  = 30
+}
+
+resource "linode_nodebalancer_node" "https" {
+  nodebalancer_id = linode_nodebalancer.main.id
+  config_id       = linode_nodebalancer_config.https.id
+  label           = "${var.infra_name}-${var.environment}-node-https"
+  address         = "${linode_instance.my_guy_instance.private_ip_address}:443"
+  mode            = "accept"
+  weight          = 100
+
+  lifecycle {
+    replace_triggered_by = [linode_instance.my_guy_instance]
+  }
+}
+
 resource "linode_firewall" "my_firewall" {
   label = "${var.infra_name}-${var.environment}-firewall"
 
@@ -58,6 +81,15 @@ resource "linode_firewall" "my_firewall" {
     action   = "ACCEPT"
     protocol = "TCP"
     ports    = "80"
+    ipv4     = ["0.0.0.0/0"]
+    ipv6     = ["::/0"]
+  }
+
+  inbound {
+    label    = "allow-https"
+    action   = "ACCEPT"
+    protocol = "TCP"
+    ports    = "443"
     ipv4     = ["0.0.0.0/0"]
     ipv6     = ["::/0"]
   }

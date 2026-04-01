@@ -38,6 +38,8 @@
           - podman
           - podman-compose
           - nginx
+          - certbot
+          - python3-certbot-nginx
         state: present
 
     # --- Falco ---
@@ -140,5 +142,14 @@
         enabled: yes
         state: started
         daemon_reload: yes
+
+    # --- Cosign ---
+
+    - name: Install cosign for image signature verification
+      ansible.builtin.get_url:
+        url: https://github.com/sigstore/cosign/releases/download/v2.4.1/cosign-linux-amd64
+        dest: /usr/local/bin/cosign
+        mode: "0755"
+        force: no
 
 

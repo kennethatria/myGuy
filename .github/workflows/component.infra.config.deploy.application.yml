@@ -22,6 +22,7 @@ on:
 env:
   TF_VERSION: '1.14.6'
   TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+  REGISTRY: ${{ vars.REGISTRY }}
 
 jobs:
   deploy:
@@ -54,6 +55,33 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y ansible
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Get image tag
+        id: get_tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if LATEST_TAG=$(gh release view --repo ${{ github.repository }} --json tagName --jq '.tagName' 2>/dev/null); then
+            echo "image_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          else
+            echo "image_tag=latest" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Verify images are signed
+        run: |
+          for IMAGE in \
+            ${{ env.REGISTRY }}/myguy-api:${{ steps.get_tag.outputs.image_tag }} \
+            ${{ env.REGISTRY }}/myguy-store-service:${{ steps.get_tag.outputs.image_tag }} \
+            ${{ env.REGISTRY }}/myguy-chat-websocket-service:${{ steps.get_tag.outputs.image_tag }}; do
+            echo "Verifying $IMAGE..."
+            cosign verify \
+              --certificate-identity-regexp "https://github.com/${{ github.repository }}/.github/workflows/.*" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "$IMAGE"
+          done
+
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
@@ -63,15 +91,6 @@ jobs:
           # Add app instance to known_hosts — monitoring is VPC-only and
           # is reached via ProxyJump through the app instance (handled in inventory)
           ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
-
-      # - name: Check Ansible connectivity
-      #   run: |
-      #     ansible-playbook \
-      #       -i configuration_management/inventory.ini \
-      #       configuration_management/site.yml \
-      #       -e "target=app" \
-      #       --check
-      #   continue-on-error: true
 
       - name: Configure monitoring instance
         run: |
@@ -95,7 +114,12 @@ jobs:
             -e "repo_url=${{ secrets.REPO_URL }}" \
             -e "jwt_secret=${{ secrets.JWT_SECRET }}" \
             -e "db_password=${{ secrets.POSTGRES_PASSWORD }}" \
-            -e "internal_api_key=${{ secrets.INTERNAL_API_KEY }}"
+            -e "internal_api_key=${{ secrets.INTERNAL_API_KEY }}" \
+            -e "registry=${{ env.REGISTRY }}" \
+            -e "image_tag=${{ steps.get_tag.outputs.image_tag }}" \
+            -e "github_repository=${{ github.repository }}" \
+            -e "domain=${{ vars.DOMAIN }}" \
+            -e "certbot_email=${{ secrets.CERTBOT_EMAIL }}"
 
       - name: Cleanup SSH key
         if: always()
