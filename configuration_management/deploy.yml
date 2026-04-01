@@ -89,29 +89,6 @@
         DB_PASSWORD: "{{ db_password }}"
         INTERNAL_API_KEY: "{{ internal_api_key }}"
 
-    # --- Frontend Build ---
-
-    - name: Write frontend .env
-      ansible.builtin.copy:
-        dest: "{{ app_dir }}/frontend/.env"
-        mode: "0644"
-        content: |
-          VITE_API_URL=https://{{ domain }}/api/v1
-          VITE_STORE_API_URL=https://{{ domain }}/store/api/v1
-          VITE_STORE_API_BASE_URL=https://{{ domain }}/store
-          VITE_CHAT_WS_URL=https://{{ domain }}
-          VITE_CHAT_API_URL=https://{{ domain }}/chat/api/v1
-
-    - name: Install frontend dependencies
-      ansible.builtin.command:
-        cmd: npm install
-        chdir: "{{ app_dir }}/frontend"
-
-    - name: Build frontend
-      ansible.builtin.command:
-        cmd: npm run build
-        chdir: "{{ app_dir }}/frontend"
-
     # --- Nginx + TLS ---
 
     - name: Check if TLS certificate exists
