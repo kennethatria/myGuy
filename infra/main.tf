@@ -145,32 +145,36 @@ resource "linode_instance" "zipkin_instance" {
   root_pass       = var.root_password
   private_ip      = true
 
-  user_data = base64encode(<<-EOF
-    #cloud-config
-    write_files:
-      - path: /etc/netplan/05-vpc.yaml
-        content: |
-          network:
-            version: 2
-            renderer: networkd
-            ethernets:
-              eth1:
-                dhcp4: false
-                addresses:
-                  - ${local.zipkin_vpc_ip}/24
-    runcmd:
-      - netplan apply
-  EOF
-  )
-
-  interface {
-    purpose      = "vpc"
-    subnet_id    = linode_vpc_subnet.main.id
-    ipam_address = "${local.zipkin_vpc_ip}/24"
+  metadata {
+    user_data = base64encode(<<-EOF
+      #cloud-config
+      write_files:
+        - path: /etc/netplan/05-vpc.yaml
+          content: |
+            network:
+              version: 2
+              renderer: networkd
+              ethernets:
+                eth1:
+                  dhcp4: false
+                  addresses:
+                    - ${local.zipkin_vpc_ip}/24
+      runcmd:
+        - netplan apply
+    EOF
+    )
   }
 
   interface {
     purpose = "public"
+  }
+
+  interface {
+    purpose   = "vpc"
+    subnet_id = linode_vpc_subnet.main.id
+    ipv4 {
+      vpc = local.zipkin_vpc_ip
+    }
   }
 }
 
