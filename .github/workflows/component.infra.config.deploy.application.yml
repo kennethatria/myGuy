@@ -64,38 +64,38 @@ jobs:
           # is reached via ProxyJump through the app instance (handled in inventory)
           ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
 
-      - name: Check Ansible connectivity
-        run: |
-          ansible-playbook \
-            -i configuration_management/inventory.ini \
-            configuration_management/site.yml \
-            -e "target=app" \
-            --check
-        continue-on-error: true
-
-      # - name: Configure monitoring instance
-      #   run: |
-      #     ansible-playbook \
-      #       -i configuration_management/inventory.ini \
-      #       configuration_management/monitoring.yml
-
-      # - name: Configure app instance
+      # - name: Check Ansible connectivity
       #   run: |
       #     ansible-playbook \
       #       -i configuration_management/inventory.ini \
       #       configuration_management/site.yml \
-      #       -e "target=app"
-
-      # - name: Deploy application
-      #   run: |
-      #     ansible-playbook \
-      #       -i configuration_management/inventory.ini \
-      #       configuration_management/deploy.yml \
       #       -e "target=app" \
-      #       -e "repo_url=${{ secrets.REPO_URL }}" \
-      #       -e "jwt_secret=${{ secrets.JWT_SECRET }}" \
-      #       -e "db_password=${{ secrets.POSTGRES_PASSWORD }}" \
-      #       -e "internal_api_key=${{ secrets.INTERNAL_API_KEY }}"
+      #       --check
+      #   continue-on-error: true
+
+      - name: Configure monitoring instance
+        run: |
+          ansible-playbook \
+            -i configuration_management/inventory.ini \
+            configuration_management/monitoring.yml
+
+      - name: Configure app instance
+        run: |
+          ansible-playbook \
+            -i configuration_management/inventory.ini \
+            configuration_management/site.yml \
+            -e "target=app"
+
+      - name: Deploy application
+        run: |
+          ansible-playbook \
+            -i configuration_management/inventory.ini \
+            configuration_management/deploy.yml \
+            -e "target=app" \
+            -e "repo_url=${{ secrets.REPO_URL }}" \
+            -e "jwt_secret=${{ secrets.JWT_SECRET }}" \
+            -e "db_password=${{ secrets.POSTGRES_PASSWORD }}" \
+            -e "internal_api_key=${{ secrets.INTERNAL_API_KEY }}"
 
       - name: Cleanup SSH key
         if: always()
