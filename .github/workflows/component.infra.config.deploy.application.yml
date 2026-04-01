@@ -2,6 +2,13 @@ name: Run ansible to deploy application
 
 on:
   workflow_call:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: dev
+        type: string
+
   workflow_dispatch:
     inputs:
       environment:
@@ -11,8 +18,6 @@ on:
         type: choice
         options:
           - dev
-          - cae
-          - prd
 
 env:
   TF_VERSION: '1.14.6'
