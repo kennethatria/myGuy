@@ -25,7 +25,7 @@ output "instance_id" {
 
 output "instance_ip_address" {
   description = "Public IP address of the myGuy instance"
-  value       = linode_instance.my_guy_instance.ip_address
+  value       = linode_instance.my_guy_instance.ipv4[0]
 }
 
 output "instance_vpc_ip" {
@@ -60,7 +60,7 @@ output "zipkin_instance_id" {
 
 output "zipkin_instance_ip" {
   description = "Public IP of the Zipkin instance"
-  value       = linode_instance.zipkin_instance.ip_address
+  value       = linode_instance.zipkin_instance.ipv4[0]
 }
 
 output "zipkin_vpc_ip" {
