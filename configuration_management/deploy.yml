@@ -166,6 +166,17 @@
 
     # --- Health Check ---
 
+    - name: Show container status
+      command: podman ps -a
+      args:
+        chdir: "{{ app_dir }}"
+      register: container_status
+      changed_when: false
+
+    - name: Print container status
+      debug:
+        var: container_status.stdout_lines
+
     - name: Wait for backend API to be healthy
       uri:
         url: "http://localhost:8080/health"
