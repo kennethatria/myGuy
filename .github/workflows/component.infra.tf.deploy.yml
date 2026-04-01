@@ -1,8 +1,8 @@
 name: 'Deploy to Development Environment'
 
 on:
-  schedule:
-    - cron: '0 19 * * *'  # 9pm Amsterdam (CEST, UTC+2)
+  # schedule:
+  #   - cron: '0 19 * * *'  # 9pm Amsterdam (CEST, UTC+2)
   workflow_call:
     inputs:
       action:
