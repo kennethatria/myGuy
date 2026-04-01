@@ -14,6 +14,13 @@
     internal_api_key: "{{ lookup('env', 'INTERNAL_API_KEY') }}"
     server_ip: "{{ ansible_host }}"
     zipkin_url: "{{ hostvars[groups['monitoring'][0]]['zipkin_url'] | default('http://10.0.0.3:9411/api/v2/spans') }}"
+    registry: "{{ registry }}"
+    image_tag: "{{ image_tag }}"
+    github_repository: "{{ github_repository }}"
+    images_to_verify:
+      - "{{ registry }}/myguy-api:{{ image_tag }}"
+      - "{{ registry }}/myguy-store-service:{{ image_tag }}"
+      - "{{ registry }}/myguy-chat-websocket-service:{{ image_tag }}"
 
   tasks:
     # --- Application Setup ---
@@ -57,6 +64,15 @@
         JWT_SECRET: "{{ jwt_secret }}"
         DB_PASSWORD: "{{ db_password }}"
         INTERNAL_API_KEY: "{{ internal_api_key }}"
+
+    - name: Verify image signatures with cosign
+      command: >
+        cosign verify
+        --certificate-identity-regexp "https://github.com/{{ github_repository }}/.github/workflows/.*"
+        --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+        {{ item }}
+      loop: "{{ images_to_verify }}"
+      changed_when: false
 
     - name: Start application stack
       command: podman compose up -d --force-recreate
