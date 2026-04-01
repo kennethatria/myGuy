@@ -146,7 +146,7 @@ resource "linode_instance" "zipkin_instance" {
   private_ip      = true
 
   interface {
-    purpose = "public"
+    purpose = "vpc"
   }
 
   interface {
