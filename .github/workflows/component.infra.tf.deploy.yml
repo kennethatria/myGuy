@@ -1,4 +1,4 @@
-name: 'Deploy to Development Environment'
+name: 'Deploy infra to Development Environment'
 
 on:
   # schedule:

@@ -40,7 +40,56 @@
           - nginx
           - certbot
           - python3-certbot-nginx
+          - libnginx-mod-http-modsecurity
         state: present
+
+    # --- ModSecurity WAF ---
+
+    - name: Create ModSecurity config directory
+      ansible.builtin.file:
+        path: /etc/nginx/modsecurity
+        state: directory
+        mode: "0755"
+
+    - name: Clone OWASP Core Rule Set
+      ansible.builtin.git:
+        repo: https://github.com/coreruleset/coreruleset.git
+        dest: /etc/nginx/modsecurity/owasp-crs
+        version: "v4.0.0"
+        force: no
+
+    - name: Copy CRS setup config
+      ansible.builtin.copy:
+        src: /etc/nginx/modsecurity/owasp-crs/crs-setup.conf.example
+        dest: /etc/nginx/modsecurity/owasp-crs/crs-setup.conf
+        remote_src: yes
+        force: no
+
+    - name: Write ModSecurity config
+      ansible.builtin.template:
+        src: coraza.conf.j2
+        dest: /etc/nginx/modsecurity/coraza.conf
+        mode: "0644"
+      vars:
+        coraza_config_dir: /etc/nginx/modsecurity
+
+    - name: Add modsecurity_audit.log logrotate config
+      ansible.builtin.copy:
+        dest: /etc/logrotate.d/modsecurity
+        mode: "0644"
+        content: |
+          /var/log/nginx/modsecurity_audit.log {
+              daily
+              missingok
+              rotate 14
+              compress
+              delaycompress
+              notifempty
+              sharedscripts
+              postrotate
+                  nginx -s reopen
+              endscript
+          }
 
     # --- VPC Network Interface ---
 
