@@ -8,6 +8,69 @@ The platform is designed with a clean architecture, separating concerns into dis
 
 ## Architecture & Tech Stack
 
+### Infrastructure Diagram
+
+```mermaid
+graph TB
+    subgraph Internet["Internet"]
+        User["User / Browser"]
+        GHA["GitHub Actions\nCI/CD"]
+        HCP["HCP Terraform\napp.terraform.io"]
+    end
+
+    subgraph Linode["Linode Cloud (de-fra-2)"]
+        NB["NodeBalancer\n:80 (HTTP)\nRound-robin"]
+
+        subgraph VPC["VPC: myguy-dev  |  Subnet: 10.0.0.0/24"]
+            subgraph AppInstance["App Instance  —  10.0.0.2 (VPC)"]
+                direction TB
+                FW1["Firewall\nAllow: :80, :22 public\nAllow: :9100, :9376 VPC only"]
+                NGINX["Nginx (reverse proxy)"]
+                API["Backend API :8080"]
+                STORE["Store Service :8081"]
+                CHAT["Chat Service :8082"]
+                PG["PostgreSQL :5432\n(my_guy, my_guy_store, my_guy_chat)"]
+                REDIS["Redis :6379"]
+                NE["node_exporter :9100\n(CPU & memory)"]
+                FE["falco-exporter :9376\n(security alerts)"]
+                FALCO["Falco\n(runtime security)"]
+            end
+
+            subgraph MonInstance["Monitoring Instance  —  10.0.0.3 (VPC)"]
+                direction TB
+                FW2["Firewall\nAllow: :22, :9411, :9090, :3000 VPC only\nNo public access"]
+                ZIPKIN["Zipkin :9411\n(distributed tracing)"]
+                PROM["Prometheus :9090\n(scrapes 10.0.0.2:9100 & :9376)"]
+                GRAFANA["Grafana :3000\n(dashboards)"]
+            end
+        end
+    end
+
+    User -->|"HTTPS"| NB
+    NB -->|"HTTP :80"| NGINX
+    NGINX --> API
+    NGINX --> STORE
+    NGINX --> CHAT
+    API & STORE & CHAT --> PG
+    CHAT --> REDIS
+    STORE -->|"booking notify"| CHAT
+
+    API -->|"traces"| ZIPKIN
+    STORE -->|"traces"| ZIPKIN
+    CHAT -->|"traces"| ZIPKIN
+
+    FALCO --> FE
+    NE -->|"scrape :9100"| PROM
+    FE -->|"scrape :9376"| PROM
+    PROM --> GRAFANA
+
+    GHA -->|"terraform plan/apply"| HCP
+    HCP -->|"provision"| AppInstance
+    HCP -->|"provision"| MonInstance
+
+    AppInstance -.->|"ProxyJump SSH"| MonInstance
+```
+
 ### Application Services
 
 | Service | Language | Port | Description |

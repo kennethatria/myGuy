@@ -1,4 +1,4 @@
-name: 'Deploy to Staging'
+name: 'Deploy to Development Environment'
 
 on:
   workflow_call:
@@ -12,7 +12,7 @@ env:
 
 jobs:
   deploy-infra:
-    name: 'Destroy Staging Environment'
+    name: 'Deploy to Development Environment'
     runs-on: ubuntu-latest
     environment: dev
     
@@ -37,4 +37,4 @@ jobs:
     - run: terraform init
 
     - id: plan
-      run: terraform plan -no-color
+      run: terraform plan
