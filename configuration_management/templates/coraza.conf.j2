@@ -1,0 +1,30 @@
+# ModSecurity Configuration for myguy
+# SecRuleEngine DetectionOnly — logs attacks, blocks nothing
+# Review /var/log/nginx/modsecurity_audit.log for false positives
+# before switching to: SecRuleEngine On
+
+SecRuleEngine DetectionOnly
+
+# Request body inspection
+SecRequestBodyAccess On
+SecRequestBodyLimit 13107200
+SecRequestBodyNoFilesLimit 131072
+SecRequestBodyLimitAction Reject
+
+# Response body inspection (off for performance)
+SecResponseBodyAccess Off
+
+# Audit logging — Off initially to prevent unbounded log growth
+# Enable with: SecAuditEngine RelevantOnly
+SecAuditEngine Off
+SecAuditLog /var/log/nginx/modsecurity_audit.log
+SecAuditLogParts ABIJDEFHZ
+SecAuditLogType Serial
+
+# Default actions — log but pass in DetectionOnly mode
+SecDefaultAction "phase:1,log,auditlog,pass"
+SecDefaultAction "phase:2,log,auditlog,pass"
+
+# OWASP Core Rule Set
+Include {{ coraza_config_dir }}/owasp-crs/crs-setup.conf
+Include {{ coraza_config_dir }}/owasp-crs/rules/*.conf
