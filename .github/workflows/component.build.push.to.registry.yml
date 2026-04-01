@@ -1,4 +1,4 @@
-name: Build and Push Images to Registry
+name: Build and push images to registry
 
 on:
   # push:

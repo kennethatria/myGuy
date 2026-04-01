@@ -1,5 +1,5 @@
 ---
-name: release-please
+name: Run release please
 
 concurrency:
   group: please-release-${{ github.event.pull_request.number || github.ref }}

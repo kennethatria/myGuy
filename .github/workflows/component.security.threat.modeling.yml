@@ -1,4 +1,4 @@
-name: Threat Model Analysis
+name: Run threat model analysis
 
 on:
   workflow_dispatch:
