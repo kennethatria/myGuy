@@ -2,7 +2,21 @@ name: 'Deploy to Development Environment'
 
 on:
   workflow_call:
+    inputs:
+      action:
+        type: string
+        description: 'Terraform action to perform (plan or apply)'
+        required: true
+        default: 'plan'
   workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        description: 'Terraform action to perform'
+        required: true
+        options:
+          - plan
+          - apply
 
 env:
   TF_VERSION: '1.14.6'
@@ -40,4 +54,4 @@ jobs:
       run: terraform plan
 
     - id: apply
-      run: terraform apply -auto-approve
+      run: terraform ${{ inputs.action }} -auto-approve
