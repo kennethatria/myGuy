@@ -42,6 +42,27 @@
           - python3-certbot-nginx
         state: present
 
+    # --- VPC Network Interface ---
+
+    - name: Write VPC netplan config
+      ansible.builtin.copy:
+        dest: /etc/netplan/05-vpc.yaml
+        mode: "0600"
+        content: |
+          network:
+            version: 2
+            renderer: networkd
+            ethernets:
+              eth1:
+                dhcp4: false
+                addresses:
+                  - 10.0.0.2/24
+
+    - name: Apply netplan configuration
+      ansible.builtin.command:
+        cmd: netplan apply
+      changed_when: false
+
     # --- Falco ---
 
     - name: Download Falco GPG key
@@ -72,16 +93,21 @@
         name: falco
         state: present
 
-    - name: Enable Falco native Prometheus metrics
+    - name: Remove old Falco metrics blockinfile entry
       ansible.builtin.blockinfile:
         path: /etc/falco/falco.yaml
         marker: "# {mark} ANSIBLE MANAGED - metrics"
-        block: |
+        state: absent
+
+    - name: Write Falco Prometheus metrics config
+      ansible.builtin.copy:
+        dest: /etc/falco/config.d/prometheus.yaml
+        mode: "0644"
+        content: |
           metrics:
             enabled: true
-            listen_port: 8765
             interval: 1h
-            output_rule: true
+            output_rule: false
             rules_counters_enabled: true
             resource_utilization_enabled: true
             state_counters_enabled: true
@@ -89,6 +115,11 @@
             libbpf_stats_enabled: true
             convert_memory_to_mb: true
             include_empty_values: false
+          webserver:
+            enabled: true
+            listen_port: 8765
+            listen_address: 0.0.0.0
+            prometheus_metrics_enabled: true
 
     - name: Enable and start Falco service
       ansible.builtin.service:
