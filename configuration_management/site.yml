@@ -61,7 +61,7 @@
 
     - name: Install kernel headers
       ansible.builtin.apt:
-        name: "linux-headers-{{ ansible_kernel }}"
+        name: "linux-headers-{{ ansible_facts['kernel'] }}"
         state: present
         update_cache: yes
 
