@@ -1,6 +1,8 @@
 name: 'Deploy to Development Environment'
 
 on:
+  schedule:
+    - cron: '0 19 * * *'  # 9pm Amsterdam (CEST, UTC+2)
   workflow_call:
     inputs:
       action:
@@ -54,4 +56,4 @@ jobs:
       run: terraform plan
 
     - id: apply
-      run: terraform ${{ inputs.action }} -auto-approve
+      run: terraform ${{ github.event_name == 'schedule' && 'destroy' || inputs.action }} -auto-approve
