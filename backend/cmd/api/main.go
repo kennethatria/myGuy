@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
@@ -15,11 +17,23 @@ import (
 	"myguy/internal/models"
 	"myguy/internal/repositories"
 	"myguy/internal/services"
+	"myguy/internal/tracing"
 )
 
 func main() {
 	// Load environment variables from .env file if it exists
 	godotenv.Load() // Ignore error if .env doesn't exist
+
+	// Initialize OpenTelemetry tracing
+	zipkinURL := os.Getenv("ZIPKIN_URL")
+	if zipkinURL == "" {
+		zipkinURL = "http://localhost:9411/api/v2/spans"
+	}
+	shutdown, err := tracing.InitTracer("myguy-backend", zipkinURL)
+	if err != nil {
+		log.Fatal("Failed to initialize tracer:", err)
+	}
+	defer shutdown(context.Background())
 
 	// Initialize database
 	db, err := gorm.Open(postgres.Open(os.Getenv("DB_CONNECTION")), &gorm.Config{})
@@ -55,6 +69,7 @@ func main() {
 
 	// Setup router
 	r := gin.Default()
+	r.Use(otelgin.Middleware("myguy-backend"))
 
 	// Enable CORS
 	r.Use(func(c *gin.Context) {

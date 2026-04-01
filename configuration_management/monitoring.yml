@@ -1,0 +1,262 @@
+# monitoring.yml - Install Zipkin, Prometheus, and Grafana on the monitoring instance
+
+---
+- name: Configure monitoring instance
+  hosts: monitoring
+  become: yes
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Enable universe repository
+      ansible.builtin.apt_repository:
+        repo: "deb http://archive.ubuntu.com/ubuntu {{ ansible_facts['distribution_release'] }} universe"
+        state: present
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Update apt cache after enabling universe
+      ansible.builtin.apt:
+        update_cache: yes
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install Podman
+      ansible.builtin.apt:
+        name: podman
+        state: present
+      when: ansible_facts['os_family'] == "Debian"
+
+    # --- Zipkin ---
+
+    - name: Pull Zipkin image
+      ansible.builtin.command:
+        cmd: podman pull openzipkin/zipkin
+      changed_when: false
+
+    - name: Run Zipkin container
+      ansible.builtin.command:
+        cmd: podman run --rm -d -p 9411:9411 --name zipkin openzipkin/zipkin
+      register: zipkin_run
+      failed_when: zipkin_run.rc != 0 and 'already in use' not in zipkin_run.stderr
+      changed_when: zipkin_run.rc == 0
+
+    - name: Generate Zipkin systemd service
+      ansible.builtin.command:
+        cmd: podman generate systemd --name zipkin --files --new
+        chdir: /etc/systemd/system
+      changed_when: false
+
+    - name: Enable and start Zipkin systemd service
+      ansible.builtin.systemd:
+        name: container-zipkin
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Set zipkin_url fact for use by other plays
+      ansible.builtin.set_fact:
+        zipkin_url: "http://{{ ansible_host }}:9411/api/v2/spans"
+
+    # --- Prometheus ---
+
+    - name: Create Prometheus config directory
+      ansible.builtin.file:
+        path: /etc/prometheus
+        state: directory
+        mode: "0755"
+
+    - name: Write Prometheus config
+      ansible.builtin.copy:
+        dest: /etc/prometheus/prometheus.yml
+        mode: "0644"
+        content: |
+          global:
+            scrape_interval: 15s
+
+          scrape_configs:
+            - job_name: node_exporter
+              static_configs:
+                - targets: ['{{ instance_vpc_ip }}:9100']
+                  labels:
+                    instance: app
+
+            - job_name: falco
+              static_configs:
+                - targets: ['{{ instance_vpc_ip }}:9376']
+                  labels:
+                    instance: app
+
+    - name: Pull Prometheus image
+      ansible.builtin.command:
+        cmd: podman pull prom/prometheus:latest
+      changed_when: false
+
+    - name: Run Prometheus container
+      ansible.builtin.command:
+        cmd: >
+          podman run -d --restart=always
+          --name prometheus
+          -p 9090:9090
+          -v /etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+          prom/prometheus:latest
+      register: prometheus_run
+      failed_when: prometheus_run.rc != 0 and 'already in use' not in prometheus_run.stderr
+      changed_when: prometheus_run.rc == 0
+
+    - name: Generate Prometheus systemd service
+      ansible.builtin.command:
+        cmd: podman generate systemd --name prometheus --files --new
+        chdir: /etc/systemd/system
+      changed_when: false
+
+    - name: Enable and start Prometheus systemd service
+      ansible.builtin.systemd:
+        name: container-prometheus
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    # --- Grafana ---
+
+    - name: Create Grafana provisioning directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /etc/grafana/provisioning/datasources
+        - /etc/grafana/provisioning/dashboards
+        - /etc/grafana/dashboards
+
+    - name: Write Grafana datasource provisioning
+      ansible.builtin.copy:
+        dest: /etc/grafana/provisioning/datasources/prometheus.yml
+        mode: "0644"
+        content: |
+          apiVersion: 1
+          datasources:
+            - name: Prometheus
+              type: prometheus
+              access: proxy
+              url: http://localhost:9090
+              isDefault: true
+
+    - name: Write Grafana dashboard provisioning config
+      ansible.builtin.copy:
+        dest: /etc/grafana/provisioning/dashboards/default.yml
+        mode: "0644"
+        content: |
+          apiVersion: 1
+          providers:
+            - name: default
+              type: file
+              options:
+                path: /etc/grafana/dashboards
+
+    - name: Write node exporter dashboard
+      ansible.builtin.copy:
+        dest: /etc/grafana/dashboards/node-exporter.json
+        mode: "0644"
+        content: |
+          {
+            "title": "App Instance Metrics",
+            "uid": "node-exporter",
+            "schemaVersion": 36,
+            "panels": [
+              {
+                "type": "timeseries",
+                "title": "CPU Usage (%)",
+                "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+                "targets": [
+                  {
+                    "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[2m])) * 100)",
+                    "legendFormat": "{{ instance }}"
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Memory Usage (%)",
+                "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+                "targets": [
+                  {
+                    "expr": "100 - ((node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100)",
+                    "legendFormat": "{{ instance }}"
+                  }
+                ]
+              }
+            ],
+            "time": { "from": "now-1h", "to": "now" },
+            "refresh": "30s"
+          }
+
+    - name: Write Falco security alerts dashboard
+      ansible.builtin.copy:
+        dest: /etc/grafana/dashboards/falco.json
+        mode: "0644"
+        content: |
+          {
+            "title": "Falco Security Alerts",
+            "uid": "falco-alerts",
+            "schemaVersion": 36,
+            "panels": [
+              {
+                "type": "timeseries",
+                "title": "Security Alerts by Priority",
+                "gridPos": { "x": 0, "y": 0, "w": 24, "h": 8 },
+                "targets": [
+                  {
+                    "expr": "rate(falco_events_total[5m])",
+                    "legendFormat": "{{ priority }} - {{ rule }}"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Total Alerts (last 1h)",
+                "gridPos": { "x": 0, "y": 8, "w": 8, "h": 4 },
+                "targets": [
+                  {
+                    "expr": "increase(falco_events_total[1h])"
+                  }
+                ]
+              }
+            ],
+            "time": { "from": "now-1h", "to": "now" },
+            "refresh": "30s"
+          }
+
+    - name: Pull Grafana image
+      ansible.builtin.command:
+        cmd: podman pull grafana/grafana:latest
+      changed_when: false
+
+    - name: Run Grafana container
+      ansible.builtin.command:
+        cmd: >
+          podman run -d --restart=always
+          --name grafana
+          -p 3000:3000
+          -v /etc/grafana/provisioning:/etc/grafana/provisioning:ro
+          -v /etc/grafana/dashboards:/etc/grafana/dashboards:ro
+          -e GF_AUTH_ANONYMOUS_ENABLED=false
+          -e GF_SERVER_HTTP_ADDR=0.0.0.0
+          grafana/grafana:latest
+      register: grafana_run
+      failed_when: grafana_run.rc != 0 and 'already in use' not in grafana_run.stderr
+      changed_when: grafana_run.rc == 0
+
+    - name: Generate Grafana systemd service
+      ansible.builtin.command:
+        cmd: podman generate systemd --name grafana --files --new
+        chdir: /etc/systemd/system
+      changed_when: false
+
+    - name: Enable and start Grafana systemd service
+      ansible.builtin.systemd:
+        name: container-grafana
+        enabled: yes
+        state: started
+        daemon_reload: yes

@@ -16,3 +16,21 @@ variable "root_password" {
     sensitive   = true
 }
 
+variable "region" {
+    type = string
+    description = "Region with resources"
+    default = "de-fra-2"
+}
+
+variable "infra_name" {
+    type = string
+    description = "default infra name"
+    default = "myguy"
+}
+
+variable "environment" {
+    type = string
+    description = "default infra name"
+    default = "dev"
+}
+

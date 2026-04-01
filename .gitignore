@@ -20,3 +20,6 @@ terraform.tfstate
 terraform.tfstate.backup
 
 .DS_Store
+
+store-service/vendor
+backend/vendor

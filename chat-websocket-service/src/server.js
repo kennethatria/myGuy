@@ -1,3 +1,4 @@
+require('./tracing'); // must be first — instruments http/express before they load
 require('dotenv').config();
 const express = require('express');
 const { createServer } = require('http');
