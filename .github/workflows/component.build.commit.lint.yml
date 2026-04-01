@@ -1,4 +1,4 @@
-name: CI
+name: Run commitlint on PR commits
 
 on: 
   workflow_call:

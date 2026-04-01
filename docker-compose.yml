@@ -68,14 +68,14 @@ services:
       - myguy-network
 
   zipkin:
-    image: openzipkin/zipkin:latest
+    image: docker.io/openzipkin/zipkin:latest
     ports:
       - "9411:9411"
     networks:
       - myguy-network
 
   redis:
-    image: redis:7-alpine
+    image: docker.io/redis:7-alpine
     ports:
       - "6379:6379"
     volumes:
@@ -91,12 +91,12 @@ services:
     command: redis-server --appendonly yes
 
   postgres-db:
-    image: postgres:15-alpine
+    image: docker.io/postgres:15-alpine
     ports:
       - "5433:5432"
     environment:
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=mysecretpassword
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=my_guy
       # Create multiple databases for microservices
       - POSTGRES_MULTIPLE_DATABASES=my_guy,my_guy_chat,my_guy_store

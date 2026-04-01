@@ -13,7 +13,7 @@
     db_password: "{{ lookup('env', 'DB_PASSWORD') }}"
     internal_api_key: "{{ lookup('env', 'INTERNAL_API_KEY') }}"
     server_ip: "{{ ansible_host }}"
-    zipkin_url: "{{ hostvars[groups['monitoring'][0]]['zipkin_url'] }}"
+    zipkin_url: "{{ hostvars[groups['monitoring'][0]]['zipkin_url'] | default('http://10.0.0.3:9411/api/v2/spans') }}"
 
   tasks:
     # --- Application Setup ---
@@ -165,6 +165,17 @@
         enabled: yes
 
     # --- Health Check ---
+
+    - name: Show container status
+      command: podman ps -a
+      args:
+        chdir: "{{ app_dir }}"
+      register: container_status
+      changed_when: false
+
+    - name: Print container status
+      debug:
+        var: container_status.stdout_lines
 
     - name: Wait for backend API to be healthy
       uri:

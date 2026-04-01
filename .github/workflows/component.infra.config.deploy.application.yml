@@ -1,7 +1,14 @@
-name: Deploy Application
+name: Run ansible to deploy application
 
 on:
   workflow_call:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: dev
+        type: string
+
   workflow_dispatch:
     inputs:
       environment:
@@ -11,8 +18,10 @@ on:
         type: choice
         options:
           - dev
-          - cae
-          - prd
+
+env:
+  TF_VERSION: '1.14.6'
+  TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
 
 jobs:
   deploy:
@@ -24,6 +33,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Get server IP from Terraform output
+        id: get_ip
+        working-directory: infra
+        run: |
+          terraform init -input=false
+          echo "SERVER_IP=$(terraform output -raw instance_ip_address)" >> $GITHUB_ENV
+
+      - name: Inject server IP into inventory
+        run: |
+          sed -i "s/APP_INSTANCE_PUBLIC_IP/$SERVER_IP/g" configuration_management/inventory.ini
+
       - name: Install Ansible
         run: |
           sudo apt-get update -y
@@ -32,24 +57,41 @@ jobs:
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+          # Write to ~/.ssh/linode to match the path hardcoded in inventory.ini
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/linode
+          chmod 600 ~/.ssh/linode
+          # Add app instance to known_hosts — monitoring is VPC-only and
+          # is reached via ProxyJump through the app instance (handled in inventory)
+          ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
 
-      - name: Run site playbook (install dependencies)
+      # - name: Check Ansible connectivity
+      #   run: |
+      #     ansible-playbook \
+      #       -i configuration_management/inventory.ini \
+      #       configuration_management/site.yml \
+      #       -e "target=app" \
+      #       --check
+      #   continue-on-error: true
+
+      - name: Configure monitoring instance
+        run: |
+          ansible-playbook \
+            -i configuration_management/inventory.ini \
+            configuration_management/monitoring.yml
+
+      - name: Configure app instance
         run: |
           ansible-playbook \
             -i configuration_management/inventory.ini \
             configuration_management/site.yml \
-            -e "target=myhosts" \
-            --become
+            -e "target=app"
 
-      - name: Run deploy playbook
+      - name: Deploy application
         run: |
           ansible-playbook \
             -i configuration_management/inventory.ini \
             configuration_management/deploy.yml \
-            -e "target=myhosts" \
+            -e "target=app" \
             -e "repo_url=${{ secrets.REPO_URL }}" \
             -e "jwt_secret=${{ secrets.JWT_SECRET }}" \
             -e "db_password=${{ secrets.POSTGRES_PASSWORD }}" \
@@ -57,4 +99,4 @@ jobs:
 
       - name: Cleanup SSH key
         if: always()
-        run: rm -f ~/.ssh/id_rsa
+        run: rm -f ~/.ssh/linode

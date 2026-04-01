@@ -1,4 +1,4 @@
-name: Tests
+name: Run tests and check code coverage
 
 on:
   workflow_call:

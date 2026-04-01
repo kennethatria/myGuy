@@ -15,39 +15,34 @@ graph TB
     subgraph Internet["Internet"]
         User["User / Browser"]
         GHA["GitHub Actions\nCI/CD"]
-        HCP["HCP Terraform\napp.terraform.io"]
+        HCP["HCP Terraform"]
     end
 
-    subgraph Linode["Linode Cloud (de-fra-2)"]
-        NB["NodeBalancer\n:80 (HTTP)\nRound-robin"]
+    subgraph Linode["Linode Cloud"]
+        NB["NodeBalancer\n(public entry point)"]
 
-        subgraph VPC["VPC: myguy-dev  |  Subnet: 10.0.0.0/24"]
-            subgraph AppInstance["App Instance  —  10.0.0.2 (VPC)"]
-                direction TB
-                FW1["Firewall\nAllow: :80, :22 public\nAllow: :9100, :9376 VPC only"]
-                NGINX["Nginx (reverse proxy)"]
-                API["Backend API :8080"]
-                STORE["Store Service :8081"]
-                CHAT["Chat Service :8082"]
-                PG["PostgreSQL :5432\n(my_guy, my_guy_store, my_guy_chat)"]
-                REDIS["Redis :6379"]
-                NE["node_exporter :9100\n(CPU & memory)"]
-                FE["falco-exporter :9376\n(security alerts)"]
+        subgraph VPC["Private VPC"]
+            subgraph AppInstance["App Instance\n(public + VPC)"]
+                NGINX["Nginx\n(reverse proxy)"]
+                API["Backend API"]
+                STORE["Store Service"]
+                CHAT["Chat Service"]
+                PG["PostgreSQL"]
+                REDIS["Redis"]
+                NE["node_exporter\n(CPU & memory)"]
                 FALCO["Falco\n(runtime security)"]
             end
 
-            subgraph MonInstance["Monitoring Instance  —  10.0.0.3 (VPC)"]
-                direction TB
-                FW2["Firewall\nAllow: :22, :9411, :9090, :3000 VPC only\nNo public access"]
-                ZIPKIN["Zipkin :9411\n(distributed tracing)"]
-                PROM["Prometheus :9090\n(scrapes 10.0.0.2:9100 & :9376)"]
-                GRAFANA["Grafana :3000\n(dashboards)"]
+            subgraph MonInstance["Monitoring Instance\n(VPC only)"]
+                ZIPKIN["Zipkin\n(distributed tracing)"]
+                PROM["Prometheus\n(metrics)"]
+                GRAFANA["Grafana\n(dashboards)"]
             end
         end
     end
 
-    User -->|"HTTPS"| NB
-    NB -->|"HTTP :80"| NGINX
+    User -->|"HTTP"| NB
+    NB --> NGINX
     NGINX --> API
     NGINX --> STORE
     NGINX --> CHAT
@@ -55,20 +50,17 @@ graph TB
     CHAT --> REDIS
     STORE -->|"booking notify"| CHAT
 
-    API -->|"traces"| ZIPKIN
-    STORE -->|"traces"| ZIPKIN
-    CHAT -->|"traces"| ZIPKIN
+    API & STORE & CHAT -->|"traces"| ZIPKIN
 
-    FALCO --> FE
-    NE -->|"scrape :9100"| PROM
-    FE -->|"scrape :9376"| PROM
+    FALCO -->|"security metrics"| PROM
+    NE -->|"host metrics"| PROM
     PROM --> GRAFANA
 
-    GHA -->|"terraform plan/apply"| HCP
-    HCP -->|"provision"| AppInstance
-    HCP -->|"provision"| MonInstance
-
-    AppInstance -.->|"ProxyJump SSH"| MonInstance
+    GHA -->|"provision"| HCP
+    HCP --> AppInstance
+    HCP --> MonInstance
+    GHA -->|"configure & deploy"| AppInstance
+    GHA -.->|"via app instance"| MonInstance
 ```
 
 ### Application Services

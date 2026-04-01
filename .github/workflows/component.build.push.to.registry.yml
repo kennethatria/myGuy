@@ -1,4 +1,4 @@
-name: Build and Push Images to Registry
+name: Build and push images to registry
 
 on:
   # push:
@@ -9,12 +9,33 @@ on:
   #     - 'store-service/**'
   #     - 'chat-websocket-service/**'
   workflow_dispatch:
+  workflow_call:
 
 env:
   REGISTRY: ${{ vars.REGISTRY }}
 
 jobs:
+  get-tag:
+    name: Get Image Tag
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.get_release.outputs.image_tag }}
+    steps:
+      - name: Get latest release tag
+        id: get_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if LATEST_TAG=$(gh release view --repo ${{ github.repository }} --json tagName --jq '.tagName' 2>/dev/null); then
+            echo "Found latest release: $LATEST_TAG"
+            echo "image_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          else
+            echo "No releases found, using 'latest'"
+            echo "image_tag=latest" >> $GITHUB_OUTPUT
+          fi
+
   build-push-api:
+    needs: get-tag
     name: API Service
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'dev' }}
@@ -34,10 +55,10 @@ jobs:
           context: ./backend
           platforms: linux/amd64
           push: true
-          tags: ${{ env.REGISTRY }}/myguy-api:latest
+          tags: ${{ env.REGISTRY }}/myguy-api:${{ needs.get-tag.outputs.image_tag }}
 
   build-push-store-service:
-    needs: build-push-api
+    needs: [get-tag, build-push-api]
     name: Store Service
     runs-on: ubuntu-latest
     environment: dev
@@ -57,10 +78,10 @@ jobs:
           context: ./store-service
           platforms: linux/amd64
           push: true
-          tags: ${{ env.REGISTRY }}/myguy-store-service:latest
+          tags: ${{ env.REGISTRY }}/myguy-store-service:${{ needs.get-tag.outputs.image_tag }}
 
   build-push-chat-service:
-    needs: build-push-store-service
+    needs: [get-tag, build-push-store-service]
     name: Chat Websocket Service
     runs-on: ubuntu-latest
     environment: dev
@@ -80,4 +101,4 @@ jobs:
           context: ./chat-websocket-service
           platforms: linux/amd64
           push: true
-          tags: ${{ env.REGISTRY }}/myguy-chat-websocket-service:latest
+          tags: ${{ env.REGISTRY }}/myguy-chat-websocket-service:${{ needs.get-tag.outputs.image_tag }}

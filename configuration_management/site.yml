@@ -36,6 +36,7 @@
           - nodejs
           - npm
           - podman
+          - podman-compose
           - nginx
         state: present
 
@@ -60,7 +61,7 @@
 
     - name: Install kernel headers
       ansible.builtin.apt:
-        name: "linux-headers-{{ ansible_kernel }}"
+        name: "linux-headers-{{ ansible_facts['kernel'] }}"
         state: present
         update_cache: yes
 
@@ -69,10 +70,28 @@
         name: falco
         state: present
 
+    - name: Enable Falco native Prometheus metrics
+      ansible.builtin.blockinfile:
+        path: /etc/falco/falco.yaml
+        marker: "# {mark} ANSIBLE MANAGED - metrics"
+        block: |
+          metrics:
+            enabled: true
+            listen_port: 8765
+            interval: 1h
+            output_rule: true
+            rules_counters_enabled: true
+            resource_utilization_enabled: true
+            state_counters_enabled: true
+            kernel_event_counters_enabled: true
+            libbpf_stats_enabled: true
+            convert_memory_to_mb: true
+            include_empty_values: false
+
     - name: Enable and start Falco service
       ansible.builtin.service:
         name: falco
-        state: started
+        state: restarted
         enabled: yes
 
     # --- node_exporter (CPU/memory metrics for Prometheus) ---
@@ -122,35 +141,4 @@
         state: started
         daemon_reload: yes
 
-    # --- falco-exporter (Falco security alerts for Prometheus) ---
-
-    - name: Pull falco-exporter image
-      ansible.builtin.command:
-        cmd: podman pull falcosecurity/falco-exporter:latest
-      changed_when: false
-
-    - name: Run falco-exporter container
-      ansible.builtin.command:
-        cmd: >
-          podman run -d --restart=always
-          --name falco-exporter
-          -p 9376:9376
-          -v /run/falco/falco.sock:/run/falco/falco.sock
-          falcosecurity/falco-exporter:latest
-      register: falco_exporter_run
-      failed_when: falco_exporter_run.rc != 0 and 'already in use' not in falco_exporter_run.stderr
-      changed_when: falco_exporter_run.rc == 0
-
-    - name: Generate falco-exporter systemd service
-      ansible.builtin.command:
-        cmd: podman generate systemd --name falco-exporter --files --new
-        chdir: /etc/systemd/system
-      changed_when: false
-
-    - name: Enable and start falco-exporter systemd service
-      ansible.builtin.systemd:
-        name: container-falco-exporter
-        enabled: yes
-        state: started
-        daemon_reload: yes
 

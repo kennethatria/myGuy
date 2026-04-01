@@ -32,12 +32,12 @@
 
     - name: Pull Zipkin image
       ansible.builtin.command:
-        cmd: podman pull openzipkin/zipkin
+        cmd: podman pull docker.io/openzipkin/zipkin
       changed_when: false
 
     - name: Run Zipkin container
       ansible.builtin.command:
-        cmd: podman run --rm -d -p 9411:9411 --name zipkin openzipkin/zipkin
+        cmd: podman run -d -p 9411:9411 --name zipkin docker.io/openzipkin/zipkin
       register: zipkin_run
       failed_when: zipkin_run.rc != 0 and 'already in use' not in zipkin_run.stderr
       changed_when: zipkin_run.rc == 0
@@ -84,13 +84,13 @@
 
             - job_name: falco
               static_configs:
-                - targets: ['{{ instance_vpc_ip }}:9376']
+                - targets: ['{{ instance_vpc_ip }}:8765']
                   labels:
                     instance: app
 
     - name: Pull Prometheus image
       ansible.builtin.command:
-        cmd: podman pull prom/prometheus:latest
+        cmd: podman pull docker.io/prom/prometheus:latest
       changed_when: false
 
     - name: Run Prometheus container
@@ -100,7 +100,7 @@
           --name prometheus
           -p 9090:9090
           -v /etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-          prom/prometheus:latest
+          docker.io/prom/prometheus:latest
       register: prometheus_run
       failed_when: prometheus_run.rc != 0 and 'already in use' not in prometheus_run.stderr
       changed_when: prometheus_run.rc == 0
@@ -159,7 +159,7 @@
       ansible.builtin.copy:
         dest: /etc/grafana/dashboards/node-exporter.json
         mode: "0644"
-        content: |
+        content: !unsafe |
           {
             "title": "App Instance Metrics",
             "uid": "node-exporter",
@@ -172,7 +172,7 @@
                 "targets": [
                   {
                     "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[2m])) * 100)",
-                    "legendFormat": "{{ instance }}"
+                    "legendFormat": "{{instance}}"
                   }
                 ]
               },
@@ -183,7 +183,7 @@
                 "targets": [
                   {
                     "expr": "100 - ((node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100)",
-                    "legendFormat": "{{ instance }}"
+                    "legendFormat": "{{instance}}"
                   }
                 ]
               }
@@ -196,7 +196,7 @@
       ansible.builtin.copy:
         dest: /etc/grafana/dashboards/falco.json
         mode: "0644"
-        content: |
+        content: !unsafe |
           {
             "title": "Falco Security Alerts",
             "uid": "falco-alerts",
@@ -209,7 +209,7 @@
                 "targets": [
                   {
                     "expr": "rate(falco_events_total[5m])",
-                    "legendFormat": "{{ priority }} - {{ rule }}"
+                    "legendFormat": "{{priority}} - {{rule}}"
                   }
                 ]
               },
@@ -230,7 +230,7 @@
 
     - name: Pull Grafana image
       ansible.builtin.command:
-        cmd: podman pull grafana/grafana:latest
+        cmd: podman pull docker.io/grafana/grafana:latest
       changed_when: false
 
     - name: Run Grafana container
@@ -243,7 +243,7 @@
           -v /etc/grafana/dashboards:/etc/grafana/dashboards:ro
           -e GF_AUTH_ANONYMOUS_ENABLED=false
           -e GF_SERVER_HTTP_ADDR=0.0.0.0
-          grafana/grafana:latest
+          docker.io/grafana/grafana:latest
       register: grafana_run
       failed_when: grafana_run.rc != 0 and 'already in use' not in grafana_run.stderr
       changed_when: grafana_run.rc == 0
