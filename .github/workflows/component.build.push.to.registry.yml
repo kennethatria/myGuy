@@ -39,9 +39,15 @@ jobs:
     name: API Service
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'dev' }}
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
 
       - name: Log in to Registry
         uses: docker/login-action@v3
@@ -50,6 +56,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ./backend
@@ -57,14 +64,30 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY }}/myguy-api:${{ needs.get-tag.outputs.image_tag }}
 
+      - name: Sign image with Cosign
+        run: cosign sign --yes ${{ env.REGISTRY }}/myguy-api@${{ steps.build.outputs.digest }}
+
+      - name: Verify image signature
+        run: |
+          cosign verify \
+            --certificate-identity-regexp "https://github.com/${{ github.repository }}/.github/workflows/.*" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            ${{ env.REGISTRY }}/myguy-api@${{ steps.build.outputs.digest }}
+
   build-push-store-service:
     needs: [get-tag, build-push-api]
     name: Store Service
     runs-on: ubuntu-latest
     environment: dev
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
 
       - name: Log in to Registry
         uses: docker/login-action@v3
@@ -73,6 +96,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ./store-service
@@ -80,14 +104,30 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY }}/myguy-store-service:${{ needs.get-tag.outputs.image_tag }}
 
+      - name: Sign image with Cosign
+        run: cosign sign --yes ${{ env.REGISTRY }}/myguy-store-service@${{ steps.build.outputs.digest }}
+
+      - name: Verify image signature
+        run: |
+          cosign verify \
+            --certificate-identity-regexp "https://github.com/${{ github.repository }}/.github/workflows/.*" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            ${{ env.REGISTRY }}/myguy-store-service@${{ steps.build.outputs.digest }}
+
   build-push-chat-service:
     needs: [get-tag, build-push-store-service]
     name: Chat Websocket Service
     runs-on: ubuntu-latest
     environment: dev
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
 
       - name: Log in to Registry
         uses: docker/login-action@v3
@@ -96,9 +136,20 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ./chat-websocket-service
           platforms: linux/amd64
           push: true
           tags: ${{ env.REGISTRY }}/myguy-chat-websocket-service:${{ needs.get-tag.outputs.image_tag }}
+
+      - name: Sign image with Cosign
+        run: cosign sign --yes ${{ env.REGISTRY }}/myguy-chat-websocket-service@${{ steps.build.outputs.digest }}
+
+      - name: Verify image signature
+        run: |
+          cosign verify \
+            --certificate-identity-regexp "https://github.com/${{ github.repository }}/.github/workflows/.*" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            ${{ env.REGISTRY }}/myguy-chat-websocket-service@${{ steps.build.outputs.digest }}
