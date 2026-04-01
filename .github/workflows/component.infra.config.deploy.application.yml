@@ -117,7 +117,9 @@ jobs:
             -e "internal_api_key=${{ secrets.INTERNAL_API_KEY }}" \
             -e "registry=${{ env.REGISTRY }}" \
             -e "image_tag=${{ steps.get_tag.outputs.image_tag }}" \
-            -e "github_repository=${{ github.repository }}"
+            -e "github_repository=${{ github.repository }}" \
+            -e "domain=${{ vars.DOMAIN }}" \
+            -e "certbot_email=${{ secrets.CERTBOT_EMAIL }}"
 
       - name: Cleanup SSH key
         if: always()

@@ -38,6 +38,8 @@
           - podman
           - podman-compose
           - nginx
+          - certbot
+          - python3-certbot-nginx
         state: present
 
     # --- Falco ---
