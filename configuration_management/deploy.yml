@@ -98,11 +98,11 @@
         dest: "{{ app_dir }}/frontend/.env"
         mode: "0644"
         content: |
-          VITE_API_URL=http://{{ server_ip }}/api/v1
-          VITE_STORE_API_URL=http://{{ server_ip }}/store/api/v1
-          VITE_STORE_API_BASE_URL=http://{{ server_ip }}/store
-          VITE_CHAT_WS_URL=http://{{ server_ip }}
-          VITE_CHAT_API_URL=http://{{ server_ip }}/chat/api/v1
+          VITE_API_URL=https://{{ domain }}/api/v1
+          VITE_STORE_API_URL=https://{{ domain }}/store/api/v1
+          VITE_STORE_API_BASE_URL=https://{{ domain }}/store
+          VITE_CHAT_WS_URL=https://{{ domain }}
+          VITE_CHAT_API_URL=https://{{ domain }}/chat/api/v1
 
     - name: Install frontend dependencies
       command: npm install
