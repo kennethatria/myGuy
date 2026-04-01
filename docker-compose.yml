@@ -1,6 +1,7 @@
 services:
   api:
     image: docker.io/katria47/myguy-api:latest
+    restart: on-failure
     ports:
       - "8080:8080"
     environment:
@@ -16,6 +17,7 @@ services:
 
   store-service:
     image: docker.io/katria47/myguy-store-service:latest
+    restart: on-failure
     ports:
       - "8081:8081"
     environment:
