@@ -1,3 +1,5 @@
+name: Run zap security webScan
+
 on: 
   workflow_call:
 
