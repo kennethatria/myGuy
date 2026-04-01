@@ -1,0 +1,8 @@
+---
+# VPC IP of the app instance — Prometheus scrapes this address
+# Must match Terraform locals.instance_vpc_ip in infra/main.tf
+instance_vpc_ip: "10.0.0.2"
+
+# Ports exposed by the app instance for metrics collection
+node_exporter_port: 9100
+falco_metrics_port: 8765
