@@ -146,13 +146,13 @@ resource "linode_instance" "zipkin_instance" {
   private_ip      = true
 
   interface {
-    purpose = "vpc"
-  }
-
-  interface {
     purpose      = "vpc"
     subnet_id    = linode_vpc_subnet.main.id
     ipam_address = "${local.zipkin_vpc_ip}/24"
+  }
+
+  interface {
+    purpose = "public"
   }
 }
 
