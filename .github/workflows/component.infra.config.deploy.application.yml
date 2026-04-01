@@ -58,7 +58,7 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           # Write to ~/.ssh/linode to match the path hardcoded in inventory.ini
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/linode
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/linode
           chmod 600 ~/.ssh/linode
           # Add app instance to known_hosts — monitoring is VPC-only and
           # is reached via ProxyJump through the app instance (handled in inventory)
