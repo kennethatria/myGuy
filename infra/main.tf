@@ -146,6 +146,14 @@ resource "linode_firewall" "zipkin_firewall" {
   }
 
   inbound {
+    label    = "allow-loki-from-vpc"
+    action   = "ACCEPT"
+    protocol = "TCP"
+    ports    = "3100"
+    ipv4     = ["10.0.0.0/24"]
+  }
+
+  inbound {
     label    = "allow-grafana-from-vpc"
     action   = "ACCEPT"
     protocol = "TCP"

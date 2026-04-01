@@ -266,3 +266,156 @@
         enabled: yes
         state: started
         daemon_reload: yes
+
+    # --- Loki ---
+
+    - name: Create Loki config directory
+      ansible.builtin.file:
+        path: /etc/loki
+        state: directory
+        mode: "0755"
+
+    - name: Write Loki config
+      ansible.builtin.copy:
+        dest: /etc/loki/loki-config.yml
+        mode: "0644"
+        content: |
+          auth_enabled: false
+
+          server:
+            http_listen_port: 3100
+
+          common:
+            path_prefix: /loki
+            storage:
+              filesystem:
+                chunks_directory: /loki/chunks
+                rules_directory: /loki/rules
+            replication_factor: 1
+            ring:
+              instance_addr: 127.0.0.1
+              kvstore:
+                store: inmemory
+
+          schema_config:
+            configs:
+              - from: 2020-10-24
+                store: tsdb
+                object_store: filesystem
+                schema: v13
+                index:
+                  prefix: index_
+                  period: 24h
+
+          analytics:
+            reporting_enabled: false
+
+    - name: Pull Loki image
+      ansible.builtin.command:
+        cmd: podman pull docker.io/grafana/loki:2.9.10
+      changed_when: false
+
+    - name: Run Loki container
+      ansible.builtin.command:
+        cmd: >
+          podman run -d --restart=always
+          --name loki
+          -p 3100:3100
+          -v /etc/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+          -v loki-data:/loki
+          docker.io/grafana/loki:2.9.10
+          -config.file=/etc/loki/loki-config.yml
+      register: loki_run
+      failed_when: loki_run.rc != 0 and 'already in use' not in loki_run.stderr
+      changed_when: loki_run.rc == 0
+
+    - name: Generate Loki systemd service
+      ansible.builtin.command:
+        cmd: podman generate systemd --name loki --files --new
+        chdir: /etc/systemd/system
+      changed_when: false
+
+    - name: Enable and start Loki systemd service
+      ansible.builtin.systemd:
+        name: container-loki
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    # --- Grafana: Loki datasource + WAF dashboard ---
+
+    - name: Write Grafana Loki datasource
+      ansible.builtin.copy:
+        dest: /etc/grafana/provisioning/datasources/loki.yml
+        mode: "0644"
+        content: |
+          apiVersion: 1
+          datasources:
+            - name: Loki
+              type: loki
+              uid: loki
+              access: proxy
+              url: http://localhost:3100
+              isDefault: false
+
+    - name: Write WAF dashboard
+      ansible.builtin.copy:
+        dest: /etc/grafana/dashboards/waf-modsecurity.json
+        mode: "0644"
+        content: !unsafe |
+          {
+            "title": "WAF - ModSecurity Detections",
+            "uid": "waf-modsecurity",
+            "schemaVersion": 36,
+            "panels": [
+              {
+                "type": "logs",
+                "title": "Recent Detections",
+                "gridPos": { "x": 0, "y": 0, "w": 24, "h": 10 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "targets": [
+                  {
+                    "expr": "{job=\"modsecurity\"} |~ \"ModSecurity: Warning\"",
+                    "refId": "A"
+                  }
+                ],
+                "options": {
+                  "showLabels": true,
+                  "showTime": true,
+                  "wrapLogMessage": true
+                }
+              },
+              {
+                "type": "timeseries",
+                "title": "Requests Exceeding Anomaly Threshold",
+                "gridPos": { "x": 0, "y": 10, "w": 16, "h": 8 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "targets": [
+                  {
+                    "expr": "sum(count_over_time({job=\"modsecurity\"} |~ \"Anomaly Score Exceeded\"[5m]))",
+                    "legendFormat": "detections",
+                    "refId": "A"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Total Detections (last 1h)",
+                "gridPos": { "x": 16, "y": 10, "w": 8, "h": 8 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "targets": [
+                  {
+                    "expr": "sum(count_over_time({job=\"modsecurity\"} |~ \"Anomaly Score Exceeded\"[1h]))",
+                    "refId": "A"
+                  }
+                ]
+              }
+            ],
+            "time": { "from": "now-6h", "to": "now" },
+            "refresh": "30s"
+          }
+
+    - name: Restart Grafana to load Loki datasource
+      ansible.builtin.command:
+        cmd: podman restart grafana
+      changed_when: true

@@ -14,9 +14,8 @@ SecRequestBodyLimitAction Reject
 # Response body inspection (off for performance)
 SecResponseBodyAccess Off
 
-# Audit logging — Off initially to prevent unbounded log growth
-# Enable with: SecAuditEngine RelevantOnly
-SecAuditEngine Off
+# Audit logging — RelevantOnly logs only requests that triggered a rule
+SecAuditEngine RelevantOnly
 SecAuditLog /var/log/nginx/modsecurity_audit.log
 SecAuditLogParts ABIJDEFHZ
 SecAuditLogType Serial

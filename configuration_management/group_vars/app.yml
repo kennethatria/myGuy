@@ -2,3 +2,7 @@
 # VPC static IP assigned to the app instance (eth1 / netplan)
 # Must match Terraform locals.instance_vpc_ip in infra/main.tf
 vpc_ip: "10.0.0.2"
+
+# VPC IP of the monitoring instance — used for Promtail → Loki push
+# Must match Terraform locals.zipkin_vpc_ip in infra/main.tf
+monitoring_vpc_ip: "10.0.0.3"

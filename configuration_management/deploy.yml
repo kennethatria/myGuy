@@ -212,6 +212,8 @@
               ssl_protocols TLSv1.2 TLSv1.3;
               ssl_ciphers HIGH:!aNULL:!MD5;
 
+              error_log /var/log/nginx/error.log warn;
+
               modsecurity on;
               modsecurity_rules_file /etc/nginx/modsecurity/coraza.conf;
 
