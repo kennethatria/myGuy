@@ -37,6 +37,36 @@
           - libnginx-mod-http-modsecurity
         state: present
 
+    # --- Swap (build headroom on 1GB nanode) ---
+
+    - name: Create swapfile
+      ansible.builtin.command:
+        cmd: fallocate -l 1536M /swapfile
+        creates: /swapfile
+
+    - name: Set swapfile permissions
+      ansible.builtin.file:
+        path: /swapfile
+        mode: "0600"
+
+    - name: Format swapfile
+      ansible.builtin.command:
+        cmd: mkswap /swapfile
+        creates: /proc/swaps  # only a rough guard — mkswap is idempotent
+
+    - name: Enable swapfile
+      ansible.builtin.command:
+        cmd: swapon /swapfile
+      register: swapon_result
+      failed_when: swapon_result.rc != 0 and 'already in use' not in swapon_result.stderr
+      changed_when: swapon_result.rc == 0
+
+    - name: Persist swapfile in fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "/swapfile none swap sw 0 0"
+        state: present
+
     # --- VPC Network Interface ---
 
     - name: Write VPC netplan config
