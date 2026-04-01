@@ -295,6 +295,4 @@
       debug:
         msg: >
           Deployment complete.
-          API: http://{{ ansible_host }}:8080
-          Store: http://{{ ansible_host }}:8081
-          Chat: http://{{ ansible_host }}:8082
+          https://{{ domain }}
