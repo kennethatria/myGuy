@@ -1,0 +1,17 @@
+# main.yml - Full provisioning orchestrator
+# Run order: monitoring first so zipkin_url is available to the app plays
+#
+# Usage:
+#   ansible-playbook main.yml -i inventory.ini
+#
+# Or run individually:
+#   ansible-playbook monitoring.yml -i inventory.ini   # monitoring instance only
+#   ansible-playbook site.yml -i inventory.ini         # app instance infrastructure
+#   ansible-playbook deploy.yml -i inventory.ini       # app deployment
+
+---
+- import_playbook: monitoring.yml
+
+- import_playbook: site.yml
+
+- import_playbook: deploy.yml
