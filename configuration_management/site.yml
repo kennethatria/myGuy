@@ -126,7 +126,7 @@
 
     - name: Pull falco-exporter image
       ansible.builtin.command:
-        cmd: podman pull falcosecurity/falco-exporter:latest
+        cmd: podman pull docker.io/falcosecurity/falco-exporter:latest
       changed_when: false
 
     - name: Run falco-exporter container
@@ -136,7 +136,7 @@
           --name falco-exporter
           -p 9376:9376
           -v /run/falco/falco.sock:/run/falco/falco.sock
-          falcosecurity/falco-exporter:latest
+          docker.io/falcosecurity/falco-exporter:latest
       register: falco_exporter_run
       failed_when: falco_exporter_run.rc != 0 and 'already in use' not in falco_exporter_run.stderr
       changed_when: falco_exporter_run.rc == 0
