@@ -159,7 +159,7 @@
       ansible.builtin.copy:
         dest: /etc/grafana/dashboards/node-exporter.json
         mode: "0644"
-        content: |
+        content: !unsafe |
           {
             "title": "App Instance Metrics",
             "uid": "node-exporter",
@@ -172,7 +172,7 @@
                 "targets": [
                   {
                     "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[2m])) * 100)",
-                    "legendFormat": "{{ instance }}"
+                    "legendFormat": "{{instance}}"
                   }
                 ]
               },
@@ -183,7 +183,7 @@
                 "targets": [
                   {
                     "expr": "100 - ((node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100)",
-                    "legendFormat": "{{ instance }}"
+                    "legendFormat": "{{instance}}"
                   }
                 ]
               }
@@ -196,7 +196,7 @@
       ansible.builtin.copy:
         dest: /etc/grafana/dashboards/falco.json
         mode: "0644"
-        content: |
+        content: !unsafe |
           {
             "title": "Falco Security Alerts",
             "uid": "falco-alerts",
@@ -209,7 +209,7 @@
                 "targets": [
                   {
                     "expr": "rate(falco_events_total[5m])",
-                    "legendFormat": "{{ priority }} - {{ rule }}"
+                    "legendFormat": "{{priority}} - {{rule}}"
                   }
                 ]
               },
