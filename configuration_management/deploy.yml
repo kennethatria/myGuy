@@ -24,7 +24,7 @@
     # --- Application Setup ---
 
     - name: Create application directory
-      file:
+      ansible.builtin.file:
         path: "{{ app_dir }}"
         state: directory
         owner: "{{ ansible_user }}"
@@ -32,7 +32,7 @@
         mode: "0755"
 
     - name: Clone or update repository
-      git:
+      ansible.builtin.git:
         repo: "{{ repo_url }}"
         dest: "{{ app_dir }}"
         version: "{{ git_branch }}"
@@ -42,7 +42,7 @@
     # --- Environment Configuration ---
 
     - name: Write .env file
-      copy:
+      ansible.builtin.copy:
         dest: "{{ app_dir }}/.env"
         mode: "0600"
         owner: "{{ ansible_user }}"
@@ -55,8 +55,8 @@
     # --- Deploy ---
 
     - name: Pull images from Docker Hub
-      command: podman compose pull
-      args:
+      ansible.builtin.command:
+        cmd: podman compose pull
         chdir: "{{ app_dir }}"
       environment:
         JWT_SECRET: "{{ jwt_secret }}"
@@ -64,23 +64,25 @@
         INTERNAL_API_KEY: "{{ internal_api_key }}"
 
     - name: Get image digests
-      command: podman image inspect --format {% raw %}"{{.Digest}}"{% endraw %} {{ item }}
+      ansible.builtin.command:
+        cmd: podman image inspect --format {% raw %}"{{.Digest}}"{% endraw %} {{ item }}
       loop: "{{ images_to_verify }}"
       register: image_digests
       changed_when: false
 
     - name: Verify image signatures with cosign
-      command: >
-        cosign verify
-        --certificate-identity-regexp "https://github.com/{{ github_repository }}/.github/workflows/.*"
-        --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
-        {{ item.item | regex_replace(':.*$', '') }}@{{ item.stdout }}
+      ansible.builtin.command:
+        cmd: >
+          cosign verify
+          --certificate-identity-regexp "https://github.com/{{ github_repository }}/.github/workflows/.*"
+          --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+          {{ item.item | regex_replace(':.*$', '') }}@{{ item.stdout }}
       loop: "{{ image_digests.results }}"
       changed_when: false
 
     - name: Start application stack
-      command: podman compose up -d --force-recreate
-      args:
+      ansible.builtin.command:
+        cmd: podman compose up -d --force-recreate
         chdir: "{{ app_dir }}"
       environment:
         JWT_SECRET: "{{ jwt_secret }}"
@@ -90,7 +92,7 @@
     # --- Frontend Build ---
 
     - name: Write frontend .env
-      copy:
+      ansible.builtin.copy:
         dest: "{{ app_dir }}/frontend/.env"
         mode: "0644"
         content: |
@@ -101,13 +103,13 @@
           VITE_CHAT_API_URL=https://{{ domain }}/chat/api/v1
 
     - name: Install frontend dependencies
-      command: npm install
-      args:
+      ansible.builtin.command:
+        cmd: npm install
         chdir: "{{ app_dir }}/frontend"
 
     - name: Build frontend
-      command: npm run build
-      args:
+      ansible.builtin.command:
+        cmd: npm run build
         chdir: "{{ app_dir }}/frontend"
 
     # --- Nginx + TLS ---
@@ -126,14 +128,14 @@
       notify: reload nginx
 
     - name: Enable nginx site
-      file:
+      ansible.builtin.file:
         src: /etc/nginx/sites-available/myguy
         dest: /etc/nginx/sites-enabled/myguy
         state: link
       notify: reload nginx
 
     - name: Remove default nginx site
-      file:
+      ansible.builtin.file:
         path: /etc/nginx/sites-enabled/default
         state: absent
       notify: reload nginx
@@ -160,18 +162,18 @@
     # --- Health Check ---
 
     - name: Show container status
-      command: podman ps -a
-      args:
+      ansible.builtin.command:
+        cmd: podman ps -a
         chdir: "{{ app_dir }}"
       register: container_status
       changed_when: false
 
     - name: Print container status
-      debug:
+      ansible.builtin.debug:
         var: container_status.stdout_lines
 
     - name: Wait for backend API to be healthy
-      uri:
+      ansible.builtin.uri:
         url: "http://localhost:8080/health"
         status_code: 200
       register: health_check
@@ -180,7 +182,7 @@
       until: health_check.status == 200
 
     - name: Report deployment status
-      debug:
+      ansible.builtin.debug:
         msg: >
           Deployment complete.
           https://{{ domain }}
