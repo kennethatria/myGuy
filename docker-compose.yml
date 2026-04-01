@@ -8,7 +8,7 @@ services:
       - PORT=8080
       - JWT_SECRET=${JWT_SECRET}
       - DB_CONNECTION=host=postgres-db user=postgres password=${DB_PASSWORD} dbname=my_guy port=5432 sslmode=disable
-      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+      - ZIPKIN_URL=${ZIPKIN_URL:-http://zipkin:9411/api/v2/spans}
     depends_on:
       postgres-db:
         condition: service_healthy
@@ -28,7 +28,7 @@ services:
       # Chat service integration for booking notifications
       - CHAT_API_URL=http://chat-websocket-service:8082/api/v1
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
-      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+      - ZIPKIN_URL=${ZIPKIN_URL:-http://zipkin:9411/api/v2/spans}
     volumes:
       - store-uploads:/app/uploads
     depends_on:
@@ -56,7 +56,7 @@ services:
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       # Redis for horizontal scaling (optional - enables multi-instance mode)
       - REDIS_URL=redis://redis:6379/0
-      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+      - ZIPKIN_URL=${ZIPKIN_URL:-http://zipkin:9411/api/v2/spans}
     depends_on:
       postgres-db:
         condition: service_healthy
