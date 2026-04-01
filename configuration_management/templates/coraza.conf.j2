@@ -21,10 +21,6 @@ SecAuditLog /var/log/nginx/modsecurity_audit.log
 SecAuditLogParts ABIJDEFHZ
 SecAuditLogType Serial
 
-# Default actions — log but pass in DetectionOnly mode
-SecDefaultAction "phase:1,log,auditlog,pass"
-SecDefaultAction "phase:2,log,auditlog,pass"
-
 # OWASP Core Rule Set
 Include {{ coraza_config_dir }}/owasp-crs/crs-setup.conf
 Include {{ coraza_config_dir }}/owasp-crs/rules/*.conf
