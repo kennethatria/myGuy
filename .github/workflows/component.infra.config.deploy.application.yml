@@ -55,6 +55,9 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y ansible
 
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install containers.podman
+
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
 
