@@ -1,0 +1,128 @@
+# security.yml - WAF (ModSecurity/OWASP CRS), Falco runtime security, cosign
+
+---
+- name: Configure app instance security tooling
+  hosts: "{{ target | default('app') }}"
+  become: yes
+
+  tasks:
+    # --- ModSecurity WAF ---
+
+    - name: Create ModSecurity config directory
+      ansible.builtin.file:
+        path: /etc/nginx/modsecurity
+        state: directory
+        mode: "0755"
+
+    - name: Clone OWASP Core Rule Set
+      ansible.builtin.git:
+        repo: https://github.com/coreruleset/coreruleset.git
+        dest: /etc/nginx/modsecurity/owasp-crs
+        version: "v4.0.0"
+        force: no
+
+    - name: Copy CRS setup config
+      ansible.builtin.copy:
+        src: /etc/nginx/modsecurity/owasp-crs/crs-setup.conf.example
+        dest: /etc/nginx/modsecurity/owasp-crs/crs-setup.conf
+        remote_src: yes
+        force: no
+
+    - name: Write ModSecurity config
+      ansible.builtin.template:
+        src: coraza.conf.j2
+        dest: /etc/nginx/modsecurity/coraza.conf
+        mode: "0644"
+      vars:
+        coraza_config_dir: /etc/nginx/modsecurity
+
+    - name: Add modsecurity_audit.log logrotate config
+      ansible.builtin.copy:
+        dest: /etc/logrotate.d/modsecurity
+        mode: "0644"
+        content: |
+          /var/log/nginx/modsecurity_audit.log {
+              daily
+              missingok
+              rotate 14
+              compress
+              delaycompress
+              notifempty
+              sharedscripts
+              postrotate
+                  nginx -s reopen
+              endscript
+          }
+
+    # --- Falco ---
+
+    - name: Download Falco GPG key
+      ansible.builtin.get_url:
+        url: https://falco.org/repo/falcosecurity-packages.asc
+        dest: /tmp/falcosecurity-packages.asc
+        mode: "0644"
+
+    - name: Dearmor Falco GPG key
+      ansible.builtin.shell:
+        cmd: gpg --dearmor -o /usr/share/keyrings/falco-archive-keyring.gpg /tmp/falcosecurity-packages.asc
+        creates: /usr/share/keyrings/falco-archive-keyring.gpg
+
+    - name: Add Falco apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/falco-archive-keyring.gpg] https://download.falco.org/packages/deb stable main"
+        filename: falcosecurity
+        state: present
+
+    - name: Install kernel headers
+      ansible.builtin.apt:
+        name: "linux-headers-{{ ansible_facts['kernel'] }}"
+        state: present
+        update_cache: yes
+
+    - name: Install Falco
+      ansible.builtin.apt:
+        name: falco
+        state: present
+
+    - name: Remove old Falco metrics blockinfile entry
+      ansible.builtin.blockinfile:
+        path: /etc/falco/falco.yaml
+        marker: "# {mark} ANSIBLE MANAGED - metrics"
+        state: absent
+
+    - name: Write Falco Prometheus metrics config
+      ansible.builtin.copy:
+        dest: /etc/falco/config.d/prometheus.yaml
+        mode: "0644"
+        content: |
+          metrics:
+            enabled: true
+            interval: 1h
+            output_rule: false
+            rules_counters_enabled: true
+            resource_utilization_enabled: true
+            state_counters_enabled: true
+            kernel_event_counters_enabled: true
+            libbpf_stats_enabled: true
+            convert_memory_to_mb: true
+            include_empty_values: false
+          webserver:
+            enabled: true
+            listen_port: 8765
+            listen_address: 0.0.0.0
+            prometheus_metrics_enabled: true
+
+    - name: Enable and start Falco service
+      ansible.builtin.service:
+        name: falco
+        state: restarted
+        enabled: yes
+
+    # --- Cosign ---
+
+    - name: Install cosign for image signature verification
+      ansible.builtin.get_url:
+        url: https://github.com/sigstore/cosign/releases/download/v2.4.1/cosign-linux-amd64
+        dest: /usr/local/bin/cosign
+        mode: "0755"
+        force: no

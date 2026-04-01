@@ -50,10 +50,32 @@ jobs:
         run: |
           sed -i "s/APP_INSTANCE_PUBLIC_IP/$SERVER_IP/g" configuration_management/inventory.ini
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+        env:
+          VITE_API_URL: https://${{ vars.DOMAIN }}/api/v1
+          VITE_STORE_API_URL: https://${{ vars.DOMAIN }}/store/api/v1
+          VITE_STORE_API_BASE_URL: https://${{ vars.DOMAIN }}/store
+          VITE_CHAT_WS_URL: https://${{ vars.DOMAIN }}
+          VITE_CHAT_API_URL: https://${{ vars.DOMAIN }}/chat/api/v1
+
       - name: Install Ansible
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y ansible
+          sudo apt-get install -y ansible rsync
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install containers.podman
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
@@ -98,11 +120,25 @@ jobs:
             -i configuration_management/inventory.ini \
             configuration_management/monitoring.yml
 
-      - name: Configure app instance
+      - name: Configure app instance base
         run: |
           ansible-playbook \
             -i configuration_management/inventory.ini \
             configuration_management/site.yml \
+            -e "target=app"
+
+      - name: Configure app instance security
+        run: |
+          ansible-playbook \
+            -i configuration_management/inventory.ini \
+            configuration_management/security.yml \
+            -e "target=app"
+
+      - name: Configure app instance observability
+        run: |
+          ansible-playbook \
+            -i configuration_management/inventory.ini \
+            configuration_management/observability.yml \
             -e "target=app"
 
       - name: Deploy application
@@ -120,6 +156,13 @@ jobs:
             -e "github_repository=${{ github.repository }}" \
             -e "domain=${{ vars.DOMAIN }}" \
             -e "certbot_email=${{ secrets.CERTBOT_EMAIL }}"
+
+      - name: Upload frontend dist
+        run: |
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/linode -o StrictHostKeyChecking=no" \
+            frontend/dist/ \
+            root@$SERVER_IP:/opt/myguy/frontend/dist/
 
       - name: Cleanup SSH key
         if: always()

@@ -14,16 +14,11 @@ SecRequestBodyLimitAction Reject
 # Response body inspection (off for performance)
 SecResponseBodyAccess Off
 
-# Audit logging — Off initially to prevent unbounded log growth
-# Enable with: SecAuditEngine RelevantOnly
-SecAuditEngine Off
+# Audit logging — RelevantOnly logs only requests that triggered a rule
+SecAuditEngine RelevantOnly
 SecAuditLog /var/log/nginx/modsecurity_audit.log
 SecAuditLogParts ABIJDEFHZ
 SecAuditLogType Serial
-
-# Default actions — log but pass in DetectionOnly mode
-SecDefaultAction "phase:1,log,auditlog,pass"
-SecDefaultAction "phase:2,log,auditlog,pass"
 
 # OWASP Core Rule Set
 Include {{ coraza_config_dir }}/owasp-crs/crs-setup.conf

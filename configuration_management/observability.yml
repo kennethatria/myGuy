@@ -1,0 +1,139 @@
+# observability.yml - node_exporter (CPU/memory metrics for Prometheus)
+
+---
+- name: Configure app instance observability
+  hosts: "{{ target | default('app') }}"
+  become: yes
+
+  tasks:
+    - name: Download node_exporter
+      ansible.builtin.get_url:
+        url: https://github.com/prometheus/node_exporter/releases/download/v1.8.2/node_exporter-1.8.2.linux-amd64.tar.gz
+        dest: /tmp/node_exporter.tar.gz
+        mode: "0644"
+
+    - name: Extract node_exporter
+      ansible.builtin.unarchive:
+        src: /tmp/node_exporter.tar.gz
+        dest: /tmp
+        remote_src: yes
+
+    - name: Install node_exporter binary
+      ansible.builtin.copy:
+        src: /tmp/node_exporter-1.8.2.linux-amd64/node_exporter
+        dest: /usr/local/bin/node_exporter
+        mode: "0755"
+        remote_src: yes
+
+    - name: Create node_exporter systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/node_exporter.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Prometheus node_exporter
+          After=network.target
+
+          [Service]
+          ExecStart=/usr/local/bin/node_exporter \
+            --collector.disable-defaults \
+            --collector.cpu \
+            --collector.meminfo
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start node_exporter
+      ansible.builtin.systemd:
+        name: node_exporter
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    # --- Promtail (ships ModSecurity audit log to Loki) ---
+
+    - name: Install unzip
+      ansible.builtin.apt:
+        name: unzip
+        state: present
+
+    - name: Download Promtail
+      ansible.builtin.get_url:
+        url: https://github.com/grafana/loki/releases/download/v2.9.10/promtail-linux-amd64.zip
+        dest: /tmp/promtail-linux-amd64.zip
+        mode: "0644"
+
+    - name: Extract Promtail
+      ansible.builtin.unarchive:
+        src: /tmp/promtail-linux-amd64.zip
+        dest: /tmp
+        remote_src: yes
+
+    - name: Install Promtail binary
+      ansible.builtin.copy:
+        src: /tmp/promtail-linux-amd64
+        dest: /usr/local/bin/promtail
+        mode: "0755"
+        remote_src: yes
+
+    - name: Create Promtail directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /etc/promtail
+        - /var/lib/promtail
+
+    - name: Write Promtail config
+      ansible.builtin.copy:
+        dest: /etc/promtail/config.yml
+        mode: "0644"
+        content: |
+          server:
+            http_listen_port: 9080
+            grpc_listen_port: 0
+
+          positions:
+            filename: /var/lib/promtail/positions.yaml
+
+          clients:
+            - url: http://{{ monitoring_vpc_ip }}:3100/loki/api/v1/push
+
+          scrape_configs:
+            - job_name: modsecurity
+              static_configs:
+                - targets:
+                    - localhost
+                  labels:
+                    job: modsecurity
+                    __path__: /var/log/nginx/modsecurity_audit.log
+              pipeline_stages:
+                - regex:
+                    expression: '.*\[id "(?P<rule_id>\d+)"\]'
+                - labels:
+                    rule_id:
+
+    - name: Create Promtail systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/promtail.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Promtail log shipper
+          After=network.target
+
+          [Service]
+          ExecStart=/usr/local/bin/promtail -config.file=/etc/promtail/config.yml
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start Promtail
+      ansible.builtin.systemd:
+        name: promtail
+        enabled: yes
+        state: started
+        daemon_reload: yes

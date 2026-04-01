@@ -5,13 +5,19 @@
 #   ansible-playbook main.yml -i inventory.ini
 #
 # Or run individually:
-#   ansible-playbook monitoring.yml -i inventory.ini   # monitoring instance only
-#   ansible-playbook site.yml -i inventory.ini         # app instance infrastructure
-#   ansible-playbook deploy.yml -i inventory.ini       # app deployment
+#   ansible-playbook monitoring.yml -i inventory.ini     # monitoring instance only
+#   ansible-playbook site.yml -i inventory.ini           # base packages + networking
+#   ansible-playbook security.yml -i inventory.ini       # WAF, Falco, cosign
+#   ansible-playbook observability.yml -i inventory.ini  # node_exporter
+#   ansible-playbook deploy.yml -i inventory.ini         # app deployment
 
 ---
 - import_playbook: monitoring.yml
 
 - import_playbook: site.yml
+
+- import_playbook: security.yml
+
+- import_playbook: observability.yml
 
 - import_playbook: deploy.yml

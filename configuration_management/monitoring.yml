@@ -1,9 +1,15 @@
-# monitoring.yml - Install Zipkin, Prometheus, and Grafana on the monitoring instance
+# monitoring.yml - Install Zipkin, Prometheus, Grafana, and Loki on the monitoring instance
 
 ---
 - name: Configure monitoring instance
   hosts: monitoring
   become: yes
+
+  handlers:
+    - name: restart grafana
+      ansible.builtin.command:
+        cmd: podman restart grafana
+      changed_when: false
 
   tasks:
     - name: Update apt cache
@@ -30,21 +36,18 @@
 
     # --- Zipkin ---
 
-    - name: Pull Zipkin image
-      ansible.builtin.command:
-        cmd: podman pull docker.io/openzipkin/zipkin
-      changed_when: false
-
     - name: Run Zipkin container
-      ansible.builtin.command:
-        cmd: podman run -d -p 9411:9411 --name zipkin docker.io/openzipkin/zipkin
-      register: zipkin_run
-      failed_when: zipkin_run.rc != 0 and 'already in use' not in zipkin_run.stderr
-      changed_when: zipkin_run.rc == 0
+      containers.podman.podman_container:
+        name: zipkin
+        image: docker.io/openzipkin/zipkin
+        state: started
+        ports:
+          - "9411:9411"
+        restart_policy: always
 
     - name: Generate Zipkin systemd service
       ansible.builtin.command:
-        cmd: podman generate systemd --name zipkin --files --new
+        cmd: podman generate systemd --name zipkin --files
         chdir: /etc/systemd/system
       changed_when: false
 
@@ -78,36 +81,30 @@
           scrape_configs:
             - job_name: node_exporter
               static_configs:
-                - targets: ['{{ instance_vpc_ip }}:9100']
+                - targets: ['{{ instance_vpc_ip }}:{{ node_exporter_port }}']
                   labels:
                     instance: app
 
             - job_name: falco
               static_configs:
-                - targets: ['{{ instance_vpc_ip }}:8765']
+                - targets: ['{{ instance_vpc_ip }}:{{ falco_metrics_port }}']
                   labels:
                     instance: app
 
-    - name: Pull Prometheus image
-      ansible.builtin.command:
-        cmd: podman pull docker.io/prom/prometheus:latest
-      changed_when: false
-
     - name: Run Prometheus container
-      ansible.builtin.command:
-        cmd: >
-          podman run -d --restart=always
-          --name prometheus
-          -p 9090:9090
-          -v /etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-          docker.io/prom/prometheus:latest
-      register: prometheus_run
-      failed_when: prometheus_run.rc != 0 and 'already in use' not in prometheus_run.stderr
-      changed_when: prometheus_run.rc == 0
+      containers.podman.podman_container:
+        name: prometheus
+        image: docker.io/prom/prometheus:latest
+        state: started
+        ports:
+          - "9090:9090"
+        volumes:
+          - /etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+        restart_policy: always
 
     - name: Generate Prometheus systemd service
       ansible.builtin.command:
-        cmd: podman generate systemd --name prometheus --files --new
+        cmd: podman generate systemd --name prometheus --files
         chdir: /etc/systemd/system
       changed_when: false
 
@@ -124,7 +121,7 @@
       changed_when: false
       failed_when: false
 
-    # --- Grafana ---
+    # --- Grafana provisioning files ---
 
     - name: Create Grafana provisioning directories
       ansible.builtin.file:
@@ -136,7 +133,7 @@
         - /etc/grafana/provisioning/dashboards
         - /etc/grafana/dashboards
 
-    - name: Write Grafana datasource provisioning
+    - name: Write Grafana Prometheus datasource
       ansible.builtin.copy:
         dest: /etc/grafana/provisioning/datasources/prometheus.yml
         mode: "0644"
@@ -148,6 +145,22 @@
               access: proxy
               url: http://localhost:9090
               isDefault: true
+      notify: restart grafana
+
+    - name: Write Grafana Loki datasource
+      ansible.builtin.copy:
+        dest: /etc/grafana/provisioning/datasources/loki.yml
+        mode: "0644"
+        content: |
+          apiVersion: 1
+          datasources:
+            - name: Loki
+              type: loki
+              uid: loki
+              access: proxy
+              url: http://localhost:3100
+              isDefault: false
+      notify: restart grafana
 
     - name: Write Grafana dashboard provisioning config
       ansible.builtin.copy:
@@ -234,35 +247,159 @@
             "refresh": "30s"
           }
 
-    - name: Pull Grafana image
-      ansible.builtin.command:
-        cmd: podman pull docker.io/grafana/grafana:latest
-      changed_when: false
+    - name: Write WAF dashboard
+      ansible.builtin.copy:
+        dest: /etc/grafana/dashboards/waf-modsecurity.json
+        mode: "0644"
+        content: !unsafe |
+          {
+            "title": "WAF - ModSecurity Detections",
+            "uid": "waf-modsecurity",
+            "schemaVersion": 36,
+            "panels": [
+              {
+                "type": "logs",
+                "title": "Recent Detections",
+                "gridPos": { "x": 0, "y": 0, "w": 24, "h": 10 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "targets": [
+                  {
+                    "expr": "{job=\"modsecurity\"} |~ \"ModSecurity: Warning\"",
+                    "refId": "A"
+                  }
+                ],
+                "options": {
+                  "showLabels": true,
+                  "showTime": true,
+                  "wrapLogMessage": true
+                }
+              },
+              {
+                "type": "timeseries",
+                "title": "Requests Exceeding Anomaly Threshold",
+                "gridPos": { "x": 0, "y": 10, "w": 16, "h": 8 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "targets": [
+                  {
+                    "expr": "sum(count_over_time({job=\"modsecurity\"} |~ \"Anomaly Score Exceeded\"[5m]))",
+                    "legendFormat": "detections",
+                    "refId": "A"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Total Detections (last 1h)",
+                "gridPos": { "x": 16, "y": 10, "w": 8, "h": 8 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "targets": [
+                  {
+                    "expr": "sum(count_over_time({job=\"modsecurity\"} |~ \"Anomaly Score Exceeded\"[1h]))",
+                    "refId": "A"
+                  }
+                ]
+              }
+            ],
+            "time": { "from": "now-6h", "to": "now" },
+            "refresh": "30s"
+          }
+      notify: restart grafana
+
+    # --- Grafana ---
 
     - name: Run Grafana container
-      ansible.builtin.command:
-        cmd: >
-          podman run -d --restart=always
-          --name grafana
-          -p 3000:3000
-          -v /etc/grafana/provisioning:/etc/grafana/provisioning:ro
-          -v /etc/grafana/dashboards:/etc/grafana/dashboards:ro
-          -e GF_AUTH_ANONYMOUS_ENABLED=false
-          -e GF_SERVER_HTTP_ADDR=0.0.0.0
-          docker.io/grafana/grafana:latest
-      register: grafana_run
-      failed_when: grafana_run.rc != 0 and 'already in use' not in grafana_run.stderr
-      changed_when: grafana_run.rc == 0
+      containers.podman.podman_container:
+        name: grafana
+        image: docker.io/grafana/grafana:latest
+        state: started
+        ports:
+          - "3000:3000"
+        volumes:
+          - /etc/grafana/provisioning:/etc/grafana/provisioning:ro
+          - /etc/grafana/dashboards:/etc/grafana/dashboards:ro
+        env:
+          GF_AUTH_ANONYMOUS_ENABLED: "false"
+          GF_SERVER_HTTP_ADDR: "0.0.0.0"
+        restart_policy: always
 
     - name: Generate Grafana systemd service
       ansible.builtin.command:
-        cmd: podman generate systemd --name grafana --files --new
+        cmd: podman generate systemd --name grafana --files
         chdir: /etc/systemd/system
       changed_when: false
 
     - name: Enable and start Grafana systemd service
       ansible.builtin.systemd:
         name: container-grafana
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    # --- Loki ---
+
+    - name: Create Loki config directory
+      ansible.builtin.file:
+        path: /etc/loki
+        state: directory
+        mode: "0755"
+
+    - name: Write Loki config
+      ansible.builtin.copy:
+        dest: /etc/loki/loki-config.yml
+        mode: "0644"
+        content: |
+          auth_enabled: false
+
+          server:
+            http_listen_port: 3100
+
+          common:
+            path_prefix: /loki
+            storage:
+              filesystem:
+                chunks_directory: /loki/chunks
+                rules_directory: /loki/rules
+            replication_factor: 1
+            ring:
+              instance_addr: 127.0.0.1
+              kvstore:
+                store: inmemory
+
+          schema_config:
+            configs:
+              - from: 2020-10-24
+                store: tsdb
+                object_store: filesystem
+                schema: v13
+                index:
+                  prefix: index_
+                  period: 24h
+
+          analytics:
+            reporting_enabled: false
+
+    - name: Run Loki container
+      containers.podman.podman_container:
+        name: loki
+        image: docker.io/grafana/loki:2.9.10
+        state: started
+        ports:
+          - "3100:3100"
+        volumes:
+          - /etc/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+          - loki-data:/loki
+        command: -config.file=/etc/loki/loki-config.yml
+        restart_policy: always
+
+    - name: Generate Loki systemd service
+      ansible.builtin.command:
+        cmd: podman generate systemd --name loki --files
+        chdir: /etc/systemd/system
+      changed_when: false
+
+    - name: Enable and start Loki systemd service
+      ansible.builtin.systemd:
+        name: container-loki
         enabled: yes
         state: started
         daemon_reload: yes
