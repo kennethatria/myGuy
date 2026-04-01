@@ -98,11 +98,25 @@ jobs:
             -i configuration_management/inventory.ini \
             configuration_management/monitoring.yml
 
-      - name: Configure app instance
+      - name: Configure app instance base
         run: |
           ansible-playbook \
             -i configuration_management/inventory.ini \
             configuration_management/site.yml \
+            -e "target=app"
+
+      - name: Configure app instance security
+        run: |
+          ansible-playbook \
+            -i configuration_management/inventory.ini \
+            configuration_management/security.yml \
+            -e "target=app"
+
+      - name: Configure app instance observability
+        run: |
+          ansible-playbook \
+            -i configuration_management/inventory.ini \
+            configuration_management/observability.yml \
             -e "target=app"
 
       - name: Deploy application
