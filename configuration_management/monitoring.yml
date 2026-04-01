@@ -118,6 +118,12 @@
         state: started
         daemon_reload: yes
 
+    - name: Reload Prometheus config
+      ansible.builtin.command:
+        cmd: podman kill --signal HUP prometheus
+      changed_when: false
+      failed_when: false
+
     # --- Grafana ---
 
     - name: Create Grafana provisioning directories
