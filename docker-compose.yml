@@ -7,8 +7,10 @@ services:
       - PORT=8080
       - JWT_SECRET=${JWT_SECRET}
       - DB_CONNECTION=host=postgres-db user=postgres password=${DB_PASSWORD} dbname=my_guy port=5432 sslmode=disable
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
     depends_on:
-      - postgres-db
+      postgres-db:
+        condition: service_healthy
     networks:
       - myguy-network
 
@@ -24,10 +26,12 @@ services:
       # Chat service integration for booking notifications
       - CHAT_API_URL=http://chat-websocket-service:8082/api/v1
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
     volumes:
       - store-uploads:/app/uploads
     depends_on:
-      - postgres-db
+      postgres-db:
+        condition: service_healthy
     networks:
       - myguy-network
 
@@ -50,11 +54,23 @@ services:
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       # Redis for horizontal scaling (optional - enables multi-instance mode)
       - REDIS_URL=redis://redis:6379/0
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
     depends_on:
-      - postgres-db
-      - redis
-      - api
-      - store-service
+      postgres-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+      store-service:
+        condition: service_started
+    networks:
+      - myguy-network
+
+  zipkin:
+    image: openzipkin/zipkin:latest
+    ports:
+      - "9411:9411"
     networks:
       - myguy-network
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 
@@ -9,9 +10,11 @@ import (
 	"store-service/internal/models"
 	"store-service/internal/repositories"
 	"store-service/internal/services"
+	"store-service/internal/tracing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -21,6 +24,17 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
 	}
+
+	// Initialize OpenTelemetry tracing
+	zipkinURL := os.Getenv("ZIPKIN_URL")
+	if zipkinURL == "" {
+		zipkinURL = "http://localhost:9411/api/v2/spans"
+	}
+	shutdown, err := tracing.InitTracer("myguy-store-service", zipkinURL)
+	if err != nil {
+		log.Fatal("Failed to initialize tracer:", err)
+	}
+	defer shutdown(context.Background())
 
 	// Database connection
 	dbConnection := os.Getenv("DB_CONNECTION")
@@ -59,6 +73,7 @@ func main() {
 
 	// Setup routes
 	router := gin.Default()
+	router.Use(otelgin.Middleware("myguy-store-service"))
 	
 	// Serve static files for uploaded images
 	router.Static("/uploads", "./uploads")
