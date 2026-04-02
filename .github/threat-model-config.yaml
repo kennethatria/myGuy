@@ -5,12 +5,12 @@ asset:
     apply for tasks, communicate in real-time, and buy/sell items via a store
     with fixed-price and auction bidding.
   internet_facing: True
-  authn_type: "JWT"
+  authn_type: "TOKEN"
   data_classification: "CONFIDENTIAL"
 
 repositories:
   - name: "myGuy"
-    local_path: "/data"
+    url: "github.com/kennethatria/myGuy"
 
 config:
   # NOTE: If the tool does not recognise "google" as a provider,
@@ -22,7 +22,7 @@ config:
   review_agent_llm: "claude-sonnet-4-6"
   threat_model_agent_llm: "claude-sonnet-4-6"
   report_agent_llm: "claude-sonnet-4-6"
-  categorize_only: False
+  categorize_only: True
 
 exclude_patterns:
   - "**/node_modules/**"
