@@ -5,7 +5,7 @@ asset:
     apply for tasks, communicate in real-time, and buy/sell items via a store
     with fixed-price and auction bidding.
   internet_facing: True
-  authn_type: "TOKEN"
+  authn_type: "BASIC"
   data_classification: "CONFIDENTIAL"
 
 repositories:
