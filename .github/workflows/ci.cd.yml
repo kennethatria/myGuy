@@ -127,26 +127,26 @@ jobs:
     uses: ./.github/workflows/component.build.push.to.registry.yml
     secrets: inherit
 
-  deploy-infra:
-    permissions:
-      contents: write
-      pull-requests: write
-      id-token: write
-    if: ${{ needs.context.outputs.isRelease == 'true' }}
-    needs: [context, release]
-    uses: ./.github/workflows/component.infra.tf.deploy.yml
-    with:
-      action: apply
-    secrets: inherit
+  # deploy-infra:
+  #   permissions:
+  #     contents: write
+  #     pull-requests: write
+  #     id-token: write
+  #   if: ${{ needs.context.outputs.isRelease == 'true' }}
+  #   needs: [context, release]
+  #   uses: ./.github/workflows/component.infra.tf.deploy.yml
+  #   with:
+  #     action: apply
+  #   secrets: inherit
 
-  run-ansible:
-    permissions:
-      contents: write
-      pull-requests: write
-      id-token: write
-    if: ${{ needs.context.outputs.isRelease == 'true' }}
-    needs: [context, release, deploy-images-to-repository, deploy-infra]
-    uses: ./.github/workflows/component.infra.config.deploy.application.yml
-    with:
-      environment: dev
-    secrets: inherit
+  # run-ansible:
+  #   permissions:
+  #     contents: write
+  #     pull-requests: write
+  #     id-token: write
+  #   if: ${{ needs.context.outputs.isRelease == 'true' }}
+  #   needs: [context, release, deploy-images-to-repository, deploy-infra]
+  #   uses: ./.github/workflows/component.infra.config.deploy.application.yml
+  #   with:
+  #     environment: dev
+  #   secrets: inherit

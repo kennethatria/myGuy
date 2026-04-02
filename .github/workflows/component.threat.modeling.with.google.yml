@@ -1,0 +1,71 @@
+name: Run threat model analysis (Google)
+
+on:
+  workflow_dispatch:
+  workflow_call:
+  schedule:
+    - cron: '0 0 1 * *'  # First day of every month
+
+jobs:
+  threat-model:
+    name: Threat Model with Google Gemini
+    runs-on: ubuntu-latest
+    environment: dev
+
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout myGuy
+        uses: actions/checkout@v4
+        with:
+          path: myGuy
+
+      - name: Checkout lets-threat-model
+        uses: actions/checkout@v4
+        with:
+          repository: OWASP/www-project-lets-threat-model
+          path: lets-threat-model
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: lets-threat-model
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -U langchain-google-genai
+
+      - name: Create report directory
+        run: mkdir -p myGuy/report
+
+      - name: Run Let's Threat Model
+        working-directory: lets-threat-model
+        env:
+          PROVIDER_API_KEY: ${{ secrets.PROVIDER_API_KEY }}
+          GITHUB_USERNAME: ${{ github.actor }}
+          GITHUB_PAT: ${{ secrets.GH_TOKEN_MY_GUY }}
+          LOG_LEVEL: INFO
+        run: |
+          python -m main \
+            --config-file ${{ github.workspace }}/myGuy/.github/threat-model-config.yaml \
+            --sarif-output ${{ github.workspace }}/myGuy/report/threat_model_report.sarif \
+            --markdown-output ${{ github.workspace }}/myGuy/report/threat_model_report.md
+
+      - name: Upload report artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: threat-model-report
+          path: myGuy/report/
+          retention-days: 90
+
+      - name: Upload SARIF to Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: myGuy/report/threat_model_report.sarif
