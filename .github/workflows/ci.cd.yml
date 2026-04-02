@@ -147,4 +147,6 @@ jobs:
     if: ${{ needs.context.outputs.isRelease == 'true' }}
     needs: [context, release, deploy-images-to-repository, deploy-infra]
     uses: ./.github/workflows/component.infra.config.deploy.application.yml
+    with:
+      environment: dev
     secrets: inherit
