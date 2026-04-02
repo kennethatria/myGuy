@@ -15,32 +15,17 @@ repositories:
 config:
   # NOTE: If the tool does not recognise "google" as a provider,
   # check the Let's Threat Model docs/source for the correct identifier.
-  llm_provider: "google_genai"
-  context_window: 30000
-  max_output_tokens: 8192
-  categorization_agent_llm: "gemini-2.0-flash"
-  review_agent_llm: "gemini-2.0-flash"
-  threat_model_agent_llm: "gemini-2.0-flash"
-  report_agent_llm: "gemini-2.0-flash"
+  llm_provider: "anthropic"
+  context_window: 128000
+  max_output_tokens: 16384
+  categorization_agent_llm: "claude-sonnet-4-6"
+  review_agent_llm: "claude-sonnet-4-6"
+  threat_model_agent_llm: "claude-sonnet-4-6"
+  report_agent_llm: "claude-sonnet-4-6"
   categorize_only: False
 
 exclude_patterns:
-  - "**/.git/**"
   - "**/node_modules/**"
-  - "**/vendor/**"
-  - "engineering/**"
-  - "demo/**"
-  - "**/*_test.go"
-  - "**/__tests__/**"
-  - "**/testdata/**"
-  - "**/*.md"
-  - "infra/.terraform/**"
-  - .claude
-  - .github
-  - .env
-  - .git
-  - venv
-  - __pycache__
-  - tests
-  - report
-  - assets
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/.github/**"
