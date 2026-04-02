@@ -25,8 +25,8 @@ jobs:
       - name: Run Let's Threat Model
         env:
           PROVIDER_API_KEY: ${{ secrets.PROVIDER_API_KEY }}
-          GITHUB_USERNAME: ${{ secrets.GH_USERNAME }}
-          GITHUB_PAT: ${{ secrets.GH_PAT }}
+          GITHUB_USERNAME: ${{ github.actor }}
+          GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
         run: |
           docker run --rm \
             -v "$(pwd)":/data \
