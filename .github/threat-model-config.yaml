@@ -5,24 +5,24 @@ asset:
     apply for tasks, communicate in real-time, and buy/sell items via a store
     with fixed-price and auction bidding.
   internet_facing: True
-  authn_type: "JWT"
+  authn_type: "BASIC"
   data_classification: "CONFIDENTIAL"
 
 repositories:
   - name: "myGuy"
-    local_path: "/data"
+    url: "github.com/kennethatria/myGuy"
 
 config:
   # NOTE: If the tool does not recognise "google" as a provider,
   # check the Let's Threat Model docs/source for the correct identifier.
-  llm_provider: "anthropic"
-  context_window: 128000
+  llm_provider: "google_genai"
+  context_window: 30000
   max_output_tokens: 16384
-  categorization_agent_llm: "claude-sonnet-4-6"
-  review_agent_llm: "claude-sonnet-4-6"
-  threat_model_agent_llm: "claude-sonnet-4-6"
-  report_agent_llm: "claude-sonnet-4-6"
-  categorize_only: False
+  categorization_agent_llm: "gemini-2.0-flash"
+  review_agent_llm: "gemini-2.0-flash"
+  threat_model_agent_llm: "gemini-2.0-flash"
+  report_agent_llm: "gemini-2.0-flash"
+  categorize_only: True
 
 exclude_patterns:
   - "**/node_modules/**"
