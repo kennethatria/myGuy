@@ -135,6 +135,8 @@ jobs:
     if: ${{ needs.context.outputs.isRelease == 'true' }}
     needs: [context, release]
     uses: ./.github/workflows/component.infra.tf.deploy.yml
+    with:
+      action: apply
     secrets: inherit
 
   run-ansible:
