@@ -136,3 +136,13 @@ jobs:
     needs: [context, release]
     uses: ./.github/workflows/component.infra.tf.deploy.yml
     secrets: inherit
+
+  run-ansible:
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    if: ${{ needs.context.outputs.isRelease == 'true' }}
+    needs: [context, release, deploy-images-to-repository, deploy-infra]
+    uses: ./.github/workflows/component.infra.config.deploy.application.yml
+    secrets: inherit
