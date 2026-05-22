@@ -13,53 +13,62 @@ The platform is designed with a clean architecture, separating concerns into dis
 Request flow from browser through to services, databases, and the monitoring stack.
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#ffffff', 'primaryBorderColor': '#cbd5e1', 'primaryTextColor': '#1e293b', 'clusterBkg': '#f8fafc', 'clusterBorder': '#cbd5e1', 'edgeLabelBackground': '#f8fafc', 'lineColor': '#94a3b8'}}}%%
+%%{init: {'theme': 'base', 'themeVariables': {'clusterBkg': '#f8fafc', 'clusterBorder': '#cbd5e1', 'edgeLabelBackground': '#ffffff', 'lineColor': '#64748b'}}}%%
 
 graph LR
-    classDef external   fill:#6366f1,stroke:#4f46e5,color:#fff
-    classDef lb         fill:#0ea5e9,stroke:#0284c7,color:#fff
-    classDef gateway    fill:#14b8a6,stroke:#0d9488,color:#fff
-    classDef service    fill:#22c55e,stroke:#16a34a,color:#fff
-    classDef database   fill:#f97316,stroke:#ea580c,color:#fff
-    classDef monitoring fill:#a855f7,stroke:#9333ea,color:#fff
+    %% Custom Semantic Styling
+    classDef external   fill:#e0e7ff,stroke:#6366f1,color:#1e1b4b,stroke-width:2px;
+    classDef lb         fill:#e0f2fe,stroke:#0ea5e9,color:#0369a1,stroke-width:2px;
+    classDef gateway    fill:#ccfbf1,stroke:#14b8a6,color:#115e59,stroke-width:2px;
+    classDef service    fill:#dcfce7,stroke:#22c55e,color:#14532d,stroke-width:2px;
+    classDef database   fill:#ffedd5,stroke:#f97316,color:#7c2d12,stroke-width:2px;
+    classDef monitoring fill:#f3e8ff,stroke:#a855f7,color:#581c87,stroke-width:2px;
 
-    User(["User / Browser"]):::external
+    %% Nodes Definitions
+    User(["👤 User / Browser"]):::external
 
-    subgraph Linode["Linode Cloud"]
-        NB["NodeBalancer"]:::lb
+    subgraph Linode["☁️ Linode Cloud Network"]
+        NB["⚖️ NodeBalancer"]:::lb
 
-        subgraph App["App Instance · 10.0.0.2"]
-            WAF["Nginx · ModSecurity WAF"]:::gateway
-            API["Backend API · :8080"]:::service
-            STORE["Store Service · :8081"]:::service
-            CHAT["Chat Service · :8082"]:::service
-            PG[("PostgreSQL")]:::database
-            REDIS[("Redis")]:::database
+        subgraph App["🖥️ App Instance · 10.0.0.2"]
+            WAF["🛡️ Nginx + ModSecurity WAF"]:::gateway
+            API["🟢 Backend API<br/><code>:8080</code>"]:::service
+            STORE["🛒 Store Service<br/><code>:8081</code>"]:::service
+            CHAT["💬 Chat Service<br/><code>:8082</code>"]:::service
+            PG[("🐘 PostgreSQL<br/><code>:5432</code>")]:::database
+            REDIS[("❤️ Redis<br/><code>:6379</code>")]:::database
         end
 
-        subgraph Mon["Monitoring · 10.0.0.3"]
-            ZIPKIN["Zipkin · :9411"]:::monitoring
-            PROM["Prometheus · :9090"]:::monitoring
-            LOKI["Loki · :3100"]:::monitoring
-            GRAFANA["Grafana · :3000"]:::monitoring
+        subgraph Mon["📊 Monitoring Stack · 10.0.0.3"]
+            ZIPKIN["⏳ Zipkin · :9411"]:::monitoring
+            PROM["🔥 Prometheus · :9090"]:::monitoring
+            LOKI["🪵 Loki · :3100"]:::monitoring
+            GRAFANA["📈 Grafana · :3000"]:::monitoring
         end
     end
 
-    User -->|HTTPS| NB
-    NB --> WAF
-    WAF --> API
-    WAF --> STORE
-    WAF --> CHAT
-    API --> PG
-    STORE --> PG
-    CHAT --> PG
-    CHAT --> REDIS
-    STORE -->|booking notify| CHAT
-    API -->|traces| ZIPKIN
-    STORE -->|traces| ZIPKIN
-    CHAT -->|traces| ZIPKIN
-    PROM --> GRAFANA
-    LOKI --> GRAFANA
+    %% Flow Topology
+    User ==>|HTTPS Request| NB
+    NB ==> WAF
+    
+    WAF -->|Proxy| API
+    WAF -->|Proxy| STORE
+    WAF -->|Proxy| CHAT
+
+    API ---> PG
+    STORE ---> PG
+    CHAT ---> PG
+    CHAT ---> REDIS
+    
+    STORE ==>|booking notify| CHAT
+
+    %% Telemetry & Logging
+    API -.->|OTel traces| ZIPKIN
+    STORE -.->|OTel traces| ZIPKIN
+    CHAT -.->|OTel traces| ZIPKIN
+    
+    PROM ---> GRAFANA
+    LOKI ---> GRAFANA
 ```
 
 ### Infrastructure & Security Diagram
@@ -67,58 +76,70 @@ graph LR
 How the platform is provisioned, deployed, and defended.
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#ffffff', 'primaryBorderColor': '#cbd5e1', 'primaryTextColor': '#1e293b', 'clusterBkg': '#f8fafc', 'clusterBorder': '#cbd5e1', 'edgeLabelBackground': '#f8fafc', 'lineColor': '#94a3b8'}}}%%
+%%{init: {'theme': 'base', 'themeVariables': {'clusterBkg': '#f8fafc', 'clusterBorder': '#cbd5e1', 'edgeLabelBackground': '#ffffff', 'lineColor': '#64748b'}}}%%
 
 graph TB
-    classDef external   fill:#6366f1,stroke:#4f46e5,color:#fff
-    classDef lb         fill:#0ea5e9,stroke:#0284c7,color:#fff
-    classDef security   fill:#ef4444,stroke:#dc2626,color:#fff
-    classDef gateway    fill:#14b8a6,stroke:#0d9488,color:#fff
-    classDef service    fill:#22c55e,stroke:#16a34a,color:#fff
-    classDef monitoring fill:#a855f7,stroke:#9333ea,color:#fff
-    classDef telemetry  fill:#ec4899,stroke:#db2777,color:#fff
-    classDef user       fill:#f59e0b,stroke:#d97706,color:#fff
+    %% Custom Infrastructure & Security Styling
+    classDef automation fill:#e0f2fe,stroke:#0ea5e9,color:#0369a1,stroke-width:2px;
+    classDef admin      fill:#fef3c7,stroke:#f59e0b,color:#78350f,stroke-width:2px;
+    classDef security   fill:#fee2e2,stroke:#ef4444,color:#7f1d1d,stroke-width:2px;
+    classDef lb         fill:#e0f2fe,stroke:#0ea5e9,color:#0369a1,stroke-width:1px;
+    classDef gateway    fill:#ccfbf1,stroke:#14b8a6,color:#115e59,stroke-width:1px;
+    classDef runtime    fill:#dcfce7,stroke:#22c55e,color:#14532d,stroke-width:2px;
+    classDef telemetry  fill:#fce7f3,stroke:#ec4899,color:#701a75,stroke-width:1px;
+    classDef monitoring fill:#f3e8ff,stroke:#a855f7,color:#581c87,stroke-width:2px;
 
-    GHA(["GitHub Actions"]):::external
-    HCP(["HCP Terraform"]):::external
-    OPS(["ops user · SSH"]):::user
+    %% Management Entities
+    subgraph Controls ["⚡ Automation & Operations Control Plane"]
+        direction LR
+        GHA(["🐙 GitHub Actions"]):::automation
+        HCP(["☁️ HCP Terraform"]):::automation
+        OPS(["🧑‍💻 ops user (SSH Key)"]):::admin
+    end
 
-    subgraph Linode["Linode Cloud"]
-        FW["Linode Firewall · 80  443  22 only"]:::security
-        NB["NodeBalancer"]:::lb
+    %% Main Network Boundary
+    subgraph Linode["☁️ Linode Cloud Perimeters"]
+        FW["🔥 Linode Network Firewall<br/><i>Allow: 80, 443, 22 | Default: DROP</i>"]:::security
+        NB["⚖️ NodeBalancer Ingress"]:::lb
 
-        subgraph App["App Instance · 10.0.0.2"]
-            F2B["Fail2ban"]:::security
-            WAF["Nginx · ModSecurity WAF"]:::gateway
-            COSIGN["Cosign · image verify"]:::security
-            PODS["App Containers · rootless Podman"]:::service
-            FALCO["Falco · :8765"]:::security
-            NE["node_exporter · :9100"]:::telemetry
-            PROMTAIL["Promtail"]:::telemetry
+        subgraph App["🖥️ Task Marketplace Core · App Instance (10.0.0.2)"]
+            F2B["🚫 Fail2ban Jails"]:::security
+            WAF["🌐 Nginx + ModSecurity WAF"]:::gateway
+            COSIGN["🔐 Cosign Signature Verification"]:::security
+            PODS["📦 Rootless Podman App Containers"]:::runtime
+            FALCO["🦅 Falco Runtime Protection<br/><code>:8765</code>"]:::security
+            NE["📊 node_exporter<br/><code>:9100</code>"]:::telemetry
+            PROMTAIL["🪵 Promtail Shipper"]:::telemetry
         end
 
-        subgraph Mon["Monitoring Instance · 10.0.0.3"]
-            PROM["Prometheus · :9090"]:::monitoring
-            LOKI["Loki · :3100"]:::monitoring
-            GRAFANA["Grafana · :3000"]:::monitoring
+        subgraph Mon["📊 Dedicated Monitoring Instance (10.0.0.3 - VPC Only)"]
+            PROM["🔥 Prometheus Core"]:::monitoring
+            LOKI["🪵 Loki Aggregator"]:::monitoring
+            GRAFANA["📈 Grafana Visualization"]:::monitoring
         end
     end
 
-    GHA -->|provision infra| HCP
-    GHA -->|Ansible configure + deploy| WAF
-    GHA -.->|Ansible via ProxyJump| PROM
-    HCP --> FW
-    OPS -->|SSH · key-only · no root| F2B
-    FW --> NB
-    NB --> F2B
-    F2B --> WAF
-    COSIGN -->|verify before run| PODS
-    WAF --> PODS
-    NE -->|host metrics| PROM
-    FALCO -->|security metrics| PROM
-    PROMTAIL -->|WAF audit logs| LOKI
-    PROM --> GRAFANA
-    LOKI --> GRAFANA
+    %% Deployment & Provisioning Flow
+    GHA -->|1. Execution Schema| HCP
+    HCP -->|Deploys Ruleset| FW
+    GHA ==>|2. Ansible Playbooks| WAF
+    GHA -.->|Ansible Bastion Tunnel| PROM
+    OPS ==>|Targeted Troubleshooting| F2B
+
+    %% Ingress Network Routing
+    FW ==> NB
+    NB ==> F2B
+    F2B ==> WAF
+    WAF ==> PODS
+    COSIGN -.->|Guard rail check| PODS
+
+    %% Telemetry, Metrics, and Audit Logs Pipelines
+    NE -.->|host metrics| PROM
+    FALCO -.->|security kernel events| PROM
+    PROMTAIL -.->|WAF audit log streams| LOKI
+    
+    PROM ---> GRAFANA
+    LOKI ---> GRAFANA
 ```
 
 ### Application Services
