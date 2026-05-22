@@ -8,43 +8,48 @@ The platform is designed with a clean architecture, separating concerns into dis
 
 ## Architecture & Tech Stack
 
-### Infrastructure Diagram
+### Application Diagram
+
+Request flow from browser through to services, databases, and the monitoring stack.
 
 ```mermaid
-graph TB
-    User["User / Browser"]
-    GHA["GitHub Actions CI/CD"]
-    HCP["HCP Terraform"]
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#ffffff', 'primaryBorderColor': '#cbd5e1', 'primaryTextColor': '#1e293b', 'clusterBkg': '#f8fafc', 'clusterBorder': '#cbd5e1', 'edgeLabelBackground': '#f8fafc', 'lineColor': '#94a3b8'}}}%%
+
+graph LR
+    classDef external   fill:#6366f1,stroke:#4f46e5,color:#fff
+    classDef lb         fill:#0ea5e9,stroke:#0284c7,color:#fff
+    classDef gateway    fill:#14b8a6,stroke:#0d9488,color:#fff
+    classDef service    fill:#22c55e,stroke:#16a34a,color:#fff
+    classDef database   fill:#f97316,stroke:#ea580c,color:#fff
+    classDef monitoring fill:#a855f7,stroke:#9333ea,color:#fff
+
+    User(["User / Browser"]):::external
 
     subgraph Linode["Linode Cloud"]
-        NB["NodeBalancer (public entry point)"]
+        NB["NodeBalancer"]:::lb
 
-        subgraph AppInstance["App Instance — public + VPC 10.0.0.2"]
-            F2B["Fail2ban"]
-            NGINX["Nginx + ModSecurity WAF"]
-            API["Backend API :8080"]
-            STORE["Store Service :8081"]
-            CHAT["Chat Service :8082"]
-            PG["PostgreSQL"]
-            REDIS["Redis"]
-            NE["node_exporter :9100"]
-            FALCO["Falco :8765"]
+        subgraph App["App Instance · 10.0.0.2"]
+            WAF["Nginx · ModSecurity WAF"]:::gateway
+            API["Backend API · :8080"]:::service
+            STORE["Store Service · :8081"]:::service
+            CHAT["Chat Service · :8082"]:::service
+            PG[("PostgreSQL")]:::database
+            REDIS[("Redis")]:::database
         end
 
-        subgraph MonInstance["Monitoring Instance — VPC only 10.0.0.3"]
-            ZIPKIN["Zipkin"]
-            PROM["Prometheus"]
-            GRAFANA["Grafana"]
-            LOKI["Loki"]
+        subgraph Mon["Monitoring · 10.0.0.3"]
+            ZIPKIN["Zipkin · :9411"]:::monitoring
+            PROM["Prometheus · :9090"]:::monitoring
+            LOKI["Loki · :3100"]:::monitoring
+            GRAFANA["Grafana · :3000"]:::monitoring
         end
     end
 
     User -->|HTTPS| NB
-    NB --> F2B
-    F2B --> NGINX
-    NGINX --> API
-    NGINX --> STORE
-    NGINX --> CHAT
+    NB --> WAF
+    WAF --> API
+    WAF --> STORE
+    WAF --> CHAT
     API --> PG
     STORE --> PG
     CHAT --> PG
@@ -53,12 +58,67 @@ graph TB
     API -->|traces| ZIPKIN
     STORE -->|traces| ZIPKIN
     CHAT -->|traces| ZIPKIN
+    PROM --> GRAFANA
+    LOKI --> GRAFANA
+```
+
+### Infrastructure & Security Diagram
+
+How the platform is provisioned, deployed, and defended.
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#ffffff', 'primaryBorderColor': '#cbd5e1', 'primaryTextColor': '#1e293b', 'clusterBkg': '#f8fafc', 'clusterBorder': '#cbd5e1', 'edgeLabelBackground': '#f8fafc', 'lineColor': '#94a3b8'}}}%%
+
+graph TB
+    classDef external   fill:#6366f1,stroke:#4f46e5,color:#fff
+    classDef lb         fill:#0ea5e9,stroke:#0284c7,color:#fff
+    classDef security   fill:#ef4444,stroke:#dc2626,color:#fff
+    classDef gateway    fill:#14b8a6,stroke:#0d9488,color:#fff
+    classDef service    fill:#22c55e,stroke:#16a34a,color:#fff
+    classDef monitoring fill:#a855f7,stroke:#9333ea,color:#fff
+    classDef telemetry  fill:#ec4899,stroke:#db2777,color:#fff
+    classDef user       fill:#f59e0b,stroke:#d97706,color:#fff
+
+    GHA(["GitHub Actions"]):::external
+    HCP(["HCP Terraform"]):::external
+    OPS(["ops user · SSH"]):::user
+
+    subgraph Linode["Linode Cloud"]
+        FW["Linode Firewall · 80  443  22 only"]:::security
+        NB["NodeBalancer"]:::lb
+
+        subgraph App["App Instance · 10.0.0.2"]
+            F2B["Fail2ban"]:::security
+            WAF["Nginx · ModSecurity WAF"]:::gateway
+            COSIGN["Cosign · image verify"]:::security
+            PODS["App Containers · rootless Podman"]:::service
+            FALCO["Falco · :8765"]:::security
+            NE["node_exporter · :9100"]:::telemetry
+            PROMTAIL["Promtail"]:::telemetry
+        end
+
+        subgraph Mon["Monitoring Instance · 10.0.0.3"]
+            PROM["Prometheus · :9090"]:::monitoring
+            LOKI["Loki · :3100"]:::monitoring
+            GRAFANA["Grafana · :3000"]:::monitoring
+        end
+    end
+
+    GHA -->|provision infra| HCP
+    GHA -->|Ansible configure + deploy| WAF
+    GHA -.->|Ansible via ProxyJump| PROM
+    HCP --> FW
+    OPS -->|SSH · key-only · no root| F2B
+    FW --> NB
+    NB --> F2B
+    F2B --> WAF
+    COSIGN -->|verify before run| PODS
+    WAF --> PODS
     NE -->|host metrics| PROM
     FALCO -->|security metrics| PROM
+    PROMTAIL -->|WAF audit logs| LOKI
     PROM --> GRAFANA
-    GHA -->|provision| HCP
-    GHA -->|configure + deploy| NGINX
-    GHA -.->|via app instance| PROM
+    LOKI --> GRAFANA
 ```
 
 ### Application Services
@@ -85,25 +145,73 @@ graph TB
 
 ## Security
 
-MyGuy runs multiple layered security controls in production.
+Security is implemented in layers — network, access control, HTTP, runtime, and supply chain. A failure at any one layer is contained by the layers beneath it.
 
-| Layer | Tool | Role |
+### Network
+
+| Control | Detail |
+| :--- | :--- |
+| **Linode Firewall** | Inbound allowlist: 80, 443, 22 only. Default policy: DROP. All other ports silently dropped at the network edge. |
+| **Private VPC** | Monitoring instance (`10.0.0.3`) has no public IP. Reachable only via VPC — unreachable from the internet entirely. |
+| **NodeBalancer** | Connection throttle of 20 connections/sec on HTTP. Acts as the single public entry point. |
+
+### Access Control
+
+Root SSH is disabled on every server. Two non-root accounts replace it.
+
+| User | Scope | Auth |
 | :--- | :--- | :--- |
-| **Network** | Linode Firewall | Allows only ports 80, 443, 22 inbound |
-| **Brute force** | Fail2ban | Bans IPs after repeated SSH failures or WAF triggers |
-| **HTTP** | Nginx + ModSecurity + OWASP CRS | Inspects and filters all inbound HTTP traffic |
-| **Images** | Cosign | Verifies app image signatures before deployment |
-| **Runtime** | Falco | Detects suspicious syscalls and container behaviour |
-| **Containers** | Rootless Podman | Container escapes land as unprivileged user, not root |
+| `myguy` | Runs app containers (rootless Podman) and Ansible automation. Sudo allowed for provisioning commands only — interactive shells explicitly blocked. | CI/CD SSH key |
+| `ops` | Troubleshooting only. Sudo scoped to: container observe/restart (`appctl`), read `.env` secrets, `fail2ban-client status` and unban. Nothing else. | Personal SSH key |
+| `node_exporter` | Dedicated no-login system account. Runs only the metrics daemon. No sudo, no shell. | — |
+| `promtail` | Dedicated no-login system account. Member of `adm` group for log read access. No sudo, no shell. | — |
 
-### Server Access
+SSH hardening applied to both servers:
 
-Two non-root users are provisioned on every server. Root SSH is disabled.
+```
+PermitRootLogin       no
+PasswordAuthentication no
+AllowAgentForwarding  no
+X11Forwarding         no
+```
 
-| User | Purpose | SSH Access |
-| :--- | :--- | :--- |
-| `myguy` | Runs application containers and Ansible automation | CI/CD runner key |
-| `ops` | Troubleshooting — container logs, status, restart, Fail2ban | Personal key |
+### Brute Force Protection — Fail2ban
+
+Four jails are active on the app instance:
+
+| Jail | Watches | Threshold | Ban duration |
+| :--- | :--- | :--- | :--- |
+| `sshd` | SSH auth log | 3 failures in 10 min | 1 hour |
+| `nginx-4xx` | nginx access log | 20 × 4xx in 5 min | 1 hour |
+| `nginx-botsearch` | nginx access log | 2 hits to scanner paths | 24 hours |
+| `nginx-modsecurity` | ModSecurity audit log | 3 WAF rule triggers | 24 hours |
+
+### HTTP Security — Nginx + ModSecurity
+
+- **TLS 1.2 / 1.3 only** — HTTP permanently redirected to HTTPS
+- **Let's Encrypt** certificates via Certbot with auto-renewal
+- **ModSecurity + OWASP Core Rule Set v4** — inspects every inbound request for SQLi, XSS, path traversal, RFI, and other OWASP Top 10 patterns
+- Currently in **DetectionOnly** mode (logs, does not block) — WAF audit log feeds Fail2ban and Loki
+
+### Container Security — Rootless Podman
+
+Application containers run under the `myguy` user with no root involvement. If a container is compromised and an attacker escapes the container boundary, they land as the unprivileged `myguy` user — not root. `loginctl enable-linger` keeps the user session alive so containers restart on boot without root.
+
+### Supply Chain — Cosign
+
+Before every deployment, the CI/CD pipeline verifies the cryptographic signature of each application image using Cosign with GitHub Actions OIDC:
+
+| Image verified |
+| :--- |
+| `myguy-api` |
+| `myguy-store-service` |
+| `myguy-chat-websocket-service` |
+
+Deployment is aborted if any signature is missing or invalid.
+
+### Runtime Security — Falco
+
+Falco monitors system calls on the app instance in real time, detecting suspicious behaviour such as privilege escalation, unexpected file access, and container escape attempts. Alerts are exported as Prometheus metrics and visualised in Grafana with a dedicated **Falco Security Alerts** dashboard.
 
 ---
 
