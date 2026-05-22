@@ -1,5 +1,8 @@
 node_modules
 
+# Engineering docs — local only, not tracked in version control
+engineering/
+
 **/.claude/settings.local.json
 
 go1.21.0.linux-amd64.tar.gz
