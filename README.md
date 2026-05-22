@@ -12,55 +12,53 @@ The platform is designed with a clean architecture, separating concerns into dis
 
 ```mermaid
 graph TB
-    subgraph Internet["Internet"]
-        User["User / Browser"]
-        GHA["GitHub Actions\nCI/CD"]
-        HCP["HCP Terraform"]
-    end
+    User["User / Browser"]
+    GHA["GitHub Actions CI/CD"]
+    HCP["HCP Terraform"]
 
     subgraph Linode["Linode Cloud"]
-        NB["NodeBalancer\n(public entry point)"]
+        NB["NodeBalancer (public entry point)"]
 
-        subgraph VPC["Private VPC"]
-            subgraph AppInstance["App Instance\n(public + VPC)"]
-                NGINX["Nginx\n(reverse proxy)"]
-                API["Backend API"]
-                STORE["Store Service"]
-                CHAT["Chat Service"]
-                PG["PostgreSQL"]
-                REDIS["Redis"]
-                NE["node_exporter\n(CPU & memory)"]
-                FALCO["Falco\n(runtime security)"]
-            end
+        subgraph AppInstance["App Instance — public + VPC 10.0.0.2"]
+            F2B["Fail2ban"]
+            NGINX["Nginx + ModSecurity WAF"]
+            API["Backend API :8080"]
+            STORE["Store Service :8081"]
+            CHAT["Chat Service :8082"]
+            PG["PostgreSQL"]
+            REDIS["Redis"]
+            NE["node_exporter :9100"]
+            FALCO["Falco :8765"]
+        end
 
-            subgraph MonInstance["Monitoring Instance\n(VPC only)"]
-                ZIPKIN["Zipkin\n(distributed tracing)"]
-                PROM["Prometheus\n(metrics)"]
-                GRAFANA["Grafana\n(dashboards)"]
-            end
+        subgraph MonInstance["Monitoring Instance — VPC only 10.0.0.3"]
+            ZIPKIN["Zipkin"]
+            PROM["Prometheus"]
+            GRAFANA["Grafana"]
+            LOKI["Loki"]
         end
     end
 
-    User -->|"HTTP"| NB
-    NB --> NGINX
+    User -->|HTTPS| NB
+    NB --> F2B
+    F2B --> NGINX
     NGINX --> API
     NGINX --> STORE
     NGINX --> CHAT
-    API & STORE & CHAT --> PG
+    API --> PG
+    STORE --> PG
+    CHAT --> PG
     CHAT --> REDIS
-    STORE -->|"booking notify"| CHAT
-
-    API & STORE & CHAT -->|"traces"| ZIPKIN
-
-    FALCO -->|"security metrics"| PROM
-    NE -->|"host metrics"| PROM
+    STORE -->|booking notify| CHAT
+    API -->|traces| ZIPKIN
+    STORE -->|traces| ZIPKIN
+    CHAT -->|traces| ZIPKIN
+    NE -->|host metrics| PROM
+    FALCO -->|security metrics| PROM
     PROM --> GRAFANA
-
-    GHA -->|"provision"| HCP
-    HCP --> AppInstance
-    HCP --> MonInstance
-    GHA -->|"configure & deploy"| AppInstance
-    GHA -.->|"via app instance"| MonInstance
+    GHA -->|provision| HCP
+    GHA -->|configure + deploy| NGINX
+    GHA -.->|via app instance| PROM
 ```
 
 ### Application Services
@@ -80,7 +78,32 @@ graph TB
 | :--- | :--- | :--- |
 | **Zipkin** | `9411` | Distributed tracing — collects spans from all backend services. |
 | **Prometheus** | `9090` | Metrics collection — scrapes CPU/memory and Falco security alerts. |
-| **Grafana** | `3000` | Visualization — dashboards for app metrics and security alerts. |
+| **Grafana** | `3000` | Visualization — dashboards for app metrics, security alerts, and WAF detections. |
+| **Loki** | `3100` | Log aggregation — receives ModSecurity audit logs shipped by Promtail. |
+
+---
+
+## Security
+
+MyGuy runs multiple layered security controls in production.
+
+| Layer | Tool | Role |
+| :--- | :--- | :--- |
+| **Network** | Linode Firewall | Allows only ports 80, 443, 22 inbound |
+| **Brute force** | Fail2ban | Bans IPs after repeated SSH failures or WAF triggers |
+| **HTTP** | Nginx + ModSecurity + OWASP CRS | Inspects and filters all inbound HTTP traffic |
+| **Images** | Cosign | Verifies app image signatures before deployment |
+| **Runtime** | Falco | Detects suspicious syscalls and container behaviour |
+| **Containers** | Rootless Podman | Container escapes land as unprivileged user, not root |
+
+### Server Access
+
+Two non-root users are provisioned on every server. Root SSH is disabled.
+
+| User | Purpose | SSH Access |
+| :--- | :--- | :--- |
+| `myguy` | Runs application containers and Ansible automation | CI/CD runner key |
+| `ops` | Troubleshooting — container logs, status, restart, Fail2ban | Personal key |
 
 ---
 
@@ -114,22 +137,28 @@ ZIPKIN_URL=http://10.0.0.3:9411/api/v2/spans
 
 **On the app instance:**
 - `node_exporter` runs as a systemd service on `:9100`, exposing CPU and memory metrics
-- `falco` monitors system calls for suspicious runtime behaviour
-- `falco-exporter` runs as a Podman container on `:9376`, exposing Falco alerts as Prometheus metrics
+- `falco` monitors system calls for suspicious runtime behaviour and exposes Prometheus metrics on `:8765`
+- `promtail` ships ModSecurity audit logs to Loki on the monitoring instance
 
 **On the monitoring instance:**
-- Prometheus scrapes `node_exporter` (`:9100`) and `falco-exporter` (`:9376`) on the app instance via VPC every 15 seconds
-- Grafana is pre-provisioned with Prometheus as a datasource and two dashboards:
+- Prometheus scrapes `node_exporter` (`:9100`) and Falco metrics (`:8765`) on the app instance via VPC every 15 seconds
+- Grafana is pre-provisioned with three dashboards:
   - **App Instance Metrics** — CPU usage (%) and memory usage (%)
   - **Falco Security Alerts** — alert rate by priority/rule and total alert count
+  - **WAF — ModSecurity Detections** — ModSecurity rule triggers visualised from Loki
 
-Both Prometheus (`:9090`) and Grafana (`:3000`) are only reachable from within the VPC. To access them locally, SSH tunnel through the app instance:
+Both Prometheus (`:9090`) and Grafana (`:3000`) are only reachable from within the VPC. To access them locally, SSH tunnel through the app instance as the `ops` user:
 
 ```sh
-ssh -L 3000:10.0.0.3:3000 root@<app_public_ip>
-# then open http://localhost:3000
-# default credentials: admin / admin
+ssh -N \
+  -L 3000:10.0.0.3:3000 \
+  -L 9090:10.0.0.3:9090 \
+  -L 9411:10.0.0.3:9411 \
+  -L 3100:10.0.0.3:3100 \
+  ops@<app_public_ip>
 ```
+
+Then open `http://localhost:3000` for Grafana, `http://localhost:9411` for Zipkin.
 
 ---
 
@@ -141,10 +170,10 @@ The production infrastructure runs on Linode and is provisioned with Terraform a
 
 | Instance | VPC IP | Purpose |
 | :--- | :--- | :--- |
-| **App instance** | `10.0.0.2` | Runs the full application stack via Podman Compose |
-| **Monitoring instance** | `10.0.0.3` | Runs Zipkin, Prometheus, and Grafana |
+| **App instance** | `10.0.0.2` | Runs the full application stack via rootless Podman Compose |
+| **Monitoring instance** | `10.0.0.3` | Runs Zipkin, Prometheus, Grafana, and Loki |
 
-The monitoring instance has no public SSH access. It is only reachable via the app instance as a jump host.
+The monitoring instance has no public IP. It is only reachable via the app instance as a ProxyJump host.
 
 ### Provisioning with Terraform
 
@@ -160,32 +189,42 @@ After apply, get the app instance's public IP:
 terraform output -raw instance_ip_address
 ```
 
-Replace both `APP_INSTANCE_PUBLIC_IP` placeholders in `configuration_management/inventory.ini` with this value.
+The CI/CD workflow injects this IP into `configuration_management/inventory.ini` automatically.
 
 ### Configuring with Ansible
 
 ```sh
 cd configuration_management
 
-# Run everything in order (monitoring first, then app infra, then app deploy)
-ansible-playbook main.yml -i inventory.ini
+# Run everything in order
+ansible-playbook main.yml -i inventory.ini \
+  -e "ci_cd_public_key=$(cat ~/.ssh/id_ed25519.pub)" \
+  -e "ops_ssh_public_key=$(cat ~/.ssh/id_ed25519.pub)"
 
 # Or run individual playbooks
-ansible-playbook monitoring.yml -i inventory.ini   # monitoring instance only
-ansible-playbook site.yml -i inventory.ini         # app instance infrastructure
-ansible-playbook deploy.yml -i inventory.ini       # app deployment
+ansible-playbook users.yml -i inventory.ini \
+  -e "ci_cd_public_key=..." \
+  -e "ops_ssh_public_key=..."    # must run first on a new server
+
+ansible-playbook monitoring.yml -i inventory.ini
+ansible-playbook site.yml -i inventory.ini
+ansible-playbook security.yml -i inventory.ini
+ansible-playbook observability.yml -i inventory.ini
+ansible-playbook deploy.yml -i inventory.ini \
+  -e "repo_url=..." \
+  -e "jwt_secret=..." \
+  -e "db_password=..." \
+  -e "internal_api_key=..." \
+  -e "registry=..." \
+  -e "image_tag=..." \
+  -e "github_repository=..." \
+  -e "domain=..." \
+  -e "certbot_email=..."
 ```
+
+> **Note:** `users.yml` must run first on any new server. It connects as root to create the `myguy` and `ops` users, then disables root SSH. All subsequent playbooks connect as `myguy`.
 
 `deploy.yml` automatically reads the Zipkin URL from the monitoring play and writes it into the app's `.env` — no manual copy-paste needed.
-
-**Required environment variables for `deploy.yml`:**
-
-```sh
-export REPO_URL=<your-repo-url>
-export JWT_SECRET=<your-jwt-secret>
-export DB_PASSWORD=<your-db-password>
-export INTERNAL_API_KEY=<your-internal-api-key>
-```
 
 ---
 
@@ -228,9 +267,7 @@ The entire platform can be run locally using Podman Compose. Services use pre-bu
 
 ## Documentation
 
-- **[Project Status & Priorities](./engineering/❗-current-focus.md)** — current engineering priorities and recently completed work
 - **[Backend README](./backend/README.md)**
 - **[Store Service README](./store-service/README.md)**
 - **[Chat Service README](./chat-websocket-service/README.md)**
 - **[Frontend README](./frontend/README.md)**
-- **[Engineering Docs](./engineering/)** — ADRs, RFCs, architecture docs
