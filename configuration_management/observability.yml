@@ -35,11 +35,17 @@
           After=network.target
 
           [Service]
+          User=node_exporter
+          Group=node_exporter
           ExecStart=/usr/local/bin/node_exporter \
             --collector.disable-defaults \
             --collector.cpu \
             --collector.meminfo
           Restart=always
+          NoNewPrivileges=yes
+          ProtectSystem=strict
+          ProtectHome=yes
+          PrivateTmp=yes
 
           [Install]
           WantedBy=multi-user.target
@@ -79,12 +85,14 @@
 
     - name: Create Promtail directories
       ansible.builtin.file:
-        path: "{{ item }}"
+        path: "{{ item.path }}"
         state: directory
-        mode: "0755"
+        owner: "{{ item.owner }}"
+        group: "{{ item.owner }}"
+        mode: "{{ item.mode }}"
       loop:
-        - /etc/promtail
-        - /var/lib/promtail
+        - { path: /etc/promtail,    owner: root,     mode: "0755" }
+        - { path: /var/lib/promtail, owner: promtail, mode: "0750" }
 
     - name: Write Promtail config
       ansible.builtin.copy:
@@ -125,8 +133,14 @@
           After=network.target
 
           [Service]
+          User=promtail
+          Group=promtail
           ExecStart=/usr/local/bin/promtail -config.file=/etc/promtail/config.yml
           Restart=always
+          NoNewPrivileges=yes
+          PrivateTmp=yes
+          ReadOnlyPaths=/etc/promtail
+          ReadWritePaths=/var/lib/promtail
 
           [Install]
           WantedBy=multi-user.target

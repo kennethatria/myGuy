@@ -126,3 +126,86 @@
         dest: /usr/local/bin/cosign
         mode: "0755"
         force: no
+
+    # --- Fail2ban ---
+
+    - name: Install fail2ban
+      ansible.builtin.apt:
+        name: fail2ban
+        state: present
+
+    - name: Write fail2ban jail config
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/jail.local
+        mode: "0644"
+        content: |
+          [DEFAULT]
+          bantime  = 3600    ; ban for 1 hour by default
+          findtime = 600     ; look at the last 10 minutes
+          maxretry = 5
+          backend  = systemd
+
+          # SSH — key-only auth is enforced, so any failed attempt is either
+          # a wrong username or connection probing. Ban quickly.
+          [sshd]
+          enabled  = true
+          port     = ssh
+          logpath  = %(sshd_log)s
+          backend  = %(sshd_backend)s
+          maxretry = 3
+          bantime  = 3600
+
+          # Nginx — generic 4xx flood (scanners probing endpoints)
+          [nginx-4xx]
+          enabled  = true
+          port     = http,https
+          filter   = nginx-4xx
+          logpath  = /var/log/nginx/access.log
+          maxretry = 20
+          findtime = 300
+          bantime  = 3600
+
+          # Nginx — known bot/scanner paths (wp-login, /admin, /phpMyAdmin etc.)
+          [nginx-botsearch]
+          enabled  = true
+          port     = http,https
+          logpath  = /var/log/nginx/access.log
+          maxretry = 2
+          bantime  = 86400  ; 24 hours — these are deliberate scans
+
+          # ModSecurity — ban IPs that repeatedly trigger WAF rules
+          [nginx-modsecurity]
+          enabled  = true
+          port     = http,https
+          filter   = nginx-modsecurity
+          logpath  = /var/log/nginx/modsecurity_audit.log
+          maxretry = 3
+          bantime  = 86400  ; 24 hours — WAF hits are high-confidence signals
+
+    - name: Write nginx-4xx fail2ban filter
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/filter.d/nginx-4xx.conf
+        mode: "0644"
+        content: |
+          [Definition]
+          failregex = ^<HOST> -.*"(GET|POST|HEAD|PUT|DELETE|PATCH|OPTIONS).*" (400|401|403|404|405|429) \d+
+          ignoreregex =
+
+    - name: Write nginx-modsecurity fail2ban filter
+      # ModSecurity audit log section A format:
+      #   [timestamp] unique_id client_ip client_port server_ip server_port
+      # We extract the client IP from that line.
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/filter.d/nginx-modsecurity.conf
+        mode: "0644"
+        content: |
+          [Definition]
+          failregex = ^\[.*?\]\s+\S+\s+<HOST>\s+\d+
+          ignoreregex =
+
+    - name: Enable and start fail2ban
+      ansible.builtin.systemd:
+        name: fail2ban
+        enabled: yes
+        state: restarted
+        daemon_reload: yes

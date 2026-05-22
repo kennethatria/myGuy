@@ -1,17 +1,23 @@
 # deploy.yml - Deploy myGuy application to a remote server
+#
+# Runs as myguy (the inventory ansible_user).  Tasks that touch system paths
+# (nginx, certbot) carry explicit become: yes.  Podman tasks run rootlessly as
+# myguy — no become needed.
 
 ---
 - name: Deploy myGuy application
   hosts: "{{ target | default('app') }}"
-  become: yes
+  # No play-level become: each task declares its own privilege requirement.
 
   handlers:
     - name: reload nginx
       ansible.builtin.service:
         name: nginx
         state: reloaded
+      become: yes
 
   vars:
+    app_user: myguy
     app_dir: /opt/myguy
     git_branch: main
     zipkin_url: "{{ hostvars[groups['monitoring'][0]]['zipkin_url'] | default('http://10.0.0.3:9411/api/v2/spans') }}"
@@ -20,6 +26,18 @@
       - "{{ registry }}/myguy-store-service:{{ image_tag }}"
       - "{{ registry }}/myguy-chat-websocket-service:{{ image_tag }}"
 
+  pre_tasks:
+    - name: Get myguy user ID for XDG_RUNTIME_DIR
+      ansible.builtin.command:
+        cmd: id -u {{ app_user }}
+      register: app_user_uid_result
+      changed_when: false
+
+    - name: Set XDG_RUNTIME_DIR fact
+      ansible.builtin.set_fact:
+        app_user_uid: "{{ app_user_uid_result.stdout }}"
+        xdg_runtime_dir: "/run/user/{{ app_user_uid_result.stdout }}"
+
   tasks:
     # --- Application Setup ---
 
@@ -27,9 +45,10 @@
       ansible.builtin.file:
         path: "{{ app_dir }}"
         state: directory
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
         mode: "0755"
+      become: yes   # /opt/ requires root to create
 
     - name: Clone or update repository
       ansible.builtin.git:
@@ -37,7 +56,7 @@
         dest: "{{ app_dir }}"
         version: "{{ git_branch }}"
         force: yes
-      become_user: "{{ ansible_user }}"
+      # myguy owns app_dir — no become needed
 
     # --- Environment Configuration ---
 
@@ -45,12 +64,13 @@
       ansible.builtin.copy:
         dest: "{{ app_dir }}/.env"
         mode: "0600"
-        owner: "{{ ansible_user }}"
+        owner: "{{ app_user }}"
         content: |
           JWT_SECRET={{ jwt_secret }}
           DB_PASSWORD={{ db_password }}
           INTERNAL_API_KEY={{ internal_api_key }}
           ZIPKIN_URL={{ zipkin_url }}
+      become: yes   # chown requires root even though myguy owns the dir
 
     # --- Deploy ---
 
@@ -59,9 +79,11 @@
         cmd: podman compose pull
         chdir: "{{ app_dir }}"
       environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
         JWT_SECRET: "{{ jwt_secret }}"
         DB_PASSWORD: "{{ db_password }}"
         INTERNAL_API_KEY: "{{ internal_api_key }}"
+      # rootless podman — no become
 
     - name: Get image digests
       ansible.builtin.command:
@@ -69,6 +91,8 @@
       loop: "{{ images_to_verify }}"
       register: image_digests
       changed_when: false
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
 
     - name: Verify image signatures with cosign
       ansible.builtin.command:
@@ -85,9 +109,11 @@
         cmd: podman compose up -d --force-recreate
         chdir: "{{ app_dir }}"
       environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
         JWT_SECRET: "{{ jwt_secret }}"
         DB_PASSWORD: "{{ db_password }}"
         INTERNAL_API_KEY: "{{ internal_api_key }}"
+      # rootless podman — no become
 
     # --- Nginx + TLS ---
 
@@ -103,6 +129,7 @@
         mode: "0644"
       when: not cert_stat.stat.exists
       notify: reload nginx
+      become: yes
 
     - name: Enable nginx site
       ansible.builtin.file:
@@ -110,12 +137,14 @@
         dest: /etc/nginx/sites-enabled/myguy
         state: link
       notify: reload nginx
+      become: yes
 
     - name: Remove default nginx site
       ansible.builtin.file:
         path: /etc/nginx/sites-enabled/default
         state: absent
       notify: reload nginx
+      become: yes
 
     - name: Flush handlers to reload nginx before certbot
       ansible.builtin.meta: flush_handlers
@@ -128,6 +157,7 @@
           --non-interactive --agree-tos
           -m {{ certbot_email }}
         creates: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
+      become: yes
 
     - name: Write nginx HTTPS config
       ansible.builtin.template:
@@ -135,6 +165,7 @@
         dest: /etc/nginx/sites-available/myguy
         mode: "0644"
       notify: reload nginx
+      become: yes
 
     # --- Health Check ---
 
@@ -144,6 +175,8 @@
         chdir: "{{ app_dir }}"
       register: container_status
       changed_when: false
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
 
     - name: Print container status
       ansible.builtin.debug:

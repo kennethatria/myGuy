@@ -110,9 +110,22 @@ jobs:
           # Write to ~/.ssh/linode to match the path hardcoded in inventory.ini
           printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/linode
           chmod 600 ~/.ssh/linode
+          # Derive public key from private key — used to authorize myguy on both instances
+          ssh-keygen -y -f ~/.ssh/linode > ~/.ssh/linode.pub
           # Add app instance to known_hosts — monitoring is VPC-only and
           # is reached via ProxyJump through the app instance (handled in inventory)
           ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
+
+      - name: Bootstrap users and harden SSH
+        # Connects as root (remote_user: root inside users.yml overrides inventory).
+        # Creates myguy on both instances and disables root login.
+        # Must run before all other playbooks.
+        run: |
+          ansible-playbook \
+            -i configuration_management/inventory.ini \
+            configuration_management/users.yml \
+            -e "ci_cd_public_key=$(cat ~/.ssh/linode.pub)" \
+            -e "ops_ssh_public_key=${{ vars.OPS_SSH_PUBLIC_KEY }}"
 
       - name: Configure monitoring instance
         run: |
@@ -162,7 +175,7 @@ jobs:
           rsync -az --delete \
             -e "ssh -i ~/.ssh/linode -o StrictHostKeyChecking=no" \
             frontend/dist/ \
-            root@$SERVER_IP:/opt/myguy/frontend/dist/
+            myguy@$SERVER_IP:/opt/myguy/frontend/dist/
 
       - name: Cleanup SSH key
         if: always()

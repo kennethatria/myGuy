@@ -12,6 +12,11 @@
 #   ansible-playbook deploy.yml -i inventory.ini         # app deployment
 
 ---
+# users.yml must run first: creates myguy, hardens SSH, and disables root login.
+# It always connects as root (remote_user: root inside the play) so it is safe
+# to run on a brand-new server before myguy exists.
+- import_playbook: users.yml
+
 - import_playbook: monitoring.yml
 
 - import_playbook: site.yml
