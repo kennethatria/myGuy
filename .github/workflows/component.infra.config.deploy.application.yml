@@ -51,7 +51,7 @@ jobs:
           sed -i "s/APP_INSTANCE_PUBLIC_IP/$SERVER_IP/g" configuration_management/inventory.ini
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: 'npm'
