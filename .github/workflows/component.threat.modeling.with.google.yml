@@ -57,7 +57,7 @@ jobs:
             --markdown-output ${{ github.workspace }}/myGuy/report/threat_model_report.md
 
       - name: Upload report artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: threat-model-report
