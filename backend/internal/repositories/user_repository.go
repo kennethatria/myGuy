@@ -51,6 +51,16 @@ func (r *GormUserRepository) Update(ctx context.Context, user *models.User) erro
 	return r.db.WithContext(ctx).Save(user).Error
 }
 
+// RecalculateAllRatings recomputes every user's average rating from their
+// reviews. Idempotent; run at startup so averages stored before ratings were
+// kept up to date are corrected.
+func (r *GormUserRepository) RecalculateAllRatings(ctx context.Context) error {
+	return r.db.WithContext(ctx).Exec(`
+		UPDATE users SET average_rating = COALESCE(
+			(SELECT AVG(reviews.rating) FROM reviews WHERE reviews.reviewed_user_id = users.id), 0)
+	`).Error
+}
+
 func (r *GormUserRepository) UpdateRating(ctx context.Context, userID uint) error {
 	// Calculate average rating
 	var avgRating float64

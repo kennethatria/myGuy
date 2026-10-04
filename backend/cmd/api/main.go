@@ -55,6 +55,9 @@ func main() {
 	}
 	// Initialize repositories
 	userRepo := repositories.NewGormUserRepository(db)
+	if err := userRepo.RecalculateAllRatings(context.Background()); err != nil {
+		log.Println("WARNING: failed to recalculate user ratings:", err)
+	}
 	taskRepo := repositories.NewGormTaskRepository(db)
 	applicationRepo := repositories.NewGormApplicationRepository(db)
 	reviewRepo := repositories.NewGormReviewRepository(db)
@@ -126,6 +129,7 @@ func main() {
 
 		// Review routes
 		auth.POST("/tasks/:id/reviews", handler.CreateReview)
+		auth.GET("/tasks/:id/reviews/mine", handler.GetMyTaskReview)
 		auth.GET("/users/:id/reviews", handler.GetUserReviews)
 		// User routes
 		auth.GET("/users/:id", handler.GetUserByID)

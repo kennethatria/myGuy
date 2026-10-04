@@ -50,3 +50,27 @@ func TestPostgres_DeleteTaskWithApplications(t *testing.T) {
 	db.Model(&models.Application{}).Where("task_id = ?", task.ID).Count(&remaining)
 	assert.Zero(t, remaining, "applications are removed with their task")
 }
+
+func TestPostgres_RatingsFollowReviews(t *testing.T) {
+	ctx := context.Background()
+	db := setupPostgres(t)
+	users := NewGormUserRepository(db)
+
+	owner := &models.User{Username: "owner", Email: "owner@example.com"}
+	worker := &models.User{Username: "worker", Email: "worker@example.com"}
+	mustNoError(t, users.Create(ctx, owner))
+	mustNoError(t, users.Create(ctx, worker))
+	for i, rating := range []int{5, 2} {
+		task := &models.Task{Title: "job", CreatedBy: owner.ID, AssignedTo: &worker.ID, Status: "completed"}
+		mustNoError(t, db.Create(task).Error)
+		mustNoError(t, db.Create(&models.Review{TaskID: task.ID, ReviewerID: owner.ID, ReviewedUserID: worker.ID, Rating: rating, Comment: string(rune('a' + i))}).Error)
+	}
+
+	mustNoError(t, users.RecalculateAllRatings(ctx))
+	got, _ := users.GetByID(ctx, worker.ID)
+	assert.Equal(t, 3.5, got.AverageRating)
+
+	mustNoError(t, users.UpdateRating(ctx, worker.ID))
+	got, _ = users.GetByID(ctx, worker.ID)
+	assert.Equal(t, 3.5, got.AverageRating)
+}

@@ -56,4 +56,13 @@ describe('reviews store: combined rating', () => {
 
     expect(all.map(r => r.id)).toEqual([1])
   })
+
+  it('asks the backend whether the user already reviewed a task', async () => {
+    globalThis.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ reviewed: true }) })) as unknown as typeof fetch
+    const store = useReviewsStore()
+
+    expect(await store.hasReviewedTask(4)).toBe(true)
+    expect(globalThis.fetch).toHaveBeenCalledWith(expect.stringContaining('/tasks/4/reviews/mine'), expect.anything())
+  })
 })
+

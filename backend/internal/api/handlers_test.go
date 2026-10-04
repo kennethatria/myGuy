@@ -335,7 +335,8 @@ func TestHandler_ApplyForTask(t *testing.T) {
 }
 
 func TestHandler_CreateReview(t *testing.T) {
-	router, handler, _, mockTaskRepo, mockReviewRepo, _ := setupTestRouter()
+	router, handler, mockUserRepo, mockTaskRepo, mockReviewRepo, _ := setupTestRouter()
+	mockUserRepo.On("UpdateRating", mock.Anything, uint(2)).Return(nil)
 	router.Use(func(c *gin.Context) {
 		c.Set("userID", uint(1))
 		c.Next()
@@ -596,3 +597,23 @@ func TestHandler_GetUserReviews(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.Code)
 	})
 }
+
+func TestHandler_GetMyTaskReview(t *testing.T) {
+	check := func(found *models.Review, err error) map[string]interface{} {
+		router, handler, _, _, mockReviewRepo, _ := setupTestRouter()
+		router.Use(func(c *gin.Context) { c.Set("userID", uint(3)); c.Next() })
+		router.GET("/tasks/:id/reviews/mine", handler.GetMyTaskReview)
+		mockReviewRepo.On("GetTaskReview", mock.Anything, uint(1), uint(3)).Return(found, err)
+
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/tasks/1/reviews/mine", nil))
+		assert.Equal(t, http.StatusOK, resp.Code)
+		var body map[string]interface{}
+		assert.NoError(t, json.Unmarshal(resp.Body.Bytes(), &body))
+		return body
+	}
+
+	assert.Equal(t, true, check(&models.Review{ID: 8, TaskID: 1, ReviewerID: 3, Rating: 5}, nil)["reviewed"])
+	assert.Equal(t, false, check(nil, gorm.ErrRecordNotFound)["reviewed"])
+}
+

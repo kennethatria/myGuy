@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 	"myguy/internal/middleware"
 	"myguy/internal/models"
 	"myguy/internal/services"
@@ -811,3 +812,26 @@ func (h *Handler) GetApplicationParticipants(c *gin.Context) {
 
 	c.JSON(http.StatusOK, participants)
 }
+
+// GetMyTaskReview reports whether the current user has already reviewed the
+// task, so the UI only offers a review once.
+func (h *Handler) GetMyTaskReview(c *gin.Context) {
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task ID"})
+		return
+	}
+
+	review, err := h.reviewService.GetTaskReview(c.Request.Context(), uint(taskID), c.GetUint("userID"))
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusOK, gin.H{"reviewed": false})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check review"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"reviewed": true, "review": review})
+}
+

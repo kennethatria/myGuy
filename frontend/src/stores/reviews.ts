@@ -174,10 +174,16 @@ export const useReviewsStore = defineStore('reviews', () => {
     const userId = authStore.user?.id
     
     if (!userId) return false
-    
-    // Check if user has already reviewed this task
-    const reviews = await fetchUserReviews(userId)
-    return reviews.some(review => review.taskId === taskId)
+
+    // Ask the backend whether this user wrote a review for the task
+    const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}/reviews/mine`, {
+      headers: { 'Authorization': `Bearer ${authStore.token}` }
+    })
+    if (!response.ok) {
+      throw new Error('Failed to check review status')
+    }
+    const data: { reviewed: boolean } = await response.json()
+    return data.reviewed
   }
 
   const calculateAverageRating = (reviews: Review[]): number => {

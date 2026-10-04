@@ -107,3 +107,26 @@ func TestUserRepository(t *testing.T) {
 		assert.Equal(t, 4.5, fetched.AverageRating)
 	})
 }
+
+func TestRecalculateAllRatings(t *testing.T) {
+	ctx := context.Background()
+	db, err := setupTestDB()
+	mustNoError(t, err)
+	repo := NewGormUserRepository(db)
+
+	reviewed := &models.User{Username: "reviewed", Email: "r@example.com"}
+	unreviewed := &models.User{Username: "new", Email: "n@example.com", AverageRating: 3} // stale value
+	mustNoError(t, repo.Create(ctx, reviewed))
+	mustNoError(t, repo.Create(ctx, unreviewed))
+	for i, rating := range []int{5, 4} {
+		mustNoError(t, db.Create(&models.Review{TaskID: uint(i + 1), ReviewerID: 99, ReviewedUserID: reviewed.ID, Rating: rating}).Error)
+	}
+
+	mustNoError(t, repo.RecalculateAllRatings(ctx))
+
+	got, _ := repo.GetByID(ctx, reviewed.ID)
+	assert.Equal(t, 4.5, got.AverageRating)
+	got, _ = repo.GetByID(ctx, unreviewed.ID)
+	assert.Equal(t, 0.0, got.AverageRating)
+}
+

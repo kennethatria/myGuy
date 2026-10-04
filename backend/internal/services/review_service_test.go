@@ -16,6 +16,8 @@ func setupReviewService() (*ReviewService, *tests.MockReviewRepository, *tests.M
 	reviewRepo := new(tests.MockReviewRepository)
 	taskRepo := new(tests.MockTaskRepository)
 	userRepo := new(tests.MockUserRepository)
+	// Every successful review recomputes the reviewed user's average.
+	userRepo.On("UpdateRating", mock.Anything, mock.Anything).Return(nil).Maybe()
 	service := NewReviewService(reviewRepo, taskRepo, userRepo)
 	return service, reviewRepo, taskRepo, userRepo
 }
@@ -402,3 +404,39 @@ func TestGetTaskReview(t *testing.T) {
 		assert.Nil(t, review)
 	})
 }
+
+func TestCreateReviewUpdatesReviewedUsersRating(t *testing.T) {
+	assignee := uint(2)
+	completed := &models.Task{ID: 1, Status: "completed", CreatedBy: 1, AssignedTo: &assignee}
+	input := CreateReviewInput{TaskID: 1, ReviewerID: 1, ReviewedUserID: 2, Rating: 4}
+
+	setup := func(ratingErr error) (*ReviewService, *tests.MockUserRepository) {
+		reviewRepo := new(tests.MockReviewRepository)
+		taskRepo := new(tests.MockTaskRepository)
+		userRepo := new(tests.MockUserRepository)
+		taskRepo.On("GetByID", mock.Anything, uint(1)).Return(completed, nil)
+		reviewRepo.On("GetTaskReview", mock.Anything, uint(1), uint(1)).Return(nil, errors.New("not found"))
+		reviewRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+		userRepo.On("UpdateRating", mock.Anything, uint(2)).Return(ratingErr)
+		return NewReviewService(reviewRepo, taskRepo, userRepo), userRepo
+	}
+
+	t.Run("recomputes the reviewed user's average", func(t *testing.T) {
+		service, userRepo := setup(nil)
+
+		_, err := service.CreateReview(context.Background(), input)
+
+		assert.NoError(t, err)
+		userRepo.AssertCalled(t, "UpdateRating", mock.Anything, uint(2))
+	})
+
+	t.Run("a failed rating update does not fail the saved review", func(t *testing.T) {
+		service, _ := setup(errors.New("db down"))
+
+		review, err := service.CreateReview(context.Background(), input)
+
+		assert.NoError(t, err)
+		assert.NotNil(t, review)
+	})
+}
+

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"log"
 	"myguy/internal/models"
 	"myguy/internal/repositories"
 )
@@ -77,6 +78,13 @@ func (s *ReviewService) CreateReview(ctx context.Context, input CreateReviewInpu
 
 	if err := s.reviewRepo.Create(ctx, review); err != nil {
 		return nil, err
+	}
+
+	// Keep the reviewed user's stored average in step with their reviews. The
+	// review itself is saved either way: failing here would invite a retry
+	// that is then refused as a duplicate, and the next review recomputes it.
+	if err := s.userRepo.UpdateRating(ctx, input.ReviewedUserID); err != nil {
+		log.Printf("update rating for user %d: %v", input.ReviewedUserID, err)
 	}
 
 	return review, nil
