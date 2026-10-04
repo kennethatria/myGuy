@@ -44,8 +44,11 @@ graph LR
             PROM["🔥 Prometheus · :9090"]:::monitoring
             LOKI["🪵 Loki · :3100"]:::monitoring
             GRAFANA["📈 Grafana · :3000"]:::monitoring
+            UMAMI["📊 Umami Analytics · :3001"]:::monitoring
         end
     end
+
+    MAIL(["✉️ Resend (SMTP)"]):::external
 
     %% Flow Topology
     User ==>|HTTPS Request| NB
@@ -61,6 +64,8 @@ graph LR
     CHAT ---> REDIS
     
     STORE ==>|booking notify| CHAT
+    API -->|login codes| MAIL
+    WAF -->|/umami tracker| UMAMI
 
     %% Telemetry & Logging
     API -.->|OTel traces| ZIPKIN
@@ -116,13 +121,14 @@ graph TB
             PROM["🔥 Prometheus Core"]:::monitoring
             LOKI["🪵 Loki Aggregator"]:::monitoring
             GRAFANA["📈 Grafana Visualization"]:::monitoring
+            UMAMI["📊 Umami Analytics"]:::monitoring
         end
     end
 
     %% Deployment & Provisioning Flow
-    GHA -->|1. Execution Schema| HCP
+    GHA -->|1. Terraform runs - manual| HCP
     HCP -->|Deploys Ruleset| FW
-    GHA ==>|2. Ansible Playbooks| WAF
+    GHA ==>|2. Ansible - auto app deploy on main| WAF
     GHA -.->|Ansible Bastion Tunnel| PROM
     OPS ==>|Targeted Troubleshooting| F2B
 
@@ -136,7 +142,7 @@ graph TB
     %% Telemetry, Metrics, and Audit Logs Pipelines
     NE -.->|host metrics| PROM
     FALCO -.->|security kernel events| PROM
-    PROMTAIL -.->|WAF audit log streams| LOKI
+    PROMTAIL -.->|WAF audit + access logs| LOKI
     
     PROM ---> GRAFANA
     LOKI ---> GRAFANA
@@ -147,7 +153,7 @@ graph TB
 | Service | Language | Port | Description |
 | :--- | :--- | :--- | :--- |
 | **Frontend** | TypeScript (Vue.js) | `5173` | The main user interface that communicates with all backend services. |
-| **Backend** | Go (Gin) | `8080` | The core API for managing users, tasks, applications, and reviews. |
+| **Backend** | Go (Gin) | `8080` | The core API: passwordless sign-in, users, tasks, applications, and reviews. |
 | **Store Service** | Go (Gin) | `8081` | A marketplace for items with fixed-price and auction-style bidding. |
 | **Chat Service** | JavaScript (Node.js) | `8082` | A real-time WebSocket service for all messaging features. |
 | **Database** | PostgreSQL | `5432` | Primary data store, with each service connecting to its own database. |
@@ -159,8 +165,31 @@ graph TB
 | :--- | :--- | :--- |
 | **Zipkin** | `9411` | Distributed tracing — collects spans from all backend services. |
 | **Prometheus** | `9090` | Metrics collection — scrapes CPU/memory and Falco security alerts. |
-| **Grafana** | `3000` | Visualization — dashboards for app metrics, security alerts, and WAF detections. |
-| **Loki** | `3100` | Log aggregation — receives ModSecurity audit logs shipped by Promtail. |
+| **Grafana** | `3000` | Visualization — dashboards for app metrics, security alerts, WAF detections, and visitors. |
+| **Loki** | `3100` | Log aggregation — receives ModSecurity audit logs and the nginx JSON access log from Promtail (90-day retention). |
+| **Umami** | `3001` | Privacy-friendly web analytics (self-hosted, with its own PostgreSQL). Only its tracker endpoints are public, via nginx. |
+
+All monitoring containers run as rootless Podman **Quadlet** units under `myguy`, so systemd starts, restarts, and boots them.
+
+---
+
+## Authentication
+
+Sign-in is **passwordless**. One flow covers both login and sign-up:
+
+1. The user enters their email address; the backend emails a **6-digit code** (`POST /api/v1/auth/request-code`).
+2. The user enters the code (`POST /api/v1/auth/verify-code`). An existing account is signed in with a session JWT.
+3. A new email instead gets a 15-minute signup token; the user enters their full name and the account is created with a username derived from the email (`POST /api/v1/auth/complete-signup`).
+
+| Rule | Value |
+| :--- | :--- |
+| Code lifetime | 10 minutes, single use; requesting a new code invalidates the previous one |
+| Wrong guesses | 5 per code, then the code is dead |
+| Requests | 5 codes per email per hour (`429` after that) |
+| Storage | Only an HMAC of the code is stored, never the code itself |
+| Signup token | Signed with a key derived from `JWT_SECRET`, so it is never accepted as a session by any service |
+
+Codes are sent over SMTP with mandatory STARTTLS (production uses [Resend](https://resend.com) on port `2587`). When `SMTP_HOST` is unset — e.g. local development — the backend **logs the code instead of emailing it**.
 
 ---
 
@@ -174,7 +203,8 @@ Security is implemented in layers — network, access control, HTTP, runtime, an
 | :--- | :--- |
 | **Linode Firewall** | Inbound allowlist: 80, 443, 22 only. Default policy: DROP. All other ports silently dropped at the network edge. |
 | **Private VPC** | Monitoring instance (`10.0.0.3`) has no public IP. Reachable only via VPC — unreachable from the internet entirely. |
-| **NodeBalancer** | Connection throttle of 20 connections/sec on HTTP. Acts as the single public entry point. |
+| **NodeBalancer** | Single public entry point (`myguy.work` DNS points here). Port 80 in HTTP mode (adds `X-Forwarded-For`, health-checks `/healthcheck/`); port 443 is TLS passthrough with **PROXY protocol v2**. Connection throttle of 20 connections/sec. |
+| **Real client IPs** | nginx trusts only the NodeBalancer range (`192.168.255.0/24`) and restores each visitor's real IP from the PROXY header or `X-Forwarded-For`, so fail2ban, the WAF, logs, and the backends see the actual client — never the NodeBalancer. |
 
 ### Access Control
 
@@ -182,10 +212,12 @@ Root SSH is disabled on every server. Two non-root accounts replace it.
 
 | User | Scope | Auth |
 | :--- | :--- | :--- |
-| `myguy` | Runs app containers (rootless Podman) and Ansible automation. Sudo allowed for provisioning commands only — interactive shells explicitly blocked. | CI/CD SSH key |
+| `myguy` | Runs app containers (rootless Podman) and Ansible automation. Passwordless sudo, required by Ansible `become`. Protected by the CI/CD key, which lives only in the GitHub `dev` environment. | CI/CD SSH key |
 | `ops` | Troubleshooting only. Sudo scoped to: container observe/restart (`appctl`), read `.env` secrets, `fail2ban-client status` and unban. Nothing else. | Personal SSH key |
 | `node_exporter` | Dedicated no-login system account. Runs only the metrics daemon. No sudo, no shell. | — |
 | `promtail` | Dedicated no-login system account. Member of `adm` group for log read access. No sudo, no shell. | — |
+
+Emergency access without SSH is via the Akamai **LISH console** as `root` (password from the Terraform `root_password` variable).
 
 SSH hardening applied to both servers:
 
@@ -209,7 +241,7 @@ Four jails are active on the app instance:
 
 ### HTTP Security — Nginx + ModSecurity
 
-- **TLS 1.2 / 1.3 only** — HTTP permanently redirected to HTTPS
+- **TLS 1.2 / 1.3 only** — HTTP permanently redirected to HTTPS (except the NodeBalancer health check, `/healthcheck/`)
 - **Let's Encrypt** certificates via Certbot with auto-renewal
 - **ModSecurity + OWASP Core Rule Set v4** — inspects every inbound request for SQLi, XSS, path traversal, RFI, and other OWASP Top 10 patterns
 - Currently in **DetectionOnly** mode (logs, does not block) — WAF audit log feeds Fail2ban and Loki
@@ -267,14 +299,15 @@ ZIPKIN_URL=http://10.0.0.3:9411/api/v2/spans
 **On the app instance:**
 - `node_exporter` runs as a systemd service on `:9100`, exposing CPU and memory metrics
 - `falco` monitors system calls for suspicious runtime behaviour and exposes Prometheus metrics on `:8765`
-- `promtail` ships ModSecurity audit logs to Loki on the monitoring instance
+- `promtail` ships ModSecurity audit logs and the nginx JSON access log (`/var/log/nginx/access.json.log`) to Loki on the monitoring instance
 
 **On the monitoring instance:**
 - Prometheus scrapes `node_exporter` (`:9100`) and Falco metrics (`:8765`) on the app instance via VPC every 15 seconds
-- Grafana is pre-provisioned with three dashboards:
+- Grafana is pre-provisioned with four dashboards:
   - **App Instance Metrics** — CPU usage (%) and memory usage (%)
   - **Falco Security Alerts** — alert rate by priority/rule and total alert count
   - **WAF — ModSecurity Detections** — ModSecurity rule triggers visualised from Loki
+  - **Visitors** — unique visitors, page loads, top pages and referrers, API requests, and response codes, from the nginx access log
 
 Both Prometheus (`:9090`) and Grafana (`:3000`) are only reachable from within the VPC. To access them locally, SSH tunnel through the app instance as the `ops` user:
 
@@ -284,16 +317,68 @@ ssh -N \
   -L 9090:10.0.0.3:9090 \
   -L 9411:10.0.0.3:9411 \
   -L 3100:10.0.0.3:3100 \
+  -L 3001:10.0.0.3:3001 \
   ops@<app_public_ip>
 ```
 
-Then open `http://localhost:3000` for Grafana, `http://localhost:9411` for Zipkin.
+Then open `http://localhost:3000` for Grafana, `http://localhost:9411` for Zipkin, and `http://localhost:3001` for Umami.
+
+### Visitor Analytics
+
+Two complementary views, both self-hosted:
+
+| Tool | What it counts | Notes |
+| :--- | :--- | :--- |
+| **Grafana → Visitors** | Unique client IPs and page loads from the nginx access log | Zero setup. Approximate: counts IPs not people, skips self-identified bots, and sees full page loads only (not in-app SPA navigation). Query strings are never logged. |
+| **Umami** | Real visitors, sessions, SPA route changes, referrers, devices, countries | The frontend loads `/umami/script.js` only when `VITE_UMAMI_WEBSITE_ID` is set at build time. |
+
+First-time Umami setup:
+
+1. Open Umami through the SSH tunnel above and log in as `admin` / `umami`, then **change the password immediately**.
+2. **Settings → Websites → Add** your domain and copy the **Website ID**.
+3. Add it as the GitHub `dev` environment **variable** `UMAMI_WEBSITE_ID`; the next deploy rebuilds the frontend with tracking enabled.
 
 ---
 
 ## Infrastructure & Deployment
 
-The production infrastructure runs on Linode and is provisioned with Terraform and configured with Ansible.
+The production infrastructure runs on Linode (Akamai Cloud), is provisioned with Terraform (HCP Terraform workspace `dev-myguy`), and is configured with Ansible. The domain's DNS `A` record must point at the **NodeBalancer** IP (Terraform output `nodebalancer_ipv4`), not an instance.
+
+### CI/CD Pipeline
+
+`.github/workflows/ci.cd.yml` orchestrates the reusable `component.*` workflows:
+
+| Trigger | What runs |
+| :--- | :--- |
+| **Pull request** | Commit lint → tests and coverage (all four services) · CodeQL |
+| **Push to `main`** | Tests and coverage → images built, **Cosign-signed**, pushed to Docker Hub → **automatic app deploy** (`Run ansible`, scope `app`). Release Please, SBOM, and Scorecard run alongside. |
+
+Each stage only runs if the previous one passed, so failing tests never reach production. Deploys are serialised (one at a time per environment).
+
+| Workflow | When to run it manually |
+| :--- | :--- |
+| **Run ansible**, scope `app` | Re-deploy the current images and frontend (same as the automatic deploy). |
+| **Run ansible**, scope `full` | New servers, or after changing `users.yml`, `site.yml`, `security.yml`, `observability.yml`, or `monitoring.yml`. |
+| **Terraform** (`component.infra.tf.deploy.yml`) | Any change under `infra/`. Kept manual so plans are reviewed — instance changes can replace servers. |
+
+Image tags: CI tags images with the latest GitHub release (or `latest` if none); the deploy writes that tag to the server's `.env` as `IMAGE_TAG`, so the server runs exactly the image whose signature was verified.
+
+### GitHub Environment (`dev`) Configuration
+
+| Name | Kind | Purpose |
+| :--- | :--- | :--- |
+| `SSH_PRIVATE_KEY` | Secret | CI deploy key (ed25519). Its public half must be the Terraform `authorized_keys` variable. |
+| `OPS_SSH_PUBLIC_KEY` | Secret | Public key for the `ops` troubleshooting user. |
+| `JWT_SECRET`, `POSTGRES_PASSWORD`, `INTERNAL_API_KEY` | Secret | Application secrets written to the server `.env`. |
+| `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | Secret | Image push and pull (tokens expire — renew on Docker Hub). |
+| `TF_API_TOKEN` | Secret | Reads Terraform outputs (server IP). |
+| `CERTBOT_EMAIL`, `REPO_URL` | Secret | Let's Encrypt registration; repository cloned on the server. |
+| `SMTP_PASSWORD` | Secret | SMTP password (Resend API key). |
+| `DOMAIN`, `REGISTRY` | Variable | e.g. `myguy.work`, `docker.io/katria47`. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_FROM` | Variable | e.g. `smtp.resend.com`, `2587`, `resend`, `MyGuy <no-reply@myguy.work>`. Akamai blocks outbound 25/465/587 on new accounts, so prefer the provider's alternate port. |
+| `UMAMI_WEBSITE_ID` | Variable | Optional; enables Umami tracking in the frontend build. |
+
+Terraform variables (`authorized_keys`, `root_password`, `provider_token`) live in the HCP Terraform workspace. `authorized_keys` must be a single-line public key; the Akamai API token needs **Events: read** in addition to Linodes, NodeBalancers, Firewalls, VPCs, and IPs.
 
 ### Servers
 
@@ -348,10 +433,14 @@ ansible-playbook deploy.yml -i inventory.ini \
   -e "image_tag=..." \
   -e "github_repository=..." \
   -e "domain=..." \
-  -e "certbot_email=..."
+  -e "certbot_email=..." \
+  -e "smtp_host=... smtp_port=... smtp_username=... smtp_from=..." \
+  -e "smtp_password=..."
 ```
 
-> **Note:** `users.yml` must run first on any new server. It connects as root to create the `myguy` and `ops` users, then disables root SSH. All subsequent playbooks connect as `myguy`.
+> **Note:** `users.yml` must run first on any new server. It logs in as `root` on a fresh server (or as `myguy` once bootstrapped, when root SSH is already disabled), creates the `myguy` and `ops` users, then disables root SSH. All subsequent playbooks connect as `myguy`.
+
+> **Tip:** `-e "key=value"` splits on spaces. For values containing spaces (SSH public keys, `SMTP_FROM`), pass JSON instead: `-e '{"smtp_from": "MyGuy <no-reply@myguy.work>"}'` — the CI workflow builds its extra-vars this way with `jq`.
 
 `deploy.yml` automatically reads the Zipkin URL from the monitoring play and writes it into the app's `.env` — no manual copy-paste needed.
 
@@ -359,10 +448,11 @@ ansible-playbook deploy.yml -i inventory.ini \
 
 ## Quick Start (Local Development)
 
-The entire platform can be run locally using Podman Compose. Services use pre-built images from Docker Hub.
+The backend services run locally with Podman Compose using pre-built images from Docker Hub; the frontend runs with the Vite dev server.
 
 ### Prerequisites
 - Podman & Podman Compose
+- Node.js 20+
 - Git
 
 ### Running the Application
@@ -378,19 +468,36 @@ The entire platform can be run locally using Podman Compose. Services use pre-bu
    JWT_SECRET=your-secret-key-here
    DB_PASSWORD=mysecretpassword
    INTERNAL_API_KEY=your-internal-api-key-here
+   # Optional: leave SMTP_HOST unset to log sign-in codes instead of emailing them
+   # SMTP_HOST=smtp.resend.com
+   # Optional: image tag to run (default: latest)
+   # IMAGE_TAG=latest
    ```
 
-3. **Start the services:**
+3. **Start the backend services:**
    ```sh
    podman compose up -d
    ```
 
-4. **Access the application:**
+4. **Start the frontend:**
+   ```sh
+   cd frontend
+   npm install
+   npm run dev
+   ```
+
+5. **Sign in:** open the frontend, enter any email, and read the code from the API logs:
+   ```sh
+   podman compose logs api | grep "login code"
+   ```
+
+6. **Access the application:**
    - **Frontend:** http://localhost:5173
    - **Backend API:** http://localhost:8080
    - **Store Service:** http://localhost:8081
    - **Chat Service:** http://localhost:8082
    - **Zipkin UI:** http://localhost:9411
+   - **PostgreSQL:** `localhost:5433`
 
 ---
 
