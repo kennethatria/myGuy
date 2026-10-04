@@ -37,11 +37,34 @@
           - /etc/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
           - loki-data:/loki
         exec: -config.file=/etc/loki/loki-config.yml
+      # Umami web analytics.  Umami joins umami-db's network namespace so it
+      # reaches Postgres on localhost without depending on Podman DNS; the
+      # Umami port (3000 in-container) is therefore published on umami-db.
+      # Only the tracker endpoints are public, via nginx on the app instance.
+      - name: umami-db
+        image: docker.io/library/postgres:16-alpine
+        ports: ["3001:3000"]
+        volumes:
+          - umami-db-data:/var/lib/postgresql/data
+        env_file: /etc/umami/umami.env
+      - name: umami
+        image: ghcr.io/umami-software/umami:postgresql-latest
+        network: container:umami-db
+        env_file: /etc/umami/umami.env
+        # Restart with the database: a new umami-db means a new namespace.
+        part_of: umami-db
 
   handlers:
     - name: restart grafana
       ansible.builtin.command:
         cmd: podman restart grafana
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+      changed_when: false
+
+    - name: restart loki
+      ansible.builtin.command:
+        cmd: podman restart loki
       environment:
         XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
       changed_when: false
@@ -322,6 +345,126 @@
       notify: restart grafana
       become: yes
 
+    - name: Write Visitors dashboard
+      # Built from the nginx JSON access log (job="nginx_access").  A "page
+      # view" is a successful GET for an app page: requests nginx proxies to
+      # a service (/api, /store/, /chat/, /socket.io, /health), static assets
+      # and obvious bots are excluded.  The SPA
+      # loads once per visit, so this counts visits/page loads, not in-app
+      # route changes.  Visitors are approximated by distinct client IP.
+      ansible.builtin.copy:
+        dest: /etc/grafana/dashboards/visitors.json
+        mode: "0644"
+        content: !unsafe |
+          {
+            "title": "Visitors",
+            "uid": "visitors",
+            "schemaVersion": 36,
+            "panels": [
+              {
+                "type": "stat",
+                "title": "Unique visitors",
+                "description": "Distinct client IPs that loaded an app page in the selected time range.",
+                "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "targets": [
+                  { "refId": "A", "queryType": "instant",
+                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|(store|chat)/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range])))" }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Page loads",
+                "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "targets": [
+                  { "refId": "A", "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|(store|chat)/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range]))" }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "API requests",
+                "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "targets": [
+                  { "refId": "A", "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | uri =~ \"/(api|store|chat)/.*\" [$__range]))" }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Error responses (5xx)",
+                "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "targets": [
+                  { "refId": "A", "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | status >= 500 [$__range]))" }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Unique visitors per hour",
+                "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 },
+                "interval": "1h",
+                "datasource": { "type": "loki", "uid": "loki" },
+                "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60 } } },
+                "targets": [
+                  { "refId": "A", "legendFormat": "visitors",
+                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|(store|chat)/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [1h])))" }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Page loads per hour",
+                "gridPos": { "x": 12, "y": 5, "w": 12, "h": 8 },
+                "interval": "1h",
+                "datasource": { "type": "loki", "uid": "loki" },
+                "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60 } } },
+                "targets": [
+                  { "refId": "A", "legendFormat": "page loads",
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|(store|chat)/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [1h]))" }
+                ]
+              },
+              {
+                "type": "bargauge",
+                "title": "Top pages",
+                "gridPos": { "x": 0, "y": 13, "w": 12, "h": 9 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "options": { "orientation": "horizontal", "displayMode": "basic" },
+                "targets": [
+                  { "refId": "A", "queryType": "instant", "legendFormat": "{{uri}}",
+                    "expr": "topk(10, sum by (uri) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|(store|chat)/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range])))" }
+                ]
+              },
+              {
+                "type": "bargauge",
+                "title": "Top referrers",
+                "description": "Where visitors came from. Includes your own domain for internal links.",
+                "gridPos": { "x": 12, "y": 13, "w": 12, "h": 9 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "options": { "orientation": "horizontal", "displayMode": "basic" },
+                "targets": [
+                  { "refId": "A", "queryType": "instant", "legendFormat": "{{referer}}",
+                    "expr": "topk(10, sum by (referer) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|(store|chat)/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" | referer != \"\" [$__range])))" }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Responses by status",
+                "gridPos": { "x": 0, "y": 22, "w": 24, "h": 8 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "targets": [
+                  { "refId": "A", "legendFormat": "{{status}}",
+                    "expr": "sum by (status) (count_over_time({job=\"nginx_access\"} | json [$__interval]))" }
+                ]
+              }
+            ],
+            "time": { "from": "now-7d", "to": "now" },
+            "refresh": "5m"
+          }
+      become: yes
+
     # --- Loki ---
 
     - name: Create Loki config directory
@@ -363,8 +506,58 @@
                   prefix: index_
                   period: 24h
 
+          limits_config:
+            # Unique-visitor queries create one series per client IP.
+            max_query_series: 50000
+            # Access logs contain client IPs; keep them 90 days.
+            retention_period: 2160h
+
+          compactor:
+            working_directory: /loki/compactor
+            shared_store: filesystem
+            retention_enabled: true
+
           analytics:
             reporting_enabled: false
+      notify: restart loki
+      become: yes
+
+    # --- Umami secrets ---
+    # Generated once on the server and never overwritten (force: false), so
+    # the Postgres password stays in sync with the initialised database.
+
+    - name: Create Umami config directory
+      ansible.builtin.file:
+        path: /etc/umami
+        state: directory
+        owner: myguy
+        group: myguy
+        mode: "0700"
+      become: yes
+
+    - name: Generate candidate Umami secrets
+      # Evaluated once here; a lookup in the copy task's vars would be
+      # re-evaluated on every reference and produce mismatched passwords.
+      ansible.builtin.set_fact:
+        umami_db_password: "{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_letters', 'digits'], length=32) }}"
+        umami_app_secret: "{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_letters', 'digits'], length=48) }}"
+      no_log: true
+
+    - name: Write Umami environment file (first run only)
+      ansible.builtin.copy:
+        dest: /etc/umami/umami.env
+        owner: myguy
+        group: myguy
+        mode: "0600"
+        force: false
+        content: |
+          POSTGRES_USER=umami
+          POSTGRES_DB=umami
+          POSTGRES_PASSWORD={{ umami_db_password }}
+          DATABASE_URL=postgresql://umami:{{ umami_db_password }}@localhost:5432/umami
+          APP_SECRET={{ umami_app_secret }}
+          DISABLE_TELEMETRY=1
+      no_log: true
       become: yes
 
     # --- Containers (Podman Quadlet) ---
@@ -403,6 +596,11 @@
         content: |
           [Unit]
           Description={{ item.name }} (monitoring)
+          {% if item.part_of is defined %}
+          Requires={{ item.part_of }}.service
+          After={{ item.part_of }}.service
+          PartOf={{ item.part_of }}.service
+          {% endif %}
 
           [Container]
           ContainerName={{ item.name }}
@@ -416,6 +614,12 @@
           {% for key, value in (item.env | default({})).items() %}
           Environment={{ key }}={{ value }}
           {% endfor %}
+          {% if item.network is defined %}
+          Network={{ item.network }}
+          {% endif %}
+          {% if item.env_file is defined %}
+          EnvironmentFile={{ item.env_file }}
+          {% endif %}
           {% if item.exec is defined %}
           Exec={{ item.exec }}
           {% endif %}

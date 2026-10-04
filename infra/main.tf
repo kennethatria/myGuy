@@ -54,6 +54,9 @@ resource "linode_nodebalancer_config" "https" {
   nodebalancer_id = linode_nodebalancer.main.id
   port            = 443
   protocol        = "tcp"
+  # TLS passes through untouched, so the client IP is sent as a PROXY protocol
+  # header instead. nginx must listen with proxy_protocol to match.
+  proxy_protocol  = "v2"
   check           = "connection"
   check_attempts  = 3
   check_timeout   = 10
@@ -158,6 +161,14 @@ resource "linode_firewall" "zipkin_firewall" {
     action   = "ACCEPT"
     protocol = "TCP"
     ports    = "3000"
+    ipv4     = ["10.0.0.0/24"]
+  }
+
+  inbound {
+    label    = "allow-umami-from-vpc"
+    action   = "ACCEPT"
+    protocol = "TCP"
+    ports    = "3001"
     ipv4     = ["10.0.0.0/24"]
   }
 

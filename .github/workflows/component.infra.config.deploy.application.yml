@@ -68,6 +68,8 @@ jobs:
           VITE_STORE_API_BASE_URL: https://${{ vars.DOMAIN }}/store
           VITE_CHAT_WS_URL: https://${{ vars.DOMAIN }}
           VITE_CHAT_API_URL: https://${{ vars.DOMAIN }}/chat/api/v1
+          # Optional: set after creating the website in the Umami dashboard.
+          VITE_UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
 
       - name: Install Ansible
         run: |

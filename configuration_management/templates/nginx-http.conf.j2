@@ -1,6 +1,7 @@
 server {
     listen 80;
     server_name {{ domain }} www.{{ domain }};
+    real_ip_header X-Forwarded-For;
 
     root {{ app_dir }}/frontend/dist;
     index index.html;
@@ -42,6 +43,17 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
+    }
+
+    # Umami analytics on the monitoring instance.  Only the tracker script and
+    # its event endpoint are public; the Umami dashboard stays VPC-only.
+    location = /umami/script.js {
+        proxy_pass http://{{ monitoring_vpc_ip }}:3001/script.js;
+    }
+
+    location = /umami/api/send {
+        proxy_pass http://{{ monitoring_vpc_ip }}:3001/api/send;
+        proxy_set_header X-Forwarded-For $remote_addr;
     }
 
     location / {

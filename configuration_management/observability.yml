@@ -123,6 +123,16 @@
                 - labels:
                     rule_id:
 
+            # JSON access log written by nginx-common.conf.j2.  Fields are
+            # parsed at query time (| json) so client IPs never become labels.
+            - job_name: nginx_access
+              static_configs:
+                - targets:
+                    - localhost
+                  labels:
+                    job: nginx_access
+                    __path__: /var/log/nginx/access.json.log
+
     - name: Create Promtail systemd service
       ansible.builtin.copy:
         dest: /etc/systemd/system/promtail.service

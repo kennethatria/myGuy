@@ -122,6 +122,14 @@
         path: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
       register: cert_stat
 
+    - name: Write nginx shared config (real client IP, JSON access log)
+      ansible.builtin.template:
+        src: nginx-common.conf.j2
+        dest: /etc/nginx/conf.d/myguy.conf
+        mode: "0644"
+      notify: reload nginx
+      become: yes
+
     - name: Write nginx HTTP config (pre-certbot)
       ansible.builtin.template:
         src: nginx-http.conf.j2

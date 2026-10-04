@@ -1,0 +1,27 @@
+# http-level settings shared by the myguy site (included via conf.d).
+
+# Traffic arrives through the Akamai NodeBalancer, which connects from this
+# range.  Each server block picks the header carrying the real client IP:
+# X-Forwarded-For on :80 (HTTP mode), PROXY protocol on :443 (TCP mode).
+set_real_ip_from 192.168.255.0/24;
+
+# JSON access log shipped to Loki by Promtail for the Visitors dashboard.
+# Log the path as requested, minus the query string (which may carry tokens
+# or search terms).  $uri is not usable: try_files rewrites every SPA route
+# to /index.html before logging.
+map $request_uri $request_path {
+    "~^(?<path>[^?]*)" $path;
+}
+
+log_format visitor_json escape=json
+    '{"time":"$time_iso8601",'
+    '"remote_addr":"$remote_addr",'
+    '"method":"$request_method",'
+    '"uri":"$request_path",'
+    '"status":$status,'
+    '"bytes":$body_bytes_sent,'
+    '"request_time":$request_time,'
+    '"referer":"$http_referer",'
+    '"user_agent":"$http_user_agent"}';
+
+access_log /var/log/nginx/access.json.log visitor_json;
