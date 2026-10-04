@@ -9,6 +9,35 @@
   hosts: monitoring
   # No play-level become: each task declares its own privilege requirement.
 
+  vars:
+    # Run as rootless Podman Quadlet units owned by myguy: systemd starts,
+    # restarts and boots each container (linger is enabled in users.yml).
+    monitoring_containers:
+      - name: zipkin
+        image: docker.io/openzipkin/zipkin
+        ports: ["9411:9411"]
+      - name: prometheus
+        image: docker.io/prom/prometheus:latest
+        ports: ["9090:9090"]
+        volumes:
+          - /etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - name: grafana
+        image: docker.io/grafana/grafana:latest
+        ports: ["3000:3000"]
+        volumes:
+          - /etc/grafana/provisioning:/etc/grafana/provisioning:ro
+          - /etc/grafana/dashboards:/etc/grafana/dashboards:ro
+        env:
+          GF_AUTH_ANONYMOUS_ENABLED: "false"
+          GF_SERVER_HTTP_ADDR: "0.0.0.0"
+      - name: loki
+        image: docker.io/grafana/loki:2.9.10
+        ports: ["3100:3100"]
+        volumes:
+          - /etc/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+          - loki-data:/loki
+        exec: -config.file=/etc/loki/loki-config.yml
+
   handlers:
     - name: restart grafana
       ansible.builtin.command:
@@ -29,6 +58,7 @@
         app_user_uid: "{{ app_user_uid_result.stdout }}"
         xdg_runtime_dir: "/run/user/{{ app_user_uid_result.stdout }}"
         user_systemd_dir: "/home/myguy/.config/systemd/user"
+        quadlet_dir: "/home/myguy/.config/containers/systemd"
 
   tasks:
     - name: Update apt cache
@@ -66,59 +96,6 @@
         mode: "0755"
       become: yes
 
-    # --- Remove stopped legacy containers before podman_container takes over ---
-
-    - name: Remove stopped containers
-      ansible.builtin.command:
-        cmd: podman rm {{ item }}
-      loop:
-        - zipkin
-        - prometheus
-        - grafana
-        - loki
-      failed_when: false
-      changed_when: false
-      environment:
-        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
-
-    # --- Zipkin ---
-
-    - name: Run Zipkin container
-      containers.podman.podman_container:
-        name: zipkin
-        image: docker.io/openzipkin/zipkin
-        state: started
-        ports:
-          - "9411:9411"
-        restart_policy: always
-      become: yes
-      become_user: myguy
-      environment:
-        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
-
-    - name: Generate Zipkin systemd user service
-      ansible.builtin.command:
-        cmd: podman generate systemd --name zipkin --files
-        chdir: "{{ user_systemd_dir }}"
-      become: yes
-      become_user: myguy
-      environment:
-        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
-      changed_when: false
-
-    - name: Enable and start Zipkin systemd user service
-      ansible.builtin.systemd:
-        name: container-zipkin
-        enabled: yes
-        state: started
-        daemon_reload: yes
-        scope: user
-      become: yes
-      become_user: myguy
-      environment:
-        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
-        DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ app_user_uid }}/bus"
-
     - name: Set zipkin_url fact for use by other plays
       ansible.builtin.set_fact:
         zipkin_url: "http://{{ ansible_host }}:9411/api/v2/spans"
@@ -153,52 +130,6 @@
                   labels:
                     instance: app
       become: yes
-
-    - name: Run Prometheus container
-      containers.podman.podman_container:
-        name: prometheus
-        image: docker.io/prom/prometheus:latest
-        state: started
-        ports:
-          - "9090:9090"
-        volumes:
-          - /etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-        restart_policy: always
-      become: yes
-      become_user: myguy
-      environment:
-        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
-
-    - name: Generate Prometheus systemd user service
-      ansible.builtin.command:
-        cmd: podman generate systemd --name prometheus --files
-        chdir: "{{ user_systemd_dir }}"
-      become: yes
-      become_user: myguy
-      environment:
-        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
-      changed_when: false
-
-    - name: Enable and start Prometheus systemd user service
-      ansible.builtin.systemd:
-        name: container-prometheus
-        enabled: yes
-        state: started
-        daemon_reload: yes
-        scope: user
-      become: yes
-      become_user: myguy
-      environment:
-        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
-        DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ app_user_uid }}/bus"
-
-    - name: Reload Prometheus config
-      ansible.builtin.command:
-        cmd: podman kill --signal HUP prometheus
-      changed_when: false
-      failed_when: false
-      environment:
-        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
 
     # --- Grafana provisioning files ---
 
@@ -391,50 +322,6 @@
       notify: restart grafana
       become: yes
 
-    # --- Grafana ---
-
-    - name: Run Grafana container
-      containers.podman.podman_container:
-        name: grafana
-        image: docker.io/grafana/grafana:latest
-        state: started
-        ports:
-          - "3000:3000"
-        volumes:
-          - /etc/grafana/provisioning:/etc/grafana/provisioning:ro
-          - /etc/grafana/dashboards:/etc/grafana/dashboards:ro
-        env:
-          GF_AUTH_ANONYMOUS_ENABLED: "false"
-          GF_SERVER_HTTP_ADDR: "0.0.0.0"
-        restart_policy: always
-      become: yes
-      become_user: myguy
-      environment:
-        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
-
-    - name: Generate Grafana systemd user service
-      ansible.builtin.command:
-        cmd: podman generate systemd --name grafana --files
-        chdir: "{{ user_systemd_dir }}"
-      become: yes
-      become_user: myguy
-      environment:
-        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
-      changed_when: false
-
-    - name: Enable and start Grafana systemd user service
-      ansible.builtin.systemd:
-        name: container-grafana
-        enabled: yes
-        state: started
-        daemon_reload: yes
-        scope: user
-      become: yes
-      become_user: myguy
-      environment:
-        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
-        DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ app_user_uid }}/bus"
-
     # --- Loki ---
 
     - name: Create Loki config directory
@@ -480,42 +367,93 @@
             reporting_enabled: false
       become: yes
 
-    - name: Run Loki container
-      containers.podman.podman_container:
-        name: loki
-        image: docker.io/grafana/loki:2.9.10
-        state: started
-        ports:
-          - "3100:3100"
-        volumes:
-          - /etc/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
-          - loki-data:/loki
-        command: -config.file=/etc/loki/loki-config.yml
-        restart_policy: always
+    # --- Containers (Podman Quadlet) ---
+    # Runs after all config files above are written.  Each container is a
+    # rootless systemd user service generated from a .container file; Quadlet
+    # runs `podman run --replace`, so containers left from earlier deploys
+    # with the same name are replaced rather than conflicting.
+
+    - name: Remove legacy podman-generate-systemd units
+      # Superseded by Quadlet; these units fail to start against a container
+      # that is already running.
+      ansible.builtin.file:
+        path: "{{ user_systemd_dir }}/{{ item[0] }}container-{{ item[1].name }}.service"
+        state: absent
+      loop: "{{ ['', 'default.target.wants/'] | product(monitoring_containers) | list }}"
+      loop_control:
+        label: "{{ item[0] }}container-{{ item[1].name }}.service"
       become: yes
       become_user: myguy
-      environment:
-        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
 
-    - name: Generate Loki systemd user service
-      ansible.builtin.command:
-        cmd: podman generate systemd --name loki --files
-        chdir: "{{ user_systemd_dir }}"
+    - name: Create Quadlet directory for myguy
+      ansible.builtin.file:
+        path: "{{ quadlet_dir }}"
+        state: directory
+        owner: myguy
+        group: myguy
+        mode: "0755"
       become: yes
-      become_user: myguy
-      environment:
-        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
-      changed_when: false
 
-    - name: Enable and start Loki systemd user service
+    - name: Write Quadlet container units
+      ansible.builtin.copy:
+        dest: "{{ quadlet_dir }}/{{ item.name }}.container"
+        owner: myguy
+        group: myguy
+        mode: "0644"
+        content: |
+          [Unit]
+          Description={{ item.name }} (monitoring)
+
+          [Container]
+          ContainerName={{ item.name }}
+          Image={{ item.image }}
+          {% for port in item.ports | default([]) %}
+          PublishPort={{ port }}
+          {% endfor %}
+          {% for volume in item.volumes | default([]) %}
+          Volume={{ volume }}
+          {% endfor %}
+          {% for key, value in (item.env | default({})).items() %}
+          Environment={{ key }}={{ value }}
+          {% endfor %}
+          {% if item.exec is defined %}
+          Exec={{ item.exec }}
+          {% endif %}
+
+          [Service]
+          Restart=always
+          # First start pulls the image, which can exceed the 90s default.
+          TimeoutStartSec=900
+
+          [Install]
+          WantedBy=default.target
+      loop: "{{ monitoring_containers }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: quadlet_units
+      become: yes
+
+    - name: Start monitoring containers (restart those whose unit changed)
+      # Quadlet services are generated, so they cannot be `enabled`; the
+      # [Install] section above makes them start at boot instead.
       ansible.builtin.systemd:
-        name: container-loki
-        enabled: yes
-        state: started
+        name: "{{ item.item.name }}.service"
+        state: "{{ 'restarted' if item.changed else 'started' }}"
         daemon_reload: yes
         scope: user
+      loop: "{{ quadlet_units.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
       become: yes
       become_user: myguy
       environment:
         XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
-        DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ app_user_uid }}/bus"
+        DBUS_SESSION_BUS_ADDRESS: "unix:path={{ xdg_runtime_dir }}/bus"
+
+    - name: Reload Prometheus config
+      ansible.builtin.command:
+        cmd: podman kill --signal HUP prometheus
+      changed_when: false
+      failed_when: false
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
