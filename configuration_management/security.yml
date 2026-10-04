@@ -19,6 +19,7 @@
         repo: https://github.com/coreruleset/coreruleset.git
         dest: /etc/nginx/modsecurity/owasp-crs
         version: "v4.0.0"
+        depth: 1   # the tag snapshot is all we need; full history is slow
         force: no
 
     - name: Copy CRS setup config
