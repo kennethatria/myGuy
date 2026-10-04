@@ -1,7 +1,10 @@
 <template>
   <div class="app-layout">
     <!-- Sidebar -->
-    <aside class="sidebar" :class="{ 'collapsed': isSidebarCollapsed }">
+    <!-- Phones: the sidebar is a drawer over the page; tapping outside closes it -->
+    <div v-if="isMobileMenuOpen" class="sidebar-backdrop" @click="isMobileMenuOpen = false"></div>
+
+    <aside class="sidebar" :class="{ 'collapsed': isSidebarCollapsed, 'mobile-open': isMobileMenuOpen }">
       <div class="sidebar-header">
         <router-link :to="{ name: 'dashboard' }" class="logo-link">
           <img class="logo-icon" src="../assets/myguy-icon.svg" alt="MyGuy" />
@@ -63,7 +66,7 @@
     <div class="main-wrapper">
       <!-- Top Bar -->
       <header class="top-bar">
-        <button class="sidebar-toggle" @click="toggleSidebar">
+        <button class="sidebar-toggle" aria-label="Toggle navigation" @click="toggleSidebar">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
             <path d="M3 12H21M3 6H21M3 18H21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
@@ -96,7 +99,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
@@ -107,6 +110,15 @@ const authStore = useAuthStore()
 const chatStore = useChatStore()
 
 const isSidebarCollapsed = ref(false)
+const isMobileMenuOpen = ref(false)
+
+// Matches the stylesheet's mobile breakpoint
+const mobileQuery = window.matchMedia('(max-width: 768px)')
+const isMobile = ref(mobileQuery.matches)
+const onViewportChange = (e: MediaQueryListEvent) => {
+  isMobile.value = e.matches
+  if (!e.matches) isMobileMenuOpen.value = false
+}
 const isUserMenuOpen = ref(false)
 const searchQuery = ref('')
 const unreadNotifications = ref(0)
@@ -165,9 +177,22 @@ const userInitials = computed(() => {
     .slice(0, 2)
 })
 
+// Desktop: collapse to icons. Phones: open or close the drawer (never
+// collapsed there, so labels and the user menu stay visible).
 const toggleSidebar = () => {
-  isSidebarCollapsed.value = !isSidebarCollapsed.value
+  if (isMobile.value) {
+    isSidebarCollapsed.value = false
+    isMobileMenuOpen.value = !isMobileMenuOpen.value
+  } else {
+    isSidebarCollapsed.value = !isSidebarCollapsed.value
+  }
 }
+
+// Close the drawer once the user has picked a page
+watch(() => route.fullPath, () => {
+  isMobileMenuOpen.value = false
+  isUserMenuOpen.value = false
+})
 
 const toggleUserMenu = () => {
   isUserMenuOpen.value = !isUserMenuOpen.value
@@ -196,7 +221,10 @@ const isActiveRoute = (item: { name: string }) => {
   return route.name === item.name
 }
 
+onBeforeUnmount(() => mobileQuery.removeEventListener('change', onViewportChange))
+
 onMounted(async () => {
+  mobileQuery.addEventListener('change', onViewportChange)
   if (authStore.token) {
     await authStore.checkAuth()
     // Temporarily disable chat connection until SQL issues are fixed
@@ -419,6 +447,7 @@ onMounted(async () => {
 /* Main Wrapper */
 .main-wrapper {
   flex: 1;
+  min-width: 0; /* let wide content shrink instead of widening the page */
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -566,6 +595,14 @@ onMounted(async () => {
   
   .sidebar.mobile-open {
     transform: translateX(0);
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.2);
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 999;
   }
   
   .main-wrapper {
@@ -578,6 +615,11 @@ onMounted(async () => {
   
   .top-bar {
     padding: 0 1rem;
+  }
+
+  /* Room to scroll the last buttons above the floating chat button */
+  .main-content {
+    padding-bottom: 5.5rem;
   }
 }
 </style>

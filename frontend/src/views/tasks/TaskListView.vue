@@ -1,6 +1,6 @@
 <template>
   <div class="container py-4">
-    <div class="flex justify-between items-center mb-4">
+    <div class="list-header flex justify-between items-center mb-4">
       <div>
         <h1 class="text-2xl font-semibold">Browse Available Gigs</h1>
         <p class="text-muted mt-1">Find and apply for gigs posted by other users</p>
@@ -138,9 +138,9 @@
                   {{ task.title }}
                 </router-link>
               </h3>
-              <p class="text-muted mb-2">{{ task.description }}</p>
-              
-              <div class="d-flex align-items-center gap-3 text-sm text-muted">
+              <p class="task-description text-muted mb-2">{{ task.description }}</p>
+
+              <div class="task-meta d-flex align-items-center gap-3 text-sm text-muted">
                 <span>
                   <i class="bi bi-person"></i>
                   {{ task.creator?.username || 'Unknown' }}
@@ -748,10 +748,34 @@ onMounted(() => {
   padding-left: 0.5rem;
 }
 
+/* Long descriptions are read on the gig page; the list shows a preview */
+.task-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.task-meta {
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
 @media (max-width: 768px) {
   .col-md-3 {
     width: 100%;
     margin-bottom: 1rem;
+  }
+
+  .list-header {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  /* .card already pads the content on phones */
+  .card-body {
+    padding: 0;
   }
 }
 

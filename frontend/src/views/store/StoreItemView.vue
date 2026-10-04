@@ -1287,6 +1287,28 @@ onMounted(() => {
   .item-content {
     grid-template-columns: 1fr;
   }
+
+  .store-item-container {
+    padding: 1rem;
+  }
+
+  /* The photo shouldn't push the details off the first screen */
+  .item-image-section {
+    min-height: 0;
+    padding: 1rem;
+  }
+
+  .main-image {
+    min-height: 200px;
+  }
+
+  .item-info-section {
+    padding: 1.25rem;
+  }
+
+  .item-info-section h1 {
+    font-size: 1.5rem;
+  }
   
   .bid-form {
     flex-direction: column;

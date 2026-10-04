@@ -1088,3 +1088,19 @@ input[type="datetime-local"].form-input {
     transform: rotate(360deg);
   }
 }
+
+/* Phones: less nested padding and smaller headings, so content gets the width */
+@media (max-width: 640px) {
+  .card {
+    padding: 1rem;
+  }
+
+  h1 {
+    font-size: 1.75rem;
+  }
+
+  h2 {
+    font-size: 1.4rem;
+  }
+}
+

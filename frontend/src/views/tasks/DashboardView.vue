@@ -612,9 +612,36 @@ onMounted(async () => {
     padding: 1rem;
   }
   
+  .page-header {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .page-title {
+    font-size: 1.6rem;
+  }
+
+  /* Three compact counters side by side instead of a screen per card */
   .stats-section {
-    grid-template-columns: 1fr;
-    gap: 1rem;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+  }
+
+  .stat-card {
+    padding: 0.75rem 0.5rem;
+  }
+
+  .stat-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .stat-value {
+    font-size: 1.5rem;
+  }
+
+  .stat-label {
+    font-size: 0.75rem;
   }
   
   .tasks-grid {

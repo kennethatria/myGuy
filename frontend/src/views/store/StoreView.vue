@@ -1893,6 +1893,30 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 
+  /* Search on its own line, the two dropdowns side by side, then the toggle */
+  .filters-section {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .search-input {
+    flex: 1 1 100%;
+  }
+
+  .filter-select {
+    flex: 1 1 calc(50% - 0.25rem);
+    min-width: 0;
+  }
+
+  .filter-toggle {
+    flex: 1 1 100%;
+  }
+
+  .store-header {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
   .pricing-type-selector {
     grid-template-columns: 1fr;
   }

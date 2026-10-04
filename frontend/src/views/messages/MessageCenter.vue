@@ -7,7 +7,8 @@
       @dismiss="chatStore.dismissWarning"
     />
     
-    <div class="message-center-layout">
+    <!-- Phones show one pane at a time: the list, or the open conversation -->
+    <div class="message-center-layout" :class="{ 'thread-open': !!chatStore.activeConversation }">
       <!-- Conversations List -->
       <div class="conversations-sidebar">
         <div class="sidebar-header">
@@ -30,6 +31,14 @@
       
       <!-- Message Thread -->
       <div class="message-thread-container">
+        <button
+          v-if="chatStore.activeConversation"
+          type="button"
+          class="back-to-list"
+          @click="chatStore.activeConversation = null"
+        >
+          ← All conversations
+        </button>
         <MessageThread
           v-if="chatStore.activeConversation"
           :conversation="chatStore.activeConversation"
@@ -220,24 +229,44 @@ function sendMessage(content: string) {
   font-size: 1.125rem;
 }
 
-/* Mobile Responsive */
+.message-thread-container {
+  min-width: 0;
+}
+
+/* Only needed on phones, where the list and the thread don't fit side by side */
+.back-to-list {
+  display: none;
+}
+
+/* Mobile Responsive: one pane at a time */
 @media (max-width: 768px) {
   .conversations-sidebar {
     width: 100%;
-    position: absolute;
-    z-index: 10;
+    border-right: none;
   }
-  
+
   .message-thread-container {
     display: none;
   }
-  
-  .conversations-sidebar.hidden {
+
+  .thread-open .conversations-sidebar {
     display: none;
   }
-  
-  .conversations-sidebar.hidden + .message-thread-container {
+
+  .thread-open .message-thread-container {
     display: flex;
+  }
+
+  .back-to-list {
+    display: block;
+    padding: 0.75rem 1rem;
+    background: #ffffff;
+    border: none;
+    border-bottom: 1px solid #e5e7eb;
+    color: #4F46E5;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
   }
 }
 </style>

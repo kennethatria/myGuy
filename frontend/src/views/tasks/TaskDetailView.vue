@@ -81,7 +81,7 @@
 
       <!-- Action buttons based on task status and user role -->
       <div class="border-t border-gray-200 p-4">
-        <div class="flex justify-end space-x-3">
+        <div class="task-actions flex justify-end space-x-3">
           <button
             v-if="canApply"
             @click="handleApply"
@@ -863,6 +863,17 @@ const handleApplicationMessageSent = () => {
 
 /* Mobile responsiveness */
 @media (max-width: 768px) {
+  /* Full-width actions stay readable and tappable beside the floating chat button */
+  .task-actions {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .task-actions > .btn {
+    width: 100%;
+    margin-left: 0;
+  }
+
   .gig-chat-header {
     flex-direction: column;
     align-items: flex-start;
