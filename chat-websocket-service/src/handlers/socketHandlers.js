@@ -205,18 +205,12 @@ class SocketHandlers {
         }
       };
 
-      // Emit to sender
+      // Deliver only to the two participants' personal rooms. Conversation
+      // rooms are shared by everyone who joins them (e.g. every buyer of a
+      // store item), so private messages must never be broadcast there.
       socket.emit('message:sent', formattedMessage);
-
-      // Emit to conversation room
-      const roomName = taskId ? `task:${taskId}` : applicationId ? `application:${applicationId}` : `item:${itemId}`;
-      socket.to(roomName).emit('message:new', formattedMessage);
-
-      // Emit to recipient's personal room (for notifications)
-      this.io.to(`user:${recipientId}`).emit('message:notification', {
-        message: formattedMessage,
-        conversationId: taskId || applicationId || itemId
-      });
+      socket.to(`user:${socket.userId}`).emit('message:new', formattedMessage); // sender's other tabs
+      this.io.to(`user:${recipientId}`).emit('message:new', formattedMessage);
 
       // Send warning if content was filtered
       if (message.hasRemovedContent) {
@@ -239,11 +233,7 @@ class SocketHandlers {
     try {
       const message = await messageService.editMessage(messageId, socket.userId, content);
 
-      // Get the conversation room
-      const roomName = message.task_id ? `task:${message.task_id}` : `application:${message.application_id}`;
-
-      // Emit to all in conversation
-      this.io.to(roomName).emit('message:edited', message);
+      this.emitToParticipants(message, 'message:edited', message);
 
       // Send warning if content was filtered
       if (message.hasRemovedContent) {
@@ -266,11 +256,7 @@ class SocketHandlers {
     try {
       const message = await messageService.deleteMessage(messageId, socket.userId);
 
-      // Get the conversation room
-      const roomName = message.task_id ? `task:${message.task_id}` : `application:${message.application_id}`;
-
-      // Emit to all in conversation
-      this.io.to(roomName).emit('message:deleted', { messageId });
+      this.emitToParticipants(message, 'message:deleted', { messageId });
 
     } catch (error) {
       logger.error('Error deleting message:', error);
@@ -301,33 +287,21 @@ class SocketHandlers {
   /**
    * Handle marking entire conversation as read
    */
-  async handleMarkConversationAsRead(socket, { taskId, applicationId, itemId }) {
+  async handleMarkConversationAsRead(socket, { taskId, applicationId, itemId, otherUserId }) {
     try {
-      let readMessages, roomName, responseId;
-      
-      if (itemId) {
-        // Store messages don't have a markConversationAsRead method yet
-        // For now, we'll emit success with 0 count since store messages aren't tracking read status
-        roomName = `item:${itemId}`;
-        readMessages = [];
-        responseId = { itemId };
-      } else {
-        // Task/application messages (existing logic)
-        readMessages = await messageService.markConversationAsRead(taskId, socket.userId);
-        roomName = taskId ? `task:${taskId}` : `application:${applicationId}`;
-        responseId = taskId ? { taskId } : { applicationId };
-      }
-      
-      // Emit read receipts for all messages
-      readMessages.forEach(msg => {
-        this.io.to(roomName).emit('message:read', {
-          messageId: msg.id,
-          readAt: new Date()
-        });
+      const readMessages = await messageService.markConversationAsRead(socket.userId, {
+        taskId, applicationId, itemId, otherUserId
       });
 
-      socket.emit('conversation:marked-read', { ...responseId, count: readMessages.length });
+      // Read receipts go to each message's sender only.
+      const readAt = new Date();
+      readMessages.forEach(msg => {
+        this.io.to(`user:${msg.sender_id}`).emit('message:read', { messageId: msg.id, readAt });
+      });
 
+      socket.emit('conversation:marked-read', {
+        taskId, applicationId, itemId, otherUserId, count: readMessages.length
+      });
     } catch (error) {
       logger.error('Error marking conversation as read:', error);
       socket.emit('error', { message: 'Failed to mark conversation as read' });
@@ -337,25 +311,23 @@ class SocketHandlers {
   /**
    * Handle typing start
    */
-  handleTypingStart(socket, { taskId, applicationId, itemId }) {
-    const roomName = taskId ? `task:${taskId}` : applicationId ? `application:${applicationId}` : `item:${itemId}`;
-    
-    socket.to(roomName).emit('user:typing', {
+  handleTypingStart(socket, { taskId, applicationId, itemId, recipientId }) {
+    if (!recipientId) return;
+    this.io.to(`user:${recipientId}`).emit('user:typing', {
       userId: socket.userId,
       userName: socket.userName,
-      conversationId: taskId || applicationId || itemId
+      taskId, applicationId, itemId
     });
   }
 
   /**
    * Handle typing stop
    */
-  handleTypingStop(socket, { taskId, applicationId, itemId }) {
-    const roomName = taskId ? `task:${taskId}` : applicationId ? `application:${applicationId}` : `item:${itemId}`;
-    
-    socket.to(roomName).emit('user:stopped-typing', {
+  handleTypingStop(socket, { taskId, applicationId, itemId, recipientId }) {
+    if (!recipientId) return;
+    this.io.to(`user:${recipientId}`).emit('user:stopped-typing', {
       userId: socket.userId,
-      conversationId: taskId || applicationId || itemId
+      taskId, applicationId, itemId
     });
   }
 
@@ -404,7 +376,7 @@ class SocketHandlers {
   /**
    * Handle getting messages for a conversation
    */
-  async handleGetMessages(socket, { taskId, applicationId, itemId, limit = 5, offset = 0 }) {
+  async handleGetMessages(socket, { taskId, applicationId, itemId, otherUserId, limit = 5, offset = 0 }) {
     try {
       logger.info('Getting messages', { 
         taskId, 
@@ -422,6 +394,7 @@ class SocketHandlers {
         taskId,
         applicationId,
         itemId,
+        otherUserId,
         userId: socket.userId,
         limit,
         offset
@@ -433,6 +406,7 @@ class SocketHandlers {
         taskId,
         applicationId,
         itemId,
+        otherUserId,
         userId: socket.userId
       });
 
@@ -462,10 +436,11 @@ class SocketHandlers {
         totalCount
       });
         
-      socket.emit('messages:list', { 
-        taskId, 
+      socket.emit('messages:list', {
+        taskId,
         applicationId,
         itemId,
+        otherUserId,
         messages: formattedMessages, 
         offset,
         totalCount
@@ -488,6 +463,13 @@ class SocketHandlers {
       logger.error('Error getting last seen:', error);
       socket.emit('error', { message: 'Failed to get last seen' });
     }
+  }
+
+  /**
+   * Emit an event to both participants of a message (all their tabs).
+   */
+  emitToParticipants(message, event, payload) {
+    this.io.to(`user:${message.sender_id}`).to(`user:${message.recipient_id}`).emit(event, payload);
   }
 
   /**

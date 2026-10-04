@@ -20,9 +20,9 @@
         <div class="conversations-list">
           <ConversationItem
             v-for="conversation in sortedConversations"
-            :key="conversation.task_id || conversation.application_id || conversation.item_id"
+            :key="conversationKey(conversation) ?? undefined"
             :conversation="conversation"
-            :active="chatStore.activeConversation ? ((chatStore.activeConversation.task_id === conversation.task_id) || (chatStore.activeConversation.application_id === conversation.application_id) || (chatStore.activeConversation.item_id === conversation.item_id)) : false"
+            :active="!!chatStore.activeConversation && conversationKey(chatStore.activeConversation) === conversationKey(conversation)"
             @click="selectConversation(conversation)"
           />
         </div>
@@ -58,7 +58,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
-import { useChatStore } from '@/stores/chat';
+import { useChatStore, conversationKey } from '@/stores/chat';
 import ConversationItem from '@/components/messages/ConversationItem.vue';
 import MessageThread from '@/components/messages/MessageThread.vue';
 import DeletionWarningBanner from '@/components/shared/DeletionWarningBanner.vue';
@@ -114,11 +114,8 @@ onUnmounted(() => {
 });
 
 function selectConversation(conversation: ConversationSummary) {
-  const conversationId = conversation.task_id || conversation.application_id || conversation.item_id;
-  if (conversationId) {
-    // joinConversation handles all conversation types (tasks, applications, and store items)
-    chatStore.joinConversation(conversationId);
-  }
+  // joinConversation handles all conversation types (tasks, applications, and store items)
+  chatStore.joinConversation(conversation);
 }
 
 function sendMessage(content: string) {

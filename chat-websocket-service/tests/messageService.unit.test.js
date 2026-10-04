@@ -115,22 +115,60 @@ describe('MessageService', () => {
   });
 
   describe('markConversationAsRead', () => {
-    it('returns array of updated message IDs', async () => {
-      db.query.mockResolvedValue({ rows: [{ id: 1 }, { id: 2 }] });
+    it('marks a task conversation read for the recipient', async () => {
+      db.query.mockResolvedValue({ rows: [{ id: 1, sender_id: 3 }, { id: 2, sender_id: 3 }] });
 
-      const result = await messageService.markConversationAsRead(5, 10);
+      const result = await messageService.markConversationAsRead(10, { taskId: 5 });
 
       expect(result).toHaveLength(2);
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('task_id = $1'),
-        [5, 10]
-      );
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('m.task_id = $1'), [5, 10]);
+      expect(db.query.mock.calls[0][0]).toContain('m.recipient_id = $2');
+    });
+
+    it('supports application conversations', async () => {
+      await messageService.markConversationAsRead(10, { applicationId: 7 });
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('m.application_id = $1'), [7, 10]);
+    });
+
+    it('scopes a store conversation to the other participant', async () => {
+      await messageService.markConversationAsRead(10, { itemId: 4, otherUserId: 22 });
+      const [sql, params] = db.query.mock.calls[0];
+      expect(sql).toContain('m.store_item_id = $1');
+      expect(sql).toContain('(m.sender_id = $3 OR m.recipient_id = $3)');
+      expect(params).toEqual([4, 10, 22]);
     });
 
     it('returns empty array when nothing to mark', async () => {
       db.query.mockResolvedValue({ rows: [] });
-      const result = await messageService.markConversationAsRead(5, 10);
+      const result = await messageService.markConversationAsRead(10, { taskId: 5 });
       expect(result).toEqual([]);
+    });
+
+    it('does nothing without a conversation context', async () => {
+      const result = await messageService.markConversationAsRead(10, {});
+      expect(result).toEqual([]);
+      expect(db.query).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getMessages', () => {
+    it('scopes store messages to both participants and paginates after them', async () => {
+      db.query.mockResolvedValue({ rows: [{ id: 2 }, { id: 1 }] });
+
+      const result = await messageService.getMessages({ itemId: 4, userId: 10, otherUserId: 22, limit: 5, offset: 0 });
+
+      const [sql, params] = db.query.mock.calls[0];
+      expect(sql).toContain('(m.sender_id = $3 OR m.recipient_id = $3)');
+      expect(sql).toContain('LIMIT $4 OFFSET $5');
+      expect(params).toEqual([4, 10, 22, 5, 0]);
+      expect(result.map(m => m.id)).toEqual([1, 2]); // oldest first
+    });
+
+    it('works without otherUserId for older clients', async () => {
+      await messageService.getMessages({ taskId: 5, userId: 10, limit: 5, offset: 10 });
+      const [sql, params] = db.query.mock.calls[0];
+      expect(sql).toContain('LIMIT $3 OFFSET $4');
+      expect(params).toEqual([5, 10, 5, 10]);
     });
   });
 
@@ -143,6 +181,8 @@ describe('MessageService', () => {
 
       expect(result).toEqual(mockRows);
       expect(db.query).toHaveBeenCalledWith(expect.any(String), [10]);
+      // One conversation per context AND other participant, never per bare id
+      expect(db.query.mock.calls[0][0]).toContain('DISTINCT ON (context_type, context_id, other_user_id)');
     });
 
     it('returns empty array when user has no conversations', async () => {

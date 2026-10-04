@@ -328,14 +328,9 @@ app.post('/api/v1/applications/:applicationId/messages', authenticateHTTP, async
 
     // Emit WebSocket events to notify connected clients
     if (io) {
-      // Emit to the application room (for users currently viewing the application)
-      io.to(`application:${applicationId}`).emit('message:new', formattedMessage);
-
-      // Emit notification to recipient's personal room
-      io.to(`user:${recipientId}`).emit('message:notification', {
-        message: formattedMessage,
-        conversationId: applicationId
-      });
+      // Deliver only to the two participants (all their tabs); conversation
+      // rooms are joinable by anyone, so private messages never go there.
+      io.to(`user:${senderId}`).to(`user:${recipientId}`).emit('message:new', formattedMessage);
 
       // Refresh conversations list for both sender and recipient
       io.to(`user:${senderId}`).emit('conversations:refresh');
@@ -448,14 +443,9 @@ app.post('/api/v1/store-messages', authenticateHTTP, async (req, res) => {
     
     // Emit WebSocket events to notify connected clients
     if (io) {
-      // Emit to the item room (for users currently viewing the item)
-      io.to(`item:${store_item_id}`).emit('message:new', formattedMessage);
-      
-      // Emit notification to recipient's personal room
-      io.to(`user:${recipient_id}`).emit('message:notification', {
-        message: formattedMessage,
-        conversationId: store_item_id
-      });
+      // Deliver only to the two participants (all their tabs). The item room
+      // holds every buyer of the item, so it must not carry private messages.
+      io.to(`user:${senderId}`).to(`user:${recipient_id}`).emit('message:new', formattedMessage);
       
       // Refresh conversations list for both sender and recipient
       io.to(`user:${senderId}`).emit('conversations:refresh');

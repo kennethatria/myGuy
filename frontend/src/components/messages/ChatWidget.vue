@@ -32,7 +32,7 @@
       <div v-if="!activeConversation" class="conversation-list">
         <div
           v-for="conversation in recentConversations"
-          :key="conversation.task_id"
+          :key="conversationKey(conversation) ?? undefined"
           class="conversation-item"
           @click="selectConversation(conversation)"
         >
@@ -112,7 +112,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
-import { useChatStore } from '@/stores/chat';
+import { useChatStore, conversationKey } from '@/stores/chat';
 import { useAuthStore } from '@/stores/auth';
 import MessageBubble from './MessageBubble.vue';
 import BookingMessageBubble from './BookingMessageBubble.vue';
@@ -129,13 +129,13 @@ const messagesArea = ref<HTMLElement>();
 const isTyping = ref(false);
 const typingTimeout = ref<ReturnType<typeof setTimeout>>();
 
-// Get last active conversation from localStorage
-const lastConversationId = localStorage.getItem('lastActiveConversation');
-if (lastConversationId && chatStore.conversations.length > 0) {
-  const conv = chatStore.conversations.find(c => c.task_id === parseInt(lastConversationId));
+// Get last active conversation (by conversation key) from localStorage
+const lastConversationKey = localStorage.getItem('lastActiveConversation');
+if (lastConversationKey && chatStore.conversations.length > 0) {
+  const conv = chatStore.conversations.find(c => conversationKey(c) === lastConversationKey);
   if (conv) {
     activeConversation.value = conv;
-    chatStore.joinConversation(conv.task_id!);
+    chatStore.joinConversation(conv);
   }
 }
 
@@ -143,19 +143,11 @@ const recentConversations = computed(() => {
   return chatStore.conversations.slice(0, 5);
 });
 
-const messages = computed(() => {
-  if (!activeConversation.value) return [];
-  const convId = activeConversation.value.task_id ?? activeConversation.value.application_id ?? activeConversation.value.item_id;
-  if (convId === undefined) return [];
-  return chatStore.messages.get(convId) || [];
-});
+const activeKey = computed(() => activeConversation.value ? conversationKey(activeConversation.value) : null);
 
-const typingUsers = computed(() => {
-  if (!activeConversation.value) return [];
-  const convId = activeConversation.value.task_id ?? activeConversation.value.application_id ?? activeConversation.value.item_id;
-  if (convId === undefined) return [];
-  return chatStore.typingUsers.get(convId) || [];
-});
+const messages = computed(() => (activeKey.value && chatStore.messages.get(activeKey.value)) || []);
+
+const typingUsers = computed(() => (activeKey.value && chatStore.typingUsers.get(activeKey.value)) || []);
 
 function toggleWidget() {
   isExpanded.value = !isExpanded.value;
@@ -172,11 +164,9 @@ function openMessageCenter() {
 
 function selectConversation(conversation: ConversationSummary) {
   activeConversation.value = conversation;
-  const taskId = conversation.task_id || conversation.application_id || conversation.item_id;
-  if (taskId) {
-    chatStore.joinConversation(taskId);
-    localStorage.setItem('lastActiveConversation', String(taskId));
-  }
+  chatStore.joinConversation(conversation);
+  const key = conversationKey(conversation);
+  if (key) localStorage.setItem('lastActiveConversation', key);
 }
 
 function backToList() {

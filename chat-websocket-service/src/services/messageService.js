@@ -2,6 +2,25 @@ const db = require('../config/database');
 const { filterContent } = require('../utils/contentFilter');
 const logger = require('../utils/logger');
 
+/**
+ * SQL filter selecting one conversation: its context (task, application or
+ * store item) AND its two participants. Including the other participant is
+ * what keeps a seller's chats with different buyers of the same item apart.
+ * Uses $1 (context id), $2 (userId) and, when given, $3 (otherUserId).
+ */
+function conversationFilter({ taskId, applicationId, itemId, userId, otherUserId }) {
+  const column = taskId ? 'task_id' : applicationId ? 'application_id' : itemId ? 'store_item_id' : null;
+  if (!column) return null;
+
+  const params = [taskId || applicationId || itemId, userId];
+  let sql = `m.${column} = $1 AND (m.sender_id = $2 OR m.recipient_id = $2)`;
+  if (otherUserId) {
+    params.push(otherUserId);
+    sql += ' AND (m.sender_id = $3 OR m.recipient_id = $3)';
+  }
+  return { sql, params };
+}
+
 class MessageService {
   constructor() {
     // Initialization if needed
@@ -145,161 +164,100 @@ class MessageService {
   /**
    * Mark all messages in a conversation as read
    */
-  async markConversationAsRead(taskId, userId) {
+  async markConversationAsRead(userId, { taskId, applicationId, itemId, otherUserId }) {
+    const filter = conversationFilter({ taskId, applicationId, itemId, userId, otherUserId });
+    if (!filter) return [];
+
     const query = `
-      UPDATE messages 
-      SET is_read = true, 
+      UPDATE messages m
+      SET is_read = true,
           read_at = NOW()
-      WHERE task_id = $1 
-        AND recipient_id = $2 
-        AND is_read = false
-      RETURNING id
+      WHERE ${filter.sql}
+        AND m.recipient_id = $2
+        AND m.is_read = false
+      RETURNING m.id, m.sender_id
     `;
-    
-    const result = await db.query(query, [taskId, userId]);
+
+    const result = await db.query(query, filter.params);
     return result.rows;
   }
 
   /**
    * Get messages for a conversation with pagination
    */
-  async getMessages({ taskId, applicationId, itemId, userId, limit = 5, offset = 0 }) {
-    let messageQuery;
-    let queryParams;
-    let conversationId = taskId || applicationId || itemId;
+  async getMessages({ taskId, applicationId, itemId, userId, otherUserId, limit = 5, offset = 0 }) {
+    // Access control: only messages the user sent or received are returned.
+    const filter = conversationFilter({ taskId, applicationId, itemId, userId, otherUserId });
+    if (!filter) return [];
 
-    if (itemId) {
-      // This is a store item conversation
-      // Note: Removed store_items query - store_items table is in my_guy_store database
-      // Access control is enforced by filtering messages where user is sender or recipient
-      messageQuery = `
-        SELECT m.*
-        FROM messages m
-        WHERE m.store_item_id = $1
-          AND (m.sender_id = $2 OR m.recipient_id = $2)
-        ORDER BY m.created_at DESC
-        LIMIT $3 OFFSET $4
-      `;
-      queryParams = [itemId, userId, limit, offset];
-    } else {
-      // Task or application conversation
-      // Note: Removed tasks/store_items queries - tables are in different databases
-      // Access control is enforced by filtering messages where user is sender or recipient
-      if (taskId) {
-        messageQuery = `
-          SELECT m.*
-          FROM messages m
-          WHERE m.task_id = $1
-            AND (m.sender_id = $2 OR m.recipient_id = $2)
-          ORDER BY m.created_at DESC
-          LIMIT $3 OFFSET $4
-        `;
-        queryParams = [taskId, userId, limit, offset];
-      } else if (applicationId) {
-        messageQuery = `
-          SELECT m.*
-          FROM messages m
-          WHERE m.application_id = $1
-            AND (m.sender_id = $2 OR m.recipient_id = $2)
-          ORDER BY m.created_at DESC
-          LIMIT $3 OFFSET $4
-        `;
-        queryParams = [applicationId, userId, limit, offset];
-      } else {
-        return []; // Unknown conversation type
-      }
-    }
-    
-    const result = await db.query(messageQuery, queryParams);
+    const n = filter.params.length;
+    const query = `
+      SELECT m.*
+      FROM messages m
+      WHERE ${filter.sql}
+      ORDER BY m.created_at DESC
+      LIMIT $${n + 1} OFFSET $${n + 2}
+    `;
+
+    const result = await db.query(query, [...filter.params, limit, offset]);
     return result.rows.reverse(); // Reverse to show oldest first
   }
 
   /**
    * Get total message count for a conversation
    */
-  async getTotalMessageCount({ taskId, applicationId, itemId, userId }) {
-    if (itemId) {
-      // Count store messages
-      // Note: Removed store_items query - store_items table is in my_guy_store database
-      // Access control is enforced by filtering messages where user is sender or recipient
-      const query = `
-        SELECT COUNT(*) as total
-        FROM messages m
-        WHERE m.store_item_id = $1
-          AND (m.sender_id = $2 OR m.recipient_id = $2)
-      `;
-      const result = await db.query(query, [itemId, userId]);
-      return parseInt(result.rows[0].total);
-    } else if (taskId) {
-      // Count task messages
-      // Note: Removed tasks query - tasks table is in my_guy database
-      // Access control is enforced by filtering messages where user is sender or recipient
-      const query = `
-        SELECT COUNT(*) as total
-        FROM messages m
-        WHERE m.task_id = $1
-          AND (m.sender_id = $2 OR m.recipient_id = $2)
-      `;
-      const result = await db.query(query, [taskId, userId]);
-      return parseInt(result.rows[0].total);
-    } else if (applicationId) {
-      // Count application messages
-      const query = `
-        SELECT COUNT(*) as total
-        FROM messages m
-        WHERE m.application_id = $1
-          AND (m.sender_id = $2 OR m.recipient_id = $2)
-      `;
-      const result = await db.query(query, [applicationId, userId]);
-      return parseInt(result.rows[0].total);
-    }
-    return 0;
+  async getTotalMessageCount({ taskId, applicationId, itemId, userId, otherUserId }) {
+    const filter = conversationFilter({ taskId, applicationId, itemId, userId, otherUserId });
+    if (!filter) return 0;
+
+    const result = await db.query(
+      `SELECT COUNT(*) as total FROM messages m WHERE ${filter.sql}`,
+      filter.params
+    );
+    return parseInt(result.rows[0].total);
   }
 
   /**
    * Get user conversations list
    */
   async getUserConversations(userId) {
-    // Simplified query - no cross-database JOINs
-    // Frontend should fetch task/user/item details via their respective APIs
+    // A conversation is (context type, context id, other participant).
+    // Task, application and store item ids share a number space, and a store
+    // item can have several buyers, so none of these may be collapsed.
+    // No cross-database JOINs: the frontend fetches task/user/item details.
     const query = `
-      WITH ConversationMessages AS (
-        SELECT DISTINCT ON (COALESCE(task_id, application_id, store_item_id))
-          m.id,
-          m.task_id,
-          m.application_id,
-          m.store_item_id,
-          m.sender_id,
-          m.recipient_id,
-          m.content,
-          m.message_type,
-          m.metadata,
-          m.is_read,
-          m.created_at,
-          m.updated_at,
-          -- Determine other_user_id (person you're chatting with)
+      WITH UserMessages AS (
+        SELECT
+          m.*,
           CASE
-            WHEN m.sender_id = $1 THEN m.recipient_id
-            ELSE m.sender_id
-          END as other_user_id
+            WHEN m.task_id IS NOT NULL THEN 'task'
+            WHEN m.application_id IS NOT NULL THEN 'application'
+            ELSE 'store'
+          END AS context_type,
+          COALESCE(m.task_id, m.application_id, m.store_item_id) AS context_id,
+          CASE WHEN m.sender_id = $1 THEN m.recipient_id ELSE m.sender_id END AS other_user_id
         FROM messages m
-        WHERE m.sender_id = $1 OR m.recipient_id = $1
-        ORDER BY COALESCE(task_id, application_id, store_item_id), created_at DESC
+        WHERE (m.sender_id = $1 OR m.recipient_id = $1)
+          AND COALESCE(m.task_id, m.application_id, m.store_item_id) IS NOT NULL
+      ),
+      LatestMessages AS (
+        SELECT DISTINCT ON (context_type, context_id, other_user_id) *
+        FROM UserMessages
+        ORDER BY context_type, context_id, other_user_id, created_at DESC
       ),
       UnreadCounts AS (
-        SELECT
-          COALESCE(task_id, application_id, store_item_id) as conversation_id,
-          COUNT(*) as unread_count
-        FROM messages
+        SELECT context_type, context_id, other_user_id, COUNT(*)::int AS unread_count
+        FROM UserMessages
         WHERE recipient_id = $1 AND is_read = false
-        GROUP BY COALESCE(task_id, application_id, store_item_id)
+        GROUP BY context_type, context_id, other_user_id
       )
-      SELECT
-        cm.*,
-        COALESCE(uc.unread_count, 0) as unread_count
-      FROM ConversationMessages cm
-      LEFT JOIN UnreadCounts uc ON COALESCE(cm.task_id, cm.application_id, cm.store_item_id) = uc.conversation_id
-      ORDER BY cm.created_at DESC
+      SELECT lm.*, COALESCE(uc.unread_count, 0) AS unread_count
+      FROM LatestMessages lm
+      LEFT JOIN UnreadCounts uc
+        ON uc.context_type = lm.context_type
+       AND uc.context_id = lm.context_id
+       AND uc.other_user_id = lm.other_user_id
+      ORDER BY lm.created_at DESC
     `;
 
     const result = await db.query(query, [userId]);
