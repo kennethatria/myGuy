@@ -120,12 +120,18 @@ jobs:
         # Connects as root (remote_user: root inside users.yml overrides inventory).
         # Creates myguy on both instances and disables root login.
         # Must run before all other playbooks.
+        # Keys are passed as JSON: -e "key=value" splits on spaces, which would
+        # truncate an SSH public key to just its type ("ssh-ed25519").
+        env:
+          OPS_SSH_PUBLIC_KEY: ${{ secrets.OPS_SSH_PUBLIC_KEY }}
         run: |
           ansible-playbook \
             -i configuration_management/inventory.ini \
             configuration_management/users.yml \
-            -e "ci_cd_public_key=$(cat ~/.ssh/linode.pub)" \
-            -e "ops_ssh_public_key=${{ secrets.OPS_SSH_PUBLIC_KEY }}"
+            -e "$(jq -n \
+                  --arg ci "$(cat ~/.ssh/linode.pub)" \
+                  --arg ops "$OPS_SSH_PUBLIC_KEY" \
+                  '{ci_cd_public_key: $ci, ops_ssh_public_key: $ops}')"
 
       - name: Configure monitoring instance
         run: |
