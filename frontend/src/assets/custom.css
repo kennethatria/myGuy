@@ -1104,3 +1104,13 @@ input[type="datetime-local"].form-input {
   }
 }
 
+/* iOS Safari zooms the page into any form field under 16px when it's tapped.
+   !important because component styles set smaller sizes with higher specificity. */
+@media (max-width: 768px) {
+  input:not([type=checkbox]):not([type=radio]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+

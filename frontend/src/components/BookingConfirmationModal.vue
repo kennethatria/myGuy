@@ -616,6 +616,7 @@ watch(
     width: 100%;
     max-width: none;
     max-height: 100vh;
+    max-height: 100dvh;
     border-radius: 0;
   }
 

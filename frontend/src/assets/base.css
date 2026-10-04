@@ -55,6 +55,11 @@
 *::after {
   box-sizing: border-box;
   margin: 0;
+}
+
+/* Not on ::before/::after: icon fonts draw glyphs there and rely on inheriting
+   their element's weight (Font Awesome solid icons need 900). */
+* {
   font-weight: normal;
 }
 

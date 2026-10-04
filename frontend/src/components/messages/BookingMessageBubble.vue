@@ -63,7 +63,7 @@
             class="btn-confirm-received"
             :disabled="isProcessing"
           >
-            <i class="fas fa-box-check"></i> I Received Item
+            <i class="fas fa-box-open"></i> I Received Item
           </button>
         </div>
 
@@ -246,7 +246,7 @@ const iconClass = computed(() => {
     case 'booking_declined':
       return 'fas fa-times-circle';
     case 'booking_item_received':
-      return 'fas fa-box-check';
+      return 'fas fa-box-open';
     case 'booking_completed':
       return 'fas fa-check-double';
     default:

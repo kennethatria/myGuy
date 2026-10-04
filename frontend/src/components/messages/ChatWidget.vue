@@ -244,7 +244,7 @@ watch(() => messages.value.length, () => {
   position: fixed;
   bottom: 2rem;
   right: 2rem;
-  z-index: 1000;
+  z-index: 900; /* below modals and the mobile nav drawer */
 }
 
 /* Widget Button */
@@ -547,6 +547,7 @@ watch(() => messages.value.length, () => {
   .chat-widget-expanded {
     width: calc(100vw - 2rem);
     height: calc(100vh - 8rem);
+    height: calc(100dvh - 8rem);
     max-width: 400px;
   }
 }

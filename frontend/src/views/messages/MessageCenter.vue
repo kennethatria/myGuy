@@ -154,7 +154,7 @@ function sendMessage(content: string) {
 
 <style scoped>
 .message-center {
-  height: calc(100vh - 60px); /* Adjust based on your navbar height */
+  height: 100%; /* fills the layout's content area, whatever the header height */
   display: flex;
   flex-direction: column;
 }

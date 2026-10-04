@@ -214,7 +214,7 @@ const changeEmail = () => {
 .link-button {
   background: none;
   border: 0;
-  padding: 0;
+  padding: 0.5rem 0; /* finger-sized tap area */
   cursor: pointer;
 }
 

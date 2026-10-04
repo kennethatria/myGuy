@@ -34,7 +34,7 @@
       <div class="message-footer">
         <span v-if="message.is_read && isOwnMessage" class="read-receipt">
           <i class="fas fa-check-double"></i>
-          Read {{ formatTime(message.read_at!) }}
+          Read<template v-if="message.read_at"> {{ formatTime(message.read_at) }}</template>
         </span>
         
         <div v-if="isOwnMessage && !message.is_deleted" class="message-actions">
@@ -311,6 +311,12 @@ function deleteMessage() {
 
 /* Mobile Responsive */
 @media (max-width: 768px) {
+  /* Finger-sized edit/delete buttons */
+  .action-btn {
+    min-width: 32px;
+    min-height: 32px;
+  }
+
   .message-content {
     max-width: 85%;
   }

@@ -132,7 +132,7 @@
                   </div>
 
                   <div v-else-if="bookingStatus === 'item_received'" class="status-item-received">
-                    <i class="fas fa-box-check"></i>
+                    <i class="fas fa-box-open"></i>
                     <div>
                       <p><strong>Item Received</strong></p>
                       <p>Waiting for seller to confirm delivery. Go to Messages to complete the transaction.</p>

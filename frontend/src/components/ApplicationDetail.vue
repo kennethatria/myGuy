@@ -305,6 +305,21 @@ watch(() => props.application.id, () => {
   gap: 0.5rem;
 }
 
+@media (max-width: 640px) {
+  .application-header {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .application-actions {
+    width: 100%;
+  }
+
+  .application-actions .btn {
+    flex: 1;
+  }
+}
+
 .application-message {
   margin-bottom: 1.5rem;
 }
@@ -398,6 +413,7 @@ watch(() => props.application.id, () => {
 
 .form-control {
   flex: 1;
+  min-width: 0; /* let the input shrink so Send stays on screen */
   padding: 0.5rem 0.75rem;
   border: 1px solid #ced4da;
   border-radius: 4px;

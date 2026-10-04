@@ -91,7 +91,7 @@
       </header>
       
       <!-- Page Content -->
-      <main class="main-content">
+      <main class="main-content" :class="{ 'has-chat-widget': route.name !== 'messages' }">
         <router-view />
       </main>
     </div>
@@ -237,6 +237,7 @@ onMounted(async () => {
 .app-layout {
   display: flex;
   height: 100vh;
+  height: 100dvh; /* phones: the visible height, excluding browser toolbars */
   background-color: #f5f5f5;
 }
 
@@ -618,7 +619,7 @@ onMounted(async () => {
   }
 
   /* Room to scroll the last buttons above the floating chat button */
-  .main-content {
+  .main-content.has-chat-widget {
     padding-bottom: 5.5rem;
   }
 }

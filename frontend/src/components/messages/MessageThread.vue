@@ -210,6 +210,10 @@ watch(() => props.messages.length, () => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  /* In a flex column (Message Center), take the space left after siblings
+     such as the mobile back button, so the reply box stays on screen. */
+  flex: 1;
+  min-height: 0;
 }
 
 /* Thread Header */
