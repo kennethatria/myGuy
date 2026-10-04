@@ -10,7 +10,9 @@ import (
 // This is a simplified version that will be populated from JWT claims
 type User struct {
 	ID          uint           `json:"id" gorm:"primaryKey"`
-	Email       string         `json:"email" gorm:"uniqueIndex;not null"`
+	// Never serialised: user records are embedded in public item responses
+	// (e.g. the seller), and contact details must not leak through them.
+	Email       string         `json:"-" gorm:"uniqueIndex;not null"`
 	Name        string         `json:"name"`
 	Username    string         `json:"username" gorm:"uniqueIndex;not null"`
 	Rating      float64        `json:"rating" gorm:"default:0"`        // Average rating (0-5)

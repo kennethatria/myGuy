@@ -56,10 +56,10 @@ func (r *GormApplicationRepository) Update(ctx context.Context, application *mod
 	return r.db.WithContext(ctx).Save(application).Error
 }
 
-// DeclineOtherPending declines every still-pending application for the task
-// except the accepted one, so other applicants are not left waiting.
-func (r *GormApplicationRepository) DeclineOtherPending(ctx context.Context, taskID, acceptedID uint) error {
+// DeclinePending declines every still-pending application for the task except
+// exceptID (0 declines all), so applicants are never left waiting.
+func (r *GormApplicationRepository) DeclinePending(ctx context.Context, taskID, exceptID uint) error {
 	return r.db.WithContext(ctx).Model(&models.Application{}).
-		Where("task_id = ? AND id <> ? AND status = ?", taskID, acceptedID, "pending").
+		Where("task_id = ? AND id <> ? AND status = ?", taskID, exceptID, "pending").
 		Update("status", "declined").Error
 }

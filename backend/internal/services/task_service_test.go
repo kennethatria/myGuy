@@ -261,6 +261,36 @@ func TestDeleteTask(t *testing.T) {
 
 // ==================== ListTasks Tests ====================
 
+func TestDeleteTaskRules(t *testing.T) {
+	t.Run("a task that was assigned cannot be deleted", func(t *testing.T) {
+		service, taskRepo, _ := setupTaskService()
+		ctx := context.Background()
+
+		assignee := uint(2)
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, CreatedBy: 1, AssignedTo: &assignee, Status: "cancelled"}, nil)
+
+		err := service.DeleteTask(ctx, 1, 1)
+
+		assert.Equal(t, ErrTaskWasAssigned, err)
+		taskRepo.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything)
+	})
+}
+
+func TestCancelTaskDeclinesPendingApplications(t *testing.T) {
+	service, taskRepo, appRepo := setupTaskService()
+	ctx := context.Background()
+
+	taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, CreatedBy: 1, Status: "open"}, nil)
+	taskRepo.On("Update", ctx, mock.Anything).Return(nil)
+	appRepo.On("DeclinePending", ctx, uint(1), uint(0)).Return(nil)
+
+	task, err := service.UpdateTaskStatus(ctx, 1, "cancelled", 1)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "cancelled", task.Status)
+	appRepo.AssertExpectations(t)
+}
+
 func TestListTasks(t *testing.T) {
 	t.Run("successful list", func(t *testing.T) {
 		service, taskRepo, _ := setupTaskService()
@@ -417,7 +447,7 @@ func TestAssignTask(t *testing.T) {
 		appRepo.On("Update", ctx, mock.MatchedBy(func(a *models.Application) bool {
 			return a.Status == "accepted"
 		})).Return(nil)
-		appRepo.On("DeclineOtherPending", ctx, uint(1), uint(1)).Return(nil)
+		appRepo.On("DeclinePending", ctx, uint(1), uint(1)).Return(nil)
 
 		result, err := service.AssignTask(ctx, 1, 1)
 

@@ -8,7 +8,7 @@ import (
 	"myguy/internal/models"
 )
 
-func TestAssignIfOpenAndDeclineOtherPending(t *testing.T) {
+func TestAssignIfOpenAndDeclinePending(t *testing.T) {
 	ctx := context.Background()
 	db, err := setupTestDB()
 	mustNoError(t, err)
@@ -39,7 +39,7 @@ func TestAssignIfOpenAndDeclineOtherPending(t *testing.T) {
 	assert.Equal(t, uint(2), *got.AssignedTo)
 	assert.Equal(t, 80.0, got.Fee)
 
-	mustNoError(t, apps.DeclineOtherPending(ctx, task.ID, accepted.ID))
+	mustNoError(t, apps.DeclinePending(ctx, task.ID, accepted.ID))
 	list, err := apps.ListByTask(ctx, task.ID)
 	mustNoError(t, err)
 	status := map[uint]string{}
@@ -49,4 +49,27 @@ func TestAssignIfOpenAndDeclineOtherPending(t *testing.T) {
 	assert.Equal(t, "pending", status[2], "accepted application is untouched by the bulk decline")
 	assert.Equal(t, "declined", status[3])
 	assert.Equal(t, "declined", status[4])
+}
+
+func TestDeclinePendingWithNoExceptionDeclinesAll(t *testing.T) {
+	ctx := context.Background()
+	db, err := setupTestDB()
+	mustNoError(t, err)
+	apps := NewGormApplicationRepository(db)
+
+	for _, applicant := range []uint{2, 3} {
+		mustNoError(t, apps.Create(ctx, &models.Application{TaskID: 1, ApplicantID: applicant, Status: "pending"}))
+	}
+	mustNoError(t, apps.Create(ctx, &models.Application{TaskID: 2, ApplicantID: 4, Status: "pending"}))
+
+	mustNoError(t, apps.DeclinePending(ctx, 1, 0))
+
+	for _, task := range []uint{1, 2} {
+		list, err := apps.ListByTask(ctx, task)
+		mustNoError(t, err)
+		for _, a := range list {
+			want := map[uint]string{1: "declined", 2: "pending"}[task]
+			assert.Equal(t, want, a.Status, "task %d applicant %d", task, a.ApplicantID)
+		}
+	}
 }

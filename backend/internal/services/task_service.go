@@ -19,6 +19,7 @@ var (
 	ErrApplicationNotPending = errors.New("application is no longer pending")
 	ErrOwnTask             = errors.New("you cannot apply to your own task")
 	ErrAlreadyApplied      = errors.New("you have already applied to this task")
+	ErrTaskWasAssigned     = errors.New("a task that was assigned can't be deleted; cancel it instead")
 )
 
 type TaskService struct {
@@ -134,6 +135,12 @@ func (s *TaskService) DeleteTask(ctx context.Context, taskID uint, userID uint) 
 
 	if task.CreatedBy != userID {
 		return ErrUnauthorized
+	}
+
+	// Assigned tasks carry work history and possibly reviews (which affect
+	// ratings); keep them and let the owner cancel instead.
+	if task.AssignedTo != nil {
+		return ErrTaskWasAssigned
 	}
 
 	return s.taskRepo.Delete(ctx, taskID)
@@ -255,7 +262,7 @@ func (s *TaskService) AssignTask(ctx context.Context, taskID, applicationID uint
 	if err := s.applicationRepo.Update(ctx, application); err != nil {
 		return nil, err
 	}
-	if err := s.applicationRepo.DeclineOtherPending(ctx, taskID, applicationID); err != nil {
+	if err := s.applicationRepo.DeclinePending(ctx, taskID, applicationID); err != nil {
 		return nil, err
 	}
 
@@ -344,6 +351,13 @@ func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID uint, status 
 
 	if err := s.taskRepo.Update(ctx, task); err != nil {
 		return nil, err
+	}
+
+	// A cancelled task no longer needs anyone: tell waiting applicants.
+	if status == "cancelled" {
+		if err := s.applicationRepo.DeclinePending(ctx, taskID, 0); err != nil {
+			return nil, err
+		}
 	}
 
 	return task, nil

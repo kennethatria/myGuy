@@ -65,3 +65,49 @@ func TestHandler_GetTask_LimitsWhatEachViewerSees(t *testing.T) {
 	// The handler must not have mutated the shared task.
 	assert.Equal(t, "a2@example.com", task.Applications[0].Applicant.Email)
 }
+
+func TestHandler_UserContactDetailsAreOnlyShownToThatUser(t *testing.T) {
+	user := &models.User{ID: 5, Username: "sam", Email: "sam@example.com", PhoneNumber: "+256700000005"}
+
+	getUser := func(viewer uint) map[string]interface{} {
+		router, handler, mockUserRepo, _, _, _ := setupTestRouter()
+		router.Use(func(c *gin.Context) { c.Set("userID", viewer); c.Next() })
+		router.GET("/users/:id", handler.GetUserByID)
+		mockUserRepo.On("GetByID", mock.Anything, uint(5)).Return(user, nil)
+
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/users/5", nil))
+		assert.Equal(t, http.StatusOK, resp.Code)
+		var body map[string]interface{}
+		assert.NoError(t, json.Unmarshal(resp.Body.Bytes(), &body))
+		return body
+	}
+
+	other := getUser(9)
+	assert.Equal(t, "sam", other["username"])
+	assert.Empty(t, other["email"])
+	assert.Empty(t, other["phone_number"])
+
+	self := getUser(5)
+	assert.Equal(t, "sam@example.com", self["email"])
+}
+
+func TestHandler_GetUserReviews_HidesContactDetails(t *testing.T) {
+	router, handler, _, _, mockReviewRepo, _ := setupTestRouter()
+	router.Use(func(c *gin.Context) { c.Set("userID", uint(9)); c.Next() })
+	router.GET("/users/:id/reviews", handler.GetUserReviews)
+	mockReviewRepo.On("ListByUser", mock.Anything, uint(5)).Return([]models.Review{{
+		ID: 1, ReviewerID: 6, ReviewedUserID: 5, Rating: 5,
+		Reviewer:     models.User{ID: 6, Username: "ann", Email: "ann@example.com", PhoneNumber: "+256700000006"},
+		ReviewedUser: models.User{ID: 5, Username: "sam", Email: "sam@example.com"},
+		Task:         models.Task{ID: 3, CreatedBy: 6, Creator: models.User{ID: 6, Email: "ann@example.com"}},
+	}}, nil)
+
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/users/5/reviews", nil))
+
+	assert.Equal(t, http.StatusOK, resp.Code)
+	assert.NotContains(t, resp.Body.String(), "@example.com")
+	assert.NotContains(t, resp.Body.String(), "+2567")
+	assert.Contains(t, resp.Body.String(), `"username":"ann"`)
+}

@@ -117,8 +117,8 @@ func (m *MockReviewRepository) GetTaskReview(ctx context.Context, taskID uint, r
 	return args.Get(0).(*models.Review), args.Error(1)
 }
 
-func (m *MockApplicationRepository) DeclineOtherPending(ctx context.Context, taskID, acceptedID uint) error {
-	args := m.Called(ctx, taskID, acceptedID)
+func (m *MockApplicationRepository) DeclinePending(ctx context.Context, taskID, exceptID uint) error {
+	args := m.Called(ctx, taskID, exceptID)
 	return args.Error(0)
 }
 

@@ -43,7 +43,7 @@ type ApplicationRepository interface {
 	ListByTask(ctx context.Context, taskID uint) ([]models.Application, error)
 	ListByUser(ctx context.Context, userID uint) ([]models.Application, error)
 	Update(ctx context.Context, application *models.Application) error
-	DeclineOtherPending(ctx context.Context, taskID, acceptedID uint) error
+	DeclinePending(ctx context.Context, taskID, exceptID uint) error
 }
 
 type ReviewRepository interface {

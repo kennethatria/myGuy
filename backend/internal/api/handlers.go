@@ -558,6 +558,13 @@ func (h *Handler) GetUserReviews(c *gin.Context) {
 		return
 	}
 
+	viewerID := c.GetUint("userID")
+	for i := range reviews {
+		reviews[i].Reviewer = publicUser(reviews[i].Reviewer, viewerID)
+		reviews[i].ReviewedUser = publicUser(reviews[i].ReviewedUser, viewerID)
+		reviews[i].Task = taskForViewer(reviews[i].Task, viewerID)
+	}
+
 	c.JSON(http.StatusOK, reviews)
 }
 
@@ -577,6 +584,12 @@ func (h *Handler) GetUserByID(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user"})
 		}
 		return
+	}
+
+	// Another user's profile never includes their contact details.
+	if user.ID != c.GetUint("userID") {
+		user.Email = ""
+		user.PhoneNumber = ""
 	}
 
 	c.JSON(http.StatusOK, user)
@@ -678,6 +691,8 @@ func (h *Handler) DeleteTask(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
 		case services.ErrUnauthorized:
 			c.JSON(http.StatusForbidden, gin.H{"error": "Not authorized to delete this task"})
+		case services.ErrTaskWasAssigned:
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete task"})
 		}

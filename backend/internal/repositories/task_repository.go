@@ -153,8 +153,15 @@ func (r *GormTaskRepository) AssignIfOpen(ctx context.Context, taskID, assigneeI
 	return res.RowsAffected == 1, res.Error
 }
 
+// Delete removes the task and its applications in one transaction
+// (applications reference the task, so the database would refuse otherwise).
 func (r *GormTaskRepository) Delete(ctx context.Context, id uint) error {
-	return r.db.WithContext(ctx).Delete(&models.Task{}, id).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("task_id = ?", id).Delete(&models.Application{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&models.Task{}, id).Error
+	})
 }
 
 func (r *GormTaskRepository) ListByUser(ctx context.Context, userID uint, role string) ([]models.Task, error) {

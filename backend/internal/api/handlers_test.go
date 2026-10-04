@@ -442,7 +442,7 @@ func TestHandler_RespondToApplication(t *testing.T) {
 		mockAppRepo.On("GetByID", mock.Anything, uint(10)).Return(&models.Application{ID: 10, TaskID: 1, ApplicantID: 2, ProposedFee: 100, Status: "pending"}, nil)
 		mockTaskRepo.On("AssignIfOpen", mock.Anything, uint(1), uint(2), 100.0).Return(true, nil)
 		mockAppRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Application")).Return(nil)
-		mockAppRepo.On("DeclineOtherPending", mock.Anything, uint(1), uint(10)).Return(nil)
+		mockAppRepo.On("DeclinePending", mock.Anything, uint(1), uint(10)).Return(nil)
 
 		reqBody := respondToApplicationRequest{Status: "accepted"}
 		body, _ := json.Marshal(reqBody)
