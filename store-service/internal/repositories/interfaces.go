@@ -42,6 +42,7 @@ type BookingRequestRepository interface {
 	IncrementNotificationAttempts(bookingID uint) error
 	UpdateBuyerRating(id uint, rating int, review string) error
 	UpdateSellerRating(id uint, rating int, review string) error
+	GetRatingsReceived(userID uint) ([]models.BookingRequest, error)
 }
 
 type UserRepository interface {

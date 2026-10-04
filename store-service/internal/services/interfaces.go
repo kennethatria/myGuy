@@ -21,6 +21,7 @@ type StoreServiceInterface interface {
 	ApproveBookingRequest(requestID uint, ownerID uint) (*models.BookingRequest, error)
 	RejectBookingRequest(requestID uint, ownerID uint) (*models.BookingRequest, error)
 	GetUserBookingRequests(userID uint) ([]models.BookingRequest, error)
+	GetUserRatings(userID uint) ([]models.ReceivedRating, error)
 	ConfirmItemReceived(requestID uint, buyerID uint) (*models.BookingRequest, error)
 	ConfirmDelivery(requestID uint, sellerID uint) (*models.BookingRequest, error)
 	SubmitBuyerRating(requestID uint, buyerID uint, rating int, review string) (*models.BookingRequest, error)

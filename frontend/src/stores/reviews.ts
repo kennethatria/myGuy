@@ -2,9 +2,11 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import config from '@/config'
 import { useAuthStore } from './auth'
+import { useUserStore } from './user'
 
-interface Review {
-  id: number
+export interface Review {
+  // Task reviews use their numeric id; store ratings use "store-<booking id>".
+  id: number | string
   taskId: number
   reviewerId: number
   reviewedUserId: number
@@ -27,6 +29,23 @@ interface Review {
     id: number
     title: string
   }
+  // Store ratings: the item, and whether the user was rated as its seller or buyer
+  item?: {
+    id: number
+    title: string
+    ratedAs: 'seller' | 'buyer'
+  }
+}
+
+interface StoreRating {
+  booking_id: number
+  item_id: number
+  item_title: string
+  rater_id: number
+  rated_as: 'seller' | 'buyer'
+  rating: number
+  review: string
+  rated_at: string
 }
 
 interface CreateReviewInput {
@@ -104,6 +123,52 @@ export const useReviewsStore = defineStore('reviews', () => {
     }
   }
 
+  // Store ratings the user received as a seller or buyer, in review form.
+  const fetchStoreRatings = async (userId: number): Promise<Review[]> => {
+    const authStore = useAuthStore()
+    const response = await fetch(`${config.STORE_API_URL}/users/${userId}/ratings`, {
+      headers: { 'Authorization': `Bearer ${authStore.token}` }
+    })
+    if (!response.ok) {
+      throw new Error('Failed to fetch store ratings')
+    }
+    const ratings: StoreRating[] = await response.json()
+
+    const userStore = useUserStore()
+    await userStore.fetchUsers([...new Set(ratings.map(r => r.rater_id))])
+
+    return ratings.map(r => {
+      const rater = userStore.getUserById(r.rater_id)
+      return {
+        id: `store-${r.booking_id}`,
+        taskId: 0,
+        reviewerId: r.rater_id,
+        reviewedUserId: userId,
+        rating: r.rating,
+        comment: r.review,
+        created_at: r.rated_at,
+        reviewer: rater ? { id: rater.id, username: rater.username } : undefined,
+        item: { id: r.item_id, title: r.item_title, ratedAs: r.rated_as }
+      }
+    })
+  }
+
+  // Everything others have said about the user — task reviews and store
+  // ratings — newest first, for one combined rating on their profile. If the
+  // store service is unavailable, task reviews are still shown.
+  const fetchAllRatings = async (userId: number): Promise<Review[]> => {
+    const [taskReviews, storeRatings] = await Promise.all([
+      fetchUserReviews(userId),
+      fetchStoreRatings(userId).catch(err => {
+        console.warn('Store ratings unavailable:', err)
+        return [] as Review[]
+      })
+    ])
+    return [...taskReviews, ...storeRatings].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )
+  }
+
   const hasReviewedTask = async (taskId: number): Promise<boolean> => {
     const authStore = useAuthStore()
     const userId = authStore.user?.id
@@ -127,6 +192,8 @@ export const useReviewsStore = defineStore('reviews', () => {
     error,
     createReview,
     fetchUserReviews,
+    fetchStoreRatings,
+    fetchAllRatings,
     hasReviewedTask,
     calculateAverageRating
   }

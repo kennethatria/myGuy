@@ -58,7 +58,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { format } from 'date-fns'
 import { useUsersStore } from '@/stores/users'
-import { useReviewsStore } from '@/stores/reviews'
+import { useReviewsStore, type Review } from '@/stores/reviews'
 import ReviewList from '@/components/ReviewList.vue'
 
 interface User {
@@ -71,24 +71,6 @@ interface User {
   created_at?: string
 }
 
-interface Review {
-  id: number
-  taskId: number
-  reviewerId: number
-  reviewedUserId: number
-  rating: number
-  comment: string
-  created_at: string
-  reviewer?: {
-    id: number
-    username: string
-    fullName?: string
-  }
-  task?: {
-    id: number
-    title: string
-  }
-}
 
 const route = useRoute()
 const usersStore = useUsersStore()
@@ -103,12 +85,8 @@ const reviewsError = ref<string | null>(null)
 
 const userId = computed(() => Number(route.params.id))
 
-const averageRating = computed(() => {
-  if (user.value?.averageRating !== undefined) {
-    return user.value.averageRating
-  }
-  return reviewsStore.calculateAverageRating(reviews.value)
-})
+// One rating from everything others said: task reviews and store ratings
+const averageRating = computed(() => reviewsStore.calculateAverageRating(reviews.value))
 
 const formatDate = (dateString: string | null | undefined): string => {
   if (!dateString) {
@@ -143,7 +121,7 @@ const loadUserData = async () => {
     loadingReviews.value = true
     reviewsError.value = null
     try {
-      const userReviews = await reviewsStore.fetchUserReviews(userId.value)
+      const userReviews = await reviewsStore.fetchAllRatings(userId.value)
       reviews.value = userReviews
     } catch (err) {
       console.error('Failed to fetch reviews:', err)

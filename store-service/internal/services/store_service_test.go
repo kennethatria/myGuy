@@ -160,6 +160,11 @@ func (m *MockBookingRequestRepository) GetByItemAndRequester(itemID uint, reques
 	return args.Get(0).(*models.BookingRequest), args.Error(1)
 }
 
+func (m *MockBookingRequestRepository) GetRatingsReceived(userID uint) ([]models.BookingRequest, error) {
+	args := m.Called(userID)
+	return args.Get(0).([]models.BookingRequest), args.Error(1)
+}
+
 func (m *MockBookingRequestRepository) GetByRequesterID(requesterID uint) ([]models.BookingRequest, error) {
 	args := m.Called(requesterID)
 	return args.Get(0).([]models.BookingRequest), args.Error(1)
@@ -1653,3 +1658,26 @@ func TestFormatPrice(t *testing.T) {
 		assert.Equal(t, tt.expected, result)
 	}
 }
+
+func TestGetUserRatings(t *testing.T) {
+	service, _, _, bookingRepo := setupService()
+	rating := func(v int) *int { return &v }
+	soldBy1 := &models.StoreItem{ID: 1, Title: "Bike", SellerID: 1}
+	soldBy2 := &models.StoreItem{ID: 2, Title: "Desk", SellerID: 2}
+
+	bookingRepo.On("GetRatingsReceived", uint(1)).Return([]models.BookingRequest{
+		{ID: 10, ItemID: 1, Item: soldBy1, RequesterID: 2, BuyerRating: rating(5), BuyerReview: "great seller"},
+		// User 1 bought from user 2: only the seller's rating of user 1 counts,
+		// not user 1's own rating of the seller.
+		{ID: 11, ItemID: 2, Item: soldBy2, RequesterID: 1, SellerRating: rating(4), SellerReview: "good buyer", BuyerRating: rating(1)},
+	}, nil)
+
+	ratings, err := service.GetUserRatings(1)
+
+	assert.NoError(t, err)
+	assert.Equal(t, []models.ReceivedRating{
+		{BookingID: 10, ItemID: 1, ItemTitle: "Bike", RaterID: 2, RatedAs: "seller", Rating: 5, Review: "great seller"},
+		{BookingID: 11, ItemID: 2, ItemTitle: "Desk", RaterID: 2, RatedAs: "buyer", Rating: 4, Review: "good buyer"},
+	}, ratings)
+}
+

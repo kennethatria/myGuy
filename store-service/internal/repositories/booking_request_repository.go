@@ -101,3 +101,16 @@ func (r *bookingRequestRepository) UpdateSellerRating(id uint, rating int, revie
 			"seller_review": review,
 		}).Error
 }
+
+// GetRatingsReceived returns bookings in which userID was rated: as the seller
+// (buyer_rating) or as the buyer (seller_rating). Newest first.
+func (r *bookingRequestRepository) GetRatingsReceived(userID uint) ([]models.BookingRequest, error) {
+	var requests []models.BookingRequest
+	err := r.db.Preload("Item").
+		Joins("JOIN store_items ON store_items.id = booking_requests.item_id").
+		Where("(store_items.seller_id = ? AND booking_requests.buyer_rating IS NOT NULL) OR "+
+			"(booking_requests.requester_id = ? AND booking_requests.seller_rating IS NOT NULL)", userID, userID).
+		Order("booking_requests.updated_at DESC").
+		Find(&requests).Error
+	return requests, err
+}

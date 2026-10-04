@@ -121,7 +121,7 @@
 import { ref, onMounted } from 'vue'
 import config from '@/config'
 import { useAuthStore } from '@/stores/auth'
-import { useReviewsStore } from '@/stores/reviews'
+import { useReviewsStore, type Review } from '@/stores/reviews'
 import ReviewList from '@/components/ReviewList.vue'
 
 interface Profile {
@@ -133,29 +133,6 @@ interface Profile {
   totalReviews: number
 }
 
-interface Review {
-  id: number
-  taskId: number
-  reviewerId: number
-  reviewedUserId: number
-  rating: number
-  comment: string
-  created_at: string
-  reviewer?: {
-    id: number
-    username: string
-    fullName?: string
-  }
-  reviewedUser?: {
-    id: number
-    username: string
-    fullName?: string
-  }
-  task?: {
-    id: number
-    title: string
-  }
-}
 
 const profile = ref<Profile>({
   username: '',
@@ -209,7 +186,8 @@ const fetchUserReviews = async (userId: number) => {
   reviewsError.value = null
   
   try {
-    const userReviews = await reviewsStore.fetchUserReviews(userId)
+    // Task reviews and store ratings together: one rating for the user
+    const userReviews = await reviewsStore.fetchAllRatings(userId)
     reviews.value = userReviews
     
     // Update total reviews count in profile

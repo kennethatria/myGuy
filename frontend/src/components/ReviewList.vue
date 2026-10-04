@@ -62,6 +62,12 @@
           <p v-if="review.task" class="task-reference">
             <small>Task: <em>{{ review.task.title }}</em></small>
           </p>
+          <p v-else-if="review.item" class="task-reference">
+            <small>
+              {{ review.item.ratedAs === 'seller' ? 'Sold' : 'Bought' }} in store:
+              <em>{{ review.item.title }}</em>
+            </small>
+          </p>
           <p class="review-comment">{{ review.comment }}</p>
         </div>
       </div>
@@ -71,26 +77,8 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useReviewsStore } from '@/stores/reviews'
+import { useReviewsStore, type Review } from '@/stores/reviews'
 
-interface Review {
-  id: number
-  taskId: number
-  reviewerId: number
-  reviewedUserId: number
-  rating: number
-  comment: string
-  created_at: string
-  reviewer?: {
-    id: number
-    username: string
-    fullName?: string
-  }
-  task?: {
-    id: number
-    title: string
-  }
-}
 
 interface Props {
   reviews: Review[]

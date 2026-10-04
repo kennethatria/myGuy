@@ -130,6 +130,7 @@ func main() {
 			auth.GET("/user/purchases", storeHandler.GetUserPurchases)
 			auth.GET("/user/bids", storeHandler.GetUserBids)
 			auth.GET("/user/booking-requests", storeHandler.GetUserBookingRequests)
+			auth.GET("/users/:id/ratings", storeHandler.GetUserRatings)
 		}
 	}
 

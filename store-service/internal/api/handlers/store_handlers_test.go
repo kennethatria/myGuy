@@ -133,6 +133,11 @@ func (m *MockStoreService) RejectBookingRequest(requestID uint, ownerID uint) (*
 	return args.Get(0).(*models.BookingRequest), args.Error(1)
 }
 
+func (m *MockStoreService) GetUserRatings(userID uint) ([]models.ReceivedRating, error) {
+	args := m.Called(userID)
+	return args.Get(0).([]models.ReceivedRating), args.Error(1)
+}
+
 func (m *MockStoreService) GetUserBookingRequests(userID uint) ([]models.BookingRequest, error) {
 	args := m.Called(userID)
 	return args.Get(0).([]models.BookingRequest), args.Error(1)
@@ -1909,3 +1914,26 @@ func TestMain(m *testing.M) {
 
 	os.Exit(code)
 }
+
+func TestGetUserRatings(t *testing.T) {
+	mockService := new(MockStoreService)
+	handler := NewStoreHandler(mockService)
+	router := setupTestRouter(handler)
+	router.GET("/api/v1/users/:id/ratings", handler.GetUserRatings)
+
+	mockService.On("GetUserRatings", uint(7)).Return([]models.ReceivedRating{
+		{BookingID: 1, ItemID: 2, ItemTitle: "Bike", RaterID: 3, RatedAs: "seller", Rating: 5},
+	}, nil)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/users/7/ratings", nil))
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"rated_as":"seller"`)
+	assert.Contains(t, w.Body.String(), `"item_title":"Bike"`)
+
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/users/abc/ratings", nil))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
