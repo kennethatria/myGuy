@@ -78,8 +78,9 @@
     # nginx, certbot, etc.).  App container operations run rootlessly and
     # require no sudo at all.
     #
-    # We deliberately deny interactive shells so an attacker who compromises
-    # the SSH key cannot do `sudo bash` to get a root shell.
+    # No shell denylist: Ansible become runs `sudo /bin/sh -c ...`, so denying
+    # shells breaks every privileged task, and `ALL, !cmd` is easily bypassed
+    # (sudo python3, sudo vim, ...).  The SSH key is the real control.
 
     - name: Write sudoers file for myguy
       ansible.builtin.copy:
@@ -88,9 +89,7 @@
         validate: /usr/sbin/visudo -cf %s
         content: |
           Defaults:{{ app_user }} !requiretty
-          Cmnd_Alias SHELLS = /bin/bash, /bin/sh, /bin/dash, /bin/zsh, \
-                              /usr/bin/bash, /usr/bin/sh, /usr/bin/zsh, /usr/bin/dash
-          {{ app_user }} ALL=(ALL) NOPASSWD: ALL, !SHELLS
+          {{ app_user }} ALL=(ALL) NOPASSWD: ALL
 
     # --- Dedicated service accounts (Phase 3) ---
 
@@ -296,9 +295,7 @@
         validate: /usr/sbin/visudo -cf %s
         content: |
           Defaults:{{ app_user }} !requiretty
-          Cmnd_Alias SHELLS = /bin/bash, /bin/sh, /bin/dash, /bin/zsh, \
-                              /usr/bin/bash, /usr/bin/sh, /usr/bin/zsh, /usr/bin/dash
-          {{ app_user }} ALL=(ALL) NOPASSWD: ALL, !SHELLS
+          {{ app_user }} ALL=(ALL) NOPASSWD: ALL
 
     # --- ops troubleshooting user (monitoring instance) ---
     # Same as app instance except no .env secret access — there are no
