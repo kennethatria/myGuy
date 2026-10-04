@@ -113,8 +113,11 @@ jobs:
       contents: write
       pull-requests: write
       id-token: write
-    if: ${{ needs.context.outputs.isRelease == 'true' }}
+    # Explicit result checks: a plain `if` also requires every upstream job to
+    # have succeeded, and `standards` (PR-only) is always skipped on pushes,
+    # which would silently skip this job and everything after it.
     # Only build and push images that passed the tests.
+    if: ${{ !failure() && !cancelled() && needs.context.outputs.isRelease == 'true' && needs.release.result == 'success' && needs.test-code-coverage.result == 'success' }}
     needs: [context, release, test-code-coverage]
     uses: ./.github/workflows/component.build.push.to.registry.yml
     secrets: inherit
@@ -137,7 +140,8 @@ jobs:
   deploy-application:
     permissions:
       contents: read
-    if: ${{ needs.context.outputs.isRelease == 'true' }}
+    # Same reasoning as deploy-images-to-repository: check the result directly.
+    if: ${{ !failure() && !cancelled() && needs.context.outputs.isRelease == 'true' && needs.deploy-images-to-repository.result == 'success' }}
     needs: [context, deploy-images-to-repository]
     uses: ./.github/workflows/component.infra.config.deploy.application.yml
     with:
