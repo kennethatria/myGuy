@@ -160,10 +160,10 @@ export const useMessagesStore = defineStore('messages', () => {
     }
   }
 
-  const sendApplicationMessage = async (applicationId: number, content: string): Promise<Message> => {
+  const sendApplicationMessage = async (applicationId: number, recipientId: number, content: string): Promise<Message> => {
     const authStore = useAuthStore();
     const token = authStore.token;
-    
+
     try {
       const response = await fetch(`${config.ENDPOINTS.APPLICATION_MESSAGES}/${applicationId}/messages`, {
         method: 'POST',
@@ -171,7 +171,7 @@ export const useMessagesStore = defineStore('messages', () => {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ recipient_id: recipientId, content }),
       })
       
       if (!response.ok) {

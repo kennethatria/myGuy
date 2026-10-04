@@ -284,7 +284,7 @@ app.get('/api/v1/applications/:applicationId/messages', authenticateHTTP, async 
 app.post('/api/v1/applications/:applicationId/messages', authenticateHTTP, async (req, res) => {
   try {
     const applicationId = parseInt(req.params.applicationId);
-    const { content, recipientId } = req.body;
+    const { content, recipient_id } = req.body;
     const senderId = req.user.id;
 
     if (isNaN(applicationId)) {
@@ -295,13 +295,15 @@ app.post('/api/v1/applications/:applicationId/messages', authenticateHTTP, async
       return res.status(400).json({ error: 'Message content is required' });
     }
 
-    if (!recipientId) {
+    if (!recipient_id) {
       return res.status(400).json({ error: 'Recipient ID is required' });
     }
 
     // applications and tasks tables exist in my_guy database (not accessible)
-    // Frontend must provide recipientId based on application context
+    // Frontend must provide recipient_id based on application context
     // TODO: Use ValidationService to validate application exists via Main API
+
+    const recipientId = parseInt(recipient_id);
 
     const message = await messageService.sendMessage({
       applicationId,
@@ -310,8 +312,38 @@ app.post('/api/v1/applications/:applicationId/messages', authenticateHTTP, async
       content: content.trim()
     });
 
+    // Format message with sender/recipient IDs only
+    // Frontend will handle fetching usernames from main API
+    const formattedMessage = {
+      ...message,
+      sender: {
+        id: senderId,
+        username: 'User' // Frontend should replace with actual username
+      },
+      recipient: {
+        id: recipientId,
+        username: 'User' // Frontend should replace with actual username
+      }
+    };
+
+    // Emit WebSocket events to notify connected clients
+    if (io) {
+      // Emit to the application room (for users currently viewing the application)
+      io.to(`application:${applicationId}`).emit('message:new', formattedMessage);
+
+      // Emit notification to recipient's personal room
+      io.to(`user:${recipientId}`).emit('message:notification', {
+        message: formattedMessage,
+        conversationId: applicationId
+      });
+
+      // Refresh conversations list for both sender and recipient
+      io.to(`user:${senderId}`).emit('conversations:refresh');
+      io.to(`user:${recipientId}`).emit('conversations:refresh');
+    }
+
     // Return message with IDs only - frontend fetches usernames separately
-    res.status(201).json(message);
+    res.status(201).json(formattedMessage);
   } catch (error) {
     logger.error('Error sending application message:', error);
     res.status(500).json({ error: 'Failed to send application message' });

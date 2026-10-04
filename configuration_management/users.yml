@@ -1,7 +1,8 @@
 # users.yml - Phase 1 & 3: IAM bootstrap for app and monitoring instances
 #
-# Always connects as root (remote_user overrides inventory) so this can run
-# on a brand-new server before myguy exists.  After this playbook completes:
+# Connects as root on a brand-new server (before myguy exists) and as myguy on
+# re-runs once root login is disabled -- see tasks/bootstrap_login_user.yml.
+# After this playbook completes:
 #   - myguy user is provisioned with SSH key and tight sudoers
 #   - node_exporter and promtail have dedicated no-login system accounts
 #   - PermitRootLogin is disabled — all subsequent plays SSH as myguy
@@ -12,11 +13,15 @@
 ---
 - name: Bootstrap app instance users and SSH hardening
   hosts: "{{ target | default('app') }}"
-  remote_user: root   # always bootstrap as root regardless of inventory ansible_user
+  gather_facts: false  # gathered once the login user is chosen (pre_tasks)
   become: yes
 
   vars:
     app_user: myguy
+
+  pre_tasks:
+    - name: Choose bootstrap login user
+      ansible.builtin.include_tasks: tasks/bootstrap_login_user.yml
 
   tasks:
     # --- myguy application user ---
@@ -230,11 +235,15 @@
 
 - name: Bootstrap monitoring instance users and SSH hardening
   hosts: monitoring
-  remote_user: root   # bootstrap as root; ProxyJump goes via myguy@app (already bootstrapped above)
+  gather_facts: false  # gathered once the login user is chosen (pre_tasks)
   become: yes
 
   vars:
     app_user: myguy
+
+  pre_tasks:
+    - name: Choose bootstrap login user
+      ansible.builtin.include_tasks: tasks/bootstrap_login_user.yml
 
   tasks:
     - name: Create myguy group

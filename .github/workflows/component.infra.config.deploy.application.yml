@@ -125,7 +125,7 @@ jobs:
             -i configuration_management/inventory.ini \
             configuration_management/users.yml \
             -e "ci_cd_public_key=$(cat ~/.ssh/linode.pub)" \
-            -e "ops_ssh_public_key=${{ vars.OPS_SSH_PUBLIC_KEY }}"
+            -e "ops_ssh_public_key=${{ secrets.OPS_SSH_PUBLIC_KEY }}"
 
       - name: Configure monitoring instance
         run: |

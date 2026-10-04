@@ -1,0 +1,29 @@
+# Pick the SSH user for the bootstrap plays in users.yml.
+#
+# A fresh server only accepts root; after users.yml has run once, root login
+# is disabled and only myguy works.  Probe myguy first and fall back to root.
+#
+# set_fact is required here: inventory ansible_user=myguy overrides the
+# remote_user play keyword, so remote_user: root alone has no effect.
+
+- name: Probe SSH login as myguy
+  # cmd (not argv) so the quoted ProxyCommand in ansible_ssh_common_args is
+  # shell-split the same way Ansible's own ssh connection splits it.
+  ansible.builtin.command:
+    cmd: >-
+      ssh -i {{ ansible_ssh_private_key_file }}
+      -o BatchMode=yes -o ConnectTimeout=10
+      {{ ansible_ssh_common_args | default('') }}
+      myguy@{{ inventory_hostname }} true
+  delegate_to: localhost
+  become: false
+  register: myguy_probe
+  changed_when: false
+  failed_when: false
+
+- name: Use myguy if it can log in, otherwise root
+  ansible.builtin.set_fact:
+    ansible_user: "{{ 'myguy' if myguy_probe.rc == 0 else 'root' }}"
+
+- name: Gather facts as the chosen user
+  ansible.builtin.setup:

@@ -467,7 +467,11 @@ export const useChatStore = defineStore('chat', () => {
       const currentUnread = unreadCounts.value.get(conversationId) || 0;
       unreadCounts.value.set(conversationId, currentUnread + 1);
       
-      const conv = conversations.value.find(c => c.task_id === conversationId);
+      const conv = conversations.value.find(c =>
+        c.task_id === conversationId ||
+        c.application_id === conversationId ||
+        c.item_id === conversationId
+      );
       if (conv) {
         conv.unread_count = currentUnread + 1;
       }

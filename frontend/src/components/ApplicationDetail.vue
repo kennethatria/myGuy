@@ -162,6 +162,10 @@ const canSendMessage = computed(() => {
   return (isTaskOwner.value || isApplicant.value) && props.application.status === 'pending'
 })
 
+const recipientId = computed(() => {
+  return isTaskOwner.value ? props.application.applicant_id : props.taskOwnerId
+})
+
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-UG', {
     minimumFractionDigits: 0,
@@ -212,7 +216,7 @@ const sendMessage = async () => {
   
   sendingMessage.value = true
   try {
-    await messagesStore.sendApplicationMessage(props.application.id, newMessage.value.trim())
+    await messagesStore.sendApplicationMessage(props.application.id, recipientId.value, newMessage.value.trim())
     newMessage.value = ''
     await loadMessages() // Reload messages
     emit('message-sent')
