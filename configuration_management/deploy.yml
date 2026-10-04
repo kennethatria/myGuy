@@ -121,6 +121,7 @@
       ansible.builtin.stat:
         path: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
       register: cert_stat
+      become: yes   # /etc/letsencrypt/live is root-only (0700)
 
     - name: Write nginx shared config (real client IP, JSON access log)
       ansible.builtin.template:
