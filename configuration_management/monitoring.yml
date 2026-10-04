@@ -348,8 +348,8 @@
     - name: Write Visitors dashboard
       # Built from the nginx JSON access log (job="nginx_access").  A "page
       # view" is a successful GET for an app page: requests nginx proxies to
-      # a service (/api, /store/, /chat/, /socket.io, /health), static assets
-      # and obvious bots are excluded.  The SPA
+      # a service (/api, /store/api|uploads, /chat/, /socket.io, /health),
+      # static assets and obvious bots are excluded.  The SPA
       # loads once per visit, so this counts visits/page loads, not in-app
       # route changes.  Visitors are approximated by distinct client IP.
       ansible.builtin.copy:
@@ -369,7 +369,7 @@
                 "datasource": { "type": "loki", "uid": "loki" },
                 "targets": [
                   { "refId": "A", "queryType": "instant",
-                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|(store|chat)/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range])))" }
+                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|store/(api|uploads)/.*|chat/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range])))" }
                 ]
               },
               {
@@ -379,7 +379,7 @@
                 "datasource": { "type": "loki", "uid": "loki" },
                 "targets": [
                   { "refId": "A", "queryType": "instant",
-                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|(store|chat)/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range]))" }
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|store/(api|uploads)/.*|chat/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range]))" }
                 ]
               },
               {
@@ -389,7 +389,7 @@
                 "datasource": { "type": "loki", "uid": "loki" },
                 "targets": [
                   { "refId": "A", "queryType": "instant",
-                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | uri =~ \"/(api|store|chat)/.*\" [$__range]))" }
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | uri =~ \"/(api|store/api|chat)/.*\" [$__range]))" }
                 ]
               },
               {
@@ -411,7 +411,7 @@
                 "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60 } } },
                 "targets": [
                   { "refId": "A", "legendFormat": "visitors",
-                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|(store|chat)/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [1h])))" }
+                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|store/(api|uploads)/.*|chat/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [1h])))" }
                 ]
               },
               {
@@ -423,7 +423,7 @@
                 "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60 } } },
                 "targets": [
                   { "refId": "A", "legendFormat": "page loads",
-                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|(store|chat)/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [1h]))" }
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|store/(api|uploads)/.*|chat/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [1h]))" }
                 ]
               },
               {
@@ -434,7 +434,7 @@
                 "options": { "orientation": "horizontal", "displayMode": "basic" },
                 "targets": [
                   { "refId": "A", "queryType": "instant", "legendFormat": "{{uri}}",
-                    "expr": "topk(10, sum by (uri) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|(store|chat)/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range])))" }
+                    "expr": "topk(10, sum by (uri) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|store/(api|uploads)/.*|chat/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range])))" }
                 ]
               },
               {
@@ -446,7 +446,7 @@
                 "options": { "orientation": "horizontal", "displayMode": "basic" },
                 "targets": [
                   { "refId": "A", "queryType": "instant", "legendFormat": "{{referer}}",
-                    "expr": "topk(10, sum by (referer) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|(store|chat)/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" | referer != \"\" [$__range])))" }
+                    "expr": "topk(10, sum by (referer) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|store/(api|uploads)/.*|chat/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" | referer != \"\" [$__range])))" }
                 ]
               },
               {

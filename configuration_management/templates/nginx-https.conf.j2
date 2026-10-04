@@ -41,7 +41,9 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
     }
 
-    location /store/ {
+    # Only the store service's own paths (API and uploaded images).  Other
+    # /store/... URLs, such as the /store/:id item page, belong to the SPA.
+    location ~ ^/store/(api|uploads)/ {
         rewrite ^/store/(.*)$ /$1 break;
         proxy_pass http://127.0.0.1:8081;
         proxy_set_header Host $host;
