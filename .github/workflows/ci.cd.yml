@@ -60,9 +60,11 @@ jobs:
     if: ${{ needs.context.outputs.isPullRequest == 'true' }}
     uses: ./.github/workflows/component.build.commit.lint.yml
 
+  # Runs on PRs and on pushes to main, where it gates the image build and
+  # deploy. standards (commit lint) only runs on PRs, so tolerate it skipped.
   test-code-coverage:
     needs: [context, standards]
-    if: ${{ needs.context.outputs.isPullRequest == 'true' }}
+    if: ${{ !failure() && !cancelled() && (needs.context.outputs.isPullRequest == 'true' || needs.context.outputs.isRelease == 'true') }}
     uses: ./.github/workflows/component.build.test.code.coverage.yml
     secrets: inherit
 
@@ -112,7 +114,8 @@ jobs:
       pull-requests: write
       id-token: write
     if: ${{ needs.context.outputs.isRelease == 'true' }}
-    needs: [context, release]
+    # Only build and push images that passed the tests.
+    needs: [context, release, test-code-coverage]
     uses: ./.github/workflows/component.build.push.to.registry.yml
     secrets: inherit
 
