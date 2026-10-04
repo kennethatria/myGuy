@@ -161,20 +161,31 @@ jobs:
             -e "target=app"
 
       - name: Deploy application
+        # Values are passed as JSON via env so spaces or shell metacharacters
+        # in secrets can't truncate or break them (see bootstrap step).
+        env:
+          REPO_URL: ${{ secrets.REPO_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          DB_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+          IMAGE_TAG: ${{ steps.get_tag.outputs.image_tag }}
+          DOMAIN: ${{ vars.DOMAIN }}
+          CERTBOT_EMAIL: ${{ secrets.CERTBOT_EMAIL }}
         run: |
           ansible-playbook \
             -i configuration_management/inventory.ini \
             configuration_management/deploy.yml \
-            -e "target=app" \
-            -e "repo_url=${{ secrets.REPO_URL }}" \
-            -e "jwt_secret=${{ secrets.JWT_SECRET }}" \
-            -e "db_password=${{ secrets.POSTGRES_PASSWORD }}" \
-            -e "internal_api_key=${{ secrets.INTERNAL_API_KEY }}" \
-            -e "registry=${{ env.REGISTRY }}" \
-            -e "image_tag=${{ steps.get_tag.outputs.image_tag }}" \
-            -e "github_repository=${{ github.repository }}" \
-            -e "domain=${{ vars.DOMAIN }}" \
-            -e "certbot_email=${{ secrets.CERTBOT_EMAIL }}"
+            -e "$(jq -n \
+                  --arg repo_url "$REPO_URL" \
+                  --arg jwt_secret "$JWT_SECRET" \
+                  --arg db_password "$DB_PASSWORD" \
+                  --arg internal_api_key "$INTERNAL_API_KEY" \
+                  --arg registry "$REGISTRY" \
+                  --arg image_tag "$IMAGE_TAG" \
+                  --arg github_repository "$GITHUB_REPOSITORY" \
+                  --arg domain "$DOMAIN" \
+                  --arg certbot_email "$CERTBOT_EMAIL" \
+                  '{target: "app"} + $ARGS.named')"
 
       - name: Upload frontend dist
         run: |
