@@ -19,11 +19,22 @@
       <div class="widget-header">
         <h3>Messages</h3>
         <div class="header-actions">
-          <button @click="openMessageCenter" class="expand-btn" title="Open Message Center">
-            <i class="fas fa-expand"></i>
+          <!-- Inline SVG: crisp at any size and shown immediately, without
+               waiting for the icon font -->
+          <button
+            @click="openMessageCenter"
+            class="expand-btn"
+            title="Open full Messages page"
+            aria-label="Open full Messages page"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
           </button>
-          <button @click="toggleWidget" class="close-btn" title="Close">
-            <i class="fas fa-times"></i>
+          <button @click="toggleWidget" class="close-btn" title="Close" aria-label="Close messages">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+            </svg>
           </button>
         </div>
       </div>
@@ -329,6 +340,7 @@ watch(() => messages.value.length, () => {
   font-size: 1.125rem;
   font-weight: 600;
   margin: 0;
+  color: white; /* global heading colour is dark, unreadable on the purple header */
 }
 
 .header-actions {
@@ -337,10 +349,10 @@ watch(() => messages.value.length, () => {
 }
 
 .expand-btn, .close-btn {
-  width: 32px;
-  height: 32px;
-  background: rgba(255, 255, 255, 0.2);
-  border: none;
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.45);
   border-radius: 0.375rem;
   color: white;
   cursor: pointer;
@@ -350,8 +362,10 @@ watch(() => messages.value.length, () => {
   transition: background-color 0.15s;
 }
 
-.expand-btn:hover, .close-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
+.expand-btn:hover, .close-btn:hover,
+.expand-btn:focus-visible, .close-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.4);
+  outline: none;
 }
 
 /* Conversation List */
