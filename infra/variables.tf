@@ -6,8 +6,13 @@ variable "provider_token" {
 
 variable "authorized_keys" {
     type        = string
-    description = "ssh key"
+    description = "Single-line SSH public key (contents of the .pub file) installed for root"
     sensitive   = true
+
+    validation {
+        condition     = can(regex("^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp[0-9]+|sk-ecdsa-sha2-nistp256@openssh.com) [A-Za-z0-9+/=]+( [^\\n]*)?$", trimspace(var.authorized_keys)))
+        error_message = "authorized_keys must be a one-line SSH public key (the .pub file), not a private key."
+    }
 }
 
 variable "root_password" {

@@ -181,7 +181,7 @@ resource "linode_instance" "zipkin_instance" {
   tags            = [var.environment, "zipkin"]
   region          = var.region
   type            = "g6-nanode-1"
-  authorized_keys = [var.authorized_keys]
+  authorized_keys = [trimspace(var.authorized_keys)]
   root_pass       = var.root_password
   private_ip      = true
 
@@ -224,7 +224,7 @@ resource "linode_instance" "my_guy_instance" {
   tags            = [var.environment]
   region          = var.region
   type            = "g6-nanode-1"
-  authorized_keys = [var.authorized_keys]
+  authorized_keys = [trimspace(var.authorized_keys)]
   root_pass       = var.root_password
   private_ip      = true
 
