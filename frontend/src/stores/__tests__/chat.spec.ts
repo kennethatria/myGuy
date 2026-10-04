@@ -119,4 +119,35 @@ describe('chat store', () => {
 
     expect(fakeSocket.emit).toHaveBeenCalledWith('typing:start', { itemId: 5, recipientId: 3 })
   })
+
+  it('opens a task chat with no history so the first message can be sent', () => {
+    const store = useChatStore()
+    store.openConversationWith({ taskId: 9, otherUserId: 4, otherUserName: 'Ann' })
+
+    expect(fakeSocket.emit).toHaveBeenCalledWith('messages:get', { taskId: 9, otherUserId: 4, limit: 20, offset: 0 })
+    store.sendMessage('first message', 4)
+    expect(fakeSocket.emit).toHaveBeenCalledWith('message:send', { taskId: 9, recipientId: 4, content: 'first message' })
+  })
+
+  it('keeps the open chat when the conversation list arrives afterwards', () => {
+    const store = useChatStore()
+    store.openConversationWith({ taskId: 9, otherUserId: 4 })
+    server('conversations:list', [
+      { task_id: 3, other_user_id: 5, unread_count: 0, last_message: '', last_message_time: '', other_user_name: 'x', conversation_type: 'task' }
+    ])
+
+    expect(conversationKey(store.activeConversation!)).toBe('task:9:4')
+    expect(store.conversations.some(c => conversationKey(c) === 'task:9:4')).toBe(true)
+  })
+
+  it("opens the owner's chat with the assignee, not another person who wrote about the task", () => {
+    const store = useChatStore()
+    server('conversations:list', [
+      { task_id: 9, other_user_id: 7, unread_count: 0, last_message: 'question', last_message_time: '', other_user_name: 'asker', conversation_type: 'task' },
+      { task_id: 9, other_user_id: 4, unread_count: 0, last_message: 'on it', last_message_time: '', other_user_name: 'assignee', conversation_type: 'task' }
+    ])
+    store.openConversationWith({ taskId: 9, otherUserId: 4 })
+
+    expect(store.activeConversation?.other_user_id).toBe(4)
+  })
 })

@@ -244,7 +244,12 @@ onMounted(async () => {
   if (props.conversationType === 'store') {
     await chatStore.joinStoreConversation(props.conversationId);
   } else {
-    chatStore.joinConversation(props.conversationId);
+    chatStore.openConversationWith({
+      taskId: props.conversationType === 'task' ? props.conversationId : undefined,
+      applicationId: props.conversationType === 'application' ? props.conversationId : undefined,
+      otherUserId: props.recipientId,
+      otherUserName: props.recipientName
+    });
   }
 
   // Scroll to bottom initially

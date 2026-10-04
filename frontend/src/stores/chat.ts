@@ -372,11 +372,16 @@ export const useChatStore = defineStore('chat', () => {
   function handleConversationsList(convs: ConversationSummary[]) {
     conversations.value = convs.map(conv => ({ ...conv, unread_count: Number(conv.unread_count) || 0 }));
 
-    // Keep the open conversation pointing at the refreshed object
+    // Keep the open conversation pointing at the refreshed object; one that
+    // has no messages yet isn't in the server list, so keep it listed.
     const key = activeKey.value;
-    if (key) {
+    if (key && activeConversation.value) {
       const refreshed = findConversation(key);
-      if (refreshed) activeConversation.value = refreshed;
+      if (refreshed) {
+        activeConversation.value = refreshed;
+      } else {
+        conversations.value.push(activeConversation.value);
+      }
     }
 
     // Enrich conversations with user names and context titles
@@ -617,6 +622,41 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  // Opens the conversation about a task or application with one specific
+  // person, creating it if it has no messages yet, so the first message can
+  // be sent and the right thread shows even before the conversation list has
+  // loaded or when several people have written about the same task.
+  function openConversationWith(target: {
+    taskId?: number;
+    applicationId?: number;
+    otherUserId: number;
+    otherUserName?: string;
+  }) {
+    const ref: ConversationRef = {
+      task_id: target.taskId,
+      application_id: target.applicationId,
+      other_user_id: target.otherUserId
+    };
+    const key = conversationKey(ref);
+    if (!key) return;
+
+    let conv = findConversation(key);
+    if (!conv) {
+      conversations.value.push({
+        task_id: target.taskId,
+        application_id: target.applicationId,
+        last_message: '',
+        last_message_time: new Date().toISOString(),
+        other_user_id: target.otherUserId,
+        other_user_name: target.otherUserName || 'User',
+        unread_count: 0,
+        conversation_type: target.taskId ? 'task' : 'application'
+      });
+      conv = findConversation(key)!;
+    }
+    openConversation(conv);
+  }
+
   // Accepts a conversation, or a bare task/application/item id (e.g. from a
   // URL), which resolves to the first matching conversation.
   function joinConversation(target: ConversationSummary | number) {
@@ -802,6 +842,7 @@ export const useChatStore = defineStore('chat', () => {
     connectSocket,
     disconnectSocket,
     joinConversation,
+    openConversationWith,
     sendMessage,
     editMessage,
     deleteMessage,
