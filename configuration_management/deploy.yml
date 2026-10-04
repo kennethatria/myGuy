@@ -70,6 +70,7 @@
           DB_PASSWORD={{ db_password }}
           INTERNAL_API_KEY={{ internal_api_key }}
           ZIPKIN_URL={{ zipkin_url }}
+          IMAGE_TAG={{ image_tag }}
           SMTP_HOST={{ smtp_host | default('') }}
           SMTP_PORT={{ smtp_port | default('587', true) }}
           SMTP_USERNAME={{ smtp_username | default('') }}

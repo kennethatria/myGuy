@@ -128,14 +128,16 @@ jobs:
   #     action: apply
   #   secrets: inherit
 
-  # run-ansible:
-  #   permissions:
-  #     contents: write
-  #     pull-requests: write
-  #     id-token: write
-  #   if: ${{ needs.context.outputs.isRelease == 'true' }}
-  #   needs: [context, release, deploy-images-to-repository, deploy-infra]
-  #   uses: ./.github/workflows/component.infra.config.deploy.application.yml
-  #   with:
-  #     environment: dev
-  #   secrets: inherit
+  # Deploys every main build: only the app images and frontend (scope: app).
+  # Server provisioning changes still need a manual "Run ansible" with scope
+  # full; Terraform stays manual (deploy-infra above) so plans get reviewed.
+  deploy-application:
+    permissions:
+      contents: read
+    if: ${{ needs.context.outputs.isRelease == 'true' }}
+    needs: [context, deploy-images-to-repository]
+    uses: ./.github/workflows/component.infra.config.deploy.application.yml
+    with:
+      environment: dev
+      scope: app
+    secrets: inherit

@@ -1,6 +1,8 @@
+# IMAGE_TAG is set by the deploy (configuration_management/deploy.yml) to the
+# tag CI pushed and whose signature it verified; local runs default to latest.
 services:
   api:
-    image: docker.io/katria47/myguy-api:latest
+    image: docker.io/katria47/myguy-api:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -22,7 +24,7 @@ services:
       - myguy-network
 
   store-service:
-    image: docker.io/katria47/myguy-store-service:latest
+    image: docker.io/katria47/myguy-store-service:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "8081:8081"
@@ -44,7 +46,7 @@ services:
       - myguy-network
 
   chat-websocket-service:
-    image: docker.io/katria47/myguy-chat-websocket-service:latest
+    image: docker.io/katria47/myguy-chat-websocket-service:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "8082:8082"
