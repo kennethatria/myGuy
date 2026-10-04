@@ -201,7 +201,7 @@ func (h *Handler) GetTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, task)
+	c.JSON(http.StatusOK, taskForViewer(*task, c.GetUint("userID")))
 }
 
 // UpdateTask updates a task with new details
@@ -250,7 +250,7 @@ func (h *Handler) UpdateTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, task)
+	c.JSON(http.StatusOK, taskForViewer(*task, userID))
 }
 
 // ListTasks returns all tasks with optional filtering, search, sorting, and pagination
@@ -338,7 +338,8 @@ func (h *Handler) ListTasks(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve tasks"})
 		return
 	}
-	
+	result.Tasks = tasksForViewer(result.Tasks, userID)
+
 	c.JSON(http.StatusOK, result)
 }
 
@@ -351,8 +352,8 @@ func (h *Handler) GetUserTasks(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user tasks"})
 		return
 	}
-	
-	c.JSON(http.StatusOK, tasks)
+
+	c.JSON(http.StatusOK, tasksForViewer(tasks, userID))
 }
 
 // GetAssignedTasks returns tasks assigned to the current user
@@ -378,8 +379,8 @@ func (h *Handler) GetAssignedTasks(c *gin.Context) {
 		}
 		tasks = filteredTasks
 	}
-	
-	c.JSON(http.StatusOK, tasks)
+
+	c.JSON(http.StatusOK, tasksForViewer(tasks, userID))
 }
 
 type applyForTaskRequest struct {
@@ -402,7 +403,14 @@ func (h *Handler) ApplyForTask(c *gin.Context) {
 
 	userID := c.GetUint("userID")
 	err = h.taskService.ApplyForTask(c.Request.Context(), uint(taskID), userID, req.ProposedFee, req.Message)
-	if err != nil {
+	switch {
+	case errors.Is(err, services.ErrTaskNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	case errors.Is(err, services.ErrAlreadyApplied), errors.Is(err, services.ErrTaskNotOpen):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	case err != nil:
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -452,22 +460,14 @@ func (h *Handler) RespondToApplication(c *gin.Context) {
 	if req.Status == "accepted" {
 		updatedTask, err = h.taskService.AssignTask(c.Request.Context(), uint(taskID), uint(applicationID))
 		if err != nil {
-			if err == services.ErrApplicationNotFound {
-				c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-				return
-			}
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			respondApplicationError(c, err)
 			return
 		}
 	} else {
 		// For declined, just update the application status
-		err = h.taskService.DeclineApplication(c.Request.Context(), uint(applicationID))
+		err = h.taskService.DeclineApplication(c.Request.Context(), uint(taskID), uint(applicationID))
 		if err != nil {
-			if err == services.ErrApplicationNotFound {
-				c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-				return
-			}
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			respondApplicationError(c, err)
 			return
 		}
 	}
@@ -659,7 +659,7 @@ func (h *Handler) UpdateTaskStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, task)
+	c.JSON(http.StatusOK, taskForViewer(*task, userID))
 }
 
 // DeleteTask deletes a task
@@ -713,11 +713,68 @@ func (h *Handler) GetTaskApplications(c *gin.Context) {
 		return
 	}
 
+	task, err := h.taskService.GetTaskByID(c.Request.Context(), uint(taskID))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return
+	}
+
 	applications, err := h.taskService.GetTaskApplications(c.Request.Context(), uint(taskID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve applications"})
 		return
 	}
 
-	c.JSON(http.StatusOK, applications)
+	task.Applications = applications
+	c.JSON(http.StatusOK, taskForViewer(*task, c.GetUint("userID")).Applications)
+}
+
+func respondApplicationError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, services.ErrApplicationNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case errors.Is(err, services.ErrTaskNotOpen):
+		c.JSON(http.StatusConflict, gin.H{"error": "this task has already been assigned"})
+	case errors.Is(err, services.ErrApplicationNotPending):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	}
+}
+
+// taskForViewer limits what a task response reveals to viewerID: the owner
+// sees every application, an applicant only their own, anyone else none; and
+// nobody's email or phone number is exposed except the viewer's own.
+func taskForViewer(task models.Task, viewerID uint) models.Task {
+	applications := make([]models.Application, 0, len(task.Applications))
+	for _, app := range task.Applications {
+		if task.CreatedBy == viewerID || app.ApplicantID == viewerID {
+			app.Applicant = publicUser(app.Applicant, viewerID)
+			applications = append(applications, app)
+		}
+	}
+	task.Applications = applications
+
+	task.Creator = publicUser(task.Creator, viewerID)
+	if task.Assignee != nil {
+		assignee := publicUser(*task.Assignee, viewerID)
+		task.Assignee = &assignee
+	}
+	return task
+}
+
+func tasksForViewer(tasks []models.Task, viewerID uint) []models.Task {
+	visible := make([]models.Task, len(tasks))
+	for i, task := range tasks {
+		visible[i] = taskForViewer(task, viewerID)
+	}
+	return visible
+}
+
+func publicUser(user models.User, viewerID uint) models.User {
+	if user.ID != viewerID {
+		user.Email = ""
+		user.PhoneNumber = ""
+	}
+	return user
 }

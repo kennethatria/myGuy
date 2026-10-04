@@ -332,8 +332,9 @@ func TestApplyForTask(t *testing.T) {
 		service, taskRepo, appRepo := setupTaskService()
 		ctx := context.Background()
 
-		openTask := &models.Task{ID: 1, Status: "open"}
+		openTask := &models.Task{ID: 1, Status: "open", CreatedBy: 9}
 		taskRepo.On("GetByID", ctx, uint(1)).Return(openTask, nil)
+		appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{{ApplicantID: 3}}, nil)
 		appRepo.On("Create", ctx, mock.MatchedBy(func(app *models.Application) bool {
 			return app.TaskID == 1 &&
 				app.ApplicantID == 2 &&
@@ -372,35 +373,58 @@ func TestApplyForTask(t *testing.T) {
 		assert.Error(t, err)
 		assert.Equal(t, ErrTaskNotOpen, err)
 	})
+
+	t.Run("cannot apply to own task", func(t *testing.T) {
+		service, taskRepo, appRepo := setupTaskService()
+		ctx := context.Background()
+
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Status: "open", CreatedBy: 2}, nil)
+
+		err := service.ApplyForTask(ctx, 1, 2, 50.0, "Message")
+
+		assert.Equal(t, ErrOwnTask, err)
+		appRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	})
+
+	t.Run("cannot apply twice", func(t *testing.T) {
+		service, taskRepo, appRepo := setupTaskService()
+		ctx := context.Background()
+
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Status: "open", CreatedBy: 9}, nil)
+		appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{{ApplicantID: 2}}, nil)
+
+		err := service.ApplyForTask(ctx, 1, 2, 50.0, "Again")
+
+		assert.Equal(t, ErrAlreadyApplied, err)
+		appRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	})
 }
 
 // ==================== AssignTask Tests ====================
 
 func TestAssignTask(t *testing.T) {
-	t.Run("successful assignment", func(t *testing.T) {
+	pending := func() *models.Application {
+		return &models.Application{ID: 1, TaskID: 1, ApplicantID: 2, ProposedFee: 80, Status: "pending"}
+	}
+
+	t.Run("successful assignment declines the other applicants", func(t *testing.T) {
 		service, taskRepo, appRepo := setupTaskService()
 		ctx := context.Background()
 
-		task := &models.Task{ID: 1, Status: "open", Fee: 100}
-		application := &models.Application{ID: 1, TaskID: 1, ApplicantID: 2, ProposedFee: 80}
-
-		taskRepo.On("GetByID", ctx, uint(1)).Return(task, nil)
-		appRepo.On("GetByID", ctx, uint(1)).Return(application, nil)
-		taskRepo.On("Update", ctx, mock.MatchedBy(func(t *models.Task) bool {
-			return t.Status == "in_progress" &&
-				t.AssignedTo != nil &&
-				*t.AssignedTo == uint(2) &&
-				t.Fee == 80
-		})).Return(nil)
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Status: "open", Fee: 100}, nil)
+		appRepo.On("GetByID", ctx, uint(1)).Return(pending(), nil)
+		taskRepo.On("AssignIfOpen", ctx, uint(1), uint(2), 80.0).Return(true, nil)
 		appRepo.On("Update", ctx, mock.MatchedBy(func(a *models.Application) bool {
 			return a.Status == "accepted"
 		})).Return(nil)
+		appRepo.On("DeclineOtherPending", ctx, uint(1), uint(1)).Return(nil)
 
 		result, err := service.AssignTask(ctx, 1, 1)
 
 		assert.NoError(t, err)
-		assert.NotNil(t, result)
 		assert.Equal(t, "in_progress", result.Status)
+		assert.Equal(t, uint(2), *result.AssignedTo)
+		assert.Equal(t, 80.0, result.Fee)
 		taskRepo.AssertExpectations(t)
 		appRepo.AssertExpectations(t)
 	})
@@ -413,23 +437,62 @@ func TestAssignTask(t *testing.T) {
 
 		result, err := service.AssignTask(ctx, 999, 1)
 
-		assert.Error(t, err)
 		assert.Equal(t, ErrTaskNotFound, err)
 		assert.Nil(t, result)
 	})
 
-	t.Run("application not found", func(t *testing.T) {
+	t.Run("already assigned task cannot be reassigned", func(t *testing.T) {
 		service, taskRepo, appRepo := setupTaskService()
 		ctx := context.Background()
 
-		task := &models.Task{ID: 1}
-		taskRepo.On("GetByID", ctx, uint(1)).Return(task, nil)
-		appRepo.On("GetByID", ctx, uint(999)).Return(nil, errors.New("not found"))
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Status: "in_progress"}, nil)
 
-		result, err := service.AssignTask(ctx, 1, 999)
+		_, err := service.AssignTask(ctx, 1, 1)
 
-		assert.Error(t, err)
-		assert.Nil(t, result)
+		assert.Equal(t, ErrTaskNotOpen, err)
+		appRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+	})
+
+	t.Run("application from another task is rejected", func(t *testing.T) {
+		service, taskRepo, appRepo := setupTaskService()
+		ctx := context.Background()
+
+		other := pending()
+		other.TaskID = 7
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Status: "open"}, nil)
+		appRepo.On("GetByID", ctx, uint(1)).Return(other, nil)
+
+		_, err := service.AssignTask(ctx, 1, 1)
+
+		assert.Equal(t, ErrApplicationNotFound, err)
+	})
+
+	t.Run("declined application cannot be accepted", func(t *testing.T) {
+		service, taskRepo, appRepo := setupTaskService()
+		ctx := context.Background()
+
+		declined := pending()
+		declined.Status = "declined"
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Status: "open"}, nil)
+		appRepo.On("GetByID", ctx, uint(1)).Return(declined, nil)
+
+		_, err := service.AssignTask(ctx, 1, 1)
+
+		assert.Equal(t, ErrApplicationNotPending, err)
+	})
+
+	t.Run("losing a concurrent acceptance changes nothing", func(t *testing.T) {
+		service, taskRepo, appRepo := setupTaskService()
+		ctx := context.Background()
+
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Status: "open"}, nil)
+		appRepo.On("GetByID", ctx, uint(1)).Return(pending(), nil)
+		taskRepo.On("AssignIfOpen", ctx, uint(1), uint(2), 80.0).Return(false, nil)
+
+		_, err := service.AssignTask(ctx, 1, 1)
+
+		assert.Equal(t, ErrTaskNotOpen, err)
+		appRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
 	})
 }
 
@@ -495,20 +558,17 @@ func TestCompleteTask(t *testing.T) {
 // ==================== UpdateTaskStatus Tests ====================
 
 func TestUpdateTaskStatus(t *testing.T) {
-	t.Run("open to in_progress", func(t *testing.T) {
+	t.Run("open to in_progress without an assignee is rejected", func(t *testing.T) {
 		service, taskRepo, _ := setupTaskService()
 		ctx := context.Background()
 
 		task := &models.Task{ID: 1, CreatedBy: 1, Status: "open"}
 		taskRepo.On("GetByID", ctx, uint(1)).Return(task, nil)
-		taskRepo.On("Update", ctx, mock.MatchedBy(func(t *models.Task) bool {
-			return t.Status == "in_progress"
-		})).Return(nil)
 
-		result, err := service.UpdateTaskStatus(ctx, 1, "in_progress", 1)
+		_, err := service.UpdateTaskStatus(ctx, 1, "in_progress", 1)
 
-		assert.NoError(t, err)
-		assert.Equal(t, "in_progress", result.Status)
+		assert.Equal(t, ErrInvalidStatus, err)
+		taskRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
 	})
 
 	t.Run("in_progress to completed", func(t *testing.T) {
@@ -595,13 +655,13 @@ func TestDeclineApplication(t *testing.T) {
 		service, _, appRepo := setupTaskService()
 		ctx := context.Background()
 
-		application := &models.Application{ID: 1, Status: "pending"}
+		application := &models.Application{ID: 1, TaskID: 1, Status: "pending"}
 		appRepo.On("GetByID", ctx, uint(1)).Return(application, nil)
 		appRepo.On("Update", ctx, mock.MatchedBy(func(a *models.Application) bool {
 			return a.Status == "declined"
 		})).Return(nil)
 
-		err := service.DeclineApplication(ctx, 1)
+		err := service.DeclineApplication(ctx, 1, 1)
 
 		assert.NoError(t, err)
 		appRepo.AssertExpectations(t)
@@ -613,7 +673,7 @@ func TestDeclineApplication(t *testing.T) {
 
 		appRepo.On("GetByID", ctx, uint(999)).Return(nil, errors.New("not found"))
 
-		err := service.DeclineApplication(ctx, 999)
+		err := service.DeclineApplication(ctx, 1, 999)
 
 		assert.Error(t, err)
 		assert.Equal(t, ErrApplicationNotFound, err)
@@ -623,13 +683,23 @@ func TestDeclineApplication(t *testing.T) {
 		service, _, appRepo := setupTaskService()
 		ctx := context.Background()
 
-		application := &models.Application{ID: 1, Status: "accepted"}
+		application := &models.Application{ID: 1, TaskID: 1, Status: "accepted"}
 		appRepo.On("GetByID", ctx, uint(1)).Return(application, nil)
 
-		err := service.DeclineApplication(ctx, 1)
+		err := service.DeclineApplication(ctx, 1, 1)
 
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "pending")
+		assert.Equal(t, ErrApplicationNotPending, err)
+	})
+
+	t.Run("application from another task is rejected", func(t *testing.T) {
+		service, _, appRepo := setupTaskService()
+		ctx := context.Background()
+
+		appRepo.On("GetByID", ctx, uint(1)).Return(&models.Application{ID: 1, TaskID: 7, Status: "pending"}, nil)
+
+		err := service.DeclineApplication(ctx, 1, 1)
+
+		assert.Equal(t, ErrApplicationNotFound, err)
 	})
 }
 

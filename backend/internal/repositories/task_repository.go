@@ -140,6 +140,19 @@ func (r *GormTaskRepository) Update(ctx context.Context, task *models.Task) erro
 	return r.db.WithContext(ctx).Save(task).Error
 }
 
+// AssignIfOpen assigns the task only while it is still open, reporting false
+// otherwise, so two concurrent acceptances cannot both win.
+func (r *GormTaskRepository) AssignIfOpen(ctx context.Context, taskID, assigneeID uint, fee float64) (bool, error) {
+	res := r.db.WithContext(ctx).Model(&models.Task{}).
+		Where("id = ? AND status = ?", taskID, "open").
+		Updates(map[string]interface{}{
+			"status":      "in_progress",
+			"assigned_to": assigneeID,
+			"fee":         fee,
+		})
+	return res.RowsAffected == 1, res.Error
+}
+
 func (r *GormTaskRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&models.Task{}, id).Error
 }

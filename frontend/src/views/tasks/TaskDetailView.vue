@@ -498,6 +498,9 @@ onMounted(async () => {
 
 const showApplicationModal = ref(false)
 
+const errorMessage = (error: unknown, fallback: string) =>
+  error instanceof Error && error.message ? error.message : fallback
+
 const handleApply = () => {
   showApplicationModal.value = true
 }
@@ -518,7 +521,7 @@ const handleApplicationSubmit = async (data: { proposedFee: number; message: str
     alert('Application submitted successfully!')
   } catch (error) {
     console.error('Failed to apply for task:', error)
-    alert('Failed to apply for task. Please try again.')
+    alert(errorMessage(error, 'Failed to apply for task. Please try again.'))
   }
 }
 
@@ -548,14 +551,15 @@ const handleAcceptApplication = async (applicationId: number) => {
 
   try {
     await tasksStore.respondToApplication(task.value.id, applicationId, 'accepted')
-    task.value.status = 'in_progress'
-    
-    // Refresh applications list
-    applications.value = await tasksStore.getTaskApplications(task.value.id) as unknown as Application[]
   } catch (error) {
     console.error('Failed to accept application:', error)
-    alert('Failed to accept application. Please try again.')
+    alert(errorMessage(error, 'Failed to accept application. Please try again.'))
   }
+
+  // Reload either way: on success the task now has an assignee and the other
+  // applications are declined; on failure (e.g. already assigned) the page
+  // catches up with the server.
+  await loadTaskData()
 }
 
 const handleDeclineApplication = async (applicationId: number) => {
@@ -568,7 +572,7 @@ const handleDeclineApplication = async (applicationId: number) => {
     applications.value = await tasksStore.getTaskApplications(task.value.id) as unknown as Application[]
   } catch (error) {
     console.error('Failed to decline application:', error)
-    alert('Failed to decline application. Please try again.')
+    alert(errorMessage(error, 'Failed to decline application. Please try again.'))
   }
 }
 

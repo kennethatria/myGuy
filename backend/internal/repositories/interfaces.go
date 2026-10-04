@@ -34,6 +34,7 @@ type TaskRepository interface {
 	Update(ctx context.Context, task *models.Task) error
 	Delete(ctx context.Context, id uint) error
 	ListByUser(ctx context.Context, userID uint, role string) ([]models.Task, error)
+	AssignIfOpen(ctx context.Context, taskID, assigneeID uint, fee float64) (bool, error)
 }
 
 type ApplicationRepository interface {
@@ -42,6 +43,7 @@ type ApplicationRepository interface {
 	ListByTask(ctx context.Context, taskID uint) ([]models.Application, error)
 	ListByUser(ctx context.Context, userID uint) ([]models.Application, error)
 	Update(ctx context.Context, application *models.Application) error
+	DeclineOtherPending(ctx context.Context, taskID, acceptedID uint) error
 }
 
 type ReviewRepository interface {

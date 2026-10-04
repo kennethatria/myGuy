@@ -16,6 +16,9 @@ var (
 	ErrTaskNotOpen         = errors.New("task is not open for applications")
 	ErrInvalidStatus       = errors.New("invalid status transition")
 	ErrApplicationNotFound = errors.New("application not found")
+	ErrApplicationNotPending = errors.New("application is no longer pending")
+	ErrOwnTask             = errors.New("you cannot apply to your own task")
+	ErrAlreadyApplied      = errors.New("you have already applied to this task")
 )
 
 type TaskService struct {
@@ -195,6 +198,19 @@ func (s *TaskService) ApplyForTask(ctx context.Context, taskID, applicantID uint
 	if task.Status != "open" {
 		return ErrTaskNotOpen
 	}
+	if task.CreatedBy == applicantID {
+		return ErrOwnTask
+	}
+
+	existing, err := s.applicationRepo.ListByTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	for _, app := range existing {
+		if app.ApplicantID == applicantID {
+			return ErrAlreadyApplied
+		}
+	}
 
 	application := &models.Application{
 		TaskID:      taskID,
@@ -207,30 +223,45 @@ func (s *TaskService) ApplyForTask(ctx context.Context, taskID, applicantID uint
 	return s.applicationRepo.Create(ctx, application)
 }
 
+// AssignTask accepts an application: the applicant gets the task at their
+// proposed fee and every other pending application is declined.
 func (s *TaskService) AssignTask(ctx context.Context, taskID, applicationID uint) (*models.Task, error) {
 	task, err := s.taskRepo.GetByID(ctx, taskID)
 	if err != nil {
 		return nil, ErrTaskNotFound
 	}
+	if task.Status != "open" {
+		return nil, ErrTaskNotOpen
+	}
 
 	application, err := s.applicationRepo.GetByID(ctx, applicationID)
+	if err != nil || application.TaskID != taskID {
+		return nil, ErrApplicationNotFound
+	}
+	if application.Status != "pending" {
+		return nil, ErrApplicationNotPending
+	}
+
+	// Conditional update: only one acceptance can win, even when racing.
+	assigned, err := s.taskRepo.AssignIfOpen(ctx, taskID, application.ApplicantID, application.ProposedFee)
 	if err != nil {
 		return nil, err
 	}
-
-	task.Status = "in_progress"
-	task.AssignedTo = &application.ApplicantID
-	task.Fee = application.ProposedFee
-
-	if err := s.taskRepo.Update(ctx, task); err != nil {
-		return nil, err
+	if !assigned {
+		return nil, ErrTaskNotOpen
 	}
 
 	application.Status = "accepted"
 	if err := s.applicationRepo.Update(ctx, application); err != nil {
 		return nil, err
 	}
-	
+	if err := s.applicationRepo.DeclineOtherPending(ctx, taskID, applicationID); err != nil {
+		return nil, err
+	}
+
+	task.Status = "in_progress"
+	task.AssignedTo = &application.ApplicantID
+	task.Fee = application.ProposedFee
 	return task, nil
 }
 
@@ -278,8 +309,9 @@ func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID uint, status 
 	validTransition := false
 	switch task.Status {
 	case "open":
-		// From open: can move to in_progress or cancelled
-		validTransition = status == "in_progress" || status == "cancelled"
+		// From open: cancel. Starting work happens by accepting an
+		// application (AssignTask), so a task is never in progress unassigned.
+		validTransition = status == "cancelled" || (status == "in_progress" && task.AssignedTo != nil)
 	case "in_progress":
 		// From in_progress: can move to completed or cancelled
 		validTransition = status == "completed" || status == "cancelled"
@@ -318,15 +350,15 @@ func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID uint, status 
 }
 
 
-// DeclineApplication updates an application status to declined
-func (s *TaskService) DeclineApplication(ctx context.Context, applicationID uint) error {
+// DeclineApplication declines a pending application to taskID.
+func (s *TaskService) DeclineApplication(ctx context.Context, taskID, applicationID uint) error {
 	application, err := s.applicationRepo.GetByID(ctx, applicationID)
-	if err != nil {
+	if err != nil || application.TaskID != taskID {
 		return ErrApplicationNotFound
 	}
 
 	if application.Status != "pending" {
-		return errors.New("can only decline pending applications")
+		return ErrApplicationNotPending
 	}
 
 	application.Status = "declined"

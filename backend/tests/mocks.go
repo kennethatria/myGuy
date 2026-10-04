@@ -56,6 +56,11 @@ func (m *MockTaskRepository) ListByUser(ctx context.Context, userID uint, role s
 	return args.Get(0).([]models.Task), args.Error(1)
 }
 
+func (m *MockTaskRepository) AssignIfOpen(ctx context.Context, taskID, assigneeID uint, fee float64) (bool, error) {
+	args := m.Called(ctx, taskID, assigneeID, fee)
+	return args.Bool(0), args.Error(1)
+}
+
 // MockApplicationRepository
 type MockApplicationRepository struct {
 	mock.Mock
@@ -110,6 +115,11 @@ func (m *MockReviewRepository) GetTaskReview(ctx context.Context, taskID uint, r
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*models.Review), args.Error(1)
+}
+
+func (m *MockApplicationRepository) DeclineOtherPending(ctx context.Context, taskID, acceptedID uint) error {
+	args := m.Called(ctx, taskID, acceptedID)
+	return args.Error(0)
 }
 
 // MockUserRepository

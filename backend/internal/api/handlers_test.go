@@ -257,11 +257,12 @@ func TestHandler_UpdateTaskStatus(t *testing.T) {
 	router.PATCH("/tasks/:id/status", handler.UpdateTaskStatus)
 
 	t.Run("successful status update", func(t *testing.T) {
-		task := &models.Task{ID: 1, CreatedBy: 1, Status: "open"}
+		assignee := uint(2)
+		task := &models.Task{ID: 1, CreatedBy: 1, AssignedTo: &assignee, Status: "in_progress"}
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
 		mockTaskRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Task")).Return(nil)
 
-		reqBody := UpdateTaskStatusRequest{Status: "in_progress"}
+		reqBody := UpdateTaskStatusRequest{Status: "completed"}
 		body, _ := json.Marshal(reqBody)
 		req, _ := http.NewRequest(http.MethodPatch, "/tasks/1/status", bytes.NewBuffer(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -317,6 +318,7 @@ func TestHandler_ApplyForTask(t *testing.T) {
 	t.Run("successful application", func(t *testing.T) {
 		task := &models.Task{ID: 1, Status: "open", CreatedBy: 1}
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
+		mockAppRepo.On("ListByTask", mock.Anything, uint(1)).Return([]models.Application{}, nil)
 		mockAppRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Application")).Return(nil)
 
 		reqBody := applyForTaskRequest{ProposedFee: 100, Message: "I'm interested"}
@@ -435,11 +437,12 @@ func TestHandler_RespondToApplication(t *testing.T) {
 		})
 		router.POST("/tasks/:id/applications/:applicationId/respond", handler.RespondToApplication)
 
-		task := &models.Task{ID: 1, CreatedBy: 1}
+		task := &models.Task{ID: 1, CreatedBy: 1, Status: "open"}
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
 		mockAppRepo.On("GetByID", mock.Anything, uint(10)).Return(&models.Application{ID: 10, TaskID: 1, ApplicantID: 2, ProposedFee: 100, Status: "pending"}, nil)
-		mockTaskRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Task")).Return(nil)
+		mockTaskRepo.On("AssignIfOpen", mock.Anything, uint(1), uint(2), 100.0).Return(true, nil)
 		mockAppRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Application")).Return(nil)
+		mockAppRepo.On("DeclineOtherPending", mock.Anything, uint(1), uint(10)).Return(nil)
 
 		reqBody := respondToApplicationRequest{Status: "accepted"}
 		body, _ := json.Marshal(reqBody)

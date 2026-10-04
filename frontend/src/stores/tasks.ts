@@ -357,12 +357,13 @@ export const useTasksStore = defineStore('tasks', () => {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Application failed:', response.status, errorText);
+        let message = `Failed to apply for task: ${response.status} ${response.statusText}`;
         try {
-          const errorData = JSON.parse(errorText);
-          throw new Error(errorData.error || 'Failed to apply for task');
+          message = JSON.parse(errorText).error || message;
         } catch {
-          throw new Error(`Failed to apply for task: ${response.status} ${response.statusText}`);
+          // Non-JSON error body: keep the status-based message
         }
+        throw new Error(message);
       }
 
       // Check if response has content
