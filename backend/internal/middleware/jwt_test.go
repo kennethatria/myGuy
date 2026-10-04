@@ -229,3 +229,39 @@ func TestNewJWTAuthMiddleware(t *testing.T) {
 	assert.NotNil(t, middleware)
 	assert.Equal(t, secretKey, middleware.secretKey)
 }
+func TestJWTAuthMiddleware_SignupToken(t *testing.T) {
+	m := NewJWTAuthMiddleware("test-secret")
+
+	t.Run("round trip returns the email", func(t *testing.T) {
+		token, err := m.GenerateSignupToken("new@example.com")
+		assert.NoError(t, err)
+
+		email, err := m.ValidateSignupToken(token)
+		assert.NoError(t, err)
+		assert.Equal(t, "new@example.com", email)
+	})
+
+	t.Run("signup token is not accepted as a session token", func(t *testing.T) {
+		token, err := m.GenerateSignupToken("new@example.com")
+		assert.NoError(t, err)
+
+		_, err = m.ValidateToken(token)
+		assert.ErrorIs(t, err, ErrInvalidToken)
+	})
+
+	t.Run("session token is not accepted as a signup token", func(t *testing.T) {
+		token, err := m.GenerateToken(1, "jane", "jane@example.com", "Jane")
+		assert.NoError(t, err)
+
+		_, err = m.ValidateSignupToken(token)
+		assert.ErrorIs(t, err, ErrInvalidToken)
+	})
+
+	t.Run("token from another secret is rejected", func(t *testing.T) {
+		token, err := NewJWTAuthMiddleware("other-secret").GenerateSignupToken("new@example.com")
+		assert.NoError(t, err)
+
+		_, err = m.ValidateSignupToken(token)
+		assert.ErrorIs(t, err, ErrInvalidToken)
+	})
+}

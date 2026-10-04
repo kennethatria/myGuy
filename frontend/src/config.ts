@@ -12,8 +12,9 @@ export default {
   CHAT_API_URL,
   CHAT_WS_URL,
   ENDPOINTS: {
-    LOGIN: `${API_URL}/login`,
-    REGISTER: `${API_URL}/register`,
+    AUTH_REQUEST_CODE: `${API_URL}/auth/request-code`,
+    AUTH_VERIFY_CODE: `${API_URL}/auth/verify-code`,
+    AUTH_COMPLETE_SIGNUP: `${API_URL}/auth/complete-signup`,
     PROFILE: `${API_URL}/profile`,
     TASKS: `${API_URL}/tasks`,
     APPLICATIONS: `${API_URL}/applications`,

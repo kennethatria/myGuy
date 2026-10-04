@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,6 +14,7 @@ import (
 )
 
 type Handler struct {
+	authService    *services.AuthService
 	userService    *services.UserService
 	taskService    *services.TaskService
 	reviewService  *services.ReviewService
@@ -19,12 +22,14 @@ type Handler struct {
 }
 
 func NewHandler(
+	authService *services.AuthService,
 	userService *services.UserService,
 	taskService *services.TaskService,
 	reviewService *services.ReviewService,
 	authMiddleware *middleware.JWTAuthMiddleware,
 ) *Handler {
 	return &Handler{
+		authService:    authService,
 		userService:    userService,
 		taskService:    taskService,
 		reviewService:  reviewService,
@@ -32,60 +37,114 @@ func NewHandler(
 	}
 }
 
-type registerRequest struct {
-	Username string `json:"username" binding:"required"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
-	FullName string `json:"full_name" binding:"required"`
+type requestCodeRequest struct {
+	Email string `json:"email" binding:"required,email"`
 }
 
-func (h *Handler) Register(c *gin.Context) {
-	var req registerRequest
+// RequestLoginCode emails a one-time sign-in code. The response is the same
+// whether or not an account exists for the address.
+func (h *Handler) RequestLoginCode(c *gin.Context) {
+	var req requestCodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	user, err := h.userService.Register(c.Request.Context(), services.RegisterUserInput{
-		Username: req.Username,
-		Email:    req.Email,
-		Password: req.Password,
-		FullName: req.FullName,
-	})
-
+	err := h.authService.RequestCode(c.Request.Context(), req.Email)
+	if errors.Is(err, services.ErrTooManyRequests) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		log.Printf("request login code: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to send code"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, user)
+	c.JSON(http.StatusAccepted, gin.H{"message": "code sent"})
 }
 
-type loginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
+type verifyCodeRequest struct {
+	Email string `json:"email" binding:"required,email"`
+	Code  string `json:"code" binding:"required,len=6,numeric"`
 }
 
-func (h *Handler) Login(c *gin.Context) {
-	var req loginRequest
+// VerifyLoginCode signs in an existing user, or returns a short-lived
+// signup token when the verified email has no account yet.
+func (h *Handler) VerifyLoginCode(c *gin.Context) {
+	var req verifyCodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	user, err := h.userService.Login(c.Request.Context(), req.Email, req.Password)
+	result, err := h.authService.VerifyCode(c.Request.Context(), req.Email, req.Code)
+	if errors.Is(err, services.ErrInvalidCode) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+		log.Printf("verify login code: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to verify code"})
 		return
 	}
 
+	if result.NewAccount {
+		signupToken, err := h.authMiddleware.GenerateSignupToken(result.Email)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"signup_token": signupToken})
+		return
+	}
+
+	h.respondWithSession(c, http.StatusOK, result.User)
+}
+
+type completeSignupRequest struct {
+	SignupToken string `json:"signup_token" binding:"required"`
+	FullName    string `json:"full_name" binding:"required"`
+}
+
+// CompleteSignup creates the account for a verified email and signs it in.
+func (h *Handler) CompleteSignup(c *gin.Context) {
+	var req completeSignupRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	email, err := h.authMiddleware.ValidateSignupToken(req.SignupToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign-up session expired, request a new code"})
+		return
+	}
+
+	user, err := h.authService.CompleteSignup(c.Request.Context(), email, req.FullName)
+	switch {
+	case errors.Is(err, services.ErrFullNameRequired):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	case errors.Is(err, services.ErrEmailExists):
+		c.JSON(http.StatusConflict, gin.H{"error": "an account already exists for this email, sign in instead"})
+		return
+	case err != nil:
+		log.Printf("complete signup: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create account"})
+		return
+	}
+
+	h.respondWithSession(c, http.StatusCreated, user)
+}
+
+func (h *Handler) respondWithSession(c *gin.Context, status int, user *models.UserResponse) {
 	token, err := h.authMiddleware.GenerateToken(user.ID, user.Username, user.Email, user.FullName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{
+	c.JSON(status, gin.H{
 		"user":  user,
 		"token": token,
 	})

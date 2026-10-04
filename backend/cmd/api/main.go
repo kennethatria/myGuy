@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"myguy/internal/api"
+	"myguy/internal/mailer"
 	"myguy/internal/middleware"
 	"myguy/internal/models"
 	"myguy/internal/repositories"
@@ -47,6 +48,7 @@ func main() {
 		&models.Task{},
 		&models.Application{},
 		&models.Review{},
+		&models.LoginCode{},
 	)
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)
@@ -56,16 +58,19 @@ func main() {
 	taskRepo := repositories.NewGormTaskRepository(db)
 	applicationRepo := repositories.NewGormApplicationRepository(db)
 	reviewRepo := repositories.NewGormReviewRepository(db)
+	loginCodeRepo := repositories.NewGormLoginCodeRepository(db)
 
 	// Initialize services
 	userService := services.NewUserService(userRepo)
 	taskService := services.NewTaskService(taskRepo, applicationRepo)
 	reviewService := services.NewReviewService(reviewRepo, taskRepo, userRepo)
 
+	authService := services.NewAuthService(userRepo, loginCodeRepo, newCodeSender(), os.Getenv("JWT_SECRET"))
+
 	// Initialize JWT middleware
 	jwtMiddleware := middleware.NewJWTAuthMiddleware(os.Getenv("JWT_SECRET"))
 	// Initialize handlers
-	handler := api.NewHandler(userService, taskService, reviewService, jwtMiddleware)
+	handler := api.NewHandler(authService, userService, taskService, reviewService, jwtMiddleware)
 
 	// Setup router
 	r := gin.Default()
@@ -96,8 +101,9 @@ func main() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 	r.GET("/api/v1/server-time", handler.GetServerTime)
-	r.POST("/api/v1/register", handler.Register)
-	r.POST("/api/v1/login", handler.Login)
+	r.POST("/api/v1/auth/request-code", handler.RequestLoginCode)
+	r.POST("/api/v1/auth/verify-code", handler.VerifyLoginCode)
+	r.POST("/api/v1/auth/complete-signup", handler.CompleteSignup)
 	// Protected routes
 	auth := r.Group("/api/v1")
 	auth.Use(jwtMiddleware.AuthRequired())
@@ -138,4 +144,25 @@ func main() {
 	if err := r.Run(":" + port); err != nil {
 		log.Fatal("Failed to start server:", err)
 	}
+}
+
+// newCodeSender emails login codes over SMTP, or logs them when SMTP_HOST is
+// unset so local development works without a mail account.
+func newCodeSender() services.CodeSender {
+	host := os.Getenv("SMTP_HOST")
+	if host == "" {
+		log.Println("WARNING: SMTP_HOST not set; login codes will be logged, not emailed")
+		return mailer.LogSender{}
+	}
+	port := os.Getenv("SMTP_PORT")
+	if port == "" {
+		port = "587"
+	}
+	return mailer.NewSMTPSender(mailer.SMTPConfig{
+		Host:     host,
+		Port:     port,
+		Username: os.Getenv("SMTP_USERNAME"),
+		Password: os.Getenv("SMTP_PASSWORD"),
+		From:     os.Getenv("SMTP_FROM"),
+	})
 }

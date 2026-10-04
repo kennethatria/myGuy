@@ -5,14 +5,12 @@ import (
 	"errors"
 	"myguy/internal/models"
 	"myguy/internal/repositories"
-	"golang.org/x/crypto/bcrypt"
 )
 
 var (
 	ErrUserNotFound      = errors.New("user not found")
 	ErrEmailExists       = errors.New("email already exists")
 	ErrUsernameExists    = errors.New("username already exists")
-	ErrInvalidCredentials = errors.New("invalid credentials")
 )
 
 type UserService struct {
@@ -25,76 +23,12 @@ func NewUserService(userRepo repositories.UserRepository) *UserService {
 	}
 }
 
-type RegisterUserInput struct {
-	Username string
-	Email    string
-	Password string
-	FullName string
-}
-
 type UpdateUserInput struct {
 	ID          uint
 	FullName    string
 	Email       string
 	PhoneNumber string
 	Bio         string
-}
-
-func (s *UserService) Register(ctx context.Context, input RegisterUserInput) (*models.UserResponse, error) {
-	// Check if email exists
-	if _, err := s.userRepo.GetByEmail(ctx, input.Email); err == nil {
-		return nil, ErrEmailExists
-	}
-
-	// Check if username exists
-	if _, err := s.userRepo.GetByUsername(ctx, input.Username); err == nil {
-		return nil, ErrUsernameExists
-	}
-
-	// Hash password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return nil, err
-	}
-
-	user := &models.User{
-		Username: input.Username,
-		Email:    input.Email,
-		Password: string(hashedPassword),
-		FullName: input.FullName,
-	}
-
-	if err := s.userRepo.Create(ctx, user); err != nil {
-		return nil, err
-	}
-
-	return &models.UserResponse{
-		ID:       user.ID,
-		Username: user.Username,
-		Email:    user.Email,
-		FullName: user.FullName,
-	}, nil
-}
-
-func (s *UserService) Login(ctx context.Context, email, password string) (*models.UserResponse, error) {
-	user, err := s.userRepo.GetByEmail(ctx, email)
-	if err != nil {
-		return nil, ErrInvalidCredentials
-	}
-
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		return nil, ErrInvalidCredentials
-	}
-
-	return &models.UserResponse{
-		ID:           user.ID,
-		Username:     user.Username,
-		Email:        user.Email,
-		FullName:     user.FullName,
-		Bio:          user.Bio,
-		AverageRating: user.AverageRating,
-		CreatedAt:    user.CreatedAt,
-	}, nil
 }
 
 func (s *UserService) GetProfile(ctx context.Context, userID uint) (*models.UserResponse, error) {

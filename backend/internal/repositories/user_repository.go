@@ -29,7 +29,9 @@ func (r *GormUserRepository) GetByID(ctx context.Context, id uint) (*models.User
 
 func (r *GormUserRepository) GetByEmail(ctx context.Context, email string) (*models.User, error) {
 	var user models.User
-	err := r.db.WithContext(ctx).Where("email = ?", email).First(&user).Error
+	// Case-insensitive: sign-in normalises to lower case, but older
+	// accounts may have been registered with mixed-case addresses.
+	err := r.db.WithContext(ctx).Where("LOWER(email) = LOWER(?)", email).First(&user).Error
 	if err != nil {
 		return nil, err
 	}

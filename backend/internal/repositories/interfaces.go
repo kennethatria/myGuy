@@ -2,6 +2,8 @@ package repositories
 
 import (
 	"context"
+	"time"
+
 	"myguy/internal/models"
 )
 
@@ -12,6 +14,15 @@ type UserRepository interface {
 	GetByUsername(ctx context.Context, username string) (*models.User, error)
 	Update(ctx context.Context, user *models.User) error
 	UpdateRating(ctx context.Context, userID uint) error
+}
+
+type LoginCodeRepository interface {
+	Create(ctx context.Context, code *models.LoginCode) error
+	LatestActive(ctx context.Context, email string, now time.Time) (*models.LoginCode, error)
+	IncrementAttempts(ctx context.Context, id uint) error
+	MarkConsumed(ctx context.Context, id uint, at time.Time) (bool, error)
+	InvalidateActive(ctx context.Context, email string, at time.Time) error
+	CountSince(ctx context.Context, email string, since time.Time) (int64, error)
 }
 
 type TaskRepository interface {

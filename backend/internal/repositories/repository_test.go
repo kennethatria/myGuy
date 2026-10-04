@@ -18,6 +18,7 @@ func setupTestDB() (*gorm.DB, error) {
 		&models.Task{},
 		&models.Application{},
 		&models.Review{},
+		&models.LoginCode{},
 	)
 	if err != nil {
 		return nil, err

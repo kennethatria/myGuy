@@ -43,54 +43,57 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  const login = async (email: string, password: string): Promise<boolean> => {
-    try {
-      const response = await fetch(config.ENDPOINTS.LOGIN, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      })
+  const startSession = (data: { user: User; token: string }) => {
+    user.value = data.user
+    token.value = data.token
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Login failed')
-      }
+    // Set token in localStorage and update default headers
+    setAuthHeaders(data.token)
 
-      const data = await response.json()
-      user.value = data.user
-      token.value = data.token
-
-      // Set token in localStorage and update default headers
-      setAuthHeaders(data.token)
-
-      // Cache current user in user store
-      cacheCurrentUser()
-
-      return true
-    } catch (error) {
-      console.error('Login failed:', error)
-      throw error
-    }
+    // Cache current user in user store
+    cacheCurrentUser()
   }
 
-  const register = async (username: string, email: string, password: string, fullName: string): Promise<boolean> => {
-    try {
-      const response = await fetch(config.ENDPOINTS.REGISTER, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, email, password, full_name: fullName })
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Registration failed')
-      }
-
-      return true
-    } catch (error) {
-      console.error('Registration failed:', error)
-      throw error
+  const postAuth = async <T>(url: string, body: object, fallbackError: string): Promise<T> => {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new Error(data.error || fallbackError)
     }
+    return data as T
+  }
+
+  // Passwordless sign-in: email a one-time code to the address.
+  const requestCode = async (email: string): Promise<void> => {
+    await postAuth(config.ENDPOINTS.AUTH_REQUEST_CODE, { email }, 'Could not send code')
+  }
+
+  // Signs in an existing user, or returns a signup token when the verified
+  // email has no account yet (finish with completeSignup).
+  const verifyCode = async (email: string, code: string): Promise<{ signupToken?: string }> => {
+    const data = await postAuth<{ user?: User; token?: string; signup_token?: string }>(
+      config.ENDPOINTS.AUTH_VERIFY_CODE,
+      { email, code },
+      'Could not verify code'
+    )
+    if (data.signup_token) {
+      return { signupToken: data.signup_token }
+    }
+    startSession(data as { user: User; token: string })
+    return {}
+  }
+
+  const completeSignup = async (signupToken: string, fullName: string): Promise<void> => {
+    const data = await postAuth<{ user: User; token: string }>(
+      config.ENDPOINTS.AUTH_COMPLETE_SIGNUP,
+      { signup_token: signupToken, full_name: fullName },
+      'Could not create account'
+    )
+    startSession(data)
   }
 
   const logout = () => {
@@ -138,8 +141,9 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     token,
     isAuthenticated,
-    login,
-    register,
+    requestCode,
+    verifyCode,
+    completeSignup,
     logout,
     checkAuth,
     setAuthHeaders

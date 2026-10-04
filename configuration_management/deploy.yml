@@ -70,6 +70,11 @@
           DB_PASSWORD={{ db_password }}
           INTERNAL_API_KEY={{ internal_api_key }}
           ZIPKIN_URL={{ zipkin_url }}
+          SMTP_HOST={{ smtp_host | default('') }}
+          SMTP_PORT={{ smtp_port | default('587', true) }}
+          SMTP_USERNAME={{ smtp_username | default('') }}
+          SMTP_PASSWORD={{ smtp_password | default('') }}
+          SMTP_FROM={{ smtp_from | default('') }}
       become: yes   # chown requires root even though myguy owns the dir
 
     # --- Deploy ---

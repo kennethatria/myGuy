@@ -68,6 +68,53 @@ func (m *JWTAuthMiddleware) ValidateToken(tokenString string) (*Claims, error) {
 	return nil, ErrInvalidToken
 }
 
+// signupTokenTTL bounds how long a verified email may take to finish sign-up.
+const signupTokenTTL = 15 * time.Minute
+
+type signupClaims struct {
+	Email string `json:"email"`
+	jwt.RegisteredClaims
+}
+
+// signupKey is derived from the session secret so signup tokens can never
+// pass ValidateToken here, or the session checks in store and chat services.
+func (m *JWTAuthMiddleware) signupKey() []byte {
+	return []byte(m.secretKey + ":signup")
+}
+
+// GenerateSignupToken proves email was verified by login code, for an email
+// that has no account yet.
+func (m *JWTAuthMiddleware) GenerateSignupToken(email string) (string, error) {
+	claims := signupClaims{
+		Email: email,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(signupTokenTTL)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(m.signupKey())
+}
+
+// ValidateSignupToken returns the verified email carried by a signup token.
+func (m *JWTAuthMiddleware) ValidateSignupToken(tokenString string) (string, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &signupClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return m.signupKey(), nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
+	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return "", ErrExpiredToken
+		}
+		return "", ErrInvalidToken
+	}
+
+	claims, ok := token.Claims.(*signupClaims)
+	if !ok || !token.Valid || claims.Email == "" {
+		return "", ErrInvalidToken
+	}
+	return claims.Email, nil
+}
+
 func (m *JWTAuthMiddleware) AuthRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")

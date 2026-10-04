@@ -44,7 +44,7 @@ const navigateToLogin = () => {
             </button>
             
             <router-link
-              :to="{ name: 'register' }"
+              :to="{ name: 'login' }"
               class="btn btn-outline w-full"
             >
               Create an Account

@@ -28,3 +28,17 @@ type UserResponse struct {
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
+
+func (u *User) ToResponse() *UserResponse {
+	return &UserResponse{
+		ID:            u.ID,
+		Username:      u.Username,
+		Email:         u.Email,
+		FullName:      u.FullName,
+		PhoneNumber:   u.PhoneNumber,
+		Bio:           u.Bio,
+		AverageRating: u.AverageRating,
+		CreatedAt:     u.CreatedAt,
+		UpdatedAt:     u.UpdatedAt,
+	}
+}

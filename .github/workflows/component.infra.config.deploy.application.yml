@@ -173,6 +173,11 @@ jobs:
           IMAGE_TAG: ${{ steps.get_tag.outputs.image_tag }}
           DOMAIN: ${{ vars.DOMAIN }}
           CERTBOT_EMAIL: ${{ secrets.CERTBOT_EMAIL }}
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_USERNAME: ${{ vars.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ vars.SMTP_FROM }}
         run: |
           ansible-playbook \
             -i configuration_management/inventory.ini \
@@ -187,6 +192,11 @@ jobs:
                   --arg github_repository "$GITHUB_REPOSITORY" \
                   --arg domain "$DOMAIN" \
                   --arg certbot_email "$CERTBOT_EMAIL" \
+                  --arg smtp_host "$SMTP_HOST" \
+                  --arg smtp_port "$SMTP_PORT" \
+                  --arg smtp_username "$SMTP_USERNAME" \
+                  --arg smtp_password "$SMTP_PASSWORD" \
+                  --arg smtp_from "$SMTP_FROM" \
                   '{target: "app"} + $ARGS.named')"
 
       - name: Upload frontend dist

@@ -16,10 +16,10 @@ const router = createRouter({
       meta: { requiresGuest: true }
     },
     {
+      // Sign-up happens in the login flow (email code); keep old links working.
       path: '/register',
       name: 'register',
-      component: () => import('@/views/auth/RegisterView.vue'),
-      meta: { requiresGuest: true }
+      redirect: { name: 'login' }
     },
     {
       path: '/dashboard',

@@ -9,6 +9,12 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - DB_CONNECTION=host=postgres-db user=postgres password=${DB_PASSWORD} dbname=my_guy port=5432 sslmode=disable
       - ZIPKIN_URL=${ZIPKIN_URL:-http://zipkin:9411/api/v2/spans}
+      # Login-code email. Unset SMTP_HOST logs codes instead (local dev only).
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
     depends_on:
       postgres-db:
         condition: service_healthy

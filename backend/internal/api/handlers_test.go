@@ -16,14 +16,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
-
-func hashPassword(password string) string {
-	hashed, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	return string(hashed)
-}
 
 func setupTestRouter() (*gin.Engine, *Handler, *tests.MockUserRepository, *tests.MockTaskRepository, *tests.MockReviewRepository, *tests.MockApplicationRepository) {
 	gin.SetMode(gin.TestMode)
@@ -39,118 +33,11 @@ func setupTestRouter() (*gin.Engine, *Handler, *tests.MockUserRepository, *tests
 	reviewService := services.NewReviewService(mockReviewRepo, mockTaskRepo, mockUserRepo)
 	authMiddleware := middleware.NewJWTAuthMiddleware("test-secret")
 
-	handler := NewHandler(userService, taskService, reviewService, authMiddleware)
+	authService := services.NewAuthService(mockUserRepo, nil, nil, "test-secret")
+
+	handler := NewHandler(authService, userService, taskService, reviewService, authMiddleware)
 
 	return router, handler, mockUserRepo, mockTaskRepo, mockReviewRepo, mockAppRepo
-}
-
-func TestHandler_Register(t *testing.T) {
-	router, handler, mockUserRepo, _, _, _ := setupTestRouter()
-	router.POST("/register", handler.Register)
-
-	t.Run("successful registration", func(t *testing.T) {
-		reqBody := registerRequest{
-			Username: "testuser",
-			Email:    "test@example.com",
-			Password: "password123",
-			FullName: "Test User",
-		}
-
-		mockUserRepo.On("GetByEmail", mock.Anything, reqBody.Email).Return(nil, gorm.ErrRecordNotFound)
-		mockUserRepo.On("GetByUsername", mock.Anything, reqBody.Username).Return(nil, gorm.ErrRecordNotFound)
-		mockUserRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.User")).Return(nil).Run(func(args mock.Arguments) {
-			user := args.Get(1).(*models.User)
-			user.ID = 1
-		})
-
-		body, _ := json.Marshal(reqBody)
-		req, _ := http.NewRequest(http.MethodPost, "/register", bytes.NewBuffer(body))
-		req.Header.Set("Content-Type", "application/json")
-		resp := httptest.NewRecorder()
-
-		router.ServeHTTP(resp, req)
-
-		assert.Equal(t, http.StatusCreated, resp.Code)
-		var user models.UserResponse
-		err := json.Unmarshal(resp.Body.Bytes(), &user)
-		assert.NoError(t, err)
-		assert.Equal(t, reqBody.Username, user.Username)
-		assert.Equal(t, uint(1), user.ID)
-		mockUserRepo.AssertExpectations(t)
-	})
-
-	t.Run("email already exists", func(t *testing.T) {
-		reqBody := registerRequest{
-			Username: "testuser",
-			Email:    "exists@example.com",
-			Password: "password123",
-			FullName: "Test User",
-		}
-
-		mockUserRepo.On("GetByEmail", mock.Anything, reqBody.Email).Return(&models.User{ID: 1}, nil)
-
-		body, _ := json.Marshal(reqBody)
-		req, _ := http.NewRequest(http.MethodPost, "/register", bytes.NewBuffer(body))
-		req.Header.Set("Content-Type", "application/json")
-		resp := httptest.NewRecorder()
-
-		router.ServeHTTP(resp, req)
-
-		assert.Equal(t, http.StatusBadRequest, resp.Code)
-	})
-}
-
-func TestHandler_Login(t *testing.T) {
-	router, handler, mockUserRepo, _, _, _ := setupTestRouter()
-	router.POST("/login", handler.Login)
-
-	t.Run("successful login", func(t *testing.T) {
-		reqBody := loginRequest{
-			Email:    "test@example.com",
-			Password: "password123",
-		}
-
-		user := &models.User{
-			ID:       1,
-			Username: "testuser",
-			Email:    reqBody.Email,
-			Password: hashPassword(reqBody.Password),
-			FullName: "Test User",
-		}
-
-		mockUserRepo.On("GetByEmail", mock.Anything, reqBody.Email).Return(user, nil)
-
-		body, _ := json.Marshal(reqBody)
-		req, _ := http.NewRequest(http.MethodPost, "/login", bytes.NewBuffer(body))
-		req.Header.Set("Content-Type", "application/json")
-		resp := httptest.NewRecorder()
-
-		router.ServeHTTP(resp, req)
-
-		assert.Equal(t, http.StatusOK, resp.Code)
-		var result map[string]interface{}
-		json.Unmarshal(resp.Body.Bytes(), &result)
-		assert.NotNil(t, result["token"])
-		mockUserRepo.AssertExpectations(t)
-	})
-
-	t.Run("invalid credentials", func(t *testing.T) {
-		reqBody := loginRequest{
-			Email:    "test@example.com",
-			Password: "wrongpassword",
-		}
-
-		mockUserRepo.On("GetByEmail", mock.Anything, reqBody.Email).Return(nil, gorm.ErrRecordNotFound)
-
-		body, _ := json.Marshal(reqBody)
-		req, _ := http.NewRequest(http.MethodPost, "/login", bytes.NewBuffer(body))
-		req.Header.Set("Content-Type", "application/json")
-		resp := httptest.NewRecorder()
-
-		router.ServeHTTP(resp, req)
-
-		assert.Equal(t, http.StatusUnauthorized, resp.Code)
-	})
 }
 
 func TestHandler_GetProfile(t *testing.T) {
