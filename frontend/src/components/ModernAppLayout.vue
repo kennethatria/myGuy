@@ -79,15 +79,6 @@
           <input type="search" placeholder="Search tasks..." v-model="searchQuery" @keyup.enter="handleSearch">
         </div>
         
-        <div class="top-bar-actions">
-          <button class="notification-btn">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <path d="M18 8A6 6 0 1 0 6 8C6 15 3 17 3 17H21C21 17 18 15 18 8Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M13.73 21C13.5542 21.3031 13.3019 21.5547 12.9982 21.7295C12.6946 21.9044 12.3504 21.9965 12 21.9965C11.6496 21.9965 11.3054 21.9044 11.0018 21.7295C10.6982 21.5547 10.4458 21.3031 10.27 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <span v-if="unreadNotifications > 0" class="notification-badge">{{ unreadNotifications }}</span>
-          </button>
-        </div>
       </header>
       
       <!-- Page Content -->
@@ -121,7 +112,6 @@ const onViewportChange = (e: MediaQueryListEvent) => {
 }
 const isUserMenuOpen = ref(false)
 const searchQuery = ref('')
-const unreadNotifications = ref(0)
 
 const user = computed(() => authStore.user)
 const totalUnreadCount = computed(() => {
@@ -510,39 +500,9 @@ onMounted(async () => {
   pointer-events: none;
 }
 
-.top-bar-actions {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
 
-.notification-btn {
-  background: none;
-  border: none;
-  padding: 0.5rem;
-  cursor: pointer;
-  color: #6c757d;
-  border-radius: 4px;
-  transition: all 0.2s;
-  position: relative;
-}
 
-.notification-btn:hover {
-  background-color: #f8f9fa;
-  color: #212529;
-}
 
-.notification-badge {
-  position: absolute;
-  top: 0;
-  right: 0;
-  background-color: #dc3545;
-  color: white;
-  font-size: 0.625rem;
-  padding: 0.125rem 0.375rem;
-  border-radius: 10px;
-  font-weight: 600;
-}
 
 .user-avatar-small {
   width: 32px;
