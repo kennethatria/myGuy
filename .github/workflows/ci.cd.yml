@@ -95,23 +95,12 @@ jobs:
     secrets: inherit
 
   run-scorecard:
-    permissions: 
+    # Must cover everything component.security.scorecard.yml requests.
+    permissions:
       security-events: write
       id-token: write
-      actions: read
-      artifact-metadata: read
-      attestations: read
-      checks: read
       contents: read
-      deployments: read
-      discussions: read
-      issues: read
-      models: read
-      packages: read
-      pages: read
-      pull-requests: read
-      repository-projects: read
-      statuses: read
+      actions: read
     if: ${{ needs.context.outputs.isRelease == 'true' }}
     needs: [context]
     uses: ./.github/workflows/component.security.scorecard.yml
