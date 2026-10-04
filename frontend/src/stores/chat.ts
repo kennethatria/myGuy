@@ -95,8 +95,10 @@ export const useChatStore = defineStore('chat', () => {
 
   // Socket connection
   // Store message methods
-  // Opens the current user's chat with the seller of itemId (buyer side).
-  async function joinStoreConversation(itemId: number) {
+  // Opens a store chat about itemId. Buyers have one chat per item (with the
+  // seller); a seller has one per buyer, so a seller's link must name the
+  // buyer (otherUserId) — without it nothing is opened rather than a guess.
+  async function joinStoreConversation(itemId: number, otherUserId?: number) {
     if (!socket.value?.connected) await connectSocket();
 
     // Wait briefly for conversations to load if empty
@@ -104,34 +106,51 @@ export const useChatStore = defineStore('chat', () => {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    let conv = conversations.value.find(c => c.item_id === itemId);
-
-    if (!conv) {
-      // Conversation doesn't exist yet, create placeholder
-      try {
-        const response = await fetch(`${config.STORE_API_URL}/items/${itemId}`);
-        if (response.ok) {
-          const item = await response.json();
-
-          conversations.value.push({
-            item_id: itemId,
-            item_title: item.title,
-            last_message: '',
-            last_message_time: new Date().toISOString(),
-            other_user_id: item.seller_id,
-            other_user_name: item.seller?.name || item.seller?.username || 'Seller',
-            unread_count: 0,
-            conversation_type: 'store'
-          });
-          conv = findConversation(conversationKey({ item_id: itemId, other_user_id: item.seller_id }));
-        }
-      } catch (error) {
-        console.error('Failed to create conversation placeholder:', error);
-        return; // Exit if we can't create conversation
+    if (otherUserId) {
+      const existing = findConversation(conversationKey({ item_id: itemId, other_user_id: otherUserId }));
+      if (existing) {
+        openConversation(existing);
+        return;
       }
+    } else {
+      const matches = conversations.value.filter(c => c.item_id === itemId);
+      if (matches.length === 1) {
+        openConversation(matches[0]!);
+        return;
+      }
+      if (matches.length > 1) return; // seller with several buyers: let them choose
     }
 
-    if (conv) openConversation(conv);
+    // No conversation yet: start one with the seller (buyer side), or with the
+    // named user.
+    try {
+      const response = await fetch(`${config.STORE_API_URL}/items/${itemId}`);
+      if (!response.ok) return;
+      const item = await response.json();
+
+      const other = otherUserId ?? item.seller_id;
+      if (!other || other === myId()) return; // a seller can't start a chat with themselves
+
+      conversations.value.push({
+        item_id: itemId,
+        item_title: item.title,
+        last_message: '',
+        last_message_time: new Date().toISOString(),
+        other_user_id: other,
+        other_user_name: other === item.seller_id
+          ? (item.seller?.name || item.seller?.username || 'Seller')
+          : 'Buyer',
+        unread_count: 0,
+        conversation_type: 'store'
+      });
+      const conv = findConversation(conversationKey({ item_id: itemId, other_user_id: other }));
+      if (conv) {
+        openConversation(conv);
+        if (other !== item.seller_id) enrichConversations();
+      }
+    } catch (error) {
+      console.error('Failed to create conversation placeholder:', error);
+    }
   }
 
   // Helper for modal: join with retry logic

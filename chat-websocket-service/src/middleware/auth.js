@@ -38,6 +38,7 @@ const authenticateSocket = async (socket, next) => {
 
     // Attach user info to socket
     socket.userId = decoded.user_id;
+    socket.token = token; // for calls to other services on the user's behalf
     socket.userEmail = decoded.email;
     socket.userName = decoded.name;
     

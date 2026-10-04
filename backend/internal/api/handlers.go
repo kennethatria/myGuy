@@ -793,3 +793,21 @@ func publicUser(user models.User, viewerID uint) models.User {
 	}
 	return user
 }
+
+// GetApplicationParticipants lets the chat service check that a user may chat
+// about an application, and with whom.
+func (h *Handler) GetApplicationParticipants(c *gin.Context) {
+	applicationID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid application ID"})
+		return
+	}
+
+	participants, err := h.taskService.GetApplicationParticipants(c.Request.Context(), uint(applicationID), c.GetUint("userID"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, participants)
+}

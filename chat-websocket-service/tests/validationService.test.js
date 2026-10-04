@@ -114,6 +114,39 @@ describe('ValidationService', () => {
     });
   });
 
+  describe('resolveApplicationRecipient', () => {
+    const participants = { data: { application_id: 7, task_id: 3, applicant_id: 2, task_owner_id: 1 } };
+
+    it('returns the other participant for the applicant and the owner', async () => {
+      axios.get.mockResolvedValue(participants);
+
+      expect(await validationService.resolveApplicationRecipient(7, 2, 'tok')).toBe(1);
+      expect(await validationService.resolveApplicationRecipient(7, 1, 'tok')).toBe(2);
+      expect(axios.get).toHaveBeenCalledWith(
+        expect.stringContaining('/applications/7/participants'),
+        expect.objectContaining({ headers: { Authorization: 'Bearer tok' } })
+      );
+      expect(axios.get).toHaveBeenCalledTimes(1); // second call served from cache
+    });
+
+    it('rejects someone who is not a participant, even with cached data', async () => {
+      axios.get.mockResolvedValue(participants);
+      await validationService.resolveApplicationRecipient(7, 2, 'tok');
+
+      expect(await validationService.resolveApplicationRecipient(7, 99, 'tok')).toBeNull();
+    });
+
+    it('treats not found / forbidden as not allowed', async () => {
+      axios.get.mockRejectedValue({ response: { status: 404 } });
+      expect(await validationService.resolveApplicationRecipient(8, 2, 'tok')).toBeNull();
+    });
+
+    it('fails closed when the main API is unreachable', async () => {
+      axios.get.mockRejectedValue(new Error('ECONNREFUSED'));
+      await expect(validationService.resolveApplicationRecipient(9, 2, 'tok')).rejects.toThrow('ECONNREFUSED');
+    });
+  });
+
   describe('validateStoreItem', () => {
     it('returns true for a 200 response', async () => {
       axios.get.mockResolvedValue({ status: 200 });

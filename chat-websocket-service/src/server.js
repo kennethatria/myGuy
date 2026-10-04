@@ -9,6 +9,7 @@ const helmet = require('helmet');
 const logger = require('./utils/logger');
 const { authenticateSocket, authenticateHTTP } = require('./middleware/auth');
 const SocketHandlers = require('./handlers/socketHandlers');
+const validationService = require('./services/validationService');
 const messageService = require('./services/messageService');
 const schedulerService = require('./services/schedulerService');
 const { configureRedisAdapter, getRedisHealth } = require('./config/redis');
@@ -295,15 +296,20 @@ app.post('/api/v1/applications/:applicationId/messages', authenticateHTTP, async
       return res.status(400).json({ error: 'Message content is required' });
     }
 
-    if (!recipient_id) {
-      return res.status(400).json({ error: 'Recipient ID is required' });
+    // Only the task owner and the applicant may chat about an application,
+    // and only with each other; the main API owns that data.
+    let recipientId;
+    try {
+      recipientId = await validationService.resolveApplicationRecipient(
+        applicationId, senderId, req.headers.authorization.replace('Bearer ', '')
+      );
+    } catch (error) {
+      logger.error('Application authorization check failed:', error.message);
+      return res.status(503).json({ error: 'Could not verify the application, try again' });
     }
-
-    // applications and tasks tables exist in my_guy database (not accessible)
-    // Frontend must provide recipient_id based on application context
-    // TODO: Use ValidationService to validate application exists via Main API
-
-    const recipientId = parseInt(recipient_id);
+    if (!recipientId || (recipient_id && parseInt(recipient_id) !== recipientId)) {
+      return res.status(403).json({ error: 'You cannot message about this application' });
+    }
 
     const message = await messageService.sendMessage({
       applicationId,
@@ -493,8 +499,16 @@ app.get('/api/v1/conversations', authenticateHTTP, async (req, res) => {
 // Get user's last seen
 app.get('/api/v1/users/:id/last-seen', authenticateHTTP, async (req, res) => {
   try {
-    const lastSeen = await messageService.getUserLastSeen(req.params.id);
-    res.json({ userId: req.params.id, lastSeen });
+    const otherUserId = parseInt(req.params.id);
+    if (isNaN(otherUserId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+    // Only people who have chatted with this user may see when they were last on.
+    if (!(await messageService.haveConversed(req.user.id, otherUserId))) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const lastSeen = await messageService.getUserLastSeen(otherUserId);
+    res.json({ userId: otherUserId, lastSeen });
   } catch (error) {
     logger.error('Error getting last seen:', error);
     res.status(500).json({ error: 'Failed to get last seen' });

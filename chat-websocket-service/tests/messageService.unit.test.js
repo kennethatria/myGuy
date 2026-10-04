@@ -172,6 +172,21 @@ describe('MessageService', () => {
     });
   });
 
+  describe('haveConversed', () => {
+    it('is true when the two users exchanged a message in either direction', async () => {
+      db.query.mockResolvedValue({ rows: [{ '?column?': 1 }] });
+      expect(await messageService.haveConversed(1, 2)).toBe(true);
+      const [sql, params] = db.query.mock.calls[0];
+      expect(sql).toContain('(sender_id = $1 AND recipient_id = $2) OR (sender_id = $2 AND recipient_id = $1)');
+      expect(params).toEqual([1, 2]);
+    });
+
+    it('is false for strangers', async () => {
+      db.query.mockResolvedValue({ rows: [] });
+      expect(await messageService.haveConversed(1, 99)).toBe(false);
+    });
+  });
+
   describe('getUserConversations', () => {
     it('returns conversation rows for the user', async () => {
       const mockRows = [{ id: 1, task_id: 5, content: 'hi', other_user_id: 3 }];

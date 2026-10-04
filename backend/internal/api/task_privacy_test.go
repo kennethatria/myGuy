@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -110,4 +111,30 @@ func TestHandler_GetUserReviews_HidesContactDetails(t *testing.T) {
 	assert.NotContains(t, resp.Body.String(), "@example.com")
 	assert.NotContains(t, resp.Body.String(), "+2567")
 	assert.Contains(t, resp.Body.String(), `"username":"ann"`)
+}
+
+func TestHandler_GetApplicationParticipants(t *testing.T) {
+	app := &models.Application{ID: 10, TaskID: 1, ApplicantID: 2, Task: models.Task{ID: 1, CreatedBy: 1}}
+
+	get := func(viewer uint, appID string) *httptest.ResponseRecorder {
+		router, handler, _, _, _, mockAppRepo := setupTestRouter()
+		router.Use(func(c *gin.Context) { c.Set("userID", viewer); c.Next() })
+		router.GET("/applications/:id/participants", handler.GetApplicationParticipants)
+		mockAppRepo.On("GetByID", mock.Anything, uint(10)).Return(app, nil)
+		mockAppRepo.On("GetByID", mock.Anything, uint(11)).Return(nil, errors.New("not found"))
+
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/applications/"+appID+"/participants", nil))
+		return resp
+	}
+
+	for _, participant := range []uint{1, 2} {
+		resp := get(participant, "10")
+		assert.Equal(t, http.StatusOK, resp.Code)
+		assert.JSONEq(t, `{"application_id":10,"task_id":1,"applicant_id":2,"task_owner_id":1}`, resp.Body.String())
+	}
+
+	// An outsider and a missing id look the same, so ids can't be probed.
+	assert.Equal(t, http.StatusNotFound, get(99, "10").Code)
+	assert.Equal(t, http.StatusNotFound, get(1, "11").Code)
 }

@@ -150,4 +150,27 @@ describe('chat store', () => {
 
     expect(store.activeConversation?.other_user_id).toBe(4)
   })
+
+  it("opens a seller's chat with the buyer named in the link, and never guesses", async () => {
+    const store = useChatStore()
+    const storeConv = (buyer: number) => ({ item_id: 5, other_user_id: buyer, unread_count: 0, last_message: '', last_message_time: '', other_user_name: `b${buyer}`, conversation_type: 'store' })
+    server('conversations:list', [storeConv(2), storeConv(3)])
+
+    await store.joinStoreConversation(5)
+    expect(store.activeConversation).toBeNull()
+
+    await store.joinStoreConversation(5, 3)
+    expect(conversationKey(store.activeConversation!)).toBe('store:5:3')
+  })
+
+  it('opens the only chat about an item when no user is named', async () => {
+    const store = useChatStore()
+    server('conversations:list', [
+      { item_id: 8, other_user_id: 6, unread_count: 0, last_message: '', last_message_time: '', other_user_name: 'seller', conversation_type: 'store' }
+    ])
+
+    await store.joinStoreConversation(8)
+    expect(conversationKey(store.activeConversation!)).toBe('store:8:6')
+  })
 })
+

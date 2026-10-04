@@ -1,4 +1,5 @@
 const messageService = require('../services/messageService');
+const validationService = require('../services/validationService');
 const logger = require('../utils/logger');
 
 class SocketHandlers {
@@ -29,7 +30,7 @@ class SocketHandlers {
 
     // Update user's online status
     logger.info('Step 3: Updating presence', { userId: socket.userId });
-    this.updateUserPresence(socket.userId, true);
+    this.updateUserPresence(socket.userId);
 
     // Set up event handlers
     logger.info('Step 4: Setting up event handlers', { userId: socket.userId });
@@ -174,6 +175,16 @@ class SocketHandlers {
       // Validate input
       if (!content || (!taskId && !applicationId && !itemId) || !recipientId) {
         return socket.emit('error', { message: 'Invalid message data' });
+      }
+
+      // Application chats: only between the task owner and the applicant.
+      if (applicationId) {
+        const allowed = await validationService.resolveApplicationRecipient(
+          parseInt(applicationId), socket.userId, socket.token
+        );
+        if (allowed !== parseInt(recipientId)) {
+          return socket.emit('error', { message: 'You cannot message about this application' });
+        }
       }
 
       // Message limits removed - unlimited messaging allowed
@@ -457,6 +468,9 @@ class SocketHandlers {
    */
   async handleGetLastSeen(socket, { userId }) {
     try {
+      if (!(await messageService.haveConversed(socket.userId, userId))) {
+        return socket.emit('user:lastseen', { userId, lastSeen: null });
+      }
       const lastSeen = await messageService.getUserLastSeen(userId);
       socket.emit('user:lastseen', { userId, lastSeen });
     } catch (error) {
@@ -504,7 +518,7 @@ class SocketHandlers {
 
     // If user has no more sockets, update presence
     if (!this.userSockets.has(socket.userId) || this.userSockets.get(socket.userId).size === 0) {
-      this.updateUserPresence(socket.userId, false);
+      this.updateUserPresence(socket.userId);
     }
   }
 
@@ -533,16 +547,12 @@ class SocketHandlers {
   /**
    * Update user's presence
    */
-  async updateUserPresence(userId, isOnline) {
+  async updateUserPresence(userId) {
     try {
+      // Record activity only. Presence is not broadcast: telling every
+      // connected user when anyone comes online leaks who uses the app and
+      // when. Partners can ask via user:lastseen.
       await messageService.updateUserActivity(userId);
-      
-      // Broadcast presence update
-      this.io.emit('user:presence', {
-        userId,
-        isOnline,
-        lastSeen: new Date()
-      });
     } catch (error) {
       logger.error('Error updating user presence:', error);
     }

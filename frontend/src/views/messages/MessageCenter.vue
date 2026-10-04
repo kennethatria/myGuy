@@ -94,12 +94,13 @@ onMounted(async () => {
 
   // Handle auto-opening conversations from query parameters
   const itemId = route.query.itemId as string | undefined;
+  const userId = route.query.userId as string | undefined; // the other person, for sellers
   const taskId = route.query.taskId as string | undefined;
   const conversationId = route.query.conversationId as string | undefined;
 
   if (itemId) {
     // Auto-join store conversation
-    await chatStore.joinStoreConversation(parseInt(itemId));
+    await chatStore.joinStoreConversation(parseInt(itemId), userId ? parseInt(userId) : undefined);
   } else if (taskId) {
     // Auto-join task conversation
     await chatStore.joinConversation(parseInt(taskId));

@@ -165,6 +165,46 @@ class ValidationService {
     }
 
     /**
+     * Who the sender may chat with about an application: the other of its two
+     * participants (task owner and applicant), or null if the sender is not one
+     * of them. Asks the main API with the sender's own token; errors other than
+     * "not found" propagate so callers fail closed.
+     * @param {number} applicationId
+     * @param {number} senderId
+     * @param {string} token - The sender's JWT
+     * @returns {Promise<number|null>}
+     */
+    async resolveApplicationRecipient(applicationId, senderId, token) {
+        const cacheKey = `application-participants:${applicationId}`;
+        let participants = this._getCached(cacheKey);
+
+        if (!participants) {
+            try {
+                const response = await axios.get(
+                    `${this.mainApiUrl}/applications/${applicationId}/participants`,
+                    { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
+                );
+                participants = {
+                    applicantId: response.data.applicant_id,
+                    ownerId: response.data.task_owner_id
+                };
+                // Participants never change, and the cached pair is still checked
+                // against each sender below.
+                this._setCache(cacheKey, participants);
+            } catch (error) {
+                if (error.response && [403, 404].includes(error.response.status)) {
+                    return null;
+                }
+                throw error;
+            }
+        }
+
+        if (senderId === participants.applicantId) return participants.ownerId;
+        if (senderId === participants.ownerId) return participants.applicantId;
+        return null;
+    }
+
+    /**
      * Validate if a store item exists
      * @param {number} itemId - Store item ID to validate
      * @param {string} token - JWT token for authentication

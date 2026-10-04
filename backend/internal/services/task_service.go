@@ -380,6 +380,33 @@ func (s *TaskService) DeclineApplication(ctx context.Context, taskID, applicatio
 	return s.applicationRepo.Update(ctx, application)
 }
 
+// ApplicationParticipants are the two people who may chat about an application.
+type ApplicationParticipants struct {
+	ApplicationID uint `json:"application_id"`
+	TaskID        uint `json:"task_id"`
+	ApplicantID   uint `json:"applicant_id"`
+	TaskOwnerID   uint `json:"task_owner_id"`
+}
+
+// GetApplicationParticipants returns who may chat about an application, but
+// only to one of them: anyone else gets ErrApplicationNotFound, so ids can't
+// be probed.
+func (s *TaskService) GetApplicationParticipants(ctx context.Context, applicationID, userID uint) (*ApplicationParticipants, error) {
+	application, err := s.applicationRepo.GetByID(ctx, applicationID)
+	if err != nil {
+		return nil, ErrApplicationNotFound
+	}
+	if userID != application.ApplicantID && userID != application.Task.CreatedBy {
+		return nil, ErrApplicationNotFound
+	}
+	return &ApplicationParticipants{
+		ApplicationID: application.ID,
+		TaskID:        application.TaskID,
+		ApplicantID:   application.ApplicantID,
+		TaskOwnerID:   application.Task.CreatedBy,
+	}, nil
+}
+
 // GetTaskApplications returns all applications for a given task
 func (s *TaskService) GetTaskApplications(ctx context.Context, taskID uint) ([]models.Application, error) {
 	return s.applicationRepo.ListByTask(ctx, taskID)

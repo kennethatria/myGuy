@@ -265,6 +265,20 @@ class MessageService {
   }
 
   /**
+   * Whether two users have exchanged at least one message. Presence (last
+   * seen) is only shared between people who are actually talking.
+   */
+  async haveConversed(userId, otherUserId) {
+    const result = await db.query(
+      `SELECT 1 FROM messages
+       WHERE (sender_id = $1 AND recipient_id = $2) OR (sender_id = $2 AND recipient_id = $1)
+       LIMIT 1`,
+      [userId, otherUserId]
+    );
+    return result.rows.length > 0;
+  }
+
+  /**
    * Update user's last activity
    */
   async updateUserActivity(userId, conversationId) {

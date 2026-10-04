@@ -130,6 +130,9 @@ func main() {
 		// User routes
 		auth.GET("/users/:id", handler.GetUserByID)
 
+		// Application chat authorization (used by the chat service)
+		auth.GET("/applications/:id/participants", handler.GetApplicationParticipants)
+
 		// Profile routes
 		auth.GET("/profile", handler.GetProfile)
 		auth.PUT("/profile", handler.UpdateProfile)
