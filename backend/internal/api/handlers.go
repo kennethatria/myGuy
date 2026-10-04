@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -596,11 +597,12 @@ func (h *Handler) GetUserByID(c *gin.Context) {
 	c.JSON(http.StatusOK, user)
 }
 
+// Profile edits change the display name and bio only. The email is the
+// sign-in identity (codes are sent to it), so it can't be changed here
+// without verifying the new address.
 type updateProfileRequest struct {
-	FullName    string `json:"full_name"`
-	Email       string `json:"email" binding:"email"`
-	PhoneNumber string `json:"phone_number"`
-	Bio         string `json:"bio"`
+	FullName string `json:"full_name" binding:"required,max=100"`
+	Bio      string `json:"bio" binding:"max=500"`
 }
 
 func (h *Handler) GetProfile(c *gin.Context) {
@@ -621,17 +623,21 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetUint("userID") // Set by JWT middleware
-	user, err := h.userService.UpdateUser(c.Request.Context(), services.UpdateUserInput{
-		ID:          userID,
-		FullName:    req.FullName,
-		Email:       req.Email,
-		PhoneNumber: req.PhoneNumber,
-		Bio:         req.Bio,
-	})
+	fullName := strings.TrimSpace(req.FullName)
+	if fullName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "full name is required"})
+		return
+	}
 
+	userID := c.GetUint("userID") // Set by JWT middleware
+	// Bio is saved as given, so clearing it works.
+	user, err := h.userService.UpdateProfile(c.Request.Context(), userID, fullName, strings.TrimSpace(req.Bio))
+	if errors.Is(err, services.ErrUserNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update profile"})
 		return
 	}
 

@@ -128,6 +128,8 @@ const formatDate = (dateString: string): string => {
 
 .reviews-header {
   display: flex;
+  flex-wrap: wrap; /* phones: rating drops under the heading */
+  gap: 0.5rem 1rem;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1.5rem;
@@ -143,6 +145,9 @@ const formatDate = (dateString: string): string => {
   display: flex;
   align-items: center;
   gap: 1rem;
+  /* the global .rating-summary adds a top rule meant for other layouts */
+  border-top: none;
+  padding-top: 0;
 }
 
 .average-rating {

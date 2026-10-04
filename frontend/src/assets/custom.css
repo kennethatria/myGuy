@@ -154,6 +154,7 @@ a:hover {
 textarea.form-input {
   min-height: 100px;
   resize: vertical;
+  font-family: inherit; /* browsers default text areas to monospace */
 }
 
 input[type="datetime-local"].form-input {

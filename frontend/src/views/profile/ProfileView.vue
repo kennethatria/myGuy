@@ -1,115 +1,68 @@
 <template>
   <div class="container py-4">
     <h1 class="mb-4">My Profile</h1>
-    
-    <div class="row">
-      <!-- Profile information -->
-      <div class="col">
-        <div class="card mb-4">
-          <h3>Profile Information</h3>
-          <p class="text-gray mt-2">
-            Manage your personal information and review your gig history.
-          </p>
-          
-          <div class="rating-summary mt-4">
-            <h4>Your Rating</h4>
-            <div class="flex items-center mt-2">
-              <div class="rating-display">
-                <span class="rating-value">{{ profile.averageRating.toFixed(1) }}</span>
-                <span class="rating-star">★</span>
-              </div>
-              <span class="text-sm text-gray ml-2">from {{ profile.totalReviews }} reviews</span>
-            </div>
-          </div>
+
+    <div class="card">
+      <!-- Account details can't be edited: the email is how you sign in -->
+      <dl class="account-details">
+        <div>
+          <dt>Username</dt>
+          <dd>{{ profile.username }}</dd>
         </div>
-      </div>
-
-      <!-- Profile form -->
-      <div class="col">
-        <div class="card">
-          <form @submit.prevent="handleSubmit">
-            <div class="form-group">
-              <label for="username" class="form-label">Username</label>
-              <input
-                type="text"
-                name="username"
-                id="username"
-                v-model="profile.username"
-                class="form-input"
-                disabled
-                title="Username cannot be changed"
-              />
-            </div>
-
-            <div class="form-group">
-              <label for="email" class="form-label">Email</label>
-              <input
-                type="email"
-                name="email"
-                id="email"
-                v-model="profile.email"
-                class="form-input"
-                :class="{ 'is-invalid': formErrors.email }"
-                required
-              />
-              <div v-if="formErrors.email" class="invalid-feedback">{{ formErrors.email }}</div>
-            </div>
-
-            <div class="form-group">
-              <label for="fullName" class="form-label">Full Name</label>
-              <input
-                type="text"
-                name="fullName"
-                id="fullName"
-                v-model="profile.fullName"
-                class="form-input"
-                :class="{ 'is-invalid': formErrors.fullName }"
-              />
-              <div v-if="formErrors.fullName" class="invalid-feedback">{{ formErrors.fullName }}</div>
-            </div>
-
-            <div class="form-group">
-              <label for="bio" class="form-label">Bio</label>
-              <textarea
-                id="bio"
-                name="bio"
-                rows="4"
-                v-model="profile.bio"
-                class="form-input"
-                :class="{ 'is-invalid': formErrors.bio }"
-                placeholder="Tell others a bit about yourself..."
-              ></textarea>
-              <p class="form-helper">Share your skills, experience, and interests with the community.</p>
-              <div v-if="formErrors.bio" class="invalid-feedback">{{ formErrors.bio }}</div>
-            </div>
-
-            <div class="form-group" v-if="formError">
-              <div class="alert alert-danger">{{ formError }}</div>
-            </div>
-            
-            <div class="form-group" v-if="successMessage">
-              <div class="alert alert-success">{{ successMessage }}</div>
-            </div>
-
-            <div class="flex justify-end mt-4">
-              <button
-                type="submit"
-                class="btn btn-primary"
-                :disabled="isSubmitting"
-              >
-                <span v-if="isSubmitting">Saving...</span>
-                <span v-else>Save Profile</span>
-              </button>
-            </div>
-          </form>
+        <div>
+          <dt>Email</dt>
+          <dd>{{ profile.email }}</dd>
+          <dd class="form-helper">You sign in with this email.</dd>
         </div>
-      </div>
+      </dl>
+
+      <form @submit.prevent="handleSubmit">
+        <div class="form-group">
+          <label for="fullName" class="form-label">Full Name</label>
+          <input
+            type="text"
+            name="fullName"
+            id="fullName"
+            v-model="profile.fullName"
+            class="form-input"
+            :class="{ 'is-invalid': formErrors.fullName }"
+            autocomplete="name"
+            maxlength="100"
+          />
+          <div v-if="formErrors.fullName" class="invalid-feedback">{{ formErrors.fullName }}</div>
+        </div>
+
+        <div class="form-group">
+          <label for="bio" class="form-label">Bio</label>
+          <textarea
+            id="bio"
+            name="bio"
+            rows="4"
+            v-model="profile.bio"
+            class="form-input"
+            :class="{ 'is-invalid': formErrors.bio }"
+            maxlength="500"
+            placeholder="Your skills, experience and interests"
+          ></textarea>
+          <p class="form-helper">{{ profile.bio.length }}/500</p>
+          <div v-if="formErrors.bio" class="invalid-feedback">{{ formErrors.bio }}</div>
+        </div>
+
+        <div v-if="formError" class="alert alert-danger">{{ formError }}</div>
+        <div v-if="successMessage" class="alert alert-success">{{ successMessage }}</div>
+
+        <div class="flex justify-end mt-4">
+          <button type="submit" class="btn btn-primary" :disabled="isSubmitting">
+            {{ isSubmitting ? 'Saving...' : 'Save Profile' }}
+          </button>
+        </div>
+      </form>
     </div>
 
-    <!-- Reviews Section -->
+    <!-- Your rating and reviews (the list shows the average) -->
     <div class="mt-4">
-      <ReviewList 
-        :reviews="reviews" 
+      <ReviewList
+        :reviews="reviews"
         :loading="isLoadingReviews"
         :error="reviewsError"
       />
@@ -124,77 +77,43 @@ import { useAuthStore } from '@/stores/auth'
 import { useReviewsStore, type Review } from '@/stores/reviews'
 import ReviewList from '@/components/ReviewList.vue'
 
-interface Profile {
-  username: string
-  email: string
-  fullName: string
-  bio: string
-  averageRating: number
-  totalReviews: number
-}
+const authStore = useAuthStore()
+const reviewsStore = useReviewsStore()
 
-
-const profile = ref<Profile>({
-  username: '',
-  email: '',
-  fullName: '',
-  bio: '',
-  averageRating: 0,
-  totalReviews: 0
-})
-
-const reviews = ref<Review[]>([])
-const isSubmitting = ref(false)
-const formError = ref('')
-const successMessage = ref('')
-const isLoading = ref(true)
-const isLoadingReviews = ref(false)
-const reviewsError = ref<string | null>(null)
-const formErrors = ref({
+const profile = ref({
   username: '',
   email: '',
   fullName: '',
   bio: ''
 })
 
-const fetchProfileData = async () => {
-  const authStore = useAuthStore()
+const reviews = ref<Review[]>([])
+const isSubmitting = ref(false)
+const formError = ref('')
+const successMessage = ref('')
+const isLoadingReviews = ref(false)
+const reviewsError = ref<string | null>(null)
+const formErrors = ref({ fullName: '', bio: '' })
+
+const loadProfile = async () => {
   if (!authStore.user) {
     await authStore.checkAuth()
   }
-  
-  if (authStore.user) {
-    // Set profile data from auth user
-    profile.value = {
-      username: authStore.user.username,
-      email: authStore.user.email,
-      fullName: authStore.user.fullName,
-      bio: authStore.user.bio || '',
-      averageRating: authStore.user.averageRating || 0,
-      totalReviews: 0  // Will be updated from reviews count
-    }
-    
-    // Fetch user reviews
-    await fetchUserReviews(authStore.user.id)
-  }
-}
+  const user = authStore.user
+  if (!user) return
 
-const fetchUserReviews = async (userId: number) => {
-  const reviewsStore = useReviewsStore()
-  
+  profile.value = {
+    username: user.username,
+    email: user.email,
+    fullName: user.fullName || '',
+    bio: user.bio || ''
+  }
+
   isLoadingReviews.value = true
   reviewsError.value = null
-  
   try {
     // Task reviews and store ratings together: one rating for the user
-    const userReviews = await reviewsStore.fetchAllRatings(userId)
-    reviews.value = userReviews
-    
-    // Update total reviews count in profile
-    profile.value.totalReviews = reviews.value.length
-    
-    // Calculate average rating using the store's helper
-    profile.value.averageRating = reviewsStore.calculateAverageRating(reviews.value)
+    reviews.value = await reviewsStore.fetchAllRatings(user.id)
   } catch (error) {
     console.error('Error fetching user reviews:', error)
     reviewsError.value = error instanceof Error ? error.message : 'Failed to load reviews'
@@ -205,124 +124,60 @@ const fetchUserReviews = async (userId: number) => {
 }
 
 onMounted(async () => {
-  isLoading.value = true
   try {
-    await fetchProfileData()
+    await loadProfile()
   } catch (error) {
     console.error('Failed to fetch profile data:', error)
     formError.value = 'Failed to load profile data. Please try refreshing the page.'
-  } finally {
-    isLoading.value = false
   }
 })
 
 const validateForm = (): boolean => {
-  let isValid = true
-  formErrors.value = {
-    username: '',
-    email: '',
-    fullName: '',
-    bio: ''
-  }
+  formErrors.value = { fullName: '', bio: '' }
   formError.value = ''
   successMessage.value = ''
-  
-  // Validate email
-  if (!profile.value.email.trim()) {
-    formErrors.value.email = 'Email is required'
-    isValid = false
-  } else if (!/^\S+@\S+\.\S+$/.test(profile.value.email)) {
-    formErrors.value.email = 'Please enter a valid email address'
-    isValid = false
-  }
-  
-  // Validate fullName
+
   if (!profile.value.fullName.trim()) {
     formErrors.value.fullName = 'Full Name is required'
-    isValid = false
   }
-  
-  // Bio validation (optional)
-  if (profile.value.bio && profile.value.bio.length > 500) {
-    formErrors.value.bio = 'Bio must be less than 500 characters'
-    isValid = false
+  if (profile.value.bio.length > 500) {
+    formErrors.value.bio = 'Bio must be 500 characters or fewer'
   }
-  
-  return isValid
+  return !formErrors.value.fullName && !formErrors.value.bio
 }
 
 const handleSubmit = async () => {
-  if (!validateForm()) {
-    return
-  }
-  
+  if (!validateForm()) return
+
+  isSubmitting.value = true
   try {
-    isSubmitting.value = true
-    formError.value = ''
-    successMessage.value = ''
-    
-    const authStore = useAuthStore()
-    if (!authStore.user) {
-      throw new Error('User not authenticated')
-    }
-    
     const response = await fetch(config.ENDPOINTS.PROFILE, {
-      method: 'PUT',  // Changed from PATCH to PUT to match backend route
+      method: 'PUT',
       headers: {
         'Authorization': `Bearer ${authStore.token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         full_name: profile.value.fullName,
-        email: profile.value.email,
-        bio: profile.value.bio,
-        phone_number: '' // Including empty phone_number to match backend struct
+        bio: profile.value.bio
       })
     })
-    
+
     if (!response.ok) {
-      // Safely try to parse error response as JSON
-      try {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to update profile')
-      } catch {
-        // If JSON parsing fails, use status text
-        throw new Error(`Failed to update profile: ${response.statusText}`)
-      }
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.error || `Failed to update profile: ${response.statusText}`)
     }
-    
-    // Get updated user data from response
-    const updatedUser = await response.json()
-    
-    // Update the profile with the returned data
-    if (updatedUser) {
-      // Update local profile data
-      profile.value = {
-        ...profile.value,
-        username: updatedUser.username,
-        email: updatedUser.email,
-        fullName: updatedUser.fullName || updatedUser.full_name,
-        bio: updatedUser.bio || ''
-      }
-      
-      // Also update the auth store to ensure consistency
-      await authStore.checkAuth()
-    }
-    
-    // Show success message below the form
-    formError.value = ''
+
+    // Refresh the signed-in user so the rest of the app shows the new name
+    await authStore.checkAuth()
+
     successMessage.value = 'Profile updated successfully!'
-    
-    // Auto-hide success message after 5 seconds
     setTimeout(() => {
       successMessage.value = ''
     }, 5000)
   } catch (error) {
     console.error('Failed to update profile:', error)
-    // Make sure we handle error properly whether it's an Error object or something else
-    formError.value = error instanceof Error 
-      ? error.message 
-      : 'Failed to update profile. Please try again.'
+    formError.value = error instanceof Error ? error.message : 'Failed to update profile. Please try again.'
   } finally {
     isSubmitting.value = false
   }
@@ -330,6 +185,24 @@ const handleSubmit = async () => {
 </script>
 
 <style scoped>
+.account-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin: 0 0 1.5rem;
+}
+
+.account-details dt {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.account-details dd {
+  margin: 0.25rem 0 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
 .alert {
   position: relative;
   padding: 0.75rem 1.25rem;

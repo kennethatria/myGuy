@@ -14,6 +14,15 @@ interface User {
   createdAt: string
 }
 
+// The API sends snake_case (full_name, average_rating); the app reads camelCase.
+function toUser(data: User & { full_name?: string; average_rating?: number }): User {
+  return {
+    ...data,
+    fullName: data.fullName ?? data.full_name ?? '',
+    averageRating: data.averageRating ?? data.average_rating
+  }
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
   const token = ref<string | null>(localStorage.getItem('token'))
@@ -44,7 +53,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const startSession = (data: { user: User; token: string }) => {
-    user.value = data.user
+    user.value = toUser(data.user)
     token.value = data.token
 
     // Set token in localStorage and update default headers
@@ -116,7 +125,7 @@ export const useAuthStore = defineStore('auth', () => {
         return false
       }
 
-      user.value = await response.json()
+      user.value = toUser(await response.json())
 
       // Cache current user in user store
       cacheCurrentUser()

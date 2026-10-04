@@ -489,13 +489,14 @@ func TestHandler_UpdateProfile(t *testing.T) {
 	})
 	router.PUT("/user/profile", handler.UpdateProfile)
 
-	t.Run("successful update profile", func(t *testing.T) {
-		mockUserRepo.On("GetByID", mock.Anything, uint(1)).Return(&models.User{ID: 1, Email: "old@example.com"}, nil)
-		mockUserRepo.On("GetByEmail", mock.Anything, "new@example.com").Return(nil, gorm.ErrRecordNotFound)
-		mockUserRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.User")).Return(nil)
+	t.Run("updates name and can clear the bio; email is never changed", func(t *testing.T) {
+		mockUserRepo.On("GetByID", mock.Anything, uint(1)).Return(&models.User{ID: 1, Email: "old@example.com", Bio: "old bio"}, nil).Once()
+		mockUserRepo.On("Update", mock.Anything, mock.MatchedBy(func(u *models.User) bool {
+			return u.FullName == "New Name" && u.Bio == "" && u.Email == "old@example.com"
+		})).Return(nil).Once()
 
-		reqBody := updateProfileRequest{FullName: "New Name", Email: "new@example.com"}
-		body, _ := json.Marshal(reqBody)
+		// An email in the body is ignored rather than applied unverified.
+		body := []byte(`{"full_name":"  New Name ","bio":"","email":"attacker@example.com"}`)
 		req, _ := http.NewRequest(http.MethodPut, "/user/profile", bytes.NewBuffer(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp := httptest.NewRecorder()
@@ -504,6 +505,17 @@ func TestHandler_UpdateProfile(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.Code)
 		mockUserRepo.AssertExpectations(t)
+	})
+
+	t.Run("full name is required", func(t *testing.T) {
+		body := []byte(`{"full_name":"   ","bio":"hi"}`)
+		req, _ := http.NewRequest(http.MethodPut, "/user/profile", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusBadRequest, resp.Code)
 	})
 }
 

@@ -23,14 +23,6 @@ func NewUserService(userRepo repositories.UserRepository) *UserService {
 	}
 }
 
-type UpdateUserInput struct {
-	ID          uint
-	FullName    string
-	Email       string
-	PhoneNumber string
-	Bio         string
-}
-
 func (s *UserService) GetProfile(ctx context.Context, userID uint) (*models.UserResponse, error) {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
@@ -76,45 +68,6 @@ func (s *UserService) GetUser(ctx context.Context, id uint) (*models.UserRespons
 	user, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, ErrUserNotFound
-	}
-
-	return &models.UserResponse{
-		ID:          user.ID,
-		Username:    user.Username,
-		Email:       user.Email,
-		FullName:    user.FullName,
-		PhoneNumber: user.PhoneNumber,
-		Bio:        user.Bio,
-		CreatedAt:   user.CreatedAt,
-		UpdatedAt:   user.UpdatedAt,
-	}, nil
-}
-
-func (s *UserService) UpdateUser(ctx context.Context, input UpdateUserInput) (*models.UserResponse, error) {
-	user, err := s.userRepo.GetByID(ctx, input.ID)
-	if err != nil {
-		return nil, ErrUserNotFound
-	}
-
-	if input.FullName != "" {
-		user.FullName = input.FullName
-	}
-	if input.Email != "" {
-		// Check if email is taken by another user
-		if existingUser, err := s.userRepo.GetByEmail(ctx, input.Email); err == nil && existingUser.ID != input.ID {
-			return nil, ErrEmailExists
-		}
-		user.Email = input.Email
-	}
-	if input.PhoneNumber != "" {
-		user.PhoneNumber = input.PhoneNumber
-	}
-	if input.Bio != "" {
-		user.Bio = input.Bio
-	}
-
-	if err := s.userRepo.Update(ctx, user); err != nil {
-		return nil, err
 	}
 
 	return &models.UserResponse{
