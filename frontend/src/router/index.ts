@@ -75,13 +75,13 @@ const router = createRouter({
       path: '/store',
       name: 'store',
       component: () => import('@/views/store/StoreView.vue'),
-      meta: { title: 'Store', requiresAuth: true }
+      meta: { title: 'Marketplace', requiresAuth: true }
     },
     {
       path: '/store/:id',
       name: 'store-item',
       component: () => import('@/views/store/StoreItemView.vue'),
-      meta: { title: 'Store', requiresAuth: true }
+      meta: { title: 'Marketplace', requiresAuth: true }
     },
     {
       // Anything unmatched (old or mistyped links)
