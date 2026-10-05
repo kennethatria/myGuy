@@ -8,6 +8,7 @@ type StoreServiceInterface interface {
 	GetItems(filter models.StoreItemFilter) ([]models.StoreItem, int64, error)
 	UpdateItem(id uint, userID uint, req models.UpdateStoreItemRequest) (*models.StoreItem, error)
 	DeleteItem(id uint, userID uint) error
+	RepostItem(id uint, userID uint) (*models.StoreItem, error)
 	PlaceBid(itemID uint, userID uint, req models.CreateBidRequest) (*models.Bid, error)
 	GetItemBids(itemID uint) ([]models.Bid, error)
 	AcceptBid(itemID uint, bidID uint, sellerID uint) error

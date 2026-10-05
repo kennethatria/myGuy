@@ -666,66 +666,91 @@ func TestStoreItemRepository_MarkAsSold(t *testing.T) {
 	})
 }
 
-func TestStoreItemRepository_ExpireOldBidItems(t *testing.T) {
+func TestStoreItemRepository_ExpireUnanswered(t *testing.T) {
 	db, err := setupTestDB()
 	assert.NoError(t, err)
-	
+
 	repo := NewStoreItemRepository(db)
 
-	// Create test items
-	pastDeadline := time.Now().Add(-1 * time.Hour)
-	futureDeadline := time.Now().Add(1 * time.Hour)
-	
-	testItems := []models.StoreItem{
-		{
-			Title:       "Expired Auction",
-			SellerID:    1,
-			PriceType:   "bidding",
-			BidDeadline: &pastDeadline,
-			Status:      "active",
-		},
-		{
-			Title:       "Active Auction",
-			SellerID:    1,
-			PriceType:   "bidding",
-			BidDeadline: &futureDeadline,
-			Status:      "active",
-		},
-		{
-			Title:     "Fixed Price Item",
-			SellerID:  1,
-			PriceType: "fixed",
-			Status:    "active",
-		},
+	past := time.Now().Add(-1 * time.Hour)
+	future := time.Now().Add(1 * time.Hour)
+
+	items := map[string]*models.StoreItem{
+		"unanswered": {Title: "Lamp", SellerID: 1, PriceType: "fixed", Deadline: &past, Status: "active"},
+		"bid on":     {Title: "Bike", SellerID: 1, PriceType: "bidding", Deadline: &past, Status: "active"},
+		"booked":     {Title: "Desk", SellerID: 1, PriceType: "fixed", Deadline: &past, Status: "active"},
+		"still live": {Title: "Sofa", SellerID: 1, PriceType: "fixed", Deadline: &future, Status: "active"},
+		"sold":       {Title: "Fan", SellerID: 1, PriceType: "fixed", Deadline: &past, Status: "sold"},
+	}
+	for _, item := range items {
+		assert.NoError(t, db.Create(item).Error)
+	}
+	assert.NoError(t, db.Create(&models.Bid{ItemID: items["bid on"].ID, BidderID: 2, Amount: 10, Status: "active"}).Error)
+	assert.NoError(t, db.Create(&models.BookingRequest{ItemID: items["booked"].ID, RequesterID: 2, Status: "pending"}).Error)
+
+	n, err := repo.ExpireUnanswered(time.Now())
+
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), n)
+	want := map[string]string{"unanswered": "expired", "bid on": "active", "booked": "active", "still live": "active", "sold": "sold"}
+	for name, item := range items {
+		var got models.StoreItem
+		assert.NoError(t, db.First(&got, item.ID).Error)
+		assert.Equal(t, want[name], got.Status, name)
+	}
+}
+
+func TestStoreItemRepository_StartMissingDeadlines(t *testing.T) {
+	db, err := setupTestDB()
+	assert.NoError(t, err)
+
+	repo := NewStoreItemRepository(db)
+
+	existing := time.Now().Add(2 * time.Hour)
+	old := &models.StoreItem{Title: "Old", SellerID: 1, PriceType: "fixed", Status: "active"}
+	dated := &models.StoreItem{Title: "Dated", SellerID: 1, PriceType: "fixed", Status: "active", Deadline: &existing}
+	sold := &models.StoreItem{Title: "Sold", SellerID: 1, PriceType: "fixed", Status: "sold"}
+	for _, item := range []*models.StoreItem{old, dated, sold} {
+		assert.NoError(t, db.Create(item).Error)
 	}
 
-	for _, item := range testItems {
-		db.Create(&item)
+	deadline := time.Now().Add(24 * time.Hour)
+	n, err := repo.StartMissingDeadlines(deadline)
+
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), n)
+	reload := func(id uint) models.StoreItem {
+		var got models.StoreItem
+		assert.NoError(t, db.First(&got, id).Error)
+		return got
+	}
+	assert.WithinDuration(t, deadline, *reload(old.ID).Deadline, time.Second)
+	assert.WithinDuration(t, existing, *reload(dated.ID).Deadline, time.Second)
+	assert.Nil(t, reload(sold.ID).Deadline)
+}
+
+func TestStoreItemRepository_GetAll_BoardFilters(t *testing.T) {
+	db, err := setupTestDB()
+	assert.NoError(t, err)
+
+	repo := NewStoreItemRepository(db)
+
+	soon := time.Now().Add(time.Hour)
+	later := time.Now().Add(20 * time.Hour)
+	for _, item := range []*models.StoreItem{
+		{Title: "Mine", SellerID: 1, PriceType: "fixed", Status: "active", Deadline: &soon},
+		{Title: "Later", SellerID: 2, PriceType: "fixed", Status: "active", Deadline: &later},
+		{Title: "Soon", SellerID: 3, PriceType: "fixed", Status: "active", Deadline: &soon},
+	} {
+		assert.NoError(t, db.Create(item).Error)
 	}
 
-	t.Run("successful expire old bid items", func(t *testing.T) {
-		err := repo.ExpireOldBidItems()
+	items, total, err := repo.GetAll(models.StoreItemFilter{ExcludeSellerID: 1, SortBy: "deadline", SortOrder: "asc"})
 
-		assert.NoError(t, err)
-		
-		// Verify only the expired auction is marked as expired
-		var items []models.StoreItem
-		db.Find(&items)
-		
-		expiredCount := 0
-		activeCount := 0
-		
-		for _, item := range items {
-			if item.Status == "expired" {
-				expiredCount++
-				assert.Equal(t, "bidding", item.PriceType)
-				assert.True(t, item.BidDeadline.Before(time.Now()))
-			} else if item.Status == "active" {
-				activeCount++
-			}
-		}
-		
-		assert.Equal(t, 1, expiredCount)
-		assert.Equal(t, 2, activeCount)
-	})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	if assert.Len(t, items, 2) {
+		assert.Equal(t, "Soon", items[0].Title)
+		assert.Equal(t, "Later", items[1].Title)
+	}
 }

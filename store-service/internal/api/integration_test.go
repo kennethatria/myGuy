@@ -12,7 +12,6 @@ import (
 	"store-service/internal/repositories"
 	"store-service/internal/services"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -247,6 +246,7 @@ func TestIntegration_ItemLifecycle(t *testing.T) {
 	t.Run("Cannot update sold item", func(t *testing.T) {
 		updateReq := models.UpdateStoreItemRequest{
 			Title: "Should not work",
+			Description: "A short note",
 		}
 
 		jsonData, _ := json.Marshal(updateReq)
@@ -270,14 +270,12 @@ func TestIntegration_BiddingLifecycle(t *testing.T) {
 	var itemID uint
 
 	t.Run("Create auction item", func(t *testing.T) {
-		bidDeadline := time.Now().Add(24 * time.Hour)
 		req := models.CreateStoreItemRequest{
 			Title:           "Vintage Guitar",
 			Description:     "Classic acoustic guitar in excellent condition",
 			PriceType:       "bidding",
 			StartingBid:     500.0,
 			MinBidIncrement: 25.0,
-			BidDeadline:     &bidDeadline,
 			Category:        "music",
 			Condition:       "good",
 		}
@@ -839,12 +837,14 @@ func TestIntegration_UserSpecificEndpoints(t *testing.T) {
 		items := []models.CreateStoreItemRequest{
 			{
 				Title:      "User 1 Item 1",
+				Description: "A short note",
 				PriceType:  "fixed",
 				FixedPrice: 100.0,
 				Condition:  "new",
 			},
 			{
 				Title:      "User 1 Item 2",
+				Description: "A short note",
 				PriceType:  "fixed",
 				FixedPrice: 200.0,
 				Condition:  "new",
@@ -865,6 +865,7 @@ func TestIntegration_UserSpecificEndpoints(t *testing.T) {
 		// User 2 creates item for bidding
 		bidItem := models.CreateStoreItemRequest{
 			Title:       "Auction Item",
+			Description: "A short note",
 			PriceType:   "bidding",
 			StartingBid: 50.0,
 			Condition:   "good",

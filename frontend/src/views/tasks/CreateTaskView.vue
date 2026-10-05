@@ -150,6 +150,7 @@ const handleSubmit = async () => {
 }
 
 .note-input-headline {
+  min-height: 44px;
   font-size: 1.5rem;
   font-weight: 700;
 }

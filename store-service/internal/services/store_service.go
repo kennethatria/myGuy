@@ -3,12 +3,54 @@ package services
 import (
 	"errors"
 	"fmt"
+	"store-service/internal/contacts"
 	"store-service/internal/models"
 	"store-service/internal/repositories"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
 )
+
+// A listing is a short sticky note, like a gig (backend task_service.go):
+// it stays on the board for ListingLifetime unless someone bids or asks to
+// book. Auctions close when the note comes down.
+const (
+	ListingLifetime  = 24 * time.Hour
+	headlineMaxWords = 5
+	bodyMaxWords     = 20
+	headlineMaxChars = 60
+	bodyMaxChars     = 200
+)
+
+// Listing text errors: the request is fine, the words need changing.
+var (
+	ErrHeadlineRequired = errors.New("headline is required")
+	ErrBodyRequired     = errors.New("note is required")
+	ErrHeadlineTooLong  = fmt.Errorf("headline can be at most %d words", headlineMaxWords)
+	ErrBodyTooLong      = fmt.Errorf("note can be at most %d words", bodyMaxWords)
+	ErrContactDetails   = errors.New("remove phone numbers, emails, links and handles; you can share them in chat once the seller approves your booking")
+	ErrListingExpired   = errors.New("this listing has expired")
+)
+
+// validateListingText enforces the sticky-note limits and keeps contact
+// details off public listings. It returns the trimmed headline and note.
+func validateListingText(title, description string) (string, string, error) {
+	title, description = strings.TrimSpace(title), strings.TrimSpace(description)
+	switch {
+	case title == "":
+		return "", "", ErrHeadlineRequired
+	case description == "":
+		return "", "", ErrBodyRequired
+	case len(strings.Fields(title)) > headlineMaxWords || len(title) > headlineMaxChars:
+		return "", "", ErrHeadlineTooLong
+	case len(strings.Fields(description)) > bodyMaxWords || len(description) > bodyMaxChars:
+		return "", "", ErrBodyTooLong
+	case contacts.Contains(title) || contacts.Contains(description):
+		return "", "", ErrContactDetails
+	}
+	return title, description, nil
+}
 
 type StoreService struct {
 	db              *gorm.DB
@@ -29,9 +71,17 @@ func NewStoreService(db *gorm.DB, itemRepo repositories.StoreItemRepository, bid
 }
 
 func (s *StoreService) CreateItem(userID uint, req models.CreateStoreItemRequest) (*models.StoreItem, error) {
-	// Validate price based on type
-	if req.PriceType == "fixed" && req.FixedPrice <= 0 {
-		return nil, errors.New("fixed price must be greater than 0")
+	title, description, err := validateListingText(req.Title, req.Description)
+	if err != nil {
+		return nil, err
+	}
+
+	// A price is optional (0 means agree it in chat); auctions need a start
+	if req.PriceType == "" {
+		req.PriceType = "fixed"
+	}
+	if req.PriceType == "fixed" && req.FixedPrice < 0 {
+		return nil, errors.New("price can't be negative")
 	}
 	if req.PriceType == "bidding" {
 		if req.StartingBid <= 0 {
@@ -40,27 +90,24 @@ func (s *StoreService) CreateItem(userID uint, req models.CreateStoreItemRequest
 		if req.MinBidIncrement <= 0 {
 			req.MinBidIncrement = 1.0 // Default increment
 		}
-		if req.BidDeadline != nil && req.BidDeadline.Before(time.Now()) {
-			return nil, errors.New("bid deadline must be in the future")
-		}
 	}
 
 	item := &models.StoreItem{
-		Title:           req.Title,
-		Description:     req.Description,
+		Title:           title,
+		Description:     description,
 		SellerID:        userID,
 		PriceType:       req.PriceType,
 		FixedPrice:      req.FixedPrice,
 		StartingBid:     req.StartingBid,
 		MinBidIncrement: req.MinBidIncrement,
-		BidDeadline:     req.BidDeadline,
 		Category:        req.Category,
 		Condition:       req.Condition,
 		Location:        req.Location,
 		ShippingInfo:    req.ShippingInfo,
 		Status:          "active",
 	}
-	
+	startListing(item)
+
 	// Create image records
 	for i, imageURL := range req.Images {
 		item.Images = append(item.Images, models.ItemImage{
@@ -69,12 +116,72 @@ func (s *StoreService) CreateItem(userID uint, req models.CreateStoreItemRequest
 		})
 	}
 
-	err := s.itemRepo.Create(item)
-	if err != nil {
+	if err := s.itemRepo.Create(item); err != nil {
 		return nil, err
 	}
 
 	return item, nil
+}
+
+// startListing puts item on the board for a fresh ListingLifetime; an
+// auction's bidding runs for the same time.
+func startListing(item *models.StoreItem) {
+	deadline := time.Now().UTC().Add(ListingLifetime)
+	item.Deadline = &deadline
+	if item.PriceType == "bidding" {
+		item.BidDeadline = &deadline
+	}
+}
+
+// hasReactions reports whether anyone bid on or asked to book item; such a
+// listing stays up past its deadline so the seller can deal.
+func (s *StoreService) hasReactions(item *models.StoreItem) (bool, error) {
+	if item.BidCount > 0 || len(item.Bids) > 0 {
+		return true, nil
+	}
+	requests, err := s.bookingRepo.GetAllByItemID(item.ID)
+	if err != nil {
+		return false, err
+	}
+	return len(requests) > 0, nil
+}
+
+// pastDeadline reports whether item's note has come off the board for new
+// people: its deadline passed and nobody reacted in time.
+func (s *StoreService) pastDeadline(item *models.StoreItem) (bool, error) {
+	if item.Deadline == nil || time.Now().Before(*item.Deadline) {
+		return false, nil
+	}
+	reacted, err := s.hasReactions(item)
+	return !reacted, err
+}
+
+// RepostItem puts an expired listing back on the board for a fresh
+// ListingLifetime.
+func (s *StoreService) RepostItem(id uint, userID uint) (*models.StoreItem, error) {
+	item, err := s.itemRepo.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if item.SellerID != userID {
+		return nil, errors.New("unauthorized: you can only repost your own items")
+	}
+	if item.Status != "expired" {
+		return nil, errors.New("only an expired listing can be reposted")
+	}
+
+	item.Status = "active"
+	startListing(item)
+	if err := s.itemRepo.Update(item); err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+// ExpireStaleItems takes listings that reached their deadline without a bid
+// or booking request off the board, returning how many it changed.
+func (s *StoreService) ExpireStaleItems() (int64, error) {
+	return s.itemRepo.ExpireUnanswered(time.Now().UTC())
 }
 
 func (s *StoreService) GetItem(id uint) (*models.StoreItem, error) {
@@ -82,9 +189,6 @@ func (s *StoreService) GetItem(id uint) (*models.StoreItem, error) {
 }
 
 func (s *StoreService) GetItems(filter models.StoreItemFilter) ([]models.StoreItem, int64, error) {
-	// Expire old bid items before fetching
-	_ = s.itemRepo.ExpireOldBidItems()
-	
 	return s.itemRepo.GetAll(filter)
 }
 
@@ -102,12 +206,18 @@ func (s *StoreService) UpdateItem(id uint, userID uint, req models.UpdateStoreIt
 		return nil, errors.New("cannot update item that is not active")
 	}
 
-	// Update fields
-	if req.Title != "" {
-		item.Title = req.Title
-	}
-	if req.Description != "" {
-		item.Description = req.Description
+	// Update fields; the note must still fit the board
+	if req.Title != "" || req.Description != "" {
+		title, description := item.Title, item.Description
+		if req.Title != "" {
+			title = req.Title
+		}
+		if req.Description != "" {
+			description = req.Description
+		}
+		if item.Title, item.Description, err = validateListingText(title, description); err != nil {
+			return nil, err
+		}
 	}
 	if req.Category != "" {
 		item.Category = req.Category
@@ -150,8 +260,8 @@ func (s *StoreService) DeleteItem(id uint, userID uint) error {
 		return errors.New("unauthorized: you can only delete your own items")
 	}
 
-	if item.Status != "active" {
-		return errors.New("cannot delete item that is not active")
+	if item.Status != "active" && item.Status != "expired" {
+		return errors.New("only a live or expired listing can be removed")
 	}
 
 	return s.itemRepo.Delete(id)
@@ -183,10 +293,13 @@ func (s *StoreService) PlaceBid(itemID uint, userID uint, req models.CreateBidRe
 			return nil, errors.New("you cannot bid on your own item")
 		}
 
+		// Bidding closes with the note; the seller can still accept a bid
 		if item.BidDeadline != nil && time.Now().After(*item.BidDeadline) {
-			// Mark item as expired
-			_ = itemRepo.UpdateStatus(itemID, "expired")
 			return nil, errors.New("bidding has ended for this item")
+		}
+
+		if contacts.Contains(req.Message) {
+			return nil, ErrContactDetails
 		}
 
 		// Check minimum bid amount
@@ -340,6 +453,18 @@ func (s *StoreService) CreateBookingRequest(itemID uint, requesterID uint, messa
 	}
 	if item.SellerID == requesterID {
 		return nil, errors.New("cannot book your own item")
+	}
+	if contacts.Contains(message) {
+		return nil, ErrContactDetails
+	}
+	// Checked here too, so the gap between expiry runs can't let a late
+	// request in
+	expired, err := s.pastDeadline(item)
+	if err != nil {
+		return nil, err
+	}
+	if expired {
+		return nil, ErrListingExpired
 	}
 
 	// Check if user already has a booking request for this item

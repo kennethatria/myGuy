@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"store-service/internal/models"
+	"time"
 )
 
 type StoreItemRepository interface {
@@ -15,7 +16,8 @@ type StoreItemRepository interface {
 	GetByBuyerID(buyerID uint) ([]models.StoreItem, error)
 	UpdateStatus(id uint, status string) error
 	MarkAsSold(id uint, buyerID uint) error
-	ExpireOldBidItems() error
+	ExpireUnanswered(now time.Time) (int64, error)
+	StartMissingDeadlines(deadline time.Time) (int64, error)
 }
 
 type BidRepository interface {

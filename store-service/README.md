@@ -146,7 +146,8 @@ The service currently stores uploaded images on the **local server filesystem**.
 
 ### Common Endpoints
 -   `GET /items`: Browse items with filtering, sorting, and pagination.
--   `POST /items`: Create a new item (fixed price or bidding).
+-   `POST /items`: Post a listing: `title` (≤ 5 words) and `description` (≤ 20 words), no contact details, optional `images`. Price fields are optional. It stays up 24 hours unless someone bids or asks to book.
+-   `POST /items/:id/repost`: Put the seller's expired listing back up for 24 hours.
 -   `GET /items/:id`: Get details for a single item.
 -   `PUT /items/:id`: Update an item (owner only).
 -   `POST /items/:id/bids`: Place a bid on an auction item.

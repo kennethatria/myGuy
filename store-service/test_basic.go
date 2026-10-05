@@ -5,7 +5,6 @@ import (
 	"store-service/internal/models"
 	"store-service/internal/repositories"
 	"store-service/internal/services"
-	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -72,14 +71,12 @@ func main() {
 
 	// Test 3: Create a bidding item
 	fmt.Println("\n=== Test 3: Create Bidding Item ===")
-	bidDeadline := time.Now().Add(24 * time.Hour)
 	bidReq := models.CreateStoreItemRequest{
 		Title:           "Vintage Guitar",
 		Description:     "Classic acoustic guitar",
 		PriceType:       "bidding",
 		StartingBid:     500.0,
 		MinBidIncrement: 25.0,
-		BidDeadline:     &bidDeadline,
 		Category:        "music",
 		Condition:       "good",
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"time"
 
 	"store-service/internal/api/handlers"
 	"store-service/internal/middleware"
@@ -61,6 +62,14 @@ func main() {
 	// Initialize services
 	storeService := services.NewStoreService(db, itemRepo, bidRepo, bookingRepo, userRepo)
 
+	// Listings from before notes had deadlines get a fresh 24 hours
+	if n, err := itemRepo.StartMissingDeadlines(time.Now().UTC().Add(services.ListingLifetime)); err != nil {
+		log.Println("WARNING: starting listing deadlines failed:", err)
+	} else if n > 0 {
+		log.Printf("gave %d listing(s) a 24 hour deadline", n)
+	}
+	go expireStaleItems(storeService)
+
 	// Initialize handlers
 	storeHandler := handlers.NewStoreHandler(storeService)
 
@@ -108,6 +117,7 @@ func main() {
 			auth.POST("/items", storeHandler.CreateItem)
 			auth.PUT("/items/:id", storeHandler.UpdateItem)
 			auth.DELETE("/items/:id", storeHandler.DeleteItem)
+			auth.POST("/items/:id/repost", storeHandler.RepostItem)
 			auth.POST("/items/:id/purchase", storeHandler.PurchaseItem)
 
 			// Bidding
@@ -147,5 +157,18 @@ func main() {
 	log.Printf("Store service starting on port %s", port)
 	if err := router.Run(":" + port); err != nil {
 		log.Fatal("Failed to start server:", err)
+	}
+}
+// expireStaleItems takes listings that got no bid or booking request within
+// their 24 hours off the board, checking every minute. Booking also checks
+// the deadline, so the gap between runs can't let a late request in.
+func expireStaleItems(storeService *services.StoreService) {
+	for range time.Tick(time.Minute) {
+		n, err := storeService.ExpireStaleItems()
+		if err != nil {
+			log.Println("WARNING: expiring stale listings failed:", err)
+		} else if n > 0 {
+			log.Printf("expired %d listing(s) with no bids or booking requests", n)
+		}
 	}
 }

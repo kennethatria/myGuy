@@ -46,7 +46,7 @@ func (h *StoreHandler) CreateItem(c *gin.Context) {
 		description := c.PostForm("description")
 		category := c.PostForm("category")
 		condition := c.PostForm("condition")
-		isAuction := c.PostForm("is_auction") == "true"
+		isAuction := c.PostForm("price_type") == "bidding" || c.PostForm("is_auction") == "true"
 		
 		if title == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "title is required"})
@@ -219,6 +219,12 @@ func (h *StoreHandler) GetItems(c *gin.Context) {
 		}
 	}
 
+	if sellerID := c.Query("exclude_seller_id"); sellerID != "" {
+		if id, err := parseID(sellerID); err == nil {
+			filter.ExcludeSellerID = id
+		}
+	}
+
 	if page := c.Query("page"); page != "" {
 		if p, err := strconv.Atoi(page); err == nil && p > 0 {
 			filter.Page = p
@@ -287,6 +293,29 @@ func (h *StoreHandler) DeleteItem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "item deleted successfully"})
+}
+
+// RepostItem puts the seller's expired listing back on the board
+func (h *StoreHandler) RepostItem(c *gin.Context) {
+	userID := c.GetUint("userID")
+
+	id, err := parseID(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
+		return
+	}
+
+	item, err := h.service.RepostItem(id, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "item not found"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, item)
 }
 
 // PlaceBid places a bid on an item

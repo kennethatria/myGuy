@@ -79,6 +79,10 @@ func (r *storeItemRepository) GetAll(filter models.StoreItemFilter) ([]models.St
 		query = query.Where("seller_id = ?", filter.SellerID)
 	}
 
+	if filter.ExcludeSellerID > 0 {
+		query = query.Where("seller_id <> ?", filter.ExcludeSellerID)
+	}
+
 	// Price filtering based on price type
 	if filter.MinPrice > 0 || filter.MaxPrice > 0 {
 		if filter.PriceType == "fixed" {
@@ -112,6 +116,8 @@ func (r *storeItemRepository) GetAll(filter models.StoreItemFilter) ([]models.St
 		query = query.Order(fmt.Sprintf("COALESCE(fixed_price, current_bid, starting_bid) %s", sortOrder))
 	case "created_at":
 		query = query.Order(fmt.Sprintf("created_at %s", sortOrder))
+	case "deadline":
+		query = query.Order(fmt.Sprintf("deadline %s", sortOrder))
 	case "title":
 		query = query.Order(fmt.Sprintf("title %s", sortOrder))
 	default:
@@ -150,7 +156,9 @@ func (r *storeItemRepository) Delete(id uint) error {
 
 func (r *storeItemRepository) GetBySellerID(sellerID uint) ([]models.StoreItem, error) {
 	var items []models.StoreItem
-	err := r.db.Where("seller_id = ?", sellerID).Find(&items).Error
+	err := r.db.Where("seller_id = ?", sellerID).Order("created_at DESC").Preload("Images", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
+	}).Find(&items).Error
 	return items, err
 }
 
@@ -173,9 +181,23 @@ func (r *storeItemRepository) MarkAsSold(id uint, buyerID uint) error {
 	}).Error
 }
 
-func (r *storeItemRepository) ExpireOldBidItems() error {
-	now := time.Now()
-	return r.db.Model(&models.StoreItem{}).
-		Where("price_type = ? AND status = ? AND bid_deadline < ?", "bidding", "active", now).
-		Update("status", "expired").Error
+// ExpireUnanswered takes listings whose deadline passed before anyone bid
+// or asked to book off the board, in one statement, returning how many
+// changed. A listing with a reaction stays up so the seller can deal.
+func (r *storeItemRepository) ExpireUnanswered(now time.Time) (int64, error) {
+	res := r.db.Model(&models.StoreItem{}).
+		Where("status = ? AND deadline < ?", "active", now).
+		Where("NOT EXISTS (SELECT 1 FROM bids WHERE bids.item_id = store_items.id AND bids.deleted_at IS NULL)").
+		Where("NOT EXISTS (SELECT 1 FROM booking_requests WHERE booking_requests.item_id = store_items.id AND booking_requests.deleted_at IS NULL)").
+		Update("status", "expired")
+	return res.RowsAffected, res.Error
+}
+
+// StartMissingDeadlines gives active listings that predate deadlines one,
+// so they come off the board like any other note.
+func (r *storeItemRepository) StartMissingDeadlines(deadline time.Time) (int64, error) {
+	res := r.db.Model(&models.StoreItem{}).
+		Where("status = ? AND deadline IS NULL", "active").
+		Updates(map[string]interface{}{"deadline": deadline})
+	return res.RowsAffected, res.Error
 }
