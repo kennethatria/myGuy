@@ -48,7 +48,7 @@ func setupIntegrationTestDB(t *testing.T) (*gorm.DB, error) {
 	})
 
 	// Auto migrate the schema
-	err = db.AutoMigrate(&models.StoreItem{}, &models.ItemImage{}, &models.Bid{}, &models.BookingRequest{}, &models.User{})
+	err = db.AutoMigrate(&models.StoreItem{}, &models.ItemImage{}, &models.Bid{}, &models.BookingRequest{}, &models.User{}, &models.ItemRequest{})
 	if err != nil {
 		return nil, err
 	}

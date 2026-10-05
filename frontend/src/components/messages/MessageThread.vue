@@ -10,6 +10,9 @@
         <span v-if="conversation.task_status" class="task-status" :class="`status-${conversation.task_status}`">
           {{ conversation.task_status }}
         </span>
+        <router-link v-if="contextLink" :to="contextLink.to" class="context-link">
+          {{ contextLink.label }}
+        </router-link>
       </div>
     </div>
     
@@ -121,6 +124,18 @@ const conversationTitle = computed(() => {
   return 'Conversation';
 });
 
+// Where the conversation's gig or item lives, to act on it (book, apply)
+const contextLink = computed(() => {
+  const c = props.conversation;
+  if (c.conversation_type === 'store' && c.item_id) {
+    return { to: { name: 'store-item', params: { id: c.item_id } }, label: 'View item' };
+  }
+  if (c.conversation_type === 'task' && c.task_id) {
+    return { to: { name: 'task-detail', params: { id: c.task_id } }, label: 'View gig' };
+  }
+  return null;
+});
+
 const conversationDescription = computed(() => {
   // Only show description for tasks
   if (props.conversation.task_description) {
@@ -215,6 +230,22 @@ watch(() => props.messages.length, () => {
 </script>
 
 <style scoped>
+.context-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 0.25rem;
+  color: var(--color-primary, #4f46e5);
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.context-link:hover,
+.context-link:focus-visible {
+  text-decoration: underline;
+}
+
 .message-thread {
   display: flex;
   flex-direction: column;

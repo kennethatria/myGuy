@@ -101,3 +101,68 @@ func markNotificationSuccess(bookingID uint, bookingRepo repositories.BookingReq
 func markNotificationFailed(bookingID uint, bookingRepo repositories.BookingRequestRepository) {
 	bookingRepo.IncrementNotificationAttempts(bookingID)
 }
+
+// ChatNotifier posts store events into the conversation between two people
+// about an item. Implementations must not block or fail the caller (chat is
+// best effort).
+type ChatNotifier interface {
+	StoreMessage(itemID, senderID, recipientID uint, content string)
+}
+
+type noopChatNotifier struct{}
+
+func (noopChatNotifier) StoreMessage(uint, uint, uint, string) {}
+
+// HTTPChatNotifier posts to chat's /internal/store-message in the background.
+type HTTPChatNotifier struct {
+	baseURL string
+	apiKey  string
+	client  *http.Client
+}
+
+// NewHTTPChatNotifier reads CHAT_API_URL and INTERNAL_API_KEY; without the
+// key it returns a notifier that does nothing (and says so once).
+func NewHTTPChatNotifier() ChatNotifier {
+	apiKey := os.Getenv("INTERNAL_API_KEY")
+	if apiKey == "" {
+		log.Println("⚠️ INTERNAL_API_KEY not set; request matches won't reach Messages")
+		return noopChatNotifier{}
+	}
+	baseURL := os.Getenv("CHAT_API_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:8082/api/v1"
+	}
+	return &HTTPChatNotifier{baseURL: baseURL, apiKey: apiKey, client: &http.Client{Timeout: 5 * time.Second}}
+}
+
+func (n *HTTPChatNotifier) StoreMessage(itemID, senderID, recipientID uint, content string) {
+	go func() {
+		if err := n.post(itemID, senderID, recipientID, content); err != nil {
+			log.Printf("⚠️ store message for item %d not delivered: %v", itemID, err)
+		}
+	}()
+}
+
+func (n *HTTPChatNotifier) post(itemID, senderID, recipientID uint, content string) error {
+	body, err := json.Marshal(map[string]interface{}{
+		"store_item_id": itemID, "sender_id": senderID, "recipient_id": recipientID, "content": content,
+	})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, n.baseURL+"/internal/store-message", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Internal-API-Key", n.apiKey)
+	resp, err := n.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("chat returned %d", resp.StatusCode)
+	}
+	return nil
+}

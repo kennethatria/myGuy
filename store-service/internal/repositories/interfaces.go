@@ -20,6 +20,17 @@ type StoreItemRepository interface {
 	StartMissingDeadlines(deadline time.Time) (int64, error)
 }
 
+type ItemRequestRepository interface {
+	Create(request *models.ItemRequest) error
+	GetByID(id uint) (*models.ItemRequest, error)
+	GetAll(filter models.ItemRequestFilter) ([]models.ItemRequest, int64, error)
+	GetByRequesterID(requesterID uint) ([]models.ItemRequest, error)
+	Update(request *models.ItemRequest) error
+	Delete(id uint) error
+	MarkFulfilled(id uint, itemID uint) (bool, error)
+	ExpireUnanswered(now time.Time) (int64, error)
+}
+
 type BidRepository interface {
 	Create(bid *models.Bid) error
 	GetByID(id uint) (*models.Bid, error)

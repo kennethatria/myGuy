@@ -148,6 +148,9 @@ The service currently stores uploaded images on the **local server filesystem**.
 -   `GET /items`: Browse items with filtering, sorting, and pagination.
 -   `POST /items`: Post a listing: `title` (≤ 5 words) and `description` (≤ 20 words), no contact details, optional `images`. Price fields are optional. It stays up 24 hours unless someone bids or asks to book.
 -   `POST /items/:id/repost`: Put the seller's expired listing back up for 24 hours.
+-   `GET /requests`, `GET /requests/:id`, `GET /requests/:id/listings`: "Wanted" notes and the listings made for one.
+-   `POST /requests`: Post a request (same note rules as a listing). `POST /requests/:id/repost` and `DELETE /requests/:id` for the requester. `GET /user/requests`: your own.
+-   A listing created with `request_id` answers that request: the requester gets a message through chat's `/internal/store-message` (needs `INTERNAL_API_KEY` and `CHAT_API_URL`).
 -   `GET /items/:id`: Get details for a single item.
 -   `PUT /items/:id`: Update an item (owner only).
 -   `POST /items/:id/bids`: Place a bid on an auction item.

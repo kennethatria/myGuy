@@ -85,6 +85,18 @@ const router = createRouter({
       meta: { title: 'Post a Listing', requiresAuth: true }
     },
     {
+      path: '/store/requests/new',
+      name: 'create-request',
+      component: () => import('@/views/store/CreateRequestView.vue'),
+      meta: { title: 'Post a Request', requiresAuth: true }
+    },
+    {
+      path: '/store/requests/:id',
+      name: 'store-request',
+      component: () => import('@/views/store/RequestView.vue'),
+      meta: { title: 'Request', requiresAuth: true }
+    },
+    {
       path: '/store/:id',
       name: 'store-item',
       component: () => import('@/views/store/StoreItemView.vue'),

@@ -47,6 +47,30 @@ router.post('/internal/booking-created', async (req, res) => {
   }
 });
 
+const hasInternalKey = (req) => {
+  const internalApiKey = req.headers['x-internal-api-key'];
+  return !!internalApiKey && internalApiKey === process.env.INTERNAL_API_KEY;
+};
+
+// Stores a system_alert in a conversation and delivers it live to both
+// participants (all their tabs). context is { taskId } or { storeItemId }.
+async function postSystemMessage(req, context, senderId, recipientId, content) {
+  const message = await messageService.sendMessage({
+    ...context, senderId, recipientId, content, messageType: 'system_alert'
+  });
+  const formatted = {
+    ...message,
+    sender: { id: senderId, username: 'User' },
+    recipient: { id: recipientId, username: 'User' }
+  };
+
+  const io = req.app.get('io');
+  if (io) {
+    io.to(`user:${senderId}`).to(`user:${recipientId}`).emit('message:new', formatted);
+  }
+  return message;
+}
+
 /**
  * Internal endpoint for the main API to post task events (new application,
  * accepted, declined, cancelled) into the owner↔applicant task conversation.
@@ -55,8 +79,7 @@ router.post('/internal/booking-created', async (req, res) => {
  */
 router.post('/internal/task-message', async (req, res) => {
   try {
-    const internalApiKey = req.headers['x-internal-api-key'];
-    if (!internalApiKey || internalApiKey !== process.env.INTERNAL_API_KEY) {
+    if (!hasInternalKey(req)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -74,25 +97,38 @@ router.post('/internal/task-message', async (req, res) => {
       await messageService.unlockContacts({ taskId, userA: senderId, userB: recipientId });
     }
 
-    const message = await messageService.sendMessage({
-      taskId, senderId, recipientId, content, messageType: 'system_alert'
-    });
-    const formatted = {
-      ...message,
-      sender: { id: senderId, username: 'User' },
-      recipient: { id: recipientId, username: 'User' }
-    };
-
-    // Deliver live to both participants (all their tabs)
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`user:${senderId}`).to(`user:${recipientId}`).emit('message:new', formatted);
-    }
-
+    const message = await postSystemMessage(req, { taskId }, senderId, recipientId, content);
     res.status(201).json({ id: message.id });
   } catch (error) {
     console.error('Error posting task message:', error);
     res.status(500).json({ error: 'Failed to post task message' });
+  }
+});
+
+/**
+ * Internal endpoint for store-service to post item events (a listing made
+ * for someone's request) into the seller↔buyer conversation about the item.
+ * Stored as 'system_alert'. Secured with the internal API key.
+ */
+router.post('/internal/store-message', async (req, res) => {
+  try {
+    if (!hasInternalKey(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const storeItemId = parseInt(req.body.store_item_id);
+    const senderId = parseInt(req.body.sender_id);
+    const recipientId = parseInt(req.body.recipient_id);
+    const content = typeof req.body.content === 'string' ? req.body.content.trim() : '';
+    if (!storeItemId || !senderId || !recipientId || !content) {
+      return res.status(400).json({ error: 'store_item_id, sender_id, recipient_id and content are required' });
+    }
+
+    const message = await postSystemMessage(req, { storeItemId }, senderId, recipientId, content);
+    res.status(201).json({ id: message.id });
+  } catch (error) {
+    console.error('Error posting store message:', error);
+    res.status(500).json({ error: 'Failed to post store message' });
   }
 });
 

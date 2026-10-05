@@ -31,6 +31,8 @@ var (
 	ErrBodyTooLong      = fmt.Errorf("note can be at most %d words", bodyMaxWords)
 	ErrContactDetails   = errors.New("remove phone numbers, emails, links and handles; you can share them in chat once the seller approves your booking")
 	ErrListingExpired   = errors.New("this listing has expired")
+	ErrRequestClosed    = errors.New("this request is no longer open")
+	ErrOwnRequest       = errors.New("you can't list an item for your own request")
 )
 
 // validateListingText enforces the sticky-note limits and keeps contact
@@ -58,6 +60,8 @@ type StoreService struct {
 	bidRepo         repositories.BidRepository
 	bookingRepo     repositories.BookingRequestRepository
 	userRepo        repositories.UserRepository
+	requestRepo     repositories.ItemRequestRepository
+	chat            ChatNotifier
 }
 
 func NewStoreService(db *gorm.DB, itemRepo repositories.StoreItemRepository, bidRepo repositories.BidRepository, bookingRepo repositories.BookingRequestRepository, userRepo repositories.UserRepository) *StoreService {
@@ -67,13 +71,40 @@ func NewStoreService(db *gorm.DB, itemRepo repositories.StoreItemRepository, bid
 		bidRepo:     bidRepo,
 		bookingRepo: bookingRepo,
 		userRepo:    userRepo,
+		chat:        noopChatNotifier{},
 	}
+}
+
+// WithRequests lets listings answer requests: requests is where they live,
+// chat tells a requester when a seller lists something for them (nil = no
+// messages).
+func (s *StoreService) WithRequests(requests repositories.ItemRequestRepository, chat ChatNotifier) *StoreService {
+	s.requestRepo = requests
+	if chat != nil {
+		s.chat = chat
+	}
+	return s
 }
 
 func (s *StoreService) CreateItem(userID uint, req models.CreateStoreItemRequest) (*models.StoreItem, error) {
 	title, description, err := validateListingText(req.Title, req.Description)
 	if err != nil {
 		return nil, err
+	}
+
+	// A listing made for a request must answer someone else's open one
+	var answers *models.ItemRequest
+	if req.RequestID != nil {
+		if s.requestRepo == nil {
+			return nil, ErrRequestClosed
+		}
+		answers, err = s.requestRepo.GetByID(*req.RequestID)
+		if err != nil || answers.Status != "active" {
+			return nil, ErrRequestClosed
+		}
+		if answers.RequesterID == userID {
+			return nil, ErrOwnRequest
+		}
 	}
 
 	// A price is optional (0 means agree it in chat); auctions need a start
@@ -105,6 +136,7 @@ func (s *StoreService) CreateItem(userID uint, req models.CreateStoreItemRequest
 		Location:        req.Location,
 		ShippingInfo:    req.ShippingInfo,
 		Status:          "active",
+		RequestID:       req.RequestID,
 	}
 	startListing(item)
 
@@ -118,6 +150,11 @@ func (s *StoreService) CreateItem(userID uint, req models.CreateStoreItemRequest
 
 	if err := s.itemRepo.Create(item); err != nil {
 		return nil, err
+	}
+
+	if answers != nil {
+		s.chat.StoreMessage(item.ID, userID, answers.RequesterID,
+			fmt.Sprintf("I listed \"%s\" for your request \"%s\". Open it to book it.", item.Title, answers.Title))
 	}
 
 	return item, nil
@@ -575,8 +612,25 @@ func (s *StoreService) ApproveBookingRequest(requestID uint, ownerID uint) (*mod
 		return nil, err
 	}
 
+	s.fulfilRequest(request)
+
 	// Get and return the updated booking request
 	return s.bookingRepo.GetByID(requestID)
+}
+
+// fulfilRequest closes the request a listing answered once the requester's
+// own booking on it is approved. Best effort: the booking already stands.
+func (s *StoreService) fulfilRequest(booking *models.BookingRequest) {
+	if s.requestRepo == nil || booking.Item == nil || booking.Item.RequestID == nil {
+		return
+	}
+	wanted, err := s.requestRepo.GetByID(*booking.Item.RequestID)
+	if err != nil || wanted.RequesterID != booking.RequesterID {
+		return
+	}
+	if _, err := s.requestRepo.MarkFulfilled(wanted.ID, booking.ItemID); err != nil {
+		fmt.Printf("Error closing request %d: %v\n", wanted.ID, err)
+	}
 }
 
 func (s *StoreService) RejectBookingRequest(requestID uint, ownerID uint) (*models.BookingRequest, error) {
