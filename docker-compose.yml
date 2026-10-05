@@ -81,6 +81,41 @@ services:
     networks:
       - myguy-network
 
+  # Rough locations of gigs, listings and requests. Internal only: no
+  # published ports; the backend and store-service call it.
+  proximity-service:
+    image: docker.io/katria47/myguy-proximity-service:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - PORT=8083
+      - GIN_MODE=release
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - REDIS_ADDR=proximity-redis:6379
+      - REDIS_PASSWORD=${PROXIMITY_REDIS_PASSWORD}
+    depends_on:
+      proximity-redis:
+        condition: service_healthy
+    networks:
+      - myguy-network
+
+  # The proximity service's own Redis (chat's is separate): password set,
+  # append-only file synced every second, no published ports.
+  proximity-redis:
+    image: docker.io/redis:7-alpine
+    restart: unless-stopped
+    environment:
+      - REDIS_PASSWORD=${PROXIMITY_REDIS_PASSWORD}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --appendfsync everysec --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - proximity-redis-data:/data
+    networks:
+      - myguy-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: docker.io/redis:7-alpine
     restart: unless-stopped
@@ -125,6 +160,7 @@ volumes:
   postgres-data:
   store-uploads:
   redis-data:
+  proximity-redis-data:
 
 networks:
   myguy-network:

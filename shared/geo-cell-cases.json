@@ -1,0 +1,19 @@
+{
+  "_comment": "Rough-location cells shared by every component that rounds a position (proximity-service, backend, store-service, frontend). cell = floor(degrees / 0.005 + 0.5); degrees = cell * 0.005. Uganda crosses the equator, so negative and exact-half inputs are included: JavaScript Math.round and Go math.Round disagree on them.",
+  "step": 0.005,
+  "cells": [
+    { "degrees": 0.3476, "cell": 70 },
+    { "degrees": 32.5842, "cell": 6517 },
+    { "degrees": 0, "cell": 0 },
+    { "degrees": 0.0025, "cell": 1 },
+    { "degrees": -0.0025, "cell": 0 },
+    { "degrees": -0.0026, "cell": -1 },
+    { "degrees": -0.33, "cell": -66 },
+    { "degrees": -0.3376, "cell": -68 },
+    { "degrees": 0.0524, "cell": 10 },
+    { "degrees": 4.2, "cell": 840 },
+    { "degrees": -1.48, "cell": -296 },
+    { "degrees": 29.6, "cell": 5920 },
+    { "degrees": 35.03, "cell": 7006 }
+  ]
+}

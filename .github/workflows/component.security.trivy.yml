@@ -101,6 +101,41 @@ jobs:
           sarif_file: 'trivy-store-service.sarif'
           category: 'trivy-store-service'
 
+  scan-proximity-service:
+    name: Scan Proximity Service
+    needs: get-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: read
+    steps:
+      - name: Log in to Registry
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull image
+        run: docker pull ${{ env.REGISTRY }}/myguy-proximity-service:${{ needs.get-tag.outputs.image_tag }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: '${{ env.REGISTRY }}/myguy-proximity-service:${{ needs.get-tag.outputs.image_tag }}'
+          format: 'sarif'
+          output: 'trivy-proximity-service.sarif'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-proximity-service.sarif'
+          category: 'trivy-proximity-service'
+
   scan-chat-service:
     name: Scan Chat Websocket Service
     needs: get-tag

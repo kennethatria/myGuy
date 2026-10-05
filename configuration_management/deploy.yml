@@ -25,8 +25,16 @@
       - "{{ registry }}/myguy-api:{{ image_tag }}"
       - "{{ registry }}/myguy-store-service:{{ image_tag }}"
       - "{{ registry }}/myguy-chat-websocket-service:{{ image_tag }}"
+      - "{{ registry }}/myguy-proximity-service:{{ image_tag }}"
 
   pre_tasks:
+    # The proximity service's Redis refuses to start without a password
+    - name: Require the proximity Redis password
+      ansible.builtin.assert:
+        that: proximity_redis_password | default('') | length > 0
+        fail_msg: "Set the PROXIMITY_REDIS_PASSWORD repository secret before deploying."
+        quiet: true
+
     - name: Get myguy user ID for XDG_RUNTIME_DIR
       ansible.builtin.command:
         cmd: id -u {{ app_user }}
@@ -69,6 +77,7 @@
           JWT_SECRET={{ jwt_secret }}
           DB_PASSWORD={{ db_password }}
           INTERNAL_API_KEY={{ internal_api_key }}
+          PROXIMITY_REDIS_PASSWORD={{ proximity_redis_password }}
           ZIPKIN_URL={{ zipkin_url }}
           IMAGE_TAG={{ image_tag }}
           SMTP_HOST={{ smtp_host | default('') }}
@@ -91,6 +100,7 @@
         JWT_SECRET: "{{ jwt_secret }}"
         DB_PASSWORD: "{{ db_password }}"
         INTERNAL_API_KEY: "{{ internal_api_key }}"
+        PROXIMITY_REDIS_PASSWORD: "{{ proximity_redis_password }}"
       # rootless podman — no become
 
     - name: Get image digests
@@ -130,6 +140,7 @@
         JWT_SECRET: "{{ jwt_secret }}"
         DB_PASSWORD: "{{ db_password }}"
         INTERNAL_API_KEY: "{{ internal_api_key }}"
+        PROXIMITY_REDIS_PASSWORD: "{{ proximity_redis_password }}"
       # rootless podman — no become
 
     # --- Nginx + TLS ---

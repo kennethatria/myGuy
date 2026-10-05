@@ -1,0 +1,7 @@
+# Advisories with no patched release that do not reach this module.
+# Read by OpenSSF Scorecard's Vulnerabilities check; re-check when they expire.
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+ignoreUntil = 2027-04-05
+reason = "golang.org/x/crypto/openpgp is deprecated and has no fix; no package in this module imports it (go list -deps -test ./... | grep openpgp is empty)."
