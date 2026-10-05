@@ -17,7 +17,10 @@ type StoreItem struct {
 	StartingBid     float64        `json:"starting_bid,omitempty"`
 	CurrentBid      float64        `json:"current_bid,omitempty"`
 	MinBidIncrement float64        `json:"min_bid_increment,omitempty"`
-	BidDeadline     *time.Time     `json:"bid_deadline,omitempty" gorm:"index:idx_store_items_bid_deadline"`
+	BidDeadline     *time.Time     `json:"bid_deadline,omitempty" gorm:"index:idx_store_items_bid_deadline"` // auctions: bidding closes with the note
+	// Deadline is when the note comes off the board unless someone reacted
+	// (a bid or a booking request). Repost starts a fresh one.
+	Deadline        *time.Time     `json:"deadline,omitempty" gorm:"index:idx_store_items_deadline"`
 	Status          string         `json:"status" gorm:"default:'active';index:idx_store_items_status"` // active, sold, expired, cancelled
 	Category        string         `json:"category" gorm:"index:idx_store_items_category"`
 	Images          []ItemImage    `json:"images" gorm:"foreignKey:ItemID"`
@@ -94,14 +97,14 @@ type ReceivedRating struct {
 type CreateStoreItemRequest struct {
 	Title           string    `json:"title" binding:"required"`
 	Description     string    `json:"description"`
-	PriceType       string    `json:"price_type" binding:"required,oneof=fixed bidding"`
+	// Optional: a listing is a note, and price can be agreed in chat
+	PriceType       string    `json:"price_type" binding:"omitempty,oneof=fixed bidding"`
 	FixedPrice      float64   `json:"fixed_price,omitempty"`
 	StartingBid     float64   `json:"starting_bid,omitempty"`
 	MinBidIncrement float64   `json:"min_bid_increment,omitempty"`
-	BidDeadline     *time.Time `json:"bid_deadline,omitempty"`
 	Category        string    `json:"category"`
 	Images          []string  `json:"images"`
-	Condition       string    `json:"condition" binding:"oneof=new like-new good fair poor"`
+	Condition       string    `json:"condition" binding:"omitempty,oneof=new like-new good fair poor"`
 	Location        string    `json:"location"`
 	ShippingInfo    string    `json:"shipping_info"`
 }
@@ -138,6 +141,8 @@ type StoreItemFilter struct {
 	MaxPrice    float64
 	Condition   string
 	SellerID    uint
+	// ExcludeSellerID leaves out one seller's listings (the viewer's own)
+	ExcludeSellerID uint
 	Status      string
 	SortBy      string
 	SortOrder   string

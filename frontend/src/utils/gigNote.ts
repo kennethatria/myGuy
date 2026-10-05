@@ -1,4 +1,5 @@
-// Sticky-note gig rules, mirroring the backend (internal/services/task_service.go).
+// Sticky-note rules for gigs and marketplace listings, mirroring the backend
+// (internal/services/task_service.go) and store-service (store_service.go).
 // The backend is the authority; these only drive counters and the look.
 
 export const HEADLINE_MAX_WORDS = 5

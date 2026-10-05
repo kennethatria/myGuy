@@ -2,9 +2,12 @@
   <component
     :is="to ? RouterLink : 'article'"
     :to="to"
-    :class="['sticky-note', `note-${color}`, `note-${size}`, { 'is-link': to }]"
+    :class="['sticky-note', `note-${color}`, `note-${size}`, { 'is-link': to, 'has-photo': photo }]"
     :style="{ '--tilt': `${tilt}deg` }"
   >
+    <figure v-if="photo" class="note-photo">
+      <img :src="photo" :alt="photoAlt" loading="lazy" />
+    </figure>
     <slot name="header">
       <h3 class="note-headline">{{ title }}</h3>
       <p class="note-body">{{ body }}</p>
@@ -28,12 +31,17 @@ const props = withDefaults(defineProps<{
   to?: RouteLocationRaw
   size?: 'small' | 'large'
   flat?: boolean
+  // A photo taped to the top of the note (marketplace listings)
+  photo?: string
+  photoAlt?: string
 }>(), {
   title: '',
   body: '',
   seed: 0,
   size: 'small',
-  flat: false
+  flat: false,
+  photo: '',
+  photoAlt: ''
 })
 
 const color = computed(() => noteColor(props.seed))
@@ -67,6 +75,44 @@ const tilt = computed(() => (props.flat ? 0 : noteTilt(props.seed)))
   min-height: 16rem;
 }
 
+/* A photo makes the note taller than a square */
+.note-small.has-photo {
+  aspect-ratio: auto;
+}
+
+.note-photo {
+  position: relative;
+  margin: 0 0 0.25rem;
+  padding: 0.35rem 0.35rem 0.9rem;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transform: rotate(calc(var(--tilt) * -1.5));
+}
+
+/* A strip of tape holding the photo on */
+.note-photo::before {
+  content: '';
+  position: absolute;
+  top: -0.5rem;
+  left: 50%;
+  width: 3.5rem;
+  height: 1rem;
+  transform: translateX(-50%) rotate(-3deg);
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.note-photo img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.note-large .note-photo img {
+  aspect-ratio: 16 / 10;
+}
+
 .note-yellow { --note-bg: #fef3a3; }
 .note-pink { --note-bg: #fbcfe8; }
 .note-blue { --note-bg: #bfdbfe; }
@@ -89,6 +135,16 @@ const tilt = computed(() => (props.flat ? 0 : noteTilt(props.seed)))
   .note-small {
     aspect-ratio: auto;
     min-height: 9rem;
+  }
+
+  .note-large {
+    padding: 1.25rem;
+    min-height: 0;
+  }
+
+  /* A wide crop keeps the headline in view on a narrow screen */
+  .note-small .note-photo img {
+    aspect-ratio: 16 / 10;
   }
 }
 

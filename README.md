@@ -154,7 +154,7 @@ graph TB
 | :--- | :--- | :--- | :--- |
 | **Frontend** | TypeScript (Vue.js) | `5173` | The main user interface that communicates with all backend services. |
 | **Backend** | Go (Gin) | `8080` | The core API: passwordless sign-in, users, tasks, applications, and reviews. |
-| **Store Service** | Go (Gin) | `8081` | A marketplace for items with fixed-price and auction-style bidding. |
+| **Store Service** | Go (Gin) | `8081` | Marketplace listings as sticky notes, with booking requests (and older auctions). |
 | **Chat Service** | JavaScript (Node.js) | `8082` | A real-time WebSocket service for all messaging features. |
 | **Database** | PostgreSQL | `5432` | Primary data store, with each service connecting to its own database. |
 | **Redis** | Redis | `6379` | Socket.IO adapter for multi-instance chat scaling. |
@@ -209,6 +209,10 @@ There is **one private conversation per pair** (poster ↔ each person) per gig,
 **Expiry.** A note nobody applies to within 24 hours is marked *expired* and comes off the board; the poster can repost it from the gig page or dashboard for another 24 hours. A gig with at least one application stays open until the poster accepts someone or cancels.
 
 **Contact details follow consent.** Phone numbers, emails, links and @handles are refused on notes and applications, and masked in chat, until the two people are matched (an accepted application, or an approved store booking). After that, chat between them is unfiltered.
+
+### Marketplace listings
+
+Selling works the same way. A listing is a sticky note with a headline (≤ 5 words), a note (≤ 20 words) and up to three photos (the first is taped to the note). There are no price, category or condition fields: put the price in the note or agree it in chat. A buyer presses **Book Now**; once the seller approves, the two can share contact details in chat. A listing nobody books within 24 hours expires; the seller can repost or remove it from the item page or **Your listings**. Older auctions keep working and close when their note comes down.
 
 ### Notifications
 

@@ -35,18 +35,19 @@
         </div>
         
         <div class="item-info-section">
-          <h1>{{ item.title }}</h1>
-          
-          <div class="item-meta">
-            <span class="category">{{ item.category }}</span>
-            <span class="condition">{{ item.condition }}</span>
-            <span class="posted-date">Posted {{ formatDate(item.created_at) }}</span>
-          </div>
-          
-          <div class="item-description">
-            <h3>Description</h3>
-            <p>{{ item.description }}</p>
-          </div>
+          <StickyNote :seed="item.id" size="large" class="item-note">
+            <template #header>
+              <span v-if="item.status !== 'active'" class="note-status">{{ statusLabel }}</span>
+              <h1 class="note-detail-headline">{{ item.title }}</h1>
+              <p class="note-detail-body">{{ item.description }}</p>
+            </template>
+            <template #footer>
+              <span>Posted {{ formatDate(item.created_at) }}</span>
+              <span v-if="item.status === 'active' && item.deadline && expiryLabel(item.deadline)">
+                {{ expiryLabel(item.deadline) }}
+              </span>
+            </template>
+          </StickyNote>
           
           <div class="seller-info">
             <h3>Seller</h3>
@@ -81,15 +82,16 @@
             <div v-if="item.is_auction" class="auction-info">
               <h3>Auction Details</h3>
               <p class="current-bid">Current Bid: UGX {{ formatCurrency(item.current_bid || item.starting_bid) }}</p>
-              <p class="bid-increment">Minimum Increment: UGX {{ formatCurrency(item.bid_increment) }}</p>
+              <p class="bid-increment">Minimum Increment: UGX {{ formatCurrency(item.min_bid_increment) }}</p>
               <p class="bid-count">{{ item.bid_count || 0 }} bids</p>
-              
-              <div v-if="item.seller.id !== userId" class="bid-form">
+              <p v-if="biddingClosed" class="bid-closed">Bidding has closed.</p>
+
+              <div v-if="item.seller.id !== userId && item.status === 'active' && !biddingClosed" class="bid-form">
                 <input 
                   v-model="bidAmount" 
                   type="number" 
                   :min="minBidAmount" 
-                  :step="item.bid_increment"
+                  :step="item.min_bid_increment"
                   placeholder="Enter bid amount"
                 />
                 <button @click="placeBid" class="btn btn-primary">Place Bid</button>
@@ -97,8 +99,10 @@
             </div>
             
             <div v-else class="fixed-price">
-              <h3>Price</h3>
-              <p class="price">UGX {{ formatCurrency(item.price) }}</p>
+              <template v-if="listingPriceLabel(item)">
+                <h3>Price</h3>
+                <p class="price">{{ listingPriceLabel(item) }}</p>
+              </template>
               
               <!-- Booking Request Section -->
               <div v-if="item.seller.id !== userId && item.status === 'active'" class="booking-section">
@@ -111,7 +115,7 @@
                   >
                     {{ loadingBookingRequest ? 'Sending Request...' : 'Book Now' }}
                   </button>
-                  <p class="booking-info">Send a booking request to the item owner</p>
+                  <p class="booking-info">Ask to book it, then agree the price and pickup in chat</p>
                 </div>
                 
                 <div v-else class="booking-status">
@@ -162,7 +166,16 @@
           <div v-if="item.seller.id === userId" class="owner-section">
             <div class="owner-status">
               <p class="owner-message">This is your listing</p>
-              <p class="status-info">Status: {{ item.status }}</p>
+              <p v-if="item.status === 'expired'" class="status-info">
+                Nobody asked to book it within 24 hours. Repost it for another 24 hours, or remove it.
+              </p>
+              <p v-else class="status-info">Status: {{ statusLabel }}</p>
+              <div v-if="item.status === 'expired'" class="owner-actions">
+                <button class="btn btn-primary btn-sm" :disabled="ownerBusy" @click="repostItem">
+                  {{ ownerBusy ? 'Reposting...' : 'Repost for 24 hours' }}
+                </button>
+                <button class="btn btn-outline btn-sm" :disabled="ownerBusy" @click="removeItem">Remove</button>
+              </div>
             </div>
             
             <!-- General Messages for Owner -->
@@ -228,7 +241,9 @@
           </div>
           
           <div v-else-if="item.status !== 'active'" class="item-status">
-            <p class="status-message">This item is {{ item.status }}</p>
+            <p class="status-message">
+              {{ item.status === 'expired' ? 'This listing has come off the board.' : `This item is ${item.status}` }}
+            </p>
           </div>
         </div>
       </div>
@@ -280,11 +295,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { setPageTitle } from '@/utils/pageTitle';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useChatStore } from '@/stores/chat';
 import ChatWindow from '@/components/ChatWindow.vue';
 import BookingConfirmationModal from '@/components/BookingConfirmationModal.vue';
+import StickyNote from '@/components/StickyNote.vue';
+import { expiryLabel } from '@/utils/gigNote';
+import { listingPriceLabel } from '@/utils/listingNote';
 import config from '@/config';
 
 // Type definitions
@@ -304,14 +322,14 @@ interface StoreItem {
   id: number;
   title: string;
   description: string;
-  category: string;
-  condition: string;
   status: string;
+  deadline?: string;
+  bid_deadline?: string;
   price_type: string;
   fixed_price?: number;
   starting_bid?: number;
   current_bid?: number;
-  bid_increment?: number;
+  min_bid_increment?: number;
   bid_count?: number;
   price?: number;
   is_auction?: boolean;
@@ -355,6 +373,7 @@ interface BookingRequest {
 }
 
 const route = useRoute();
+const router = useRouter();
 const authStore = useAuthStore();
 const chatStore = useChatStore();
 
@@ -386,9 +405,58 @@ const itemId = computed(() => route.params.id);
 
 const minBidAmount = computed(() => {
   if (!item.value?.is_auction) return 0;
-  const currentBid = item.value.current_bid ?? item.value.starting_bid ?? 0;
-  return currentBid + (item.value.bid_increment ?? 0);
+  // The first bid may match the starting bid; later ones must beat the current bid
+  if (!item.value.current_bid) return item.value.starting_bid ?? 0;
+  return item.value.current_bid + (item.value.min_bid_increment ?? 0);
 });
+
+// Auctions close when the note comes down
+const biddingClosed = computed(() =>
+  !!item.value?.bid_deadline && new Date(item.value.bid_deadline).getTime() <= Date.now()
+);
+
+const statusLabel = computed(() => {
+  const status = item.value?.status ?? '';
+  return status === 'expired' ? 'Expired' : status.charAt(0).toUpperCase() + status.slice(1);
+});
+
+// Seller actions on an expired note
+const ownerBusy = ref(false);
+
+async function repostItem() {
+  ownerBusy.value = true;
+  try {
+    const response = await fetch(`${config.STORE_API_URL}/items/${itemId.value}/repost`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Could not repost the listing. Please try again.');
+    await loadItem();
+  } catch (err) {
+    alert(err instanceof Error ? err.message : 'Could not repost the listing. Please try again.');
+  } finally {
+    ownerBusy.value = false;
+  }
+}
+
+async function removeItem() {
+  if (!item.value || !confirm(`Remove "${item.value.title}" for good?`)) return;
+  ownerBusy.value = true;
+  try {
+    const response = await fetch(`${config.STORE_API_URL}/items/${itemId.value}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Could not remove the listing. Please try again.');
+    router.push({ name: 'store' });
+  } catch (err) {
+    alert(err instanceof Error ? err.message : 'Could not remove the listing. Please try again.');
+  } finally {
+    ownerBusy.value = false;
+  }
+}
 
 // Booking computed properties
 const bookingStatus = computed(() => {
@@ -844,43 +912,51 @@ onMounted(() => {
   padding: 2rem;
 }
 
-.item-info-section h1 {
-  font-size: 2rem;
+.item-note {
+  margin-bottom: 2rem;
+}
+
+.note-status {
+  align-self: flex-start;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
   font-weight: 600;
-  margin-bottom: 1rem;
+  background: rgba(31, 41, 55, 0.12);
 }
 
-.item-meta {
+.note-detail-headline {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.note-detail-body {
+  margin: 0;
+  font-size: 1.15rem;
+  line-height: 1.5;
+  flex: 1;
+}
+
+.owner-actions {
   display: flex;
-  gap: 1rem;
-  margin-bottom: 2rem;
   flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
 }
 
-.category, .condition, .posted-date {
-  padding: 0.25rem 0.75rem;
-  border-radius: 0.25rem;
-  font-size: 0.875rem;
-  background: #f3f4f6;
-  color: #374151;
+.bid-closed {
+  font-weight: 600;
+  color: #6b7280;
 }
 
-.item-description {
-  margin-bottom: 2rem;
-}
-
-.item-description h3,
 .seller-info h3,
 .price-section h3 {
   font-size: 1.125rem;
   font-weight: 600;
   margin-bottom: 0.5rem;
   color: #111827;
-}
-
-.item-description p {
-  color: #6b7280;
-  line-height: 1.6;
 }
 
 .seller-info {
@@ -1285,6 +1361,25 @@ onMounted(() => {
   margin-top: 0.5rem;
 }
 
+/* Phones: thumb-sized targets */
+@media (max-width: 768px) {
+  .back-link {
+    min-height: 44px;
+  }
+
+  .view-profile,
+  .message-btn,
+  .owner-actions .btn,
+  .bid-form input,
+  .bid-form button {
+    min-height: 44px;
+  }
+
+  .owner-actions .btn {
+    flex: 1;
+  }
+}
+
 @media (max-width: 768px) {
   .item-content {
     grid-template-columns: 1fr;
@@ -1308,8 +1403,8 @@ onMounted(() => {
     padding: 1.25rem;
   }
 
-  .item-info-section h1 {
-    font-size: 1.5rem;
+  .note-detail-headline {
+    font-size: 1.4rem;
   }
   
   .bid-form {

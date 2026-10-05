@@ -59,6 +59,14 @@ func (m *MockStoreService) DeleteItem(id uint, userID uint) error {
 	return args.Error(0)
 }
 
+func (m *MockStoreService) RepostItem(id uint, userID uint) (*models.StoreItem, error) {
+	args := m.Called(id, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.StoreItem), args.Error(1)
+}
+
 func (m *MockStoreService) PlaceBid(itemID uint, userID uint, req models.CreateBidRequest) (*models.Bid, error) {
 	args := m.Called(itemID, userID, req)
 	if args.Get(0) == nil {
@@ -241,6 +249,7 @@ func setupTestRouterRoutes(router *gin.Engine, handler *StoreHandler) *gin.Engin
 		api.POST("/booking-requests/:requestId/confirm-delivery", handler.ConfirmDelivery)
 		api.POST("/booking-requests/:requestId/buyer-rating", handler.SubmitBuyerRating)
 		api.POST("/booking-requests/:requestId/seller-rating", handler.SubmitSellerRating)
+		api.POST("/items/:id/repost", handler.RepostItem)
 	}
 
 	return router
@@ -349,6 +358,51 @@ func TestCreateItem(t *testing.T) {
 		writer.WriteField("price", "100.0")
 		writer.WriteField("category", "electronics")
 		writer.WriteField("condition", "new")
+		writer.Close()
+
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/v1/items", body)
+		httpReq.Header.Set("Content-Type", writer.FormDataContentType())
+
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+		mockService.AssertExpectations(t)
+	})
+
+	t.Run("note only: no price, category or condition", func(t *testing.T) {
+		mockService := new(MockStoreService)
+		router := setupTestRouter(NewStoreHandler(mockService))
+
+		mockService.On("CreateItem", uint(1), models.CreateStoreItemRequest{
+			Title: "Kids bike", Description: "Red, fits ages 5-8",
+		}).Return(&models.StoreItem{ID: 3}, nil)
+
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/v1/items",
+			bytes.NewBufferString(`{"title":"Kids bike","description":"Red, fits ages 5-8"}`))
+		httpReq.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(w, httpReq)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+		mockService.AssertExpectations(t)
+	})
+
+	t.Run("form data auction keeps its price type", func(t *testing.T) {
+		mockService := new(MockStoreService)
+		router := setupTestRouter(NewStoreHandler(mockService))
+
+		mockService.On("CreateItem", uint(1), mock.MatchedBy(func(req models.CreateStoreItemRequest) bool {
+			return req.PriceType == "bidding" && req.StartingBid == 5000 && req.MinBidIncrement == 500
+		})).Return(&models.StoreItem{ID: 2}, nil)
+
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		writer.WriteField("title", "Bike")
+		writer.WriteField("description", "Red city bike")
+		writer.WriteField("price_type", "bidding")
+		writer.WriteField("starting_bid", "5000")
+		writer.WriteField("min_bid_increment", "500")
 		writer.Close()
 
 		w := httptest.NewRecorder()
@@ -580,6 +634,37 @@ func TestDeleteItem(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 		mockService.AssertExpectations(t)
 	})
+}
+
+func TestRepostItem(t *testing.T) {
+	cases := []struct {
+		name   string
+		path   string
+		item   *models.StoreItem
+		err    error
+		status int
+	}{
+		{"reposted", "/api/v1/items/1/repost", &models.StoreItem{ID: 1, Status: "active"}, nil, http.StatusOK},
+		{"not expired", "/api/v1/items/1/repost", nil, errors.New("only an expired listing can be reposted"), http.StatusBadRequest},
+		{"missing", "/api/v1/items/1/repost", nil, gorm.ErrRecordNotFound, http.StatusNotFound},
+		{"invalid ID", "/api/v1/items/x/repost", nil, nil, http.StatusBadRequest},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockService := new(MockStoreService)
+			router := setupTestRouter(NewStoreHandler(mockService))
+			if tc.item != nil || tc.err != nil {
+				mockService.On("RepostItem", uint(1), uint(1)).Return(tc.item, tc.err)
+			}
+
+			w := httptest.NewRecorder()
+			httpReq, _ := http.NewRequest("POST", tc.path, nil)
+			router.ServeHTTP(w, httpReq)
+
+			assert.Equal(t, tc.status, w.Code)
+			mockService.AssertExpectations(t)
+		})
+	}
 }
 
 func TestPlaceBid(t *testing.T) {
