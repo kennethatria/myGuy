@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { setPageTitle } from '@/utils/pageTitle'
+import { reloadOnStaleBuild, clearStaleBuildReload } from '@/utils/staleBuild'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -112,8 +113,17 @@ router.beforeEach(async (to, from, next) => {
 })
 
 // Detail pages (gig, store item) replace this with the loaded title.
-router.afterEach((to) => {
+router.afterEach((to, _from, failure) => {
   setPageTitle(to.meta.title as string | undefined)
+  if (!failure) clearStaleBuildReload()
+})
+
+// A tab opened before a deploy can't load the new build's pages: load the
+// page the user asked for fresh instead of silently staying put.
+router.onError((error, to) => {
+  if (!reloadOnStaleBuild(error, router.resolve(to).href)) {
+    console.error('Navigation failed:', error)
+  }
 })
 
 export default router
