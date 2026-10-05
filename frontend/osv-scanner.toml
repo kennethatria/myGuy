@@ -1,0 +1,7 @@
+# Advisories with no patched release that do not reach this package.
+# Read by OpenSSF Scorecard's Vulnerabilities check; re-check when they expire.
+
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+ignoreUntil = 2027-04-05
+reason = "braces has no fixed release (3.0.3 is latest and affected). It is a dev-only transitive dependency of test/lint/watch tooling that expands only our own glob patterns; npm ls braces --omit=dev is empty."
