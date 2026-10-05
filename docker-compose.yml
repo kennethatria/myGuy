@@ -81,14 +81,6 @@ services:
     networks:
       - myguy-network
 
-  zipkin:
-    image: docker.io/openzipkin/zipkin:latest
-    restart: unless-stopped
-    ports:
-      - "9411:9411"
-    networks:
-      - myguy-network
-
   redis:
     image: docker.io/redis:7-alpine
     restart: unless-stopped

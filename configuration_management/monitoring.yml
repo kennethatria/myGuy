@@ -110,6 +110,41 @@
       when: ansible_facts['os_family'] == "Debian"
       become: yes
 
+    # --- Journal size ---
+    # Uncapped, journald grows its files (and their memory mappings) to ~10%
+    # of the disk; on a 1 GB server that memory matters more than old logs.
+
+    - name: Create journald drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/journald.conf.d
+        state: directory
+        mode: "0755"
+      become: yes
+
+    - name: Cap systemd journal size
+      ansible.builtin.copy:
+        dest: /etc/systemd/journald.conf.d/size.conf
+        mode: "0644"
+        content: |
+          [Journal]
+          SystemMaxUse=100M
+          SystemMaxFileSize=20M
+      become: yes
+      register: journald_conf
+
+    - name: Apply journal cap now
+      when: journald_conf.changed
+      become: yes
+      block:
+        - name: Restart journald
+          ansible.builtin.systemd:
+            name: systemd-journald
+            state: restarted
+
+        - name: Trim existing journal files to the cap
+          ansible.builtin.command:
+            cmd: journalctl --vacuum-size=100M
+
     - name: Create user systemd directory for myguy
       ansible.builtin.file:
         path: "{{ user_systemd_dir }}"

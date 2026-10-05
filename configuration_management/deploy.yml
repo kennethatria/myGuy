@@ -80,9 +80,11 @@
 
     # --- Deploy ---
 
+    # `-f docker-compose.yml` skips docker-compose.override.yml (local-only
+    # services such as Zipkin, which runs on the monitoring server instead).
     - name: Pull images from Docker Hub
       ansible.builtin.command:
-        cmd: podman compose pull
+        cmd: podman compose -f docker-compose.yml pull
         chdir: "{{ app_dir }}"
       environment:
         XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
@@ -110,9 +112,18 @@
       loop: "{{ image_digests.results }}"
       changed_when: false
 
+    - name: Remove the old app-server Zipkin (traces go to the monitoring server)
+      ansible.builtin.command:
+        cmd: podman rm -f myguy_zipkin_1
+      register: old_zipkin
+      changed_when: old_zipkin.rc == 0
+      failed_when: false
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+
     - name: Start application stack
       ansible.builtin.command:
-        cmd: podman compose up -d --force-recreate
+        cmd: podman compose -f docker-compose.yml up -d --force-recreate
         chdir: "{{ app_dir }}"
       environment:
         XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"

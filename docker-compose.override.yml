@@ -1,0 +1,14 @@
+# Local development additions, loaded automatically by `podman compose` /
+# `docker compose` alongside docker-compose.yml.
+#
+# Production deploys with `-f docker-compose.yml` only, so none of this runs
+# there: services send traces to the monitoring server's Zipkin instead
+# (ZIPKIN_URL in the server's .env).
+services:
+  zipkin:
+    image: docker.io/openzipkin/zipkin:latest
+    restart: unless-stopped
+    ports:
+      - "9411:9411"
+    networks:
+      - myguy-network
