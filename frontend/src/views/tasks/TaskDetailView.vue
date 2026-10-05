@@ -13,20 +13,22 @@
     </div>
     
     <div v-else-if="task" class="card overflow-hidden">
-      <div class="p-4 pb-0">
-        <div class="flex justify-between items-center mb-3">
-          <h1 class="text-xl font-semibold">{{ task.title }}</h1>
-          <span class="badge" :class="statusClasses[task.status]">
-            {{ task.status.replace('_', ' ') }}
-          </span>
-        </div>
+      <div class="p-4 note-stage">
+        <StickyNote :seed="task.id" size="large">
+          <template #header>
+            <span class="badge note-status" :class="statusClasses[task.status]">
+              {{ statusLabel }}
+            </span>
+            <h1 class="note-detail-headline">{{ task.title }}</h1>
+            <p class="note-detail-body">{{ task.description }}</p>
+          </template>
+          <template #footer>
+            <span>Posted {{ formatDate(task.created_at) }}</span>
+            <span v-if="task.status === 'open' && expiryLabel(task.deadline)">{{ expiryLabel(task.deadline) }}</span>
+          </template>
+        </StickyNote>
       </div>
       <div class="p-4 border-t border-gray-200">
-        <div class="mb-4">
-          <h3 class="font-medium mb-2">Description</h3>
-          <p>{{ task.description }}</p>
-        </div>
-        
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
           <div>
             <h4 class="font-medium text-sm text-gray">Created by</h4>
@@ -48,10 +50,6 @@
             </p>
             <p v-else>{{ task.created_by ? 'User ' + task.created_by : 'Unknown User' }}</p>
           </div>
-          <div>
-            <h4 class="font-medium text-sm text-gray">Deadline</h4>
-            <p>{{ formatDate(task.deadline) }}</p>
-          </div>
           <div v-if="task.assigned_to || task.assignee || assignee">
             <h4 class="font-medium text-sm text-gray">Assigned to</h4>
             <p v-if="task.assignee && task.assignee.username">
@@ -72,16 +70,22 @@
             </p>
             <p v-else>{{ task.assigned_to ? 'User ' + task.assigned_to : 'Not assigned' }}</p>
           </div>
-          <div v-if="task.fee">
-            <h4 class="font-medium text-sm text-gray">Fee</h4>
-            <p>UGX {{ formatCurrency(task.fee) }}</p>
-          </div>
         </div>
       </div>
 
       <!-- Action buttons based on task status and user role -->
       <div class="border-t border-gray-200 p-4">
+        <p v-if="isOwner && task.status === 'expired'" class="expired-note">
+          Nobody replied within 24 hours, so this note came off the board.
+        </p>
         <div class="task-actions flex justify-end space-x-3">
+          <button
+            v-if="isOwner && task.status === 'expired'"
+            @click="handleRepost"
+            class="btn btn-primary"
+          >
+            Repost for 24 hours
+          </button>
           <button
             v-if="canApply"
             @click="handleApply"
@@ -189,6 +193,8 @@ import { useReviewsStore } from '@/stores/reviews'
 import ApplicationDetail from '@/components/ApplicationDetail.vue'
 import ApplicationModal from '@/components/ApplicationModal.vue'
 import ChatWindow from '@/components/ChatWindow.vue'
+import StickyNote from '@/components/StickyNote.vue'
+import { expiryLabel } from '@/utils/gigNote'
 
 const route = useRoute()
 const router = useRouter()
@@ -202,11 +208,10 @@ interface Task {
   id: number
   title: string
   description: string
-  status: 'open' | 'in_progress' | 'completed'
+  status: 'open' | 'in_progress' | 'completed' | 'cancelled' | 'expired'
   created_by: number  // Changed from createdBy to match API
   assigned_to?: number  // Changed from assignedTo to match API
   deadline: string
-  fee?: number
   created_at: string
   is_messages_public?: boolean
   
@@ -232,7 +237,6 @@ interface Application {
     id: number
     username: string
   }
-  proposed_fee: number
   status: 'pending' | 'accepted' | 'declined'
   message?: string
   created_at: string
@@ -249,18 +253,15 @@ const assignee = ref<{ id: number; username: string; fullName?: string } | null>
 const statusClasses = {
   open: 'badge-open',
   in_progress: 'badge-in_progress',
-  completed: 'badge-completed'
+  completed: 'badge-completed',
+  cancelled: 'badge-cancelled',
+  expired: 'badge-cancelled'
 }
+
+const statusLabel = computed(() => (task.value?.status ?? '').replace('_', ' '))
 
 const formatDate = (date: string) => {
   return format(new Date(date), 'MMM dd, yyyy h:mm a')
-}
-
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-UG', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount)
 }
 
 const isOwner = computed(() => {
@@ -431,7 +432,7 @@ const handleApply = () => {
   showApplicationModal.value = true
 }
 
-const handleApplicationSubmit = async (data: { proposedFee: number; message: string }) => {
+const handleApplicationSubmit = async (data: { message: string }) => {
   if (!task.value) return
 
   try {
@@ -448,6 +449,20 @@ const handleApplicationSubmit = async (data: { proposedFee: number; message: str
   } catch (error) {
     console.error('Failed to apply for task:', error)
     alert(errorMessage(error, 'Failed to apply for the gig. Please try again.'))
+  }
+}
+
+// Expired notes go back on the board for a fresh 24 hours
+const handleRepost = async () => {
+  if (!task.value) return
+
+  try {
+    const updated = await tasksStore.updateTaskStatus(task.value.id, 'open')
+    task.value.status = 'open'
+    if (updated?.deadline) task.value.deadline = updated.deadline
+  } catch (error) {
+    console.error('Failed to repost task:', error)
+    alert(errorMessage(error, 'Failed to repost the note. Please try again.'))
   }
 }
 
@@ -534,6 +549,35 @@ const handleMessageApplicant = async (applicantId: number) => {
 </script>
 
 <style scoped>
+.note-stage {
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.note-status {
+  align-self: flex-start;
+  text-transform: capitalize;
+}
+
+.note-detail-headline {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.note-detail-body {
+  margin: 0;
+  font-size: 1.15rem;
+  line-height: 1.45;
+  flex: 1;
+}
+
+.expired-note {
+  margin: 0 0 0.75rem;
+  color: var(--color-text-light, #6b7280);
+}
+
 /* Gig Chat Interface Styles */
 .gig-chat-header {
   display: flex;

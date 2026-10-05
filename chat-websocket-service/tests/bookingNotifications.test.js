@@ -14,12 +14,18 @@ jest.mock('../src/services/bookingMessageService', () => ({
   updateBookingMessageStatus: jest.fn()
 }));
 
+jest.mock('../src/services/messageService', () => ({
+  sendMessage: jest.fn(),
+  unlockContacts: jest.fn()
+}));
+
 const request = require('supertest');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 
 const db = require('../src/config/database');
 const bookingMessageService = require('../src/services/bookingMessageService');
+const messageService = require('../src/services/messageService');
 
 const JWT_SECRET = 'your-secret-key'; // matches default in auth.js
 const INTERNAL_API_KEY = 'test-internal-api-key';
@@ -169,9 +175,9 @@ describe('bookingNotifications router', () => {
         .expect(400);
     });
 
-    it('handles approve action and returns success', async () => {
+    it('handles approve action and lets seller and buyer share contacts', async () => {
       const token = createUserToken(1);
-      const mockBooking = { status: 'approved' };
+      const mockBooking = { status: 'approved', item_id: 7, requester_id: 4 };
 
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
@@ -186,6 +192,7 @@ describe('bookingNotifications router', () => {
         .expect(200);
 
       expect(res.body.success).toBe(true);
+      expect(messageService.unlockContacts).toHaveBeenCalledWith({ storeItemId: 7, userA: 1, userB: 4 });
     });
 
     it('handles decline action and returns success', async () => {

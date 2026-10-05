@@ -3,7 +3,7 @@
     <div v-if="isOpen" class="modal-backdrop" @click="handleBackdropClick">
       <div class="modal-container" @click.stop>
         <div class="modal-header">
-          <h2>Apply for Gig</h2>
+          <h2>Reply to this note</h2>
           <button @click="close" class="close-btn" aria-label="Close">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 6L6 18M6 6l12 12"/>
@@ -16,40 +16,14 @@
             <h3>{{ task.title }}</h3>
             <p class="task-meta">
               Posted by {{ task.creator?.username || 'Unknown' }}
-              <span v-if="task.fee" class="separator">•</span>
-              <span v-if="task.fee" class="budget">Budget: UGX {{ formatCurrency(task.fee) }}</span>
             </p>
           </div>
 
           <form @submit.prevent="handleSubmit">
             <div class="form-group">
-              <label for="proposedFee" class="form-label">
-                Proposed Fee (UGX)
-                <span class="required">*</span>
-              </label>
-              <input
-                id="proposedFee"
-                v-model.number="formData.proposedFee"
-                type="number"
-                min="0"
-                step="0.01"
-                class="form-input"
-                :class="{ 'is-invalid': errors.proposedFee }"
-                placeholder="Enter your proposed fee"
-                required
-              />
-              <div v-if="errors.proposedFee" class="invalid-feedback">
-                {{ errors.proposedFee }}
-              </div>
-              <p v-if="task.fee" class="form-helper">
-                Task budget is UGX {{ formatCurrency(task.fee) }}
-              </p>
-            </div>
-
-            <div class="form-group">
               <label for="message" class="form-label">
-                Application Message
-                <span class="optional">(optional)</span>
+                Message
+                <span class="required">*</span>
               </label>
               <textarea
                 id="message"
@@ -57,13 +31,16 @@
                 rows="5"
                 class="form-input"
                 :class="{ 'is-invalid': errors.message }"
-                placeholder="Explain why you're the right person for this gig..."
+                :maxlength="MESSAGE_MAX"
+                placeholder="Say why you're a good fit and when you could do it..."
+                required
               ></textarea>
               <div v-if="errors.message" class="invalid-feedback">
                 {{ errors.message }}
               </div>
               <p class="form-helper">
-                Optional: Describe your experience, approach, and timeline for completing this task.
+                Agree the price in chat. Keep phone numbers for after the poster accepts you.
+                ({{ formData.message.length }}/{{ MESSAGE_MAX }})
               </p>
             </div>
 
@@ -76,7 +53,7 @@
                 Cancel
               </button>
               <button type="submit" class="btn btn-primary" :disabled="isSubmitting">
-                {{ isSubmitting ? 'Submitting...' : 'Submit Application' }}
+                {{ isSubmitting ? 'Sending...' : 'Send' }}
               </button>
             </div>
           </form>
@@ -92,7 +69,6 @@ import { ref, reactive, watch } from 'vue'
 interface Task {
   id: number
   title: string
-  fee?: number
   creator?: {
     id: number
     username: string
@@ -105,23 +81,23 @@ interface Props {
 }
 
 interface FormData {
-  proposedFee: number | null
   message: string
 }
+
+// Matches the backend's limit on application messages
+const MESSAGE_MAX = 500
 
 const props = defineProps<Props>()
 const emit = defineEmits<{
   'close': []
-  'submit': [data: { proposedFee: number; message: string }]
+  'submit': [data: { message: string }]
 }>()
 
 const formData = reactive<FormData>({
-  proposedFee: null,
   message: ''
 })
 
 const errors = reactive({
-  proposedFee: '',
   message: ''
 })
 
@@ -131,9 +107,7 @@ const isSubmitting = ref(false)
 // Reset form when modal opens
 watch(() => props.isOpen, (newValue) => {
   if (newValue) {
-    formData.proposedFee = props.task.fee || null
     formData.message = ''
-    errors.proposedFee = ''
     errors.message = ''
     error.value = ''
     isSubmitting.value = false
@@ -141,45 +115,28 @@ watch(() => props.isOpen, (newValue) => {
 })
 
 const validateForm = (): boolean => {
-  errors.proposedFee = ''
+  const message = formData.message.trim()
   errors.message = ''
-  
-  let isValid = true
-  
-  if (!formData.proposedFee || formData.proposedFee <= 0) {
-    errors.proposedFee = 'Please enter a valid fee amount'
-    isValid = false
+
+  if (message.length < 10) {
+    errors.message = 'Please write at least a short sentence (10 characters).'
+  } else if (message.length > MESSAGE_MAX) {
+    errors.message = `Please keep it under ${MESSAGE_MAX} characters.`
   }
-  
-  // Message is optional, but if provided, it should have at least 10 characters
-  if (formData.message && formData.message.trim().length > 0 && formData.message.trim().length < 10) {
-    errors.message = 'If providing a message, please make it at least 10 characters'
-    isValid = false
-  }
-  
-  return isValid
+
+  return !errors.message
 }
 
 const handleSubmit = () => {
   if (!validateForm()) {
     return
   }
-  
-  emit('submit', {
-    proposedFee: formData.proposedFee!,
-    message: formData.message.trim() || ''
-  })
+
+  emit('submit', { message: formData.message.trim() })
 }
 
 const close = () => {
   emit('close')
-}
-
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-UG', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount)
 }
 
 const handleBackdropClick = () => {

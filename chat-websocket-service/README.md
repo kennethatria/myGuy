@@ -34,7 +34,7 @@ The service operates as a standalone Node.js application, managing all real-time
 -   **Task events**: The main API posts system messages (new application, accepted, declined, cancelled) into the owner↔applicant task conversation. They are stored as `system_alert` and can't be edited or deleted.
 -   **Booking messages**: The store service posts booking requests, which participants approve, decline and rate from the chat.
 -   **Message Lifecycle**: Editing, soft deletion, and read receipts.
--   **Content Filtering**: Removes URLs, emails, phone numbers and social handles from messages.
+-   **Content Filtering**: Masks URLs, emails, phone numbers and social handles in messages until the two people are matched (accepted gig application or approved booking).
 -   **Automated Deletion**: A scheduler flags old messages on finished tasks for deletion, warning users 30 days ahead.
 -   **Privacy**: Online status isn't broadcast; "last seen" is only shared with people you've exchanged messages with. Application chats are limited to the task owner and the applicant (checked against the main API).
 
@@ -163,12 +163,13 @@ A conversation is addressed by its context (`taskId`, `applicationId` or `itemId
 
 -   **Authentication**: All socket connections and REST endpoints are protected and require a valid JWT.
 -   **Authorization**: Users only ever receive and read messages they sent or received; application chats are verified against the main API (`GET /applications/:id/participants`), failing closed if it is unreachable.
--   **Content Filtering**: To protect user privacy, the following patterns are automatically removed from message content before storage:
-    -   URLs (e.g., `http://example.com`)
+-   **Content Filtering**: Until two people are matched, these are masked in message content before storage:
+    -   URLs (e.g., `http://example.com`, `www.shop.ug`, `john.dev/x`)
     -   Emails (e.g., `user@example.com`)
-    -   Phone numbers
+    -   Phone numbers, local and international (e.g., `0772 123 456`, `+256 772 123456`) — prices like `120,000` are left alone
     -   Social media handles (`@username`)
-    The original, unfiltered content is stored separately for auditing but is never exposed to clients.
+    The patterns are tested against `shared/contact-filter-cases.json`, which the backend's gig-text check also uses.
+-   **Contact Unlocks**: When the poster accepts an application (the backend sends `unlock_contacts: true` to `/internal/task-message`) or a seller approves a booking (`/booking-action`), the pair is recorded in `contact_unlocks` and their messages in that conversation are no longer filtered. Application chats never unlock.
 -   **Input Validation**: Message length and payload structure are validated.
 
 ## 11. Troubleshooting & Common Issues

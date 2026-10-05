@@ -34,7 +34,8 @@ type TaskRepository interface {
 	Update(ctx context.Context, task *models.Task) error
 	Delete(ctx context.Context, id uint) error
 	ListByUser(ctx context.Context, userID uint, role string) ([]models.Task, error)
-	AssignIfOpen(ctx context.Context, taskID, assigneeID uint, fee float64) (bool, error)
+	AssignIfOpen(ctx context.Context, taskID, assigneeID uint) (bool, error)
+	ExpireUnanswered(ctx context.Context, now time.Time) (int64, error)
 }
 
 type ApplicationRepository interface {

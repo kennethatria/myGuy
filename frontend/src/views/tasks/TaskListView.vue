@@ -1,209 +1,90 @@
 <template>
   <div class="container py-4">
-    <div class="list-header flex justify-between items-center mb-4">
+    <div class="board-header">
       <div>
-        <h1 class="text-2xl font-semibold">Browse Available Gigs</h1>
-        <p class="text-muted mt-1">Find and apply for gigs posted by other users</p>
+        <h1 class="text-2xl font-semibold">Gig Board</h1>
+        <p class="text-muted mt-1">Short notes from people who need a hand. Each stays up for 24 hours.</p>
       </div>
-      <div class="d-flex gap-2">
-        <button
-          @click="showFilters = !showFilters"
-          class="btn btn-outline-secondary"
-        >
-          <i class="fas fa-filter" aria-hidden="true"></i>
-          Filters
-          <span v-if="hasActiveFilters" class="badge bg-primary ms-1">{{ activeFilterCount }}</span>
-        </button>
-        <router-link
-          :to="{ name: 'create-task' }"
-          class="btn btn-primary"
-        >
-          Post a Gig
-        </router-link>
-      </div>
+      <router-link :to="{ name: 'create-task' }" class="btn btn-primary">
+        Post a Note
+      </router-link>
     </div>
 
-    <!-- Search Bar (Always Visible) -->
-    <div class="mb-4">
+    <div class="board-controls">
+      <label class="visually-hidden" for="gig-search">Search gigs</label>
       <input
+        id="gig-search"
         v-model="searchQuery"
-        type="text"
-        class="form-control"
-        placeholder="Search gigs by title or description..."
+        type="search"
+        class="board-input"
+        placeholder="Search notes..."
         @input="debouncedSearch"
       />
+      <label class="visually-hidden" for="gig-sort">Sort notes</label>
+      <select id="gig-sort" v-model="sortBy" class="board-input board-sort" @change="applySort">
+        <option value="created_at">Newest first</option>
+        <option value="deadline">Expiring soon</option>
+      </select>
     </div>
 
-    <!-- Collapsible Filters Section -->
-    <transition name="slide-fade">
-      <div v-if="showFilters" class="card mb-4">
-        <div class="card-body">
-          <!-- Filter Controls -->
-          <div class="row g-3">
-          <!-- Status Filter -->
-          <div class="col-md-3">
-            <label class="form-label">Status</label>
-            <select v-model="filters.status" class="form-select">
-              <option value="">All Statuses</option>
-              <option value="open">Open</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-            </select>
-          </div>
-
-          <!-- Price Range -->
-          <div class="col-md-3">
-            <label class="form-label">Min Fee (UGX)</label>
-            <input
-              v-model.number="filters.minFee"
-              type="number"
-              min="0"
-              class="form-control"
-              placeholder="0"
-            />
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Max Fee (UGX)</label>
-            <input
-              v-model.number="filters.maxFee"
-              type="number"
-              min="0"
-              class="form-control"
-              placeholder="Any"
-            />
-          </div>
-
-          <!-- Sort By -->
-          <div class="col-md-3">
-            <label class="form-label">Sort By</label>
-            <select v-model="sortBy" class="form-select">
-              <option value="created_at">Newest First</option>
-              <option value="deadline">Deadline</option>
-              <option value="fee">Fee Amount</option>
-            </select>
-          </div>
-        </div>
-
-          <div class="mt-3 flex gap-2">
-            <button @click="applyFilters" class="btn btn-primary btn-sm">
-              Apply Filters
-            </button>
-            <button @click="resetFilters" class="btn btn-secondary btn-sm">
-              Reset
-            </button>
-          </div>
-        </div>
-      </div>
-    </transition>
-
-    <!-- Loading State -->
     <div v-if="loading" class="text-center py-5">
       <div class="spinner-border" role="status">
         <span class="visually-hidden">Loading...</span>
       </div>
     </div>
 
-    <!-- Error State -->
-    <div v-else-if="error" class="alert alert-danger">
+    <div v-else-if="error" class="alert alert-danger" role="alert">
       {{ error }}
-      <button @click="fetchTasks" class="btn btn-sm btn-outline-danger ms-3">
-        Retry
-      </button>
+      <button @click="fetchTasks" class="btn btn-sm btn-outline ms-3">Retry</button>
     </div>
 
-    <!-- Results Info -->
-    <div v-else-if="paginatedResult" class="mb-3">
-      <p class="text-muted">
-        Showing {{ (currentPage - 1) * perPage + 1 }} - 
-        {{ Math.min(currentPage * perPage, paginatedResult.total) }} 
-        of {{ paginatedResult.total }} gigs
-      </p>
-    </div>
+    <template v-else-if="paginatedResult">
+      <ul v-if="paginatedResult.tasks.length > 0" class="note-board" aria-label="Open gigs">
+        <li v-for="task in paginatedResult.tasks" :key="task.id">
+          <StickyNote
+            :title="task.title"
+            :body="task.description"
+            :seed="task.id"
+            :to="{ name: 'task-detail', params: { id: task.id } }"
+          >
+            <template #footer>
+              <span>@{{ task.creator?.username || 'someone' }}</span>
+              <span v-if="expiryLabel(task.deadline, now)">{{ expiryLabel(task.deadline, now) }}</span>
+            </template>
+          </StickyNote>
+        </li>
+      </ul>
 
-    <!-- Task List -->
-    <div v-if="paginatedResult && paginatedResult.tasks.length > 0" class="space-y-3">
-      <div
-        v-for="task in paginatedResult.tasks"
-        :key="task.id"
-        class="card hover-shadow"
-      >
-        <div class="card-body">
-          <div class="d-flex justify-content-between align-items-start">
-            <div class="flex-grow-1">
-              <h3 class="h5 mb-2">
-                <router-link
-                  :to="{ name: 'task-detail', params: { id: task.id } }"
-                  class="text-decoration-none"
-                >
-                  {{ task.title }}
-                </router-link>
-              </h3>
-              <p class="task-description text-muted mb-2">{{ task.description }}</p>
-
-              <div class="task-meta d-flex align-items-center gap-3 text-sm text-muted">
-                <span>
-                  <i class="fas fa-user" aria-hidden="true"></i>
-                  {{ task.creator?.username || 'Unknown' }}
-                </span>
-                <span>
-                  <i class="far fa-calendar" aria-hidden="true"></i>
-                  {{ formatDate(task.deadline) }}
-                </span>
-                <span v-if="task.fee" class="text-success fw-bold">
-                                    UGX {{ formatCurrency(task.fee) }}
-                </span>
-              </div>
-            </div>
-            
-            <div class="ms-3">
-              <span :class="['badge', statusBadgeClass(task.status)]">
-                {{ formatStatus(task.status) }}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Empty State -->
-    <div v-else-if="!loading && paginatedResult?.tasks.length === 0" class="card">
-      <div class="card-body text-center py-5">
-        <i class="fas fa-inbox display-1 text-muted" aria-hidden="true"></i>
-        <h3 class="mt-3">No gigs found</h3>
+      <div v-else class="empty-board">
+        <h2 class="h5">No notes on the board</h2>
         <p class="text-muted">
-          {{ searchQuery || hasActiveFilters ? 'Try adjusting your search or filters' : 'Be the first to create a gig!' }}
+          {{ searchQuery ? 'Nothing matches that search.' : 'Be the first to ask for a hand.' }}
         </p>
-        <div class="mt-4">
-          <button v-if="hasActiveFilters" @click="resetFilters" class="btn btn-secondary me-2">
-            Clear Filters
-          </button>
-          <router-link :to="{ name: 'create-task' }" class="btn btn-primary">
-            Create a Gig
-          </router-link>
-        </div>
+        <router-link :to="{ name: 'create-task' }" class="btn btn-primary mt-2">Post a Note</router-link>
       </div>
-    </div>
+    </template>
 
-    <!-- Pagination -->
-    <nav v-if="paginatedResult && paginatedResult.total_pages > 1" class="mt-4">
+    <nav v-if="paginatedResult && paginatedResult.total_pages > 1" class="mt-4" aria-label="Board pages">
       <ul class="pagination justify-content-center">
         <li class="page-item" :class="{ disabled: currentPage === 1 }">
           <button class="page-link" @click="goToPage(currentPage - 1)" :disabled="currentPage === 1">
             Previous
           </button>
         </li>
-        
         <li
           v-for="page in visiblePages"
           :key="page"
           class="page-item"
           :class="{ active: page === currentPage }"
         >
-          <button class="page-link" @click="typeof page === 'number' && goToPage(page)">
+          <button
+            class="page-link"
+            :aria-current="page === currentPage ? 'page' : undefined"
+            @click="typeof page === 'number' && goToPage(page)"
+          >
             {{ page }}
           </button>
         </li>
-        
         <li class="page-item" :class="{ disabled: currentPage === paginatedResult.total_pages }">
           <button
             class="page-link"
@@ -219,11 +100,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { format } from 'date-fns'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { debounce } from 'lodash-es'
 import config from '@/config'
+import StickyNote from '@/components/StickyNote.vue'
+import { expiryLabel } from '@/utils/gigNote'
 
 interface Task {
   id: number
@@ -231,7 +113,6 @@ interface Task {
   description: string
   status: string
   deadline: string
-  fee?: number
   creator?: {
     id: number
     username: string
@@ -248,37 +129,17 @@ interface PaginatedResult {
 
 const authStore = useAuthStore()
 
-// State
 const loading = ref(false)
 const error = ref('')
 const paginatedResult = ref<PaginatedResult | null>(null)
 const searchQuery = ref('')
 const currentPage = ref(1)
-const perPage = ref(10)
-const sortBy = ref('created_at')
-const sortOrder = ref('desc')
-const showFilters = ref(false)
+const perPage = 24
+const sortBy = ref<'created_at' | 'deadline'>('created_at')
 
-// Filters
-const filters = ref({
-  status: '',
-  minFee: null as number | null,
-  maxFee: null as number | null,
-})
-
-// Computed
-const hasActiveFilters = computed(() => {
-  return filters.value.status || 
-         filters.value.minFee !== null || filters.value.maxFee !== null
-})
-
-const activeFilterCount = computed(() => {
-  let count = 0
-  if (filters.value.status) count++
-  if (filters.value.minFee !== null) count++
-  if (filters.value.maxFee !== null) count++
-  return count
-})
+// Countdowns move without refetching
+const now = ref(new Date())
+let clock: ReturnType<typeof setInterval> | undefined
 
 const visiblePages = computed(() => {
   if (!paginatedResult.value) return []
@@ -311,70 +172,29 @@ const visiblePages = computed(() => {
   return rangeWithDots
 })
 
-// Methods
-const formatDate = (date: string) => {
-  return format(new Date(date), 'MMM d, yyyy')
-}
-
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-UG', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount)
-}
-
-const formatStatus = (status: string) => {
-  return status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-}
-
-const statusBadgeClass = (status: string) => {
-  const classes: Record<string, string> = {
-    open: 'bg-success',
-    in_progress: 'bg-warning',
-    completed: 'bg-secondary'
-  }
-  return classes[status] || 'bg-secondary'
-}
-
 const buildQueryParams = () => {
   const params = new URLSearchParams()
-  
-  // Always exclude current user's tasks
+
+  // The board shows live notes from other people
+  params.append('status', 'open')
   if (authStore.user?.id) {
     params.append('exclude_created_by', String(authStore.user.id))
   }
-  
-  // Search
   if (searchQuery.value) {
     params.append('search', searchQuery.value)
   }
-  
-  // Filters
-  if (filters.value.status) {
-    params.append('status', filters.value.status)
-  }
-  if (filters.value.minFee !== null) {
-    params.append('min_fee', String(filters.value.minFee))
-  }
-  if (filters.value.maxFee !== null) {
-    params.append('max_fee', String(filters.value.maxFee))
-  }
-  
-  // Sorting
   params.append('sort_by', sortBy.value)
-  params.append('sort_order', sortOrder.value)
-  
-  // Pagination
+  params.append('sort_order', sortBy.value === 'deadline' ? 'asc' : 'desc')
   params.append('page', String(currentPage.value))
-  params.append('per_page', String(perPage.value))
-  
+  params.append('per_page', String(perPage))
+
   return params
 }
 
 const fetchTasks = async () => {
   loading.value = true
   error.value = ''
-  
+
   try {
     const response = await fetch(`${config.API_URL}/tasks?${buildQueryParams()}`, {
       headers: {
@@ -382,14 +202,14 @@ const fetchTasks = async () => {
         'Content-Type': 'application/json'
       }
     })
-    
+
     if (!response.ok) {
       throw new Error('Failed to load gigs')
     }
-    
+
     paginatedResult.value = await response.json()
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to load tasks'
+    error.value = err instanceof Error ? err.message : 'Failed to load gigs'
     console.error('Error fetching tasks:', err)
   } finally {
     loading.value = false
@@ -401,38 +221,26 @@ const debouncedSearch = debounce(() => {
   fetchTasks()
 }, 300)
 
-const applyFilters = () => {
-  currentPage.value = 1
-  fetchTasks()
-}
-
-const resetFilters = () => {
-  searchQuery.value = ''
-  filters.value = {
-    status: '',
-    minFee: null,
-    maxFee: null,
-  }
-  sortBy.value = 'created_at'
-  sortOrder.value = 'desc'
+const applySort = () => {
   currentPage.value = 1
   fetchTasks()
 }
 
 const goToPage = (page: number) => {
-  if (page < 1 || (paginatedResult.value && page > paginatedResult.value.total_pages)) return
-  currentPage.value = page
-  fetchTasks()
+  if (page >= 1 && page <= (paginatedResult.value?.total_pages || 1)) {
+    currentPage.value = page
+    fetchTasks()
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 }
-
-// Watch for sort changes
-watch([sortBy, sortOrder], () => {
-  currentPage.value = 1
-  fetchTasks()
-})
 
 onMounted(() => {
   fetchTasks()
+  clock = setInterval(() => { now.value = new Date() }, 60_000)
+})
+
+onUnmounted(() => {
+  if (clock) clearInterval(clock)
 })
 </script>
 
@@ -442,138 +250,78 @@ onMounted(() => {
   margin: 0 auto;
 }
 
-.hover-shadow {
-  transition: box-shadow 0.2s ease;
+.board-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
 }
 
-.hover-shadow:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+.board-controls {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
 }
 
-.space-y-3 > * + * {
-  margin-top: 1rem;
-}
-
-.form-control,
-.form-select {
-  width: 100%;
+.board-input {
   padding: 0.5rem 0.75rem;
-  border: 1px solid #ced4da;
-  border-radius: 0.25rem;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 0.375rem;
   font-size: 1rem;
+  background: #fff;
 }
 
-.form-control:focus,
-.form-select:focus {
-  border-color: #86b7fe;
-  outline: 0;
-  box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
-}
-
-.btn {
-  display: inline-block;
-  font-weight: 400;
-  text-align: center;
-  vertical-align: middle;
-  user-select: none;
-  padding: 0.375rem 0.75rem;
-  font-size: 1rem;
-  line-height: 1.5;
-  border-radius: 0.25rem;
-  transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out;
-  text-decoration: none;
-  border: 1px solid transparent;
-  cursor: pointer;
-}
-
-.btn-primary {
-  color: #fff;
-  background-color: var(--color-primary);
+.board-input:focus {
+  outline: none;
   border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
 }
 
-.btn-outline-secondary {
-  color: #6c757d;
-  border-color: #6c757d;
-  background-color: transparent;
+.board-controls .board-input:first-of-type {
+  flex: 1;
+  min-width: 0;
 }
 
-.btn-outline-secondary:hover {
-  color: #fff;
-  background-color: #6c757d;
-  border-color: #6c757d;
+.board-sort {
+  flex: 0 0 auto;
 }
 
-/* Transition for filter dropdown */
-.slide-fade-enter-active {
-  transition: all 0.3s ease-out;
+.note-board {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 0.25rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 1.75rem;
 }
 
-.slide-fade-leave-active {
-  transition: all 0.3s ease-in;
-}
-
-.slide-fade-enter-from {
-  transform: translateY(-10px);
-  opacity: 0;
-}
-
-.slide-fade-leave-to {
-  transform: translateY(-10px);
-  opacity: 0;
-}
-
-.btn-primary:hover {
-  color: #fff;
-  background-color: var(--color-primary-dark);
-  border-color: var(--color-primary-dark);
-}
-
-.btn-secondary {
-  color: #fff;
-  background-color: #6c757d;
-  border-color: #6c757d;
-}
-
-.btn-secondary:hover {
-  color: #fff;
-  background-color: #5c636a;
-  border-color: #565e64;
-}
-
-.btn-sm {
-  padding: 0.25rem 0.5rem;
-  font-size: 0.875rem;
-}
-
-.badge {
-  display: inline-block;
-  padding: 0.35em 0.65em;
-  font-size: 0.75em;
-  font-weight: 700;
-  line-height: 1;
-  color: #fff;
+.empty-board {
   text-align: center;
-  white-space: nowrap;
-  vertical-align: baseline;
+  padding: 3rem 1rem;
+  border: 2px dashed var(--color-border, #e5e7eb);
+  border-radius: 8px;
+}
+
+.alert {
+  padding: 0.75rem 1.25rem;
   border-radius: 0.25rem;
 }
 
-.bg-success {
-  background-color: #198754;
+.alert-danger {
+  color: #842029;
+  background-color: #f8d7da;
+  border: 1px solid #f5c2c7;
 }
 
-.bg-warning {
-  background-color: #ffc107;
-  color: #000;
-}
-
-.bg-secondary {
-  background-color: #6c757d;
+.text-muted {
+  color: var(--color-text-light, #6b7280);
 }
 
 .pagination {
   display: flex;
+  justify-content: center;
   padding-left: 0;
   list-style: none;
 }
@@ -583,24 +331,19 @@ onMounted(() => {
 }
 
 .page-link {
-  position: relative;
   display: block;
   padding: 0.375rem 0.75rem;
   color: var(--color-primary);
-  text-decoration: none;
   background-color: #fff;
   border: 1px solid #dee2e6;
 }
 
 .page-link:hover {
-  z-index: 2;
   color: var(--color-primary-dark);
   background-color: #e9ecef;
-  border-color: #dee2e6;
 }
 
 .page-item.active .page-link {
-  z-index: 3;
   color: #fff;
   background-color: var(--color-primary);
   border-color: var(--color-primary);
@@ -609,201 +352,15 @@ onMounted(() => {
 .page-item.disabled .page-link {
   color: #6c757d;
   pointer-events: none;
-  background-color: #fff;
-  border-color: #dee2e6;
 }
 
-.card {
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-/* .card already pads its content; don't pad twice */
-.card-body {
-  padding: 0;
-}
-
-.alert {
-  padding: 0.75rem 1.25rem;
-  border: 1px solid transparent;
-  border-radius: 0.25rem;
-}
-
-.alert-danger {
-  color: #842029;
-  background-color: #f8d7da;
-  border-color: #f5c2c7;
-}
-
-.text-muted {
-  color: #6c757d;
-}
-
-.text-decoration-none {
-  text-decoration: none;
-}
-
-.flex {
-  display: flex;
-}
-
-.justify-between {
-  justify-content: space-between;
-}
-
-.items-center {
-  align-items: center;
-}
-
-.gap-2 {
-  gap: 0.5rem;
-}
-
-.gap-3 {
-  gap: 1rem;
-}
-
-.mb-2 {
-  margin-bottom: 0.5rem;
-}
-
-.mb-3 {
-  margin-bottom: 1rem;
-}
-
-.mb-4 {
-  margin-bottom: 1.5rem;
-}
-
-.mt-1 {
-  margin-top: 0.25rem;
-}
-
-.mt-3 {
-  margin-top: 1rem;
-}
-
-.mt-4 {
-  margin-top: 1.5rem;
-}
-
-.ms-3 {
-  margin-left: 1rem;
-}
-
-.me-2 {
-  margin-right: 0.5rem;
-}
-
-.py-4 {
-  padding-top: 1.5rem;
-  padding-bottom: 1.5rem;
-}
-
-.py-5 {
-  padding-top: 3rem;
-  padding-bottom: 3rem;
-}
-
-.text-center {
-  text-align: center;
-}
-
-.fw-bold {
-  font-weight: 700;
-}
-
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  margin-right: -0.5rem;
-  margin-left: -0.5rem;
-}
-
-.g-3 {
-  gap: 1rem;
-}
-
-.col-md-3 {
-  flex: 0 0 auto;
-  width: 25%;
-  padding-right: 0.5rem;
-  padding-left: 0.5rem;
-}
-
-/* Long descriptions are read on the gig page; the list shows a preview */
-.task-description {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.task-meta {
-  flex-wrap: wrap;
-  row-gap: 0.25rem;
-}
-
-@media (max-width: 768px) {
-  .col-md-3 {
-    width: 100%;
-    margin-bottom: 1rem;
+@media (max-width: 480px) {
+  .board-controls {
+    flex-direction: column;
   }
 
-  .list-header {
-    flex-wrap: wrap;
-    gap: 0.75rem;
+  .note-board {
+    grid-template-columns: 1fr;
   }
-}
-
-.form-label {
-  display: inline-block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-}
-
-.d-flex {
-  display: flex;
-}
-
-.justify-content-between {
-  justify-content: space-between;
-}
-
-.align-items-start {
-  align-items: flex-start;
-}
-
-.align-items-center {
-  align-items: center;
-}
-
-.flex-grow-1 {
-  flex-grow: 1;
-}
-
-.h5 {
-  font-size: 1.25rem;
-}
-
-.text-sm {
-  font-size: 0.875rem;
-}
-
-.display-1 {
-  font-size: 4rem;
-}
-
-.text-success {
-  color: #198754;
-}
-
-.bi {
-  display: inline-block;
-  vertical-align: -0.125em;
-  margin-right: 0.25rem;
 }
 </style>

@@ -6,6 +6,22 @@ jest.mock('../src/utils/logger', () => ({
 }));
 
 const { filterContent, containsFilteredContent } = require('../src/utils/contentFilter');
+const sharedCases = require('../../shared/contact-filter-cases.json');
+
+describe('shared contact cases (also checked by the backend)', () => {
+  it.each(sharedCases.contacts)('masks contact details in %p', (text) => {
+    const result = filterContent(text);
+    expect(result.hasRemovedContent).toBe(true);
+    // Nothing usable left: no run of 6+ digits, no address, no handle
+    expect(result.filtered).not.toMatch(/\d(?:[\s\-.()]*\d){5,}|@\w/);
+  });
+
+  it.each(sharedCases.clean)('leaves %p unchanged', (text) => {
+    const result = filterContent(text);
+    expect(result.hasRemovedContent).toBe(false);
+    expect(result.filtered).toBe(text.trim());
+  });
+});
 
 describe('contentFilter', () => {
   describe('filterContent', () => {

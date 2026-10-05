@@ -69,6 +69,8 @@ func main() {
 	taskService := services.NewTaskService(taskRepo, applicationRepo, newTaskNotifier())
 	reviewService := services.NewReviewService(reviewRepo, taskRepo, userRepo)
 
+	go expireStaleTasks(taskService)
+
 	authService := services.NewAuthService(userRepo, loginCodeRepo, newCodeSender(), os.Getenv("JWT_SECRET"))
 
 	// Initialize JWT middleware
@@ -152,6 +154,20 @@ func main() {
 
 	if err := r.Run(":" + port); err != nil {
 		log.Fatal("Failed to start server:", err)
+	}
+}
+
+// expireStaleTasks marks gigs that got no application within their 24 hours
+// as expired, checking every minute. Applying also checks the deadline, so
+// the gap between runs can't let a late application in.
+func expireStaleTasks(taskService *services.TaskService) {
+	for range time.Tick(time.Minute) {
+		n, err := taskService.ExpireStaleTasks(context.Background())
+		if err != nil {
+			log.Println("WARNING: expiring stale tasks failed:", err)
+		} else if n > 0 {
+			log.Printf("expired %d task(s) with no applications", n)
+		}
 	}
 }
 

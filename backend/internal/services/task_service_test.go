@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,117 +24,117 @@ func setupTaskService() (*TaskService, *tests.MockTaskRepository, *tests.MockApp
 type sentMessage struct {
 	taskID, from, to uint
 	content          string
+	match            bool
 }
 
 // recordingNotifier captures task event messages instead of posting them.
 type recordingNotifier struct{ sent []sentMessage }
 
 func (r *recordingNotifier) TaskMessage(taskID, from, to uint, content string) {
-	r.sent = append(r.sent, sentMessage{taskID, from, to, content})
+	r.sent = append(r.sent, sentMessage{taskID, from, to, content, false})
+}
+
+func (r *recordingNotifier) TaskMatch(taskID, from, to uint, content string) {
+	r.sent = append(r.sent, sentMessage{taskID, from, to, content, true})
 }
 
 // ==================== CreateTask Tests ====================
 
 func TestCreateTask(t *testing.T) {
-	t.Run("successful task creation", func(t *testing.T) {
+	t.Run("posts a note that runs for 24 hours", func(t *testing.T) {
 		service, taskRepo, _ := setupTaskService()
 		ctx := context.Background()
 
-		deadline := time.Now().Add(48 * time.Hour)
-		input := CreateTaskInput{
-			Title:       "Test Task",
-			Description: "Description",
-			Fee:         100.0,
-			Deadline:    deadline,
-			CreatedBy:   1,
-		}
-
 		taskRepo.On("Create", ctx, mock.MatchedBy(func(task *models.Task) bool {
-			return task.Title == input.Title &&
-				task.Fee == input.Fee &&
+			return task.Title == "Paint my fence" &&
+				task.Description == "Small garden fence, white paint provided." &&
+				task.Fee == 0 &&
 				task.Status == "open"
 		})).Return(nil)
 
-		task, err := service.CreateTask(ctx, input)
+		before := time.Now()
+		task, err := service.CreateTask(ctx, CreateTaskInput{
+			Title:       "  Paint my fence ",
+			Description: "Small garden fence, white paint provided.",
+			CreatedBy:   1,
+		})
 
 		assert.NoError(t, err)
-		assert.NotNil(t, task)
-		assert.Equal(t, input.Title, task.Title)
-		assert.Equal(t, "open", task.Status)
+		assert.WithinDuration(t, before.Add(24*time.Hour), task.Deadline, time.Minute)
 		taskRepo.AssertExpectations(t)
 	})
 
-	t.Run("invalid deadline - too soon", func(t *testing.T) {
-		service, _, _ := setupTaskService()
-		ctx := context.Background()
-
-		// Deadline 1 hour from now (should fail, needs 24h)
-		deadline := time.Now().Add(1 * time.Hour)
-		input := CreateTaskInput{
-			Title:    "Test Task",
-			Deadline: deadline,
+	t.Run("enforces the sticky-note limits", func(t *testing.T) {
+		cases := map[string]struct {
+			title, description string
+			want               error
+		}{
+			"no headline":          {"", "body", ErrHeadlineRequired},
+			"no body":              {"Paint fence", "   ", ErrBodyRequired},
+			"six-word headline":    {"one two three four five six", "body", ErrHeadlineTooLong},
+			"overlong single word": {strings.Repeat("a", 61), "body", ErrHeadlineTooLong},
+			"21-word body":         {"Paint fence", strings.TrimSpace(strings.Repeat("word ", 21)), ErrBodyTooLong},
+			"phone number":         {"Paint fence", "call 0772 123 456", ErrContactDetails},
+			"email in headline":    {"mail john@gmail.com", "body", ErrContactDetails},
 		}
+		for name, tc := range cases {
+			t.Run(name, func(t *testing.T) {
+				service, taskRepo, _ := setupTaskService()
 
-		task, err := service.CreateTask(ctx, input)
+				task, err := service.CreateTask(context.Background(), CreateTaskInput{Title: tc.title, Description: tc.description})
 
-		assert.Error(t, err)
-		assert.Nil(t, task)
-		assert.Equal(t, ErrInvalidDeadline, err)
+				assert.ErrorIs(t, err, tc.want)
+				assert.True(t, IsGigTextError(err))
+				assert.Nil(t, task)
+				taskRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+			})
+		}
+	})
+
+	t.Run("five-word headline and twenty-word body fit", func(t *testing.T) {
+		service, taskRepo, _ := setupTaskService()
+		taskRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+
+		_, err := service.CreateTask(context.Background(), CreateTaskInput{
+			Title:       "one two three four five",
+			Description: strings.TrimSpace(strings.Repeat("word ", 20)),
+		})
+
+		assert.NoError(t, err)
 	})
 
 	t.Run("repository create error", func(t *testing.T) {
 		service, taskRepo, _ := setupTaskService()
 		ctx := context.Background()
 
-		deadline := time.Now().Add(48 * time.Hour)
-		input := CreateTaskInput{
-			Title:    "Test Task",
-			Deadline: deadline,
-		}
-
 		taskRepo.On("Create", ctx, mock.Anything).Return(errors.New("database error"))
 
-		task, err := service.CreateTask(ctx, input)
+		task, err := service.CreateTask(ctx, CreateTaskInput{Title: "Paint fence", Description: "Today"})
 
 		assert.Error(t, err)
+		assert.False(t, IsGigTextError(err))
 		assert.Nil(t, task)
-		taskRepo.AssertExpectations(t)
 	})
 }
 
 // ==================== UpdateTask Tests ====================
 
 func TestUpdateTask(t *testing.T) {
-	t.Run("successful update", func(t *testing.T) {
+	t.Run("successful update keeps the deadline", func(t *testing.T) {
 		service, taskRepo, _ := setupTaskService()
 		ctx := context.Background()
 
-		existingTask := &models.Task{
-			ID:        1,
-			Title:     "Old Title",
-			CreatedBy: 1,
-			Status:    "open",
-		}
-
-		deadline := time.Now().Add(48 * time.Hour)
-		input := UpdateTaskInput{
-			ID:          1,
-			Title:       "New Title",
-			Description: "New Description",
-			Fee:         150.0,
-			Deadline:    deadline,
-			UpdatedBy:   1,
-		}
+		deadline := time.Now().Add(5 * time.Hour)
+		existingTask := &models.Task{ID: 1, Title: "Old Title", CreatedBy: 1, Status: "open", Deadline: deadline}
 
 		taskRepo.On("GetByID", ctx, uint(1)).Return(existingTask, nil)
 		taskRepo.On("Update", ctx, mock.MatchedBy(func(task *models.Task) bool {
-			return task.Title == "New Title" && task.Fee == 150.0
+			return task.Title == "New Title" && task.Deadline.Equal(deadline)
 		})).Return(nil)
 
-		task, err := service.UpdateTask(ctx, input)
+		task, err := service.UpdateTask(ctx, UpdateTaskInput{ID: 1, Title: "New Title", Description: "New note", UpdatedBy: 1})
 
 		assert.NoError(t, err)
-		assert.NotNil(t, task)
 		assert.Equal(t, "New Title", task.Title)
 		taskRepo.AssertExpectations(t)
 	})
@@ -142,12 +143,10 @@ func TestUpdateTask(t *testing.T) {
 		service, taskRepo, _ := setupTaskService()
 		ctx := context.Background()
 
-		input := UpdateTaskInput{ID: 999, UpdatedBy: 1}
 		taskRepo.On("GetByID", ctx, uint(999)).Return(nil, errors.New("not found"))
 
-		task, err := service.UpdateTask(ctx, input)
+		task, err := service.UpdateTask(ctx, UpdateTaskInput{ID: 999, UpdatedBy: 1})
 
-		assert.Error(t, err)
 		assert.Equal(t, ErrTaskNotFound, err)
 		assert.Nil(t, task)
 	})
@@ -156,40 +155,24 @@ func TestUpdateTask(t *testing.T) {
 		service, taskRepo, _ := setupTaskService()
 		ctx := context.Background()
 
-		existingTask := &models.Task{ID: 1, CreatedBy: 1}
-		input := UpdateTaskInput{
-			ID:        1,
-			UpdatedBy: 2, // Different user
-			Deadline:  time.Now().Add(48 * time.Hour),
-		}
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, CreatedBy: 1}, nil)
 
-		taskRepo.On("GetByID", ctx, uint(1)).Return(existingTask, nil)
+		task, err := service.UpdateTask(ctx, UpdateTaskInput{ID: 1, Title: "T", Description: "D", UpdatedBy: 2})
 
-		task, err := service.UpdateTask(ctx, input)
-
-		assert.Error(t, err)
 		assert.Equal(t, ErrUnauthorized, err)
 		assert.Nil(t, task)
 	})
 
-	t.Run("invalid deadline", func(t *testing.T) {
+	t.Run("edits follow the same limits", func(t *testing.T) {
 		service, taskRepo, _ := setupTaskService()
 		ctx := context.Background()
 
-		existingTask := &models.Task{ID: 1, CreatedBy: 1}
-		input := UpdateTaskInput{
-			ID:        1,
-			UpdatedBy: 1,
-			Deadline:  time.Now().Add(1 * time.Hour), // Too soon
-		}
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, CreatedBy: 1}, nil)
 
-		taskRepo.On("GetByID", ctx, uint(1)).Return(existingTask, nil)
+		_, err := service.UpdateTask(ctx, UpdateTaskInput{ID: 1, Title: "Paint fence", Description: "www.myshop.ug", UpdatedBy: 1})
 
-		task, err := service.UpdateTask(ctx, input)
-
-		assert.Error(t, err)
-		assert.Equal(t, ErrInvalidDeadline, err)
-		assert.Nil(t, task)
+		assert.ErrorIs(t, err, ErrContactDetails)
+		taskRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
 	})
 }
 
@@ -305,7 +288,7 @@ func TestCancelTaskDeclinesPendingApplications(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "cancelled", task.Status)
 	appRepo.AssertExpectations(t)
-	assert.Equal(t, []sentMessage{{1, 1, 7, `"Paint fence" was cancelled by the poster, so your application is closed.`}}, notifier.sent)
+	assert.Equal(t, []sentMessage{{1, 1, 7, `"Paint fence" was cancelled by the poster, so your application is closed.`, false}}, notifier.sent)
 }
 
 func TestListTasks(t *testing.T) {
@@ -385,11 +368,10 @@ func TestApplyForTask(t *testing.T) {
 		appRepo.On("Create", ctx, mock.MatchedBy(func(app *models.Application) bool {
 			return app.TaskID == 1 &&
 				app.ApplicantID == 2 &&
-				app.ProposedFee == 50.0 &&
 				app.Status == "pending"
 		})).Return(nil)
 
-		err := service.ApplyForTask(ctx, 1, 2, 50.0, "I can do this")
+		err := service.ApplyForTask(ctx, 1, 2, "I can do this")
 
 		assert.NoError(t, err)
 		taskRepo.AssertExpectations(t)
@@ -402,7 +384,7 @@ func TestApplyForTask(t *testing.T) {
 
 		taskRepo.On("GetByID", ctx, uint(999)).Return(nil, errors.New("not found"))
 
-		err := service.ApplyForTask(ctx, 999, 2, 50.0, "Message")
+		err := service.ApplyForTask(ctx, 999, 2, "Message")
 
 		assert.Error(t, err)
 		assert.Equal(t, ErrTaskNotFound, err)
@@ -415,7 +397,7 @@ func TestApplyForTask(t *testing.T) {
 		closedTask := &models.Task{ID: 1, Status: "in_progress"}
 		taskRepo.On("GetByID", ctx, uint(1)).Return(closedTask, nil)
 
-		err := service.ApplyForTask(ctx, 1, 2, 50.0, "Message")
+		err := service.ApplyForTask(ctx, 1, 2, "Message")
 
 		assert.Error(t, err)
 		assert.Equal(t, ErrTaskNotOpen, err)
@@ -427,7 +409,7 @@ func TestApplyForTask(t *testing.T) {
 
 		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Status: "open", CreatedBy: 2}, nil)
 
-		err := service.ApplyForTask(ctx, 1, 2, 50.0, "Message")
+		err := service.ApplyForTask(ctx, 1, 2, "Message")
 
 		assert.Equal(t, ErrOwnTask, err)
 		appRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
@@ -440,10 +422,103 @@ func TestApplyForTask(t *testing.T) {
 		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Status: "open", CreatedBy: 9}, nil)
 		appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{{ApplicantID: 2}}, nil)
 
-		err := service.ApplyForTask(ctx, 1, 2, 50.0, "Again")
+		err := service.ApplyForTask(ctx, 1, 2, "Again")
 
 		assert.Equal(t, ErrAlreadyApplied, err)
 		appRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	})
+}
+
+func TestApplyForTaskGigRules(t *testing.T) {
+	t.Run("past 24 hours with no applications counts as expired", func(t *testing.T) {
+		service, taskRepo, appRepo := setupTaskService()
+		ctx := context.Background()
+
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Status: "open", CreatedBy: 9, Deadline: time.Now().Add(-time.Minute)}, nil)
+		appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{}, nil)
+
+		err := service.ApplyForTask(ctx, 1, 2, "Interested")
+
+		assert.Equal(t, ErrTaskNotOpen, err)
+		appRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	})
+
+	t.Run("a gig someone applied to stays open past 24 hours", func(t *testing.T) {
+		service, taskRepo, appRepo := setupTaskService()
+		ctx := context.Background()
+
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Status: "open", CreatedBy: 9, Deadline: time.Now().Add(-time.Hour)}, nil)
+		appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{{ApplicantID: 3}}, nil)
+		appRepo.On("Create", ctx, mock.Anything).Return(nil)
+
+		assert.NoError(t, service.ApplyForTask(ctx, 1, 2, "Interested"))
+	})
+
+	t.Run("no contact details before a match", func(t *testing.T) {
+		service, taskRepo, _ := setupTaskService()
+
+		err := service.ApplyForTask(context.Background(), 1, 2, "whatsapp me on 0772123456")
+
+		assert.Equal(t, ErrContactDetails, err)
+		taskRepo.AssertNotCalled(t, "GetByID", mock.Anything, mock.Anything)
+	})
+
+	t.Run("message length is capped", func(t *testing.T) {
+		service, _, _ := setupTaskService()
+
+		err := service.ApplyForTask(context.Background(), 1, 2, strings.Repeat("a", 501))
+
+		assert.Equal(t, ErrMessageTooLong, err)
+	})
+}
+
+func TestExpireStaleTasks(t *testing.T) {
+	service, taskRepo, _ := setupTaskService()
+	ctx := context.Background()
+
+	before := time.Now()
+	taskRepo.On("ExpireUnanswered", ctx, mock.MatchedBy(func(now time.Time) bool {
+		return !now.Before(before.UTC().Add(-time.Second))
+	})).Return(int64(3), nil)
+
+	n, err := service.ExpireStaleTasks(ctx)
+
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), n)
+}
+
+func TestRepostExpiredTask(t *testing.T) {
+	t.Run("expired gig can be reposted for a fresh 24 hours", func(t *testing.T) {
+		service, taskRepo, _ := setupTaskService()
+		ctx := context.Background()
+
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, CreatedBy: 1, Status: "expired", Deadline: time.Now().Add(-time.Hour)}, nil)
+		taskRepo.On("Update", ctx, mock.Anything).Return(nil)
+
+		task, err := service.UpdateTaskStatus(ctx, 1, "open", 1)
+
+		assert.NoError(t, err)
+		assert.Equal(t, "open", task.Status)
+		assert.WithinDuration(t, time.Now().Add(24*time.Hour), task.Deadline, time.Minute)
+	})
+
+	t.Run("expired gig can be cancelled but not started", func(t *testing.T) {
+		for status, ok := range map[string]bool{"cancelled": true, "in_progress": false, "completed": false} {
+			service, taskRepo, appRepo := setupTaskService()
+			ctx := context.Background()
+			taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, CreatedBy: 1, Status: "expired"}, nil)
+			taskRepo.On("Update", ctx, mock.Anything).Return(nil)
+			appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{}, nil)
+			appRepo.On("DeclinePending", ctx, uint(1), uint(0)).Return(nil)
+
+			_, err := service.UpdateTaskStatus(ctx, 1, status, 1)
+
+			if ok {
+				assert.NoError(t, err, status)
+			} else {
+				assert.Equal(t, ErrInvalidStatus, err, status)
+			}
+		}
 	})
 }
 
@@ -451,7 +526,7 @@ func TestApplyForTask(t *testing.T) {
 
 func TestAssignTask(t *testing.T) {
 	pending := func() *models.Application {
-		return &models.Application{ID: 1, TaskID: 1, ApplicantID: 2, ProposedFee: 80, Status: "pending"}
+		return &models.Application{ID: 1, TaskID: 1, ApplicantID: 2, Status: "pending"}
 	}
 
 	t.Run("successful assignment declines the other applicants", func(t *testing.T) {
@@ -468,7 +543,7 @@ func TestAssignTask(t *testing.T) {
 			{ID: 2, ApplicantID: 3, Status: "pending"},
 			{ID: 3, ApplicantID: 4, Status: "declined"},
 		}, nil)
-		taskRepo.On("AssignIfOpen", ctx, uint(1), uint(2), 80.0).Return(true, nil)
+		taskRepo.On("AssignIfOpen", ctx, uint(1), uint(2)).Return(true, nil)
 		appRepo.On("Update", ctx, mock.MatchedBy(func(a *models.Application) bool {
 			return a.Status == "accepted"
 		})).Return(nil)
@@ -479,7 +554,6 @@ func TestAssignTask(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "in_progress", result.Status)
 		assert.Equal(t, uint(2), *result.AssignedTo)
-		assert.Equal(t, 80.0, result.Fee)
 		taskRepo.AssertExpectations(t)
 		appRepo.AssertExpectations(t)
 
@@ -487,7 +561,9 @@ func TestAssignTask(t *testing.T) {
 		// they didn't; the already-declined one hears nothing new.
 		assert.Len(t, notifier.sent, 2)
 		assert.Equal(t, uint(2), notifier.sent[0].to)
-		assert.Contains(t, notifier.sent[0].content, "was accepted at UGX 80")
+		assert.Contains(t, notifier.sent[0].content, "was accepted")
+		assert.True(t, notifier.sent[0].match, "acceptance unlocks contact sharing")
+		assert.False(t, notifier.sent[1].match)
 		assert.Equal(t, uint(3), notifier.sent[1].to)
 		assert.Contains(t, notifier.sent[1].content, "wasn't selected")
 		for _, m := range notifier.sent {
@@ -554,7 +630,7 @@ func TestAssignTask(t *testing.T) {
 		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Status: "open"}, nil)
 		appRepo.On("GetByID", ctx, uint(1)).Return(pending(), nil)
 		appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{}, nil)
-		taskRepo.On("AssignIfOpen", ctx, uint(1), uint(2), 80.0).Return(false, nil)
+		taskRepo.On("AssignIfOpen", ctx, uint(1), uint(2)).Return(false, nil)
 
 		_, err := service.AssignTask(ctx, 1, 1)
 
@@ -829,19 +905,19 @@ func TestListUserTasks(t *testing.T) {
 func TestApplyAndDeclineNotify(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("applying tells the owner, with the fee and message", func(t *testing.T) {
+	t.Run("applying tells the owner, with the message", func(t *testing.T) {
 		taskRepo := new(tests.MockTaskRepository)
 		appRepo := new(tests.MockApplicationRepository)
 		notifier := &recordingNotifier{}
 		service := NewTaskService(taskRepo, appRepo, notifier)
 
-		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Title: "Paint fence", Status: "open", CreatedBy: 9}, nil)
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Title: "Paint fence", Status: "open", CreatedBy: 9, Deadline: time.Now().Add(time.Hour)}, nil)
 		appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{}, nil)
 		appRepo.On("Create", ctx, mock.Anything).Return(nil)
 
-		assert.NoError(t, service.ApplyForTask(ctx, 1, 2, 120000, "  I have a van  "))
+		assert.NoError(t, service.ApplyForTask(ctx, 1, 2, "  I have a van  "))
 
-		assert.Equal(t, []sentMessage{{1, 2, 9, "📩 New application for \"Paint fence\": UGX 120,000 proposed.\n\nI have a van"}}, notifier.sent)
+		assert.Equal(t, []sentMessage{{1, 2, 9, "📩 New application for \"Paint fence\".\n\nI have a van", false}}, notifier.sent)
 	})
 
 	t.Run("declining tells the applicant", func(t *testing.T) {
@@ -855,13 +931,7 @@ func TestApplyAndDeclineNotify(t *testing.T) {
 
 		assert.NoError(t, service.DeclineApplication(ctx, 1, 4))
 
-		assert.Equal(t, []sentMessage{{1, 9, 2, "Your application for \"Paint fence\" wasn't selected this time."}}, notifier.sent)
+		assert.Equal(t, []sentMessage{{1, 9, 2, "Your application for \"Paint fence\" wasn't selected this time.", false}}, notifier.sent)
 	})
-}
-
-func TestFormatUGX(t *testing.T) {
-	for in, want := range map[float64]string{0: "0", 950: "950", 1000: "1,000", 120000: "120,000", 1234567.4: "1,234,567"} {
-		assert.Equal(t, want, formatUGX(in))
-	}
 }
 

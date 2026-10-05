@@ -455,6 +455,7 @@ describe('MessageService', () => {
       const mockMsg = { id: 1, content: 'Hello', task_id: 1, message_type: 'task' };
       mockClient.query
         .mockResolvedValueOnce({})             // BEGIN
+        .mockResolvedValueOnce({ rows: [] })   // contact unlock check
         .mockResolvedValueOnce({ rows: [mockMsg] }) // INSERT message
         .mockResolvedValueOnce({});            // COMMIT
       db.query.mockResolvedValue({ rows: [] }); // updateUserActivity
@@ -474,6 +475,7 @@ describe('MessageService', () => {
       const mockMsg = { id: 2, content: 'Store msg', store_item_id: 5, message_type: 'store' };
       mockClient.query
         .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ rows: [] })   // contact unlock check
         .mockResolvedValueOnce({ rows: [mockMsg] })
         .mockResolvedValueOnce({});
       db.query.mockResolvedValue({ rows: [] });
@@ -502,6 +504,53 @@ describe('MessageService', () => {
 
       expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
       expect(mockClient.release).toHaveBeenCalled();
+    });
+  });
+
+  describe('contact unlocks', () => {
+    const insertedContent = () =>
+      mockClient.query.mock.calls.find(([sql]) => /INSERT INTO messages/.test(sql))[1][5];
+
+    const send = (unlocked, extra = {}) => {
+      mockClient.query.mockImplementation(async (sql) => {
+        if (/FROM contact_unlocks/.test(sql)) return { rows: unlocked ? [{ '?column?': 1 }] : [] };
+        if (/INSERT INTO messages/.test(sql)) return { rows: [{ id: 1 }] };
+        return {};
+      });
+      return messageService.sendMessage({ taskId: 4, senderId: 9, recipientId: 2, content: 'call 0772 123 456', ...extra });
+    };
+
+    it('masks contacts before the two people are matched', async () => {
+      const result = await send(false);
+      expect(insertedContent()).toBe('call [phone removed]');
+      expect(result.hasRemovedContent).toBe(true);
+    });
+
+    it('keeps contacts once they are matched', async () => {
+      const result = await send(true);
+      expect(insertedContent()).toBe('call 0772 123 456');
+      expect(result.hasRemovedContent).toBe(false);
+    });
+
+    it('looks the pair up in either direction', async () => {
+      await send(false);
+      const lookup = mockClient.query.mock.calls.find(([sql]) => /FROM contact_unlocks/.test(sql));
+      expect(lookup[1]).toEqual(['task', 4, 2, 9]);
+    });
+
+    it('never unlocks application chats', async () => {
+      await send(true, { taskId: undefined, applicationId: 3 });
+      expect(insertedContent()).toBe('call [phone removed]');
+    });
+
+    it('records an unlock with the pair ordered', async () => {
+      await messageService.unlockContacts({ storeItemId: '7', userA: 12, userB: '5' });
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO contact_unlocks'), ['store', 7, 5, 12]);
+    });
+
+    it('refuses an unlock without a context or with one person', async () => {
+      await expect(messageService.unlockContacts({ userA: 1, userB: 2 })).rejects.toThrow();
+      await expect(messageService.unlockContacts({ taskId: 1, userA: 2, userB: 2 })).rejects.toThrow();
     });
   });
 

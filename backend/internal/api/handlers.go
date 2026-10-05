@@ -152,11 +152,11 @@ func (h *Handler) respondWithSession(c *gin.Context, status int, user *models.Us
 	})
 }
 
+// createTaskRequest is a sticky note: a short headline and body. There is no
+// fee or deadline; price is agreed in chat and every gig runs 24 hours.
 type createTaskRequest struct {
-	Title       string  `json:"title" binding:"required"`
-	Description string  `json:"description" binding:"required"`
-	Fee         float64 `json:"fee" binding:"required"`
-	Deadline    string  `json:"deadline" binding:"required"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
 }
 
 func (h *Handler) CreateTask(c *gin.Context) {
@@ -165,20 +165,11 @@ func (h *Handler) CreateTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	
-	// Parse the deadline string to time.Time
-	deadline, err := time.Parse(time.RFC3339, req.Deadline)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid deadline format. Must be RFC3339 format (e.g., 2025-05-15T12:00:00Z)"})
-		return
-	}
 
 	userID := c.GetUint("userID")
 	task, err := h.taskService.CreateTask(c.Request.Context(), services.CreateTaskInput{
 		Title:       req.Title,
 		Description: req.Description,
-		Fee:         req.Fee,
-		Deadline:    deadline,
 		CreatedBy:   userID,
 	})
 
@@ -191,13 +182,13 @@ func (h *Handler) CreateTask(c *gin.Context) {
 }
 
 func (h *Handler) GetTask(c *gin.Context) {
-	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	taskID, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task ID"})
 		return
 	}
 
-	task, err := h.taskService.GetTask(c.Request.Context(), uint(taskID))
+	task, err := h.taskService.GetTask(c.Request.Context(), taskID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
 		return
@@ -208,7 +199,7 @@ func (h *Handler) GetTask(c *gin.Context) {
 
 // UpdateTask updates a task with new details
 func (h *Handler) UpdateTask(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
 		return
@@ -219,33 +210,24 @@ func (h *Handler) UpdateTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	
-	// Parse the deadline string to time.Time
-	deadline, err := time.Parse(time.RFC3339, req.Deadline)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid deadline format. Must be RFC3339 format (e.g., 2025-05-15T12:00:00Z)"})
-		return
-	}
 
 	userID := c.GetUint("userID")
 	input := services.UpdateTaskInput{
-		ID:          uint(id),
+		ID:          id,
 		Title:       req.Title,
 		Description: req.Description,
-		Fee:         req.Fee,
-		Deadline:    deadline,
 		UpdatedBy:   userID,
 	}
 
 	task, err := h.taskService.UpdateTask(c.Request.Context(), input)
 	if err != nil {
-		switch err {
-		case services.ErrTaskNotFound:
+		switch {
+		case errors.Is(err, services.ErrTaskNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
-		case services.ErrUnauthorized:
+		case errors.Is(err, services.ErrUnauthorized):
 			c.JSON(http.StatusForbidden, gin.H{"error": "Not authorized to update this task"})
-		case services.ErrInvalidDeadline:
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Deadline must be at least one day (24 hours) in the future"})
+		case services.IsGigTextError(err):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update task"})
 		}
@@ -270,18 +252,6 @@ func (h *Handler) ListTasks(c *gin.Context) {
 		filters["search"] = search
 	}
 	
-	// Add price range filters
-	if minFee := c.Query("min_fee"); minFee != "" {
-		if fee, err := strconv.ParseFloat(minFee, 64); err == nil {
-			filters["min_fee"] = fee
-		}
-	}
-	if maxFee := c.Query("max_fee"); maxFee != "" {
-		if fee, err := strconv.ParseFloat(maxFee, 64); err == nil {
-			filters["max_fee"] = fee
-		}
-	}
-	
 	// Add deadline filter (tasks due before a certain date)
 	if deadline := c.Query("deadline_before"); deadline != "" {
 		filters["deadline_before"] = deadline
@@ -289,7 +259,7 @@ func (h *Handler) ListTasks(c *gin.Context) {
 	
 	// Sorting
 	if sortBy := c.Query("sort_by"); sortBy != "" {
-		filters["sort_by"] = sortBy // fee, deadline, created_at
+		filters["sort_by"] = sortBy // deadline (expiring soonest), created_at
 	}
 	if sortOrder := c.Query("sort_order"); sortOrder != "" {
 		filters["sort_order"] = sortOrder // asc, desc
@@ -322,15 +292,15 @@ func (h *Handler) ListTasks(c *gin.Context) {
 		filters["assigned_to"] = userID
 	} else if createdBy := c.Query("created_by"); createdBy != "" {
 		// Add created_by filter if explicitly provided
-		userID, err := strconv.ParseUint(createdBy, 10, 64)
+		userID, err := parseID(createdBy)
 		if err == nil {
-			filters["created_by"] = uint(userID)
+			filters["created_by"] = userID
 		}
 	} else if excludeCreatedBy := c.Query("exclude_created_by"); excludeCreatedBy != "" {
 		// Exclude tasks created by a specific user (useful for browsing)
-		userID, err := strconv.ParseUint(excludeCreatedBy, 10, 64)
+		userID, err := parseID(excludeCreatedBy)
 		if err == nil {
-			filters["exclude_created_by"] = uint(userID)
+			filters["exclude_created_by"] = userID
 		}
 	}
 	
@@ -386,12 +356,11 @@ func (h *Handler) GetAssignedTasks(c *gin.Context) {
 }
 
 type applyForTaskRequest struct {
-	ProposedFee float64 `json:"proposed_fee" binding:"required"`
-	Message     string  `json:"message" binding:"required"`
+	Message string `json:"message" binding:"required"`
 }
 
 func (h *Handler) ApplyForTask(c *gin.Context) {
-	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	taskID, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task ID"})
 		return
@@ -404,7 +373,7 @@ func (h *Handler) ApplyForTask(c *gin.Context) {
 	}
 
 	userID := c.GetUint("userID")
-	err = h.taskService.ApplyForTask(c.Request.Context(), uint(taskID), userID, req.ProposedFee, req.Message)
+	err = h.taskService.ApplyForTask(c.Request.Context(), taskID, userID, req.Message)
 	switch {
 	case errors.Is(err, services.ErrTaskNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -425,13 +394,13 @@ type respondToApplicationRequest struct {
 }
 
 func (h *Handler) RespondToApplication(c *gin.Context) {
-	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	taskID, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task ID"})
 		return
 	}
 
-	applicationID, err := strconv.ParseUint(c.Param("applicationId"), 10, 64)
+	applicationID, err := parseID(c.Param("applicationId"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid application ID"})
 		return
@@ -446,7 +415,7 @@ func (h *Handler) RespondToApplication(c *gin.Context) {
 	userID := c.GetUint("userID")
 	
 	// Verify the user is the task creator
-	task, err := h.taskService.GetTaskByID(c.Request.Context(), uint(taskID))
+	task, err := h.taskService.GetTaskByID(c.Request.Context(), taskID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
 		return
@@ -460,14 +429,14 @@ func (h *Handler) RespondToApplication(c *gin.Context) {
 	// Update application status
 	var updatedTask *models.Task
 	if req.Status == "accepted" {
-		updatedTask, err = h.taskService.AssignTask(c.Request.Context(), uint(taskID), uint(applicationID))
+		updatedTask, err = h.taskService.AssignTask(c.Request.Context(), taskID, applicationID)
 		if err != nil {
 			respondApplicationError(c, err)
 			return
 		}
 	} else {
 		// For declined, just update the application status
-		err = h.taskService.DeclineApplication(c.Request.Context(), uint(taskID), uint(applicationID))
+		err = h.taskService.DeclineApplication(c.Request.Context(), taskID, applicationID)
 		if err != nil {
 			respondApplicationError(c, err)
 			return
@@ -493,7 +462,7 @@ type createReviewRequest struct {
 }
 
 func (h *Handler) CreateReview(c *gin.Context) {
-	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	taskID, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task ID"})
 		return
@@ -508,7 +477,7 @@ func (h *Handler) CreateReview(c *gin.Context) {
 	reviewerID := c.GetUint("userID")
 	
 	// Fetch the task to determine who should be reviewed
-	task, err := h.taskService.GetTaskByID(c.Request.Context(), uint(taskID))
+	task, err := h.taskService.GetTaskByID(c.Request.Context(), taskID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
 		return
@@ -532,7 +501,7 @@ func (h *Handler) CreateReview(c *gin.Context) {
 	}
 	
 	review, err := h.reviewService.CreateReview(c.Request.Context(), services.CreateReviewInput{
-		TaskID:         uint(taskID),
+		TaskID:         taskID,
 		ReviewerID:     reviewerID,
 		ReviewedUserID: reviewedUserID,
 		Rating:         req.Rating,
@@ -548,13 +517,13 @@ func (h *Handler) CreateReview(c *gin.Context) {
 }
 
 func (h *Handler) GetUserReviews(c *gin.Context) {
-	userID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	userID, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
 		return
 	}
 
-	reviews, err := h.reviewService.GetUserReviews(c.Request.Context(), uint(userID))
+	reviews, err := h.reviewService.GetUserReviews(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -572,13 +541,13 @@ func (h *Handler) GetUserReviews(c *gin.Context) {
 
 // GetUserByID handles retrieving a user by their ID
 func (h *Handler) GetUserByID(c *gin.Context) {
-	userID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	userID, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
 		return
 	}
 
-	user, err := h.userService.GetUser(c.Request.Context(), uint(userID))
+	user, err := h.userService.GetUser(c.Request.Context(), userID)
 	if err != nil {
 		if err == services.ErrUserNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
@@ -651,7 +620,7 @@ type UpdateTaskStatusRequest struct {
 
 // UpdateTaskStatus updates the status of a task
 func (h *Handler) UpdateTaskStatus(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
 		return
@@ -664,7 +633,7 @@ func (h *Handler) UpdateTaskStatus(c *gin.Context) {
 	}
 
 	userID := c.GetUint("userID")
-	task, err := h.taskService.UpdateTaskStatus(c.Request.Context(), uint(id), req.Status, userID)
+	task, err := h.taskService.UpdateTaskStatus(c.Request.Context(), id, req.Status, userID)
 	if err != nil {
 		switch err {
 		case services.ErrTaskNotFound:
@@ -684,14 +653,14 @@ func (h *Handler) UpdateTaskStatus(c *gin.Context) {
 
 // DeleteTask deletes a task
 func (h *Handler) DeleteTask(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
 		return
 	}
 
 	userID := c.GetUint("userID")
-	err = h.taskService.DeleteTask(c.Request.Context(), uint(id), userID)
+	err = h.taskService.DeleteTask(c.Request.Context(), id, userID)
 	if err != nil {
 		switch err {
 		case services.ErrTaskNotFound:
@@ -729,19 +698,19 @@ func (h *Handler) GetServerTime(c *gin.Context) {
 
 // GetTaskApplications retrieves all applications for a specific task
 func (h *Handler) GetTaskApplications(c *gin.Context) {
-	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	taskID, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task ID"})
 		return
 	}
 
-	task, err := h.taskService.GetTaskByID(c.Request.Context(), uint(taskID))
+	task, err := h.taskService.GetTaskByID(c.Request.Context(), taskID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
 		return
 	}
 
-	applications, err := h.taskService.GetTaskApplications(c.Request.Context(), uint(taskID))
+	applications, err := h.taskService.GetTaskApplications(c.Request.Context(), taskID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve applications"})
 		return
@@ -749,6 +718,17 @@ func (h *Handler) GetTaskApplications(c *gin.Context) {
 
 	task.Applications = applications
 	c.JSON(http.StatusOK, taskForViewer(*task, c.GetUint("userID")).Applications)
+}
+
+// parseID parses a database id from a path or query value. 32 bits is far
+// more than any table holds and fits uint on every platform, so the
+// conversion can't overflow.
+func parseID(s string) (uint, error) {
+	n, err := strconv.ParseUint(s, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return uint(n), nil
 }
 
 func respondApplicationError(c *gin.Context, err error) {
@@ -804,13 +784,13 @@ func publicUser(user models.User, viewerID uint) models.User {
 // GetApplicationParticipants lets the chat service check that a user may chat
 // about an application, and with whom.
 func (h *Handler) GetApplicationParticipants(c *gin.Context) {
-	applicationID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	applicationID, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid application ID"})
 		return
 	}
 
-	participants, err := h.taskService.GetApplicationParticipants(c.Request.Context(), uint(applicationID), c.GetUint("userID"))
+	participants, err := h.taskService.GetApplicationParticipants(c.Request.Context(), applicationID, c.GetUint("userID"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 		return
@@ -822,13 +802,13 @@ func (h *Handler) GetApplicationParticipants(c *gin.Context) {
 // GetMyTaskReview reports whether the current user has already reviewed the
 // task, so the UI only offers a review once.
 func (h *Handler) GetMyTaskReview(c *gin.Context) {
-	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	taskID, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task ID"})
 		return
 	}
 
-	review, err := h.reviewService.GetTaskReview(c.Request.Context(), uint(taskID), c.GetUint("userID"))
+	review, err := h.reviewService.GetTaskReview(c.Request.Context(), taskID, c.GetUint("userID"))
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusOK, gin.H{"reviewed": false})
 		return

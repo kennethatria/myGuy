@@ -21,9 +21,59 @@ function conversationFilter({ taskId, applicationId, itemId, userId, otherUserId
   return { sql, params };
 }
 
+/**
+ * The conversation a contact unlock applies to, or null for contexts that
+ * never unlock (application chats). Participants are ordered so the pair
+ * matches whichever of them is sending.
+ */
+function unlockKey({ taskId, storeItemId, userA, userB }) {
+  const [type, id] = taskId ? ['task', taskId] : storeItemId ? ['store', storeItemId] : [null, null];
+  const a = parseInt(userA), b = parseInt(userB);
+  if (!type || !a || !b || a === b) return null;
+  return [type, parseInt(id), Math.min(a, b), Math.max(a, b)];
+}
+
 class MessageService {
   constructor() {
     // Initialization if needed
+  }
+
+  /**
+   * Let two people share contact details in their conversation about a task
+   * or store item: they agreed to work together. Idempotent.
+   */
+  async unlockContacts({ taskId, storeItemId, userA, userB }) {
+    const key = unlockKey({ taskId, storeItemId, userA, userB });
+    if (!key) throw new Error('unlockContacts needs a task or store item and two different users');
+    await db.query(
+      `INSERT INTO contact_unlocks (context_type, context_id, user_low, user_high)
+       VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+      key
+    );
+  }
+
+  /**
+   * Whether the two people in this conversation may share contact details.
+   */
+  async contactsUnlocked(client, { taskId, storeItemId, senderId, recipientId }) {
+    const key = unlockKey({ taskId, storeItemId, userA: senderId, userB: recipientId });
+    if (!key) return false;
+    const result = await client.query(
+      `SELECT 1 FROM contact_unlocks
+       WHERE context_type = $1 AND context_id = $2 AND user_low = $3 AND user_high = $4`,
+      key
+    );
+    return result.rows.length > 0;
+  }
+
+  /**
+   * Contact details are masked until the two people are matched.
+   */
+  async filterFor(client, conversation, content) {
+    if (await this.contactsUnlocked(client, conversation)) {
+      return { filtered: content.trim(), hasRemovedContent: false };
+    }
+    return filterContent(content);
   }
 
   /**
@@ -35,8 +85,9 @@ class MessageService {
     try {
       await client.query('BEGIN');
 
-      // Filter content
-      const { filtered, hasRemovedContent } = filterContent(content);
+      const { filtered, hasRemovedContent } = await this.filterFor(
+        client, { taskId, storeItemId, senderId, recipientId }, content
+      );
 
       // Determine message type (callers may set e.g. 'system_alert')
       const type = messageType || (taskId ? 'task' : (applicationId ? 'application' : 'store'));
@@ -94,8 +145,13 @@ class MessageService {
         throw new Error('Message not found or unauthorized');
       }
 
-      // Filter new content
-      const { filtered, hasRemovedContent } = filterContent(newContent);
+      const original = checkResult.rows[0];
+      const { filtered, hasRemovedContent } = await this.filterFor(client, {
+        taskId: original.task_id,
+        storeItemId: original.store_item_id,
+        senderId: original.sender_id,
+        recipientId: original.recipient_id
+      }, newContent);
 
       // Update message
       const updateQuery = `
