@@ -193,6 +193,29 @@ Codes are sent over SMTP with mandatory STARTTLS (production uses [Resend](https
 
 ---
 
+## How Gigs Work
+
+| Step | Poster | Applicant |
+| :--- | :--- | :--- |
+| **Post** | Creates a gig (title, description, fee, deadline ≥ 24 h away) | — |
+| **Apply** | Gets a 📩 *New application* message in Messages | Applies with a proposed fee and note; can't apply twice or to their own gig |
+| **Talk** | Presses **Message** on an application card to chat with that person | Chats with the poster from the gig page |
+| **Decide** | Accepts one application (the gig moves to *In progress* at the proposed fee) or declines | Gets ✅ *accepted* or *not selected*; everyone else still waiting is told they weren't selected |
+| **Track** | Dashboard shows "*N awaiting your reply*" per gig | Dashboard → **My Applications** shows each application's status |
+| **Finish** | Either party marks it complete; both can then review each other | — |
+
+There is **one private conversation per pair** (poster ↔ each person) per gig, shown on the gig page and in Messages. Posters can cancel a gig (pending applicants are told) and delete gigs that were never assigned.
+
+### Notifications
+
+Everything arrives in **Messages**, live, with an unread badge on the floating chat button and the Messages menu item: chat messages, task events (above), and store booking requests and updates. Event messages are system notices and can't be edited or deleted. There is no email or push notification yet; people who are offline see the unread counts next time they open the app.
+
+### Ratings
+
+A user's profile shows **one rating** combining task reviews (backend) and store ratings received as a seller or buyer (store service), with each review labelled by its gig or item.
+
+---
+
 ## Security
 
 Security is implemented in layers — network, access control, HTTP, runtime, and supply chain. A failure at any one layer is contained by the layers beneath it.
@@ -389,6 +412,9 @@ Terraform variables (`authorized_keys`, `root_password`, `provider_token`) live 
 
 The monitoring instance has no public IP. It is only reachable via the app instance as a ProxyJump host.
 
+- **Compose files:** `docker-compose.yml` is the production stack; `docker-compose.override.yml` adds local-only services (Zipkin) and is loaded automatically by `podman compose` / `docker compose` on your machine. Production runs `podman compose -f docker-compose.yml …`, so traces go to the monitoring server's Zipkin instead.
+- **Journal size:** both servers cap the systemd journal at 100 MB (`/etc/systemd/journald.conf.d/size.conf`, applied by `site.yml` / `monitoring.yml`) to keep memory free on the 1 GB instances.
+
 ### Provisioning with Terraform
 
 ```sh
@@ -474,7 +500,7 @@ The backend services run locally with Podman Compose using pre-built images from
    # IMAGE_TAG=latest
    ```
 
-3. **Start the backend services:**
+3. **Start the backend services** (also starts a local Zipkin from `docker-compose.override.yml`):
    ```sh
    podman compose up -d
    ```

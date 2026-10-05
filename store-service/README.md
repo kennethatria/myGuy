@@ -152,6 +152,10 @@ The service currently stores uploaded images on the **local server filesystem**.
 -   `POST /items/:id/bids`: Place a bid on an auction item.
 -   `POST /items/:id/purchase`: Purchase a fixed-price item.
 -   `POST /items/:id/booking-request`: Request to book an item.
+-   `POST /booking-requests/:id/approve|reject|confirm-received|confirm-delivery|rate-seller|rate-buyer`: Booking workflow steps.
+-   `GET /users/:id/ratings`: Store ratings a user has received (as seller or buyer). Profiles combine these with task reviews into one rating.
+
+User records embedded in responses (e.g. an item's seller) never include the email address.
 
 ---
 

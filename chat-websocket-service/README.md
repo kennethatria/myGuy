@@ -29,11 +29,14 @@ The service operates as a standalone Node.js application, managing all real-time
 
 ## 2. Features
 
--   **Real-time Messaging**: Instant message delivery, typing indicators, and online presence.
--   **Conversation Management**: Groups messages by context (task, store item) and tracks unread counts.
--   **Message Lifecycle**: Supports editing (with history), soft deletion, and read receipts.
--   **Content Filtering**: Automatically removes URLs, emails, and phone numbers from messages to ensure user privacy.
--   **Automated Deletion**: A scheduler (`node-cron`) automatically deletes old messages based on predefined rules (e.g., 6 months after task completion).
+-   **Real-time Messaging**: Instant delivery, typing indicators, and read receipts — sent only to the two participants of a conversation.
+-   **Conversations**: A conversation is a context (task, application or store item) **plus the other person**, so a seller's chats with different buyers of one item, or a task's chats with different applicants, stay separate. Unread counts are tracked per conversation.
+-   **Task events**: The main API posts system messages (new application, accepted, declined, cancelled) into the owner↔applicant task conversation. They are stored as `system_alert` and can't be edited or deleted.
+-   **Booking messages**: The store service posts booking requests, which participants approve, decline and rate from the chat.
+-   **Message Lifecycle**: Editing, soft deletion, and read receipts.
+-   **Content Filtering**: Removes URLs, emails, phone numbers and social handles from messages.
+-   **Automated Deletion**: A scheduler flags old messages on finished tasks for deletion, warning users 30 days ahead.
+-   **Privacy**: Online status isn't broadcast; "last seen" is only shared with people you've exchanged messages with. Application chats are limited to the task owner and the applicant (checked against the main API).
 
 ## 3. Technology Stack
 
@@ -115,34 +118,43 @@ Migrations are handled via npm scripts. They run automatically on service startu
 
 ## 7. WebSocket API
 
-Authentication is performed by passing a JWT in the `auth.token` field upon connection.
+Authentication is performed by passing a JWT in the `auth.token` field upon connection. Each user joins a personal room (`user:<id>`), and all message events are delivered there — never to shared conversation rooms.
+
+A conversation is addressed by its context (`taskId`, `applicationId` or `itemId`) and `otherUserId`.
 
 ### Key Events (Client → Server)
--   `join:conversation`: Join a room for a specific task or item (`{ taskId: 1 }` or `{ itemId: 2 }`).
--   `message:send`: Send a message (`{ recipientId: 1, content: 'Hello!', ... }`).
--   `message:edit`: Edit a message (`{ messageId: 1, content: 'New content' }`).
--   `message:delete`: Soft-delete a message (`{ messageId: 1 }`).
--   `conversation:read`: Mark all messages in a conversation as read (`{ taskId: 1 }`).
--   `conversations:list`: Request the list of all conversations for the user.
--   `messages:get`: Request a paginated history of messages for a conversation.
--   `typing:start` / `typing:stop`: Manage typing indicators.
+-   `message:send`: `{ taskId | applicationId | itemId, recipientId, content }`. Application messages must be between the task owner and the applicant.
+-   `message:edit` / `message:delete`: `{ messageId, content? }` (own messages only; never system messages).
+-   `messages:get`: `{ <context>, otherUserId, limit, offset }` — a page of history.
+-   `conversation:read`: `{ <context>, otherUserId }` — mark it read.
+-   `conversations:list`: the user's conversations with unread counts.
+-   `typing:start` / `typing:stop`: `{ <context>, recipientId }`.
+-   `user:lastseen`: `{ userId }` — answered only for people you've chatted with.
 
 ### Key Events (Server → Client)
--   `message:new`: A new message has arrived.
--   `message:edited` / `message:deleted`: A message was changed.
--   `user:typing` / `user:stopped-typing`: Typing indicator updates.
--   `conversations:list`: The user's list of conversations.
--   `error`: An error occurred (`{ message: 'Error description' }`).
+-   `message:new` / `message:sent`: a message (including system and booking messages).
+-   `message:edited` / `message:deleted` / `message:updated` / `message:read`.
+-   `messages:list`: `{ <context>, otherUserId, messages, offset, totalCount }`.
+-   `conversation:marked-read`, `conversations:list`, `conversations:refresh`.
+-   `user:typing` / `user:stopped-typing`: `{ userId, <context> }`.
+-   `error`: `{ message }`.
 
 ## 8. REST API
 
--   `GET /health`: Health check endpoint to verify the service is running.
--   `GET /api/v1/deletion-warnings`: Get pending deletion warnings for the authenticated user.
--   `POST /api/v1/deletion-warnings/:id/shown`: Mark a warning as acknowledged.
+-   `GET /health`
+-   `GET /api/v1/conversations` — conversations (HTTP fallback).
+-   `GET|POST /api/v1/tasks/:taskId/messages`, `GET|POST /api/v1/applications/:applicationId/messages`, `GET|POST /api/v1/store-messages…` — message history and sending over HTTP.
+-   `GET /api/v1/users/:id/last-seen` — only for people you've chatted with.
+-   `GET /api/v1/deletion-warnings`, `POST /api/v1/deletion-warnings/:id/shown`.
+-   `POST /api/v1/booking-action` — approve/decline/confirm/rate a booking from chat.
+
+### Internal (service-to-service, `X-Internal-API-Key: $INTERNAL_API_KEY`)
+-   `POST /api/v1/internal/booking-created` — from the store service.
+-   `POST /api/v1/internal/task-message` — from the main API: `{ task_id, sender_id, recipient_id, content }`, stored as `system_alert`.
 
 ## 9. Message Lifecycle
 
-1.  **Creation**: A client sends `message:send`. The server filters content, saves to the `messages` table, and emits `message:new` to the recipient.
+1.  **Creation**: A client sends `message:send`. The server filters content, saves to the `messages` table, and emits `message:new` to the recipient's and the sender's personal rooms.
 2.  **Editing**: A client sends `message:edit`. The server verifies ownership, updates the record, and emits `message:edited`.
 3.  **Deletion**: A client sends `message:delete`. The server soft-deletes the message (replaces content with "[Message deleted]") and emits `message:deleted`.
 4.  **Auto-Deletion**: A daily cron job checks for old conversations tied to completed/inactive tasks and schedules them for permanent deletion, notifying users 30 days in advance.
@@ -150,7 +162,7 @@ Authentication is performed by passing a JWT in the `auth.token` field upon conn
 ## 10. Security & Filtering
 
 -   **Authentication**: All socket connections and REST endpoints are protected and require a valid JWT.
--   **Authorization**: Business logic verifies that users can only access or modify their own messages and conversations.
+-   **Authorization**: Users only ever receive and read messages they sent or received; application chats are verified against the main API (`GET /applications/:id/participants`), failing closed if it is unreachable.
 -   **Content Filtering**: To protect user privacy, the following patterns are automatically removed from message content before storage:
     -   URLs (e.g., `http://example.com`)
     -   Emails (e.g., `user@example.com`)

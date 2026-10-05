@@ -1,255 +1,51 @@
-# MyGuy Infrastructure - Terraform Configuration
+# MyGuy Infrastructure (Terraform)
 
-This directory contains Terraform configuration for deploying MyGuy application infrastructure on Akamai Cloud (Linode).
+Terraform for MyGuy's Akamai Cloud (Linode) infrastructure. State and variables live in **HCP Terraform** (organization `myGuy`, workspace `dev-myguy`). Server configuration and app deployment are done by Ansible (`../configuration_management`); see the root `README.md` for the full picture.
 
-## 🏗️ Architecture Overview
+## What it creates
 
-```
-Production Environment (€39/month):
-├── 1x Linode Standard 2GB Instance (€9/month)
-├── 1x Managed PostgreSQL 1GB (€15/month)
-├── 1x Object Storage 250GB (€5/month)
-├── 1x Load Balancer (€10/month)
-└── SSL Certificate (Free - Let's Encrypt)
+| Resource | Purpose |
+| :--- | :--- |
+| `linode_vpc.main` + subnet `10.0.0.0/24` | Private network between the two servers |
+| `linode_instance.my_guy_instance` (`g6-nanode-1`, VPC `10.0.0.2`) | App server: nginx + WAF, API, store, chat, PostgreSQL, Redis |
+| `linode_instance.zipkin_instance` (`g6-nanode-1`, VPC `10.0.0.3`) | Monitoring server: Zipkin, Prometheus, Loki, Grafana, Umami (no public ingress) |
+| `linode_nodebalancer.main` | Public entry point; the domain's DNS `A` record points here |
+| NodeBalancer config `:80` (HTTP mode) | Health-checks `/healthcheck/` expecting body `healthcheck`; adds `X-Forwarded-For` |
+| NodeBalancer config `:443` (TCP, **PROXY protocol v2**) | TLS passthrough; nginx must listen with `proxy_protocol` |
+| `linode_firewall.my_firewall` | App server: 80, 443, 22 public; node_exporter/Falco metrics from the VPC |
+| `linode_firewall.zipkin_firewall` | Monitoring server: Zipkin, Prometheus, Loki, Grafana, Umami (3001), SSH — VPC only |
 
-Staging Environment (€7/month):
-├── 1x Linode Nanode 1GB Instance (€4.50/month)
-├── Shared PostgreSQL (Production)
-├── Object Storage 50GB (€2.50/month)
-└── No Load Balancer
-```
+Outputs include `instance_ip_address`, `nodebalancer_ipv4`, `zipkin_vpc_ip` and `zipkin_url`.
 
-## 📋 Prerequisites
+## Variables (set in the HCP Terraform workspace)
 
-1. **Akamai Cloud Account**: Set up at [cloud.linode.com](https://cloud.linode.com)
-2. **Domain**: Configure `myguy.work` DNS to point to your infrastructure
-3. **GitHub Secrets**: Required secrets for automated deployment
-4. **SSH Key Pair**: For server access
+| Variable | Notes |
+| :--- | :--- |
+| `provider_token` | Akamai API token (sensitive). Needs **Linodes, NodeBalancers, Firewalls, VPCs, IPs: Read/Write** and **Events: Read** — without Events, instance create/delete fails with `401 ... not authorized to use this endpoint`. |
+| `authorized_keys` | **Single-line SSH public key** (`ssh-ed25519 AAAA… comment`), installed for root. Validated: a private key or multi-line value fails at plan time. Its private half is the GitHub `dev` secret `SSH_PRIVATE_KEY`. |
+| `root_password` | Root password (sensitive), used for the Akamai LISH console. |
+| `region`, `infra_name`, `environment` | Defaults in `variables.tf`. |
 
-## 🔐 Required Secrets
+## Running it
 
-Configure these secrets in your GitHub repository:
+Normally through GitHub Actions: **Terraform** workflow (`.github/workflows/component.infra.tf.deploy.yml`) with `apply`. It is deliberately manual — review the plan first.
 
-### Akamai/Linode Secrets
-```bash
-LINODE_TOKEN=your_linode_api_token
-LINODE_OBJECT_STORAGE_ACCESS_KEY=your_object_storage_access_key
-LINODE_OBJECT_STORAGE_SECRET_KEY=your_object_storage_secret_key
-```
+Locally (requires `terraform login` to HCP Terraform):
 
-### SSH Access
-```bash
-SSH_PUBLIC_KEY=ssh-rsa AAAAB3NzaC1yc2E...
-SSH_PRIVATE_KEY=-----BEGIN OPENSSH PRIVATE KEY-----
-```
-
-### Application Secrets
-```bash
-JWT_SECRET=your_staging_jwt_secret_32_chars
-JWT_SECRET_PRODUCTION=your_production_jwt_secret_32_chars
-POSTGRES_PASSWORD=your_staging_db_password
-POSTGRES_PASSWORD_PRODUCTION=your_production_db_password
-```
-
-## 🚀 Deployment Workflows
-
-### Staging Deployment (Cost-Optimized)
-- **Create Staging**: PR opened to `main` branch → Deploy to `staging.myguy.work`
-- **Update Staging**: PR updated → Redeploy staging
-- **Destroy Staging**: PR closed → Automatic destruction (saves €7/month)
-- **Recreate Staging**: PR reopened → Automatic recreation
-- **Cost**: ~€7/month (only when PRs are active)
-- **Features**: Shared database, no load balancer
-
-### Production Deployment (Automatic)
-- **Trigger**: Push to `main` branch (PR merged)
-- **Process**: 
-  1. Destroy staging environment first (if exists)
-  2. Deploy to production `myguy.work`
-  3. Run health checks and tests
-- **Cost**: ~€39/month
-- **Features**: Dedicated database, load balancer, SSL
-
-### Cost Optimization Strategy
-- **Development**: €46/month (staging + production)
-- **Production Only**: €39/month (staging destroyed)
-- **Average**: ~€40/month (staging only during testing)
-
-## 🛠️ Manual Deployment
-
-### Initial Setup
-
-1. **Generate SSH Key Pair**:
-```bash
-ssh-keygen -t rsa -b 4096 -f ~/.ssh/myguy_deploy
-```
-
-2. **Configure Terraform Backend**:
-```bash
-# Create Object Storage bucket for Terraform state
-# This should be done manually via Linode console first
-```
-
-3. **Initialize Terraform**:
-```bash
-cd terraform
+```sh
+cd infra
 terraform init
-```
-
-### Deploy Staging
-```bash
-terraform workspace new staging
-terraform apply -var-file="environments/staging/terraform.tfvars"
-```
-
-### Deploy Production
-```bash
-terraform workspace new production
-terraform apply -var-file="environments/production/terraform.tfvars"
-```
-
-## 📁 Directory Structure
-
-```
-terraform/
-├── main.tf                    # Main infrastructure resources
-├── variables.tf              # Input variables
-├── outputs.tf               # Output values
-├── providers.tf             # Provider configuration
-├── scripts/
-│   └── setup.sh            # Instance initialization script
-├── environments/
-│   ├── staging/
-│   │   └── terraform.tfvars # Staging configuration
-│   └── production/
-│       └── terraform.tfvars # Production configuration
-└── README.md               # This file
-```
-
-## 🔧 Configuration Files
-
-### Environment Variables
-The setup script creates `/opt/myguy/.env` with:
-- Database connection strings
-- JWT secrets
-- Object storage configuration
-- Application URLs
-
-### Nginx Configuration
-- Reverse proxy for all services
-- SSL termination with Let's Encrypt
-- Load balancing (production only)
-
-### Docker Compose Overrides
-- `docker-compose.staging.yml`: Staging-specific settings
-- `docker-compose.production.yml`: Production optimizations
-
-## 🌐 DNS Configuration
-
-### Production Setup
-```
-Type: A
-Name: myguy.work
-Value: <load_balancer_ip>
-
-Type: A  
-Name: staging.myguy.work
-Value: <staging_instance_ip>
-```
-
-### SSL Certificates
-- Automatically provisioned via Let's Encrypt
-- Renewed automatically via certbot
-- Staging uses Let's Encrypt staging environment
-
-## 📊 Cost Breakdown
-
-### Production (€39/month)
-| Service | Specification | Cost |
-|---------|--------------|------|
-| Compute Instance | 2GB RAM, 1 CPU | €9.00 |
-| PostgreSQL | 1GB Managed DB | €15.00 |
-| Object Storage | 250GB | €5.00 |
-| Load Balancer | HTTP/HTTPS | €10.00 |
-| **Total** | | **€39.00** |
-
-### Staging (€7/month)
-| Service | Specification | Cost |
-|---------|--------------|------|
-| Compute Instance | 1GB RAM, 1 CPU | €4.50 |
-| Object Storage | 50GB | €2.50 |
-| Database | Shared with Prod | €0.00 |
-| **Total** | | **€7.00** |
-
-## 🔍 Monitoring & Maintenance
-
-### Health Checks
-- Application endpoints: `/health`
-- Database connectivity
-- Object storage access
-
-### Logging
-- Application logs: `docker compose logs`
-- System logs: `journalctl`
-- Nginx logs: `/var/log/nginx/`
-
-### Backup Strategy
-- Database: Managed service backups (disabled for cost)
-- Application: Git repository + Docker images
-- User uploads: Object storage (365-day lifecycle)
-
-## 🚨 Troubleshooting
-
-### Common Issues
-
-1. **Terraform State Lock**:
-```bash
-terraform force-unlock <lock_id>
-```
-
-2. **SSL Certificate Issues**:
-```bash
-sudo certbot renew --dry-run
-```
-
-3. **Service Not Starting**:
-```bash
-ssh root@<instance_ip>
-docker compose logs <service_name>
-```
-
-4. **Database Connection**:
-```bash
-docker compose exec api go run cmd/health/main.go
-```
-
-### Emergency Procedures
-
-1. **Rollback Deployment**:
-```bash
-ssh root@<instance_ip>
-cd /opt/myguy-backup
-docker compose up -d
-```
-
-2. **Scale Up Instance**:
-```bash
-# Update terraform.tfvars with larger instance type
+terraform plan
 terraform apply
 ```
 
-## 📞 Support
+## Gotchas
 
-For infrastructure issues:
-1. Check GitHub Actions logs
-2. Review Terraform state
-3. SSH to instances for debugging
-4. Contact Akamai Cloud support if needed
+- **Changing `authorized_keys` or the instance image replaces the servers.** Akamai applies keys only at creation. All data on them (including PostgreSQL) is lost; DNS keeps working because it points at the NodeBalancer.
+- **NodeBalancer ↔ nginx are coupled.** The `:443` PROXY protocol setting and nginx's `listen 443 ssl proxy_protocol` must change together, and the `:80` health check must never be redirected — otherwise the NodeBalancer marks the server down and returns 503.
+- **After servers are rebuilt**, run the **Run ansible** workflow with scope `full`, and clear old SSH host keys locally (`ssh-keygen -R <ip>`, `ssh-keygen -R 10.0.0.3`).
+- **Destroy is irreversible.** The scheduled workflow trigger runs `destroy` (see the workflow file) — check before enabling schedules.
 
-## 🔄 Updates
+## Unused legacy files
 
-To update infrastructure:
-1. Modify Terraform files
-2. Create PR (triggers plan)
-3. Merge to main (triggers apply)
-4. Monitor deployment in GitHub Actions
+`environments/`, `envs/*.tfvars` and `scripts/setup.sh` come from an earlier staging/production design and are not used by the workflows. The real variable values are in the HCP Terraform workspace.

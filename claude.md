@@ -23,6 +23,8 @@ MyGuy is a microservices task marketplace: users post tasks, apply, chat in real
 4. **User Privacy & Content Filtering** — The Chat Service must strip URLs, emails, phone numbers, and social handles from messages.
 5. **Service Blueprint Pattern** — New Go code follows handlers → services → repositories, with tests. `store-service` is the reference; the backend now follows it too (repository and auth tests run on in-memory SQLite).
 6. **Unified Message Table** — Chat uses a single `messages` table for all message types, distinguished by `task_id` / `store_item_id` / `application_id`.
+7. **Conversation Identity** — A conversation is *(context type, context id, other participant)*: frontend `conversationKey()` in `stores/chat.ts`, backend `conversationFilter()` in `messageService.js`. Never key by a bare id (task/application/item ids overlap; items and tasks have many counterparts). Deliver message events only to `user:<id>` rooms, never shared conversation rooms.
+8. **Events Are Messages** — Task events (new application, accepted, declined, cancelled) are posted by the backend (`internal/chatnotify`, best effort) to chat's `POST /internal/task-message` and stored as `system_alert` (not editable/deletable). The gig page has one poster↔person conversation per pair; there are no per-application threads. Application chats that do exist are authorized via `GET /applications/:id/participants`.
 
 ## Engineering Docs
 
