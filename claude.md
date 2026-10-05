@@ -41,7 +41,7 @@ podman compose logs api | grep "login code"   # sign-in codes when SMTP_HOST is 
 
 - **Backend**: `cd backend && go run cmd/api/main.go`. Tests: `go test ./...`. CI enforces ≥70% coverage on `./internal/...` and the backend sits just above it — add tests with new code.
 - **Store Service**: `cd store-service && make test-coverage-check` (enforces ≥70%). `make help` for all targets.
-- **Chat Service**: `cd chat-websocket-service && npm run dev`. Migrations: `npm run migrate:create <name>` then `npm run migrate`. `npm test` rewrites the committed `coverage/` report — restore it (`git checkout -- coverage`) rather than committing the churn.
+- **Chat Service**: `cd chat-websocket-service && npm run dev`. Migrations: `npm run migrate:create <name>` then `npm run migrate`. Coverage reports (`coverage/`, `coverage.out`) are generated and git-ignored.
 - **Frontend**: `cd frontend && npm run dev`. `npm run test:unit`, `npm run test:e2e`, `npm run type-check`. `npm run lint` runs `eslint --fix` and may edit files.
 - **Go modules**: `vendor/` is git-ignored; CI runs with `GOWORK=off` and downloads modules. Locally `go.work` hides a stale `vendor/` — to reproduce CI, use `GOWORK=off GOFLAGS=-mod=mod go test ./internal/...`.
 

@@ -26,3 +26,9 @@ terraform.tfstate.backup
 
 store-service/vendor
 backend/vendor
+
+# Build outputs and generated reports (CI builds and measures from source)
+store-service/api
+store-service/store-service
+coverage/
+*.out
