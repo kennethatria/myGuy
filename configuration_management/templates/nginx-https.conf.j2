@@ -86,6 +86,20 @@ server {
         proxy_set_header X-Forwarded-For $remote_addr;
     }
 
+    # Build files are named by content hash, so they never change: cache them
+    # for good, and 404 a missing one (an old build's) instead of answering
+    # with index.html, which a browser can't run as a script.
+    location /assets/ {
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    # The page itself points at the current build's files: always revalidate
+    # it, so tabs pick up a deploy on their next load.
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }
