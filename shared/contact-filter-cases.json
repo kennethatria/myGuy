@@ -1,0 +1,32 @@
+{
+  "_comment": "Shared cases for contact detection. The backend (Go, gig text) and the chat service (Node, messages) both test against this file so their filters agree.",
+  "contacts": [
+    "call 0772 123 456",
+    "0772-123-456",
+    "0772123456",
+    "+256 772 123456",
+    "+256772123456",
+    "(0772) 123 456",
+    "ring 772 123 456",
+    "email john@gmail.com",
+    "JOHN.DOE@Example.co.ug",
+    "ig: @john_doe",
+    "follow @kampala.fixit",
+    "see https://example.com/me",
+    "www.myshop.ug",
+    "visit john.dev/portfolio",
+    "check myguy-fixers.com"
+  ],
+  "clean": [
+    "Paint my fence",
+    "Pay UGX 120,000 by Friday",
+    "20k for two hours",
+    "UGX 20 000",
+    "Need 3 boxes moved on 10/10/2026",
+    "Plot 12, Ntinda, near Shell",
+    "Done by 5pm. Thanks!",
+    "Budget 1,500,000",
+    "e.g. tiles, paint",
+    "meet at 2:30"
+  ]
+}

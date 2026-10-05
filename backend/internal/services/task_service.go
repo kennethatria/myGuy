@@ -4,18 +4,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
+	"myguy/internal/contacts"
 	"myguy/internal/models"
 	"myguy/internal/repositories"
-	"strconv"
 	"strings"
 	"time"
+)
+
+// A gig is a short sticky note, live for gigLifetime unless someone applies.
+const (
+	gigLifetime       = 24 * time.Hour
+	headlineMaxWords  = 5
+	bodyMaxWords      = 20
+	headlineMaxChars  = 60
+	bodyMaxChars      = 200
+	applicationMaxLen = 500
 )
 
 var (
 	ErrTaskNotFound        = errors.New("task not found")
 	ErrUnauthorized        = errors.New("unauthorized")
-	ErrInvalidDeadline     = errors.New("deadline must be at least one day (24 hours) in the future")
 	ErrTaskNotOpen         = errors.New("task is not open for applications")
 	ErrInvalidStatus       = errors.New("invalid status transition")
 	ErrApplicationNotFound = errors.New("application not found")
@@ -23,18 +31,59 @@ var (
 	ErrOwnTask             = errors.New("you cannot apply to your own task")
 	ErrAlreadyApplied      = errors.New("you have already applied to this task")
 	ErrTaskWasAssigned     = errors.New("a task that was assigned can't be deleted; cancel it instead")
+
+	// Gig text errors: the request is fine, the words need changing.
+	ErrHeadlineRequired = errors.New("headline is required")
+	ErrBodyRequired     = errors.New("note is required")
+	ErrHeadlineTooLong  = fmt.Errorf("headline can be at most %d words", headlineMaxWords)
+	ErrBodyTooLong      = fmt.Errorf("note can be at most %d words", bodyMaxWords)
+	ErrMessageTooLong   = fmt.Errorf("message can be at most %d characters", applicationMaxLen)
+	ErrContactDetails   = errors.New("remove phone numbers, emails, links and handles; you can share them in chat once you've agreed on the gig")
 )
+
+// IsGigTextError reports whether err is about the gig or application text.
+func IsGigTextError(err error) bool {
+	for _, e := range []error{ErrHeadlineRequired, ErrBodyRequired, ErrHeadlineTooLong, ErrBodyTooLong, ErrMessageTooLong, ErrContactDetails} {
+		if errors.Is(err, e) {
+			return true
+		}
+	}
+	return false
+}
+
+// validateGigText enforces the sticky-note limits and keeps contact details
+// off public gigs. It returns the trimmed headline and body.
+func validateGigText(title, description string) (string, string, error) {
+	title, description = strings.TrimSpace(title), strings.TrimSpace(description)
+	switch {
+	case title == "":
+		return "", "", ErrHeadlineRequired
+	case description == "":
+		return "", "", ErrBodyRequired
+	case len(strings.Fields(title)) > headlineMaxWords || len(title) > headlineMaxChars:
+		return "", "", ErrHeadlineTooLong
+	case len(strings.Fields(description)) > bodyMaxWords || len(description) > bodyMaxChars:
+		return "", "", ErrBodyTooLong
+	case contacts.Contains(title) || contacts.Contains(description):
+		return "", "", ErrContactDetails
+	}
+	return title, description, nil
+}
 
 // TaskNotifier tells the people involved about task events by posting a
 // message into their conversation about the task. Implementations must not
 // block or fail the caller (chat is best effort).
 type TaskNotifier interface {
 	TaskMessage(taskID, senderID, recipientID uint, content string)
+	// TaskMatch posts the acceptance message and lets the two people share
+	// contact details in that conversation from now on.
+	TaskMatch(taskID, senderID, recipientID uint, content string)
 }
 
 type noopNotifier struct{}
 
 func (noopNotifier) TaskMessage(uint, uint, uint, string) {}
+func (noopNotifier) TaskMatch(uint, uint, uint, string)   {}
 
 type TaskService struct {
 	taskRepo        repositories.TaskRepository
@@ -57,8 +106,6 @@ func NewTaskService(taskRepo repositories.TaskRepository, applicationRepo reposi
 type CreateTaskInput struct {
 	Title       string
 	Description string
-	Fee         float64
-	Deadline    time.Time
 	CreatedBy   uint
 }
 
@@ -66,31 +113,19 @@ type UpdateTaskInput struct {
 	ID          uint
 	Title       string
 	Description string
-	Fee         float64
-	Deadline    time.Time
 	UpdatedBy   uint
 }
 
 func (s *TaskService) CreateTask(ctx context.Context, input CreateTaskInput) (*models.Task, error) {
-	// Compare dates in UTC
-	now := time.Now().UTC()
-	minDeadline := now.AddDate(0, 0, 1) // Add 1 day to current time
-	deadline := input.Deadline.UTC()
-
-	fmt.Printf("CreateTask: Now=%v, MinDeadline=%v, ProvidedDeadline=%v\n", 
-		now, minDeadline, deadline)
-
-	if deadline.Before(minDeadline) {
-		fmt.Printf("Validation error: Deadline (%v) is before minimum deadline (%v)\n", 
-			deadline, minDeadline)
-		return nil, ErrInvalidDeadline
+	title, description, err := validateGigText(input.Title, input.Description)
+	if err != nil {
+		return nil, err
 	}
 
 	task := &models.Task{
-		Title:       input.Title,
-		Description: input.Description,
-		Fee:         input.Fee,
-		Deadline:    deadline,
+		Title:       title,
+		Description: description,
+		Deadline:    time.Now().UTC().Add(gigLifetime),
 		CreatedBy:   input.CreatedBy,
 		Status:      "open",
 	}
@@ -112,20 +147,13 @@ func (s *TaskService) UpdateTask(ctx context.Context, input UpdateTaskInput) (*m
 		return nil, ErrUnauthorized
 	}
 
-	// Require deadline to be at least one day in the future
-	now := time.Now().UTC()
-	minDeadline := now.AddDate(0, 0, 1)
-	
-	if input.Deadline.UTC().Before(minDeadline) {
-		fmt.Printf("Validation error: Deadline (%v) is before minimum deadline (%v)\n", 
-			input.Deadline.UTC(), minDeadline)
-		return nil, ErrInvalidDeadline
+	title, description, err := validateGigText(input.Title, input.Description)
+	if err != nil {
+		return nil, err
 	}
 
-	task.Title = input.Title
-	task.Description = input.Description
-	task.Fee = input.Fee
-	task.Deadline = input.Deadline
+	task.Title = title
+	task.Description = description
 
 	if err := s.taskRepo.Update(ctx, task); err != nil {
 		return nil, err
@@ -216,7 +244,18 @@ func (s *TaskService) ListUserTasks(ctx context.Context, userID uint, role strin
 	return s.taskRepo.ListByUser(ctx, userID, role)
 }
 
-func (s *TaskService) ApplyForTask(ctx context.Context, taskID, applicantID uint, proposedFee float64, message string) error {
+// ApplyForTask records interest in an open gig. Price and details are agreed
+// in chat, so an application is just a short message.
+func (s *TaskService) ApplyForTask(ctx context.Context, taskID, applicantID uint, message string) error {
+	message = strings.TrimSpace(message)
+	if len(message) > applicationMaxLen {
+		return ErrMessageTooLong
+	}
+	// Applicant and poster aren't matched yet, so no contact details.
+	if contacts.Contains(message) {
+		return ErrContactDetails
+	}
+
 	task, err := s.taskRepo.GetByID(ctx, taskID)
 	if err != nil {
 		return ErrTaskNotFound
@@ -238,11 +277,15 @@ func (s *TaskService) ApplyForTask(ctx context.Context, taskID, applicantID uint
 			return ErrAlreadyApplied
 		}
 	}
+	// Past its 24 hours with nobody interested: expired, even if the
+	// expiry job hasn't marked it yet.
+	if len(existing) == 0 && time.Now().After(task.Deadline) {
+		return ErrTaskNotOpen
+	}
 
 	application := &models.Application{
 		TaskID:      taskID,
 		ApplicantID: applicantID,
-		ProposedFee: proposedFee,
 		Message:     message,
 		Status:      "pending",
 	}
@@ -251,16 +294,16 @@ func (s *TaskService) ApplyForTask(ctx context.Context, taskID, applicantID uint
 		return err
 	}
 
-	content := fmt.Sprintf("📩 New application for \"%s\": UGX %s proposed.", task.Title, formatUGX(proposedFee))
-	if trimmed := strings.TrimSpace(message); trimmed != "" {
-		content += "\n\n" + trimmed
+	content := fmt.Sprintf("📩 New application for \"%s\".", task.Title)
+	if message != "" {
+		content += "\n\n" + message
 	}
 	s.notifier.TaskMessage(taskID, applicantID, task.CreatedBy, content)
 	return nil
 }
 
-// AssignTask accepts an application: the applicant gets the task at their
-// proposed fee and every other pending application is declined.
+// AssignTask accepts an application: the applicant gets the task, every
+// other pending application is declined, and the pair may now share contacts.
 func (s *TaskService) AssignTask(ctx context.Context, taskID, applicationID uint) (*models.Task, error) {
 	task, err := s.taskRepo.GetByID(ctx, taskID)
 	if err != nil {
@@ -285,7 +328,7 @@ func (s *TaskService) AssignTask(ctx context.Context, taskID, applicationID uint
 	}
 
 	// Conditional update: only one acceptance can win, even when racing.
-	assigned, err := s.taskRepo.AssignIfOpen(ctx, taskID, application.ApplicantID, application.ProposedFee)
+	assigned, err := s.taskRepo.AssignIfOpen(ctx, taskID, application.ApplicantID)
 	if err != nil {
 		return nil, err
 	}
@@ -301,8 +344,8 @@ func (s *TaskService) AssignTask(ctx context.Context, taskID, applicationID uint
 		return nil, err
 	}
 
-	s.notifier.TaskMessage(taskID, task.CreatedBy, application.ApplicantID,
-		fmt.Sprintf("✅ Your application for \"%s\" was accepted at UGX %s. Use this chat to arrange the details.", task.Title, formatUGX(application.ProposedFee)))
+	s.notifier.TaskMatch(taskID, task.CreatedBy, application.ApplicantID,
+		fmt.Sprintf("✅ Your application for \"%s\" was accepted. You can now share phone numbers here to arrange the details.", task.Title))
 	for _, applicantID := range others {
 		s.notifier.TaskMessage(taskID, task.CreatedBy, applicantID,
 			fmt.Sprintf("Your application for \"%s\" wasn't selected this time.", task.Title))
@@ -310,7 +353,6 @@ func (s *TaskService) AssignTask(ctx context.Context, taskID, applicationID uint
 
 	task.Status = "in_progress"
 	task.AssignedTo = &application.ApplicantID
-	task.Fee = application.ProposedFee
 	return task, nil
 }
 
@@ -370,6 +412,9 @@ func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID uint, status 
 	case "cancelled":
 		// From cancelled: can move to open (reopen)
 		validTransition = status == "open"
+	case "expired":
+		// From expired: repost (open again for a fresh 24 hours) or cancel
+		validTransition = status == "open" || status == "cancelled"
 	}
 
 	if !validTransition {
@@ -385,10 +430,12 @@ func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID uint, status 
 		task.CompletedAt = &now
 	}
 
-	// If moving back to open, clear any assignments and completed timestamp
+	// Moving back to open starts a fresh listing: no assignment, a new
+	// 24 hours on the board
 	if status == "open" {
 		task.AssignedTo = nil
 		task.CompletedAt = nil
+		task.Deadline = time.Now().UTC().Add(gigLifetime)
 	}
 
 	if err := s.taskRepo.Update(ctx, task); err != nil {
@@ -452,13 +499,10 @@ func (s *TaskService) pendingApplicants(ctx context.Context, taskID, exceptID ui
 	return ids, nil
 }
 
-// formatUGX renders 120000 as "120,000".
-func formatUGX(amount float64) string {
-	digits := strconv.FormatInt(int64(math.Round(amount)), 10)
-	for i := len(digits) - 3; i > 0; i -= 3 {
-		digits = digits[:i] + "," + digits[i:]
-	}
-	return digits
+// ExpireStaleTasks marks open gigs that reached their deadline without any
+// application as expired, returning how many it changed.
+func (s *TaskService) ExpireStaleTasks(ctx context.Context) (int64, error) {
+	return s.taskRepo.ExpireUnanswered(ctx, time.Now().UTC())
 }
 
 // ApplicationParticipants are the two people who may chat about an application.

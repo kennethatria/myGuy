@@ -152,11 +152,11 @@ func (h *Handler) respondWithSession(c *gin.Context, status int, user *models.Us
 	})
 }
 
+// createTaskRequest is a sticky note: a short headline and body. There is no
+// fee or deadline; price is agreed in chat and every gig runs 24 hours.
 type createTaskRequest struct {
-	Title       string  `json:"title" binding:"required"`
-	Description string  `json:"description" binding:"required"`
-	Fee         float64 `json:"fee" binding:"required"`
-	Deadline    string  `json:"deadline" binding:"required"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
 }
 
 func (h *Handler) CreateTask(c *gin.Context) {
@@ -165,20 +165,11 @@ func (h *Handler) CreateTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	
-	// Parse the deadline string to time.Time
-	deadline, err := time.Parse(time.RFC3339, req.Deadline)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid deadline format. Must be RFC3339 format (e.g., 2025-05-15T12:00:00Z)"})
-		return
-	}
 
 	userID := c.GetUint("userID")
 	task, err := h.taskService.CreateTask(c.Request.Context(), services.CreateTaskInput{
 		Title:       req.Title,
 		Description: req.Description,
-		Fee:         req.Fee,
-		Deadline:    deadline,
 		CreatedBy:   userID,
 	})
 
@@ -219,33 +210,24 @@ func (h *Handler) UpdateTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	
-	// Parse the deadline string to time.Time
-	deadline, err := time.Parse(time.RFC3339, req.Deadline)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid deadline format. Must be RFC3339 format (e.g., 2025-05-15T12:00:00Z)"})
-		return
-	}
 
 	userID := c.GetUint("userID")
 	input := services.UpdateTaskInput{
 		ID:          uint(id),
 		Title:       req.Title,
 		Description: req.Description,
-		Fee:         req.Fee,
-		Deadline:    deadline,
 		UpdatedBy:   userID,
 	}
 
 	task, err := h.taskService.UpdateTask(c.Request.Context(), input)
 	if err != nil {
-		switch err {
-		case services.ErrTaskNotFound:
+		switch {
+		case errors.Is(err, services.ErrTaskNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
-		case services.ErrUnauthorized:
+		case errors.Is(err, services.ErrUnauthorized):
 			c.JSON(http.StatusForbidden, gin.H{"error": "Not authorized to update this task"})
-		case services.ErrInvalidDeadline:
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Deadline must be at least one day (24 hours) in the future"})
+		case services.IsGigTextError(err):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update task"})
 		}
@@ -270,18 +252,6 @@ func (h *Handler) ListTasks(c *gin.Context) {
 		filters["search"] = search
 	}
 	
-	// Add price range filters
-	if minFee := c.Query("min_fee"); minFee != "" {
-		if fee, err := strconv.ParseFloat(minFee, 64); err == nil {
-			filters["min_fee"] = fee
-		}
-	}
-	if maxFee := c.Query("max_fee"); maxFee != "" {
-		if fee, err := strconv.ParseFloat(maxFee, 64); err == nil {
-			filters["max_fee"] = fee
-		}
-	}
-	
 	// Add deadline filter (tasks due before a certain date)
 	if deadline := c.Query("deadline_before"); deadline != "" {
 		filters["deadline_before"] = deadline
@@ -289,7 +259,7 @@ func (h *Handler) ListTasks(c *gin.Context) {
 	
 	// Sorting
 	if sortBy := c.Query("sort_by"); sortBy != "" {
-		filters["sort_by"] = sortBy // fee, deadline, created_at
+		filters["sort_by"] = sortBy // deadline (expiring soonest), created_at
 	}
 	if sortOrder := c.Query("sort_order"); sortOrder != "" {
 		filters["sort_order"] = sortOrder // asc, desc
@@ -386,8 +356,7 @@ func (h *Handler) GetAssignedTasks(c *gin.Context) {
 }
 
 type applyForTaskRequest struct {
-	ProposedFee float64 `json:"proposed_fee" binding:"required"`
-	Message     string  `json:"message" binding:"required"`
+	Message string `json:"message" binding:"required"`
 }
 
 func (h *Handler) ApplyForTask(c *gin.Context) {
@@ -404,7 +373,7 @@ func (h *Handler) ApplyForTask(c *gin.Context) {
 	}
 
 	userID := c.GetUint("userID")
-	err = h.taskService.ApplyForTask(c.Request.Context(), uint(taskID), userID, req.ProposedFee, req.Message)
+	err = h.taskService.ApplyForTask(c.Request.Context(), uint(taskID), userID, req.Message)
 	switch {
 	case errors.Is(err, services.ErrTaskNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})

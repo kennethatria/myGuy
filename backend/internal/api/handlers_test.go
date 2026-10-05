@@ -81,13 +81,7 @@ func TestHandler_CreateTask(t *testing.T) {
 	router.POST("/tasks", handler.CreateTask)
 
 	t.Run("successful task creation", func(t *testing.T) {
-		deadline := time.Now().Add(48 * time.Hour).Format(time.RFC3339)
-		reqBody := createTaskRequest{
-			Title:       "Test Task",
-			Description: "Description",
-			Fee:         100.0,
-			Deadline:    deadline,
-		}
+		reqBody := createTaskRequest{Title: "Paint my fence", Description: "White paint provided"}
 
 		mockTaskRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Task")).Return(nil).Run(func(args mock.Arguments) {
 			task := args.Get(1).(*models.Task)
@@ -105,15 +99,8 @@ func TestHandler_CreateTask(t *testing.T) {
 		mockTaskRepo.AssertExpectations(t)
 	})
 
-	t.Run("invalid deadline", func(t *testing.T) {
-		reqBody := createTaskRequest{
-			Title:       "Test Task",
-			Description: "Description",
-			Fee:         100.0,
-			Deadline:    "invalid-date",
-		}
-
-		body, _ := json.Marshal(reqBody)
+	t.Run("contact details are refused with a reason", func(t *testing.T) {
+		body, _ := json.Marshal(createTaskRequest{Title: "Paint fence", Description: "call 0772 123 456"})
 		req, _ := http.NewRequest(http.MethodPost, "/tasks", bytes.NewBuffer(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp := httptest.NewRecorder()
@@ -121,6 +108,7 @@ func TestHandler_CreateTask(t *testing.T) {
 		router.ServeHTTP(resp, req)
 
 		assert.Equal(t, http.StatusBadRequest, resp.Code)
+		assert.Contains(t, resp.Body.String(), "share them in chat")
 	})
 }
 
@@ -170,8 +158,7 @@ func TestHandler_UpdateTask(t *testing.T) {
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
 		mockTaskRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Task")).Return(nil)
 
-		deadline := time.Now().Add(48 * time.Hour).Format(time.RFC3339)
-		reqBody := createTaskRequest{Title: "New Title", Description: "New Desc", Fee: 200, Deadline: deadline}
+		reqBody := createTaskRequest{Title: "New Title", Description: "New Desc"}
 		body, _ := json.Marshal(reqBody)
 		req, _ := http.NewRequest(http.MethodPut, "/tasks/1", bytes.NewBuffer(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -194,8 +181,7 @@ func TestHandler_UpdateTask(t *testing.T) {
 		task := &models.Task{ID: 1, CreatedBy: 2}
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
 
-		deadline := time.Now().Add(48 * time.Hour).Format(time.RFC3339)
-		reqBody := createTaskRequest{Title: "New Title", Description: "New Desc", Fee: 200, Deadline: deadline}
+		reqBody := createTaskRequest{Title: "New Title", Description: "New Desc"}
 		body, _ := json.Marshal(reqBody)
 		req, _ := http.NewRequest(http.MethodPut, "/tasks/1", bytes.NewBuffer(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -316,12 +302,12 @@ func TestHandler_ApplyForTask(t *testing.T) {
 	router.POST("/tasks/:id/apply", handler.ApplyForTask)
 
 	t.Run("successful application", func(t *testing.T) {
-		task := &models.Task{ID: 1, Status: "open", CreatedBy: 1}
+		task := &models.Task{ID: 1, Status: "open", CreatedBy: 1, Deadline: time.Now().Add(time.Hour)}
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
 		mockAppRepo.On("ListByTask", mock.Anything, uint(1)).Return([]models.Application{}, nil)
 		mockAppRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Application")).Return(nil)
 
-		reqBody := applyForTaskRequest{ProposedFee: 100, Message: "I'm interested"}
+		reqBody := applyForTaskRequest{Message: "I'm interested"}
 		body, _ := json.Marshal(reqBody)
 		req, _ := http.NewRequest(http.MethodPost, "/tasks/1/apply", bytes.NewBuffer(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -440,9 +426,9 @@ func TestHandler_RespondToApplication(t *testing.T) {
 
 		task := &models.Task{ID: 1, CreatedBy: 1, Status: "open"}
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
-		mockAppRepo.On("GetByID", mock.Anything, uint(10)).Return(&models.Application{ID: 10, TaskID: 1, ApplicantID: 2, ProposedFee: 100, Status: "pending"}, nil)
+		mockAppRepo.On("GetByID", mock.Anything, uint(10)).Return(&models.Application{ID: 10, TaskID: 1, ApplicantID: 2, Status: "pending"}, nil)
 		mockAppRepo.On("ListByTask", mock.Anything, uint(1)).Return([]models.Application{}, nil)
-		mockTaskRepo.On("AssignIfOpen", mock.Anything, uint(1), uint(2), 100.0).Return(true, nil)
+		mockTaskRepo.On("AssignIfOpen", mock.Anything, uint(1), uint(2)).Return(true, nil)
 		mockAppRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Application")).Return(nil)
 		mockAppRepo.On("DeclinePending", mock.Anything, uint(1), uint(10)).Return(nil)
 
@@ -467,7 +453,7 @@ func TestHandler_RespondToApplication(t *testing.T) {
 
 		task := &models.Task{ID: 1, CreatedBy: 1}
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
-		mockAppRepo.On("GetByID", mock.Anything, uint(10)).Return(&models.Application{ID: 10, TaskID: 1, ApplicantID: 2, ProposedFee: 100, Status: "pending"}, nil)
+		mockAppRepo.On("GetByID", mock.Anything, uint(10)).Return(&models.Application{ID: 10, TaskID: 1, ApplicantID: 2, Status: "pending"}, nil)
 		mockAppRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Application")).Return(nil)
 
 		reqBody := respondToApplicationRequest{Status: "declined"}

@@ -35,6 +35,9 @@ type taskMessage struct {
 	SenderID    uint   `json:"sender_id"`
 	RecipientID uint   `json:"recipient_id"`
 	Content     string `json:"content"`
+	// UnlockContacts tells chat the two people agreed to work together, so
+	// contact details are no longer filtered between them for this task.
+	UnlockContacts bool `json:"unlock_contacts,omitempty"`
 }
 
 // TaskMessage delivers content in the background as a system message from
@@ -42,9 +45,19 @@ type taskMessage struct {
 // failures are logged, never returned, so a chat outage can't block the task
 // action that triggered it.
 func (n *Notifier) TaskMessage(taskID, senderID, recipientID uint, content string) {
+	n.post(taskMessage{TaskID: taskID, SenderID: senderID, RecipientID: recipientID, Content: content})
+}
+
+// TaskMatch is TaskMessage for an accepted application: it also unlocks
+// contact sharing between the two people in that conversation.
+func (n *Notifier) TaskMatch(taskID, senderID, recipientID uint, content string) {
+	n.post(taskMessage{TaskID: taskID, SenderID: senderID, RecipientID: recipientID, Content: content, UnlockContacts: true})
+}
+
+func (n *Notifier) post(msg taskMessage) {
 	go func() {
-		if err := n.send(taskMessage{TaskID: taskID, SenderID: senderID, RecipientID: recipientID, Content: content}); err != nil {
-			log.Printf("chat notification for task %d failed: %v", taskID, err)
+		if err := n.send(msg); err != nil {
+			log.Printf("chat notification for task %d failed: %v", msg.TaskID, err)
 		}
 	}()
 }

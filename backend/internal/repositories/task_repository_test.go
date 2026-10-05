@@ -52,14 +52,6 @@ func TestTaskRepository(t *testing.T) {
 		for _, task := range tasks {
 			assert.Equal(t, "open", task.Status)
 		}
-
-		// Filter by min_fee
-		tasks, err = repo.List(ctx, map[string]interface{}{"min_fee": 100.0})
-		assert.NoError(t, err)
-		assert.NotEmpty(t, tasks)
-		for _, task := range tasks {
-			assert.GreaterOrEqual(t, task.Fee, 100.0)
-		}
 	})
 
 	t.Run("ListWithPagination", func(t *testing.T) {

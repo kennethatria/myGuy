@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"time"
 
 	"myguy/internal/models"
 
@@ -56,9 +57,14 @@ func (m *MockTaskRepository) ListByUser(ctx context.Context, userID uint, role s
 	return args.Get(0).([]models.Task), args.Error(1)
 }
 
-func (m *MockTaskRepository) AssignIfOpen(ctx context.Context, taskID, assigneeID uint, fee float64) (bool, error) {
-	args := m.Called(ctx, taskID, assigneeID, fee)
+func (m *MockTaskRepository) AssignIfOpen(ctx context.Context, taskID, assigneeID uint) (bool, error) {
+	args := m.Called(ctx, taskID, assigneeID)
 	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockTaskRepository) ExpireUnanswered(ctx context.Context, now time.Time) (int64, error) {
+	args := m.Called(ctx, now)
+	return args.Get(0).(int64), args.Error(1)
 }
 
 // MockApplicationRepository

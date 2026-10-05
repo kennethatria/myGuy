@@ -36,3 +36,18 @@ func TestSendReportsChatErrors(t *testing.T) {
 
 	assert.Error(t, New(server.URL, "wrong").send(taskMessage{TaskID: 1}))
 }
+
+func TestTaskMatchUnlocksContacts(t *testing.T) {
+	got := make(chan taskMessage, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var msg taskMessage
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&msg))
+		got <- msg
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	New(server.URL, "secret").TaskMatch(1, 2, 3, "accepted")
+
+	assert.Equal(t, taskMessage{TaskID: 1, SenderID: 2, RecipientID: 3, Content: "accepted", UnlockContacts: true}, <-got)
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 	"myguy/internal/models"
 	"gorm.io/gorm"
 )
@@ -71,7 +72,7 @@ func (r *GormTaskRepository) ListWithPagination(ctx context.Context, filters map
 	sortOrder := "DESC"
 	if sb, ok := filters["sort_by"].(string); ok {
 		switch sb {
-		case "fee", "deadline", "created_at":
+		case "deadline", "created_at":
 			sortBy = sb
 		}
 	}
@@ -112,10 +113,6 @@ func (r *GormTaskRepository) buildTaskQuery(ctx context.Context, filters map[str
 			// Search in title and description
 			searchTerm := fmt.Sprintf("%%%s%%", value)
 			query = query.Where("(title ILIKE ? OR description ILIKE ?)", searchTerm, searchTerm)
-		case "min_fee":
-			query = query.Where("fee >= ?", value)
-		case "max_fee":
-			query = query.Where("fee <= ?", value)
 		case "deadline_before":
 			query = query.Where("deadline <= ?", value)
 		case "exclude_created_by":
@@ -142,15 +139,24 @@ func (r *GormTaskRepository) Update(ctx context.Context, task *models.Task) erro
 
 // AssignIfOpen assigns the task only while it is still open, reporting false
 // otherwise, so two concurrent acceptances cannot both win.
-func (r *GormTaskRepository) AssignIfOpen(ctx context.Context, taskID, assigneeID uint, fee float64) (bool, error) {
+func (r *GormTaskRepository) AssignIfOpen(ctx context.Context, taskID, assigneeID uint) (bool, error) {
 	res := r.db.WithContext(ctx).Model(&models.Task{}).
 		Where("id = ? AND status = ?", taskID, "open").
 		Updates(map[string]interface{}{
 			"status":      "in_progress",
 			"assigned_to": assigneeID,
-			"fee":         fee,
 		})
 	return res.RowsAffected == 1, res.Error
+}
+
+// ExpireUnanswered marks open tasks whose deadline passed before anyone
+// applied as expired, in one statement, returning how many changed.
+func (r *GormTaskRepository) ExpireUnanswered(ctx context.Context, now time.Time) (int64, error) {
+	res := r.db.WithContext(ctx).Model(&models.Task{}).
+		Where("status = ? AND deadline < ?", "open", now).
+		Where("NOT EXISTS (SELECT 1 FROM applications WHERE applications.task_id = tasks.id)").
+		Update("status", "expired")
+	return res.RowsAffected, res.Error
 }
 
 // Delete removes the task and its applications in one transaction
