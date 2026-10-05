@@ -17,6 +17,10 @@ on:
       - '.github/ISSUE_TEMPLATE/**'
   pull_request:
     
+# Read-only by default; jobs that need more ask for it.
+permissions:
+  contents: read
+
 jobs:
   context:
     runs-on: ubuntu-latest
@@ -75,7 +79,8 @@ jobs:
       contents: read
       security-events: write
       attestations: read
-    if: ${{ needs.context.outputs.isPullRequest == 'true' }}
+    # Pull requests, and main after each merge so fixed alerts close
+    if: ${{ needs.context.outputs.isPullRequest == 'true' || needs.context.outputs.isRelease == 'true' }}
     uses: ./.github/workflows/component.security.codeql.yml
 
   release:

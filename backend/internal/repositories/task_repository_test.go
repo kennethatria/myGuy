@@ -101,3 +101,31 @@ func TestTaskRepository(t *testing.T) {
 		assert.Equal(t, user.ID, tasks[0].CreatedBy)
 	})
 }
+
+func TestTaskListingSortsAndIgnoresUnknownFilters(t *testing.T) {
+	db, err := setupTestDB()
+	assert.NoError(t, err)
+	repo := NewGormTaskRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	for i, title := range []string{"soon", "later", "latest"} {
+		db.Create(&models.Task{Title: title, CreatedBy: 1, Status: "open", Deadline: now.Add(time.Duration(i+1) * time.Hour)})
+	}
+
+	asc, err := repo.ListWithPagination(ctx, map[string]interface{}{"sort_by": "deadline", "sort_order": "asc", "page": 1, "per_page": 10})
+	assert.NoError(t, err)
+	assert.Equal(t, "soon", asc[0].Title)
+
+	desc, err := repo.ListWithPagination(ctx, map[string]interface{}{"sort_by": "deadline", "sort_order": "desc", "page": 1, "per_page": 10})
+	assert.NoError(t, err)
+	assert.Equal(t, "latest", desc[0].Title)
+
+	// Unknown sort columns fall back to created_at; unknown filter keys are
+	// ignored rather than turned into column names.
+	_, err = repo.ListWithPagination(ctx, map[string]interface{}{"sort_by": "title; DROP TABLE tasks", "1=1 OR id": 1, "page": 1, "per_page": 10})
+	assert.NoError(t, err)
+	n, err := repo.Count(ctx, map[string]interface{}{"status": "open", "1=1 OR id": 1})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), n)
+}

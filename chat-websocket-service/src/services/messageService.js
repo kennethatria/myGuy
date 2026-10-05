@@ -33,6 +33,18 @@ function unlockKey({ taskId, storeItemId, userA, userB }) {
   return [type, parseInt(id), Math.min(a, b), Math.max(a, b)];
 }
 
+// The app's message box allows 1000 characters; this is the hard ceiling for
+// anything sent to the API directly, which also bounds filtering work.
+const MAX_MESSAGE_LENGTH = 2000;
+
+function assertMessageLength(content) {
+  if (typeof content !== 'string' || content.length > MAX_MESSAGE_LENGTH) {
+    const error = new Error(`Messages can be at most ${MAX_MESSAGE_LENGTH} characters`);
+    error.status = 400;
+    throw error;
+  }
+}
+
 class MessageService {
   constructor() {
     // Initialization if needed
@@ -80,6 +92,7 @@ class MessageService {
    * Send a new message
    */
   async sendMessage({ taskId, applicationId, storeItemId, senderId, recipientId, content, messageType }) {
+    assertMessageLength(content);
     const client = await db.getClient();
 
     try {
@@ -131,6 +144,7 @@ class MessageService {
    * Edit a message
    */
   async editMessage(messageId, userId, newContent) {
+    assertMessageLength(newContent);
     const client = await db.getClient();
 
     try {
@@ -593,3 +607,4 @@ class MessageService {
 }
 
 module.exports = new MessageService();
+module.exports.MAX_MESSAGE_LENGTH = MAX_MESSAGE_LENGTH;

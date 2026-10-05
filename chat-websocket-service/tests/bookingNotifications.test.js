@@ -324,5 +324,31 @@ describe('bookingNotifications router', () => {
         .send({ bookingId: 1, action: 'approve' })
         .expect(500);
     });
+
+    it.each(['1/../../admin', '-3', '2.5', 'abc'])('rejects bookingId %p without calling store-service', async (bookingId) => {
+      const token = createUserToken(1);
+      global.fetch = jest.fn();
+
+      await request(app)
+        .post('/booking-action')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ bookingId, action: 'approve' })
+        .expect(400);
+
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects actions outside the allowed list, including inherited keys', async () => {
+      const token = createUserToken(1);
+      global.fetch = jest.fn();
+
+      await request(app)
+        .post('/booking-action')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ bookingId: 1, action: 'constructor' })
+        .expect(400);
+
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
   });
 });

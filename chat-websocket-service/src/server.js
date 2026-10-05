@@ -8,6 +8,7 @@ const helmet = require('helmet');
 
 const logger = require('./utils/logger');
 const { authenticateSocket, authenticateHTTP } = require('./middleware/auth');
+const { apiRateLimit } = require('./middleware/rateLimit');
 const SocketHandlers = require('./handlers/socketHandlers');
 const validationService = require('./services/validationService');
 const messageService = require('./services/messageService');
@@ -22,6 +23,7 @@ const httpServer = createServer(app);
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
+app.use('/api/v1', apiRateLimit);
 
 // Initialize Socket.IO
 const io = new Server(httpServer, {

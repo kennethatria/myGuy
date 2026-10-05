@@ -4,11 +4,16 @@ const logger = require('./logger');
 // patterns (backend/internal/contacts); both are tested against
 // shared/contact-filter-cases.json so they agree. Order matters when
 // masking: emails before links, so "john@gmail.com" isn't half a link.
+//
+// The lookbehinds only let a match start at the beginning of a run of
+// address characters. Without them a long word is retried from every
+// character, which is quadratic (ReDoS). Go's RE2 is linear anyway, and the
+// lookbehinds don't change what matches.
 const patterns = {
-  emails: /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi,
+  emails: /(?<![a-z0-9._%+-])[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi,
 
   // With a scheme, starting www., or a bare domain on a common TLD
-  urls: /(?:https?|ftp):\/\/\S+|www\.\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|ug|co|io|me|info|biz|app|dev|xyz|link|ly|africa)\b(?:\/\S*)?/gi,
+  urls: /(?:https?|ftp):\/\/\S+|(?<!\S)www\.\S+|(?<![a-z0-9.-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|ug|co|io|me|info|biz|app|dev|xyz|link|ly|africa)\b(?:\/\S*)?/gi,
 
   // 9 to 15 digits, optionally +, spaced by space - . ( ) — local (0772 123 456)
   // and international (+256 772 123456) formats, but not prices like 120,000
