@@ -172,13 +172,13 @@ func (h *StoreHandler) CreateItem(c *gin.Context) {
 
 // GetItem retrieves a specific store item
 func (h *StoreHandler) GetItem(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
 		return
 	}
 
-	item, err := h.service.GetItem(uint(id))
+	item, err := h.service.GetItem(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "item not found"})
 		return
@@ -214,8 +214,8 @@ func (h *StoreHandler) GetItems(c *gin.Context) {
 	}
 
 	if sellerID := c.Query("seller_id"); sellerID != "" {
-		if id, err := strconv.ParseUint(sellerID, 10, 32); err == nil {
-			filter.SellerID = uint(id)
+		if id, err := parseID(sellerID); err == nil {
+			filter.SellerID = id
 		}
 	}
 
@@ -249,7 +249,7 @@ func (h *StoreHandler) GetItems(c *gin.Context) {
 func (h *StoreHandler) UpdateItem(c *gin.Context) {
 	userID := c.GetUint("userID")
 	
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
 		return
@@ -261,7 +261,7 @@ func (h *StoreHandler) UpdateItem(c *gin.Context) {
 		return
 	}
 
-	item, err := h.service.UpdateItem(uint(id), userID, req)
+	item, err := h.service.UpdateItem(id, userID, req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -274,13 +274,13 @@ func (h *StoreHandler) UpdateItem(c *gin.Context) {
 func (h *StoreHandler) DeleteItem(c *gin.Context) {
 	userID := c.GetUint("userID")
 	
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
 		return
 	}
 
-	err = h.service.DeleteItem(uint(id), userID)
+	err = h.service.DeleteItem(id, userID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -293,7 +293,7 @@ func (h *StoreHandler) DeleteItem(c *gin.Context) {
 func (h *StoreHandler) PlaceBid(c *gin.Context) {
 	userID := c.GetUint("userID")
 	
-	itemID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	itemID, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
 		return
@@ -305,7 +305,7 @@ func (h *StoreHandler) PlaceBid(c *gin.Context) {
 		return
 	}
 
-	bid, err := h.service.PlaceBid(uint(itemID), userID, req)
+	bid, err := h.service.PlaceBid(itemID, userID, req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -316,13 +316,13 @@ func (h *StoreHandler) PlaceBid(c *gin.Context) {
 
 // GetItemBids retrieves all bids for an item
 func (h *StoreHandler) GetItemBids(c *gin.Context) {
-	itemID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	itemID, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
 		return
 	}
 
-	bids, err := h.service.GetItemBids(uint(itemID))
+	bids, err := h.service.GetItemBids(itemID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve bids"})
 		return
@@ -335,19 +335,19 @@ func (h *StoreHandler) GetItemBids(c *gin.Context) {
 func (h *StoreHandler) AcceptBid(c *gin.Context) {
 	userID := c.GetUint("userID")
 	
-	itemID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	itemID, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
 		return
 	}
 
-	bidID, err := strconv.ParseUint(c.Param("bidId"), 10, 32)
+	bidID, err := parseID(c.Param("bidId"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid bid id"})
 		return
 	}
 
-	err = h.service.AcceptBid(uint(itemID), uint(bidID), userID)
+	err = h.service.AcceptBid(itemID, bidID, userID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -360,13 +360,13 @@ func (h *StoreHandler) AcceptBid(c *gin.Context) {
 func (h *StoreHandler) PurchaseItem(c *gin.Context) {
 	userID := c.GetUint("userID")
 	
-	itemID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	itemID, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
 		return
 	}
 
-	err = h.service.PurchaseItem(uint(itemID), userID)
+	err = h.service.PurchaseItem(itemID, userID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -421,7 +421,7 @@ func (h *StoreHandler) CreateBookingRequest(c *gin.Context) {
 	userID := c.GetUint("userID")
 	
 	itemIDStr := c.Param("id")
-	itemID, err := strconv.Atoi(itemIDStr)
+	itemID, err := parseID(itemIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item ID"})
 		return
@@ -433,7 +433,7 @@ func (h *StoreHandler) CreateBookingRequest(c *gin.Context) {
 		return
 	}
 
-	bookingRequest, err := h.service.CreateBookingRequest(uint(itemID), userID, req.Message)
+	bookingRequest, err := h.service.CreateBookingRequest(itemID, userID, req.Message)
 	if err != nil {
 		if err.Error() == "you already have a booking request for this item" {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
@@ -459,13 +459,13 @@ func (h *StoreHandler) GetBookingRequest(c *gin.Context) {
 	userID := c.GetUint("userID")
 	
 	itemIDStr := c.Param("id")
-	itemID, err := strconv.Atoi(itemIDStr)
+	itemID, err := parseID(itemIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item ID"})
 		return
 	}
 
-	bookingRequest, err := h.service.GetBookingRequestByItem(uint(itemID), userID)
+	bookingRequest, err := h.service.GetBookingRequestByItem(itemID, userID)
 	if err != nil {
 		// Check if it's a GORM "record not found" error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -486,13 +486,13 @@ func (h *StoreHandler) GetAllBookingRequests(c *gin.Context) {
 	userID := c.GetUint("userID")
 	
 	itemIDStr := c.Param("id")
-	itemID, err := strconv.Atoi(itemIDStr)
+	itemID, err := parseID(itemIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item ID"})
 		return
 	}
 
-	bookingRequests, err := h.service.GetAllBookingRequestsByItem(uint(itemID), userID)
+	bookingRequests, err := h.service.GetAllBookingRequestsByItem(itemID, userID)
 	if err != nil {
 		if err.Error() == "unauthorized: you are not the owner of this item" {
 			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
@@ -510,13 +510,13 @@ func (h *StoreHandler) ApproveBookingRequest(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	requestIDStr := c.Param("requestId")
-	requestID, err := strconv.Atoi(requestIDStr)
+	requestID, err := parseID(requestIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request ID"})
 		return
 	}
 
-	booking, err := h.service.ApproveBookingRequest(uint(requestID), userID)
+	booking, err := h.service.ApproveBookingRequest(requestID, userID)
 	if err != nil {
 		if err.Error() == "unauthorized: you are not the owner of this item" {
 			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
@@ -538,13 +538,13 @@ func (h *StoreHandler) RejectBookingRequest(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	requestIDStr := c.Param("requestId")
-	requestID, err := strconv.Atoi(requestIDStr)
+	requestID, err := parseID(requestIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request ID"})
 		return
 	}
 
-	booking, err := h.service.RejectBookingRequest(uint(requestID), userID)
+	booking, err := h.service.RejectBookingRequest(requestID, userID)
 	if err != nil {
 		if err.Error() == "unauthorized: you are not the owner of this item" {
 			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
@@ -577,13 +577,13 @@ func (h *StoreHandler) GetUserBookingRequests(c *gin.Context) {
 // GetUserRatings lists the store ratings a user has received (as seller or
 // buyer), for their profile.
 func (h *StoreHandler) GetUserRatings(c *gin.Context) {
-	userID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	userID, err := parseID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
 		return
 	}
 
-	ratings, err := h.service.GetUserRatings(uint(userID))
+	ratings, err := h.service.GetUserRatings(userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve ratings"})
 		return
@@ -597,13 +597,13 @@ func (h *StoreHandler) ConfirmItemReceived(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	requestIDStr := c.Param("requestId")
-	requestID, err := strconv.Atoi(requestIDStr)
+	requestID, err := parseID(requestIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request ID"})
 		return
 	}
 
-	booking, err := h.service.ConfirmItemReceived(uint(requestID), userID)
+	booking, err := h.service.ConfirmItemReceived(requestID, userID)
 	if err != nil {
 		if err.Error() == "booking request not found" {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -629,13 +629,13 @@ func (h *StoreHandler) ConfirmDelivery(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	requestIDStr := c.Param("requestId")
-	requestID, err := strconv.Atoi(requestIDStr)
+	requestID, err := parseID(requestIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request ID"})
 		return
 	}
 
-	booking, err := h.service.ConfirmDelivery(uint(requestID), userID)
+	booking, err := h.service.ConfirmDelivery(requestID, userID)
 	if err != nil {
 		if err.Error() == "booking request not found" {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -661,7 +661,7 @@ func (h *StoreHandler) SubmitBuyerRating(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	requestIDStr := c.Param("requestId")
-	requestID, err := strconv.Atoi(requestIDStr)
+	requestID, err := parseID(requestIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request ID"})
 		return
@@ -673,7 +673,7 @@ func (h *StoreHandler) SubmitBuyerRating(c *gin.Context) {
 		return
 	}
 
-	booking, err := h.service.SubmitBuyerRating(uint(requestID), userID, req.Rating, req.Review)
+	booking, err := h.service.SubmitBuyerRating(requestID, userID, req.Rating, req.Review)
 	if err != nil {
 		if err.Error() == "booking request not found" {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -699,7 +699,7 @@ func (h *StoreHandler) SubmitSellerRating(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	requestIDStr := c.Param("requestId")
-	requestID, err := strconv.Atoi(requestIDStr)
+	requestID, err := parseID(requestIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request ID"})
 		return
@@ -711,7 +711,7 @@ func (h *StoreHandler) SubmitSellerRating(c *gin.Context) {
 		return
 	}
 
-	booking, err := h.service.SubmitSellerRating(uint(requestID), userID, req.Rating, req.Review)
+	booking, err := h.service.SubmitSellerRating(requestID, userID, req.Rating, req.Review)
 	if err != nil {
 		if err.Error() == "booking request not found" {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -730,4 +730,15 @@ func (h *StoreHandler) SubmitSellerRating(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, booking)
+}
+
+// parseID parses a database id from a path or query value. 32 bits is far
+// more than any table holds and fits uint on every platform; negative and
+// oversized values are rejected rather than wrapped.
+func parseID(s string) (uint, error) {
+	n, err := strconv.ParseUint(s, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return uint(n), nil
 }
