@@ -11,11 +11,9 @@
     <!-- Chat Messages -->
     <div class="chat-messages" ref="messagesContainer">
       <!-- Loading State -->
-      <div v-if="chatStore.isLoadingMessages" class="loading-state">
-        <div class="spinner-border spinner-border-sm" role="status">
-          <span class="visually-hidden">Loading messages...</span>
-        </div>
-        <span class="ms-2">Loading messages...</span>
+      <div v-if="chatStore.isLoadingMessages" class="loading-state" role="status">
+        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+        <span>Loading messages...</span>
       </div>
 
       <!-- Load More Button -->
@@ -330,6 +328,7 @@ watch(() => messages.value.length, async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 0.5rem;
   padding: 1rem;
   color: #6c757d;
 }

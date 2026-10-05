@@ -279,6 +279,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { setPageTitle } from '@/utils/pageTitle';
 import { useRoute } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useChatStore } from '@/stores/chat';
@@ -431,6 +432,7 @@ async function loadItem() {
     }
     
     item.value = await response.json();
+    setPageTitle(item.value?.title);
     console.log('Item loaded successfully:', item.value);
     
     if (item.value?.is_auction) {

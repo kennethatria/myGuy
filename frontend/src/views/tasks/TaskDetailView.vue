@@ -178,6 +178,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
+import { setPageTitle } from '@/utils/pageTitle'
 import { useRoute, useRouter } from 'vue-router'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/stores/auth'
@@ -341,6 +342,7 @@ const loadTaskData = async () => {
     }
     
     task.value = taskData as unknown as Task;
+    setPageTitle(task.value.title);
     console.log('Task data loaded successfully:', task.value);
     
     // Try to load user info for task creator and assignee
