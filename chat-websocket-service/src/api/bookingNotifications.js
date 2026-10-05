@@ -68,6 +68,12 @@ router.post('/internal/task-message', async (req, res) => {
       return res.status(400).json({ error: 'task_id, sender_id, recipient_id and content are required' });
     }
 
+    // An accepted application: the pair agreed to work together, so they
+    // may now share contact details in this conversation.
+    if (req.body.unlock_contacts === true) {
+      await messageService.unlockContacts({ taskId, userA: senderId, userB: recipientId });
+    }
+
     const message = await messageService.sendMessage({
       taskId, senderId, recipientId, content, messageType: 'system_alert'
     });
@@ -156,6 +162,12 @@ router.post('/booking-action', authenticateHTTP, async (req, res) => {
     }
 
     const booking = await response.json();
+
+    // An approved booking: store-service checked this user is the seller, so
+    // seller and buyer may now share contact details about this item.
+    if (action === 'approve') {
+      await messageService.unlockContacts({ storeItemId: booking.item_id, userA: userId, userB: booking.requester_id });
+    }
 
     // Get io instance from app
     const io = req.app.get('io');

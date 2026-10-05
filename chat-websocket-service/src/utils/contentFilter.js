@@ -1,24 +1,34 @@
 const logger = require('./logger');
 
-// Regex patterns for content filtering
+// Contact-detail patterns. The backend checks gig text with the same
+// patterns (backend/internal/contacts); both are tested against
+// shared/contact-filter-cases.json so they agree. Order matters when
+// masking: emails before links, so "john@gmail.com" isn't half a link.
 const patterns = {
-  // URLs with various protocols
-  urls: /(?:https?|ftp|ftps):\/\/[^\s]+|www\.[^\s]+\.[^\s]+|[^\s]+\.[a-z]{2,}\/[^\s]*/gi,
-  
-  // Email addresses
-  emails: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
-  
-  // Phone numbers (various formats)
-  phones: /(?:\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}|[0-9]{10,15}/g,
-  
-  // Social media handles
-  socialHandles: /@[a-zA-Z0-9_]+/g
+  emails: /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi,
+
+  // With a scheme, starting www., or a bare domain on a common TLD
+  urls: /(?:https?|ftp):\/\/\S+|www\.\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|ug|co|io|me|info|biz|app|dev|xyz|link|ly|africa)\b(?:\/\S*)?/gi,
+
+  // 9 to 15 digits, optionally +, spaced by space - . ( ) — local (0772 123 456)
+  // and international (+256 772 123456) formats, but not prices like 120,000
+  phones: /\+?\(?\d(?:[\s\-.()]*\d){8,14}/g,
+
+  // @handle, not the @ inside an email (emails are masked first anyway)
+  socialHandles: /(?<![A-Za-z0-9_])@[A-Za-z0-9_][A-Za-z0-9_.]+/g
 };
 
+const replacements = [
+  ['email', patterns.emails, '[email removed]'],
+  ['url', patterns.urls, '[link removed]'],
+  ['phone', patterns.phones, '[phone removed]'],
+  ['handle', patterns.socialHandles, '[handle removed]']
+];
+
 /**
- * Filter content by removing URLs, emails, and phone numbers
+ * Mask contact details: URLs, emails, phone numbers and social handles.
  * @param {string} content - The message content to filter
- * @returns {object} - Object containing filtered content and what was removed
+ * @returns {object} - Filtered content and what was removed
  */
 const filterContent = (content) => {
   if (!content || typeof content !== 'string') {
@@ -32,41 +42,17 @@ const filterContent = (content) => {
   const removed = [];
   let filtered = content;
 
-  // Check and remove URLs
-  const urlMatches = filtered.match(patterns.urls);
-  if (urlMatches) {
-    removed.push(...urlMatches.map(match => ({ type: 'url', value: match })));
-    filtered = filtered.replace(patterns.urls, '[link removed]');
-  }
-
-  // Check and remove emails
-  const emailMatches = filtered.match(patterns.emails);
-  if (emailMatches) {
-    removed.push(...emailMatches.map(match => ({ type: 'email', value: match })));
-    filtered = filtered.replace(patterns.emails, '[email removed]');
-  }
-
-  // Check and remove phone numbers
-  const phoneMatches = filtered.match(patterns.phones);
-  if (phoneMatches) {
-    // Filter out numbers that are likely not phone numbers (e.g., years, prices)
-    const likelyPhones = phoneMatches.filter(match => {
-      const digits = match.replace(/\D/g, '');
-      return digits.length >= 10 && digits.length <= 15;
+  for (const [type, pattern, label] of replacements) {
+    filtered = filtered.replace(pattern, (match) => {
+      removed.push({ type, value: match });
+      return label;
     });
-    
-    if (likelyPhones.length > 0) {
-      removed.push(...likelyPhones.map(match => ({ type: 'phone', value: match })));
-      likelyPhones.forEach(phone => {
-        filtered = filtered.replace(phone, '[phone removed]');
-      });
-    }
   }
 
-  logger.debug('Content filtered', { 
-    originalLength: content.length, 
+  logger.debug('Content filtered', {
+    originalLength: content.length,
     filteredLength: filtered.length,
-    removedCount: removed.length 
+    removedCount: removed.length
   });
 
   return {
@@ -81,13 +67,7 @@ const filterContent = (content) => {
  * @param {string} content - The content to check
  * @returns {boolean} - True if content contains filtered patterns
  */
-const containsFilteredContent = (content) => {
-  if (!content || typeof content !== 'string') return false;
-
-  return patterns.urls.test(content) || 
-         patterns.emails.test(content) || 
-         patterns.phones.test(content);
-};
+const containsFilteredContent = (content) => filterContent(content).hasRemovedContent;
 
 module.exports = {
   filterContent,

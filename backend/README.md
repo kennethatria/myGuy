@@ -55,7 +55,7 @@ backend/
 - `DELETE /api/v1/tasks/:id` - Delete (creator only; never-assigned tasks only)
 
 #### Applications
-- `POST /api/v1/tasks/:id/apply` - Apply with a proposed fee and message
+- `POST /api/v1/tasks/:id/apply` - Apply with a short message (no fee; price is agreed in chat)
 - `GET /api/v1/tasks/:id/applications` - The creator sees all; an applicant only their own
 - `PATCH /api/v1/tasks/:id/applications/:applicationId` - Accept or decline (creator only)
 - `GET /api/v1/user/applications` - The current user's applications with each task's status
@@ -99,11 +99,11 @@ type Task struct {
     ID          uint       `json:"id"`
     Title       string     `json:"title"`
     Description string     `json:"description"`
-    Status      string     `json:"status"`      // open, in_progress, completed, cancelled
+    Status      string     `json:"status"`      // open, in_progress, completed, cancelled, expired
     CreatedBy   uint       `json:"created_by"`
     AssignedTo  *uint      `json:"assigned_to"`
-    Fee         float64    `json:"fee"`
-    Deadline    time.Time  `json:"deadline"`
+    Fee         float64    `json:"fee"`         // no longer set for new gigs
+    Deadline    time.Time  `json:"deadline"`    // when the listing expires: posted + 24h
     CompletedAt *time.Time `json:"completed_at"`
     CreatedAt   time.Time  `json:"created_at"`
     UpdatedAt   time.Time  `json:"updated_at"`
@@ -161,19 +161,20 @@ type Review struct {
 
 ### Task Lifecycle Management
 - Create → Apply → Accept/Decline → In Progress → Complete → Review
-- Status transitions: `open` → `in_progress` → `completed` → `cancelled`
-- Deadline validation (minimum 24 hours in future)
+- Status transitions: `open` → `in_progress` → `completed` → `cancelled`; `open` → `expired` (24 h with no application) → `open` (repost) or `cancelled`
+- A ticker in `cmd/api/main.go` expires unanswered gigs every minute
 
 ### Advanced Search & Filtering
 - Search by title/description
-- Filter by status, price range, deadline
-- Sorting by fee, deadline, creation date
+- Filter by status
+- Sorting by creation date or deadline (expiring soonest)
 - Pagination support
 - User-specific views (created vs assigned tasks)
 
-### Fee Negotiation
-- Applicants propose their own fee when applying
-- Accepting an application sets the task's fee to the proposed one
+### Sticky-Note Gigs
+- Headline up to 5 words (60 characters), note up to 20 words (200 characters)
+- No fee or deadline input: price is agreed in chat; every gig runs 24 hours
+- Contact details are refused in gig text and applications (`internal/contacts`, tested against `shared/contact-filter-cases.json`)
 
 ### Review System
 - Bidirectional reviews (creator ↔ assignee), 1–5 stars with an optional comment
@@ -183,7 +184,7 @@ type Review struct {
 ### Task Events in Messages
 Task events are posted as system messages into the owner↔applicant conversation in the chat service (`internal/chatnotify`, best effort, never blocking the action):
 - New application → owner
-- Accepted → the applicant; everyone else still waiting is told they weren't selected
+- Accepted → the applicant, with `unlock_contacts` so the pair may share contact details in chat; everyone else still waiting is told they weren't selected
 - Declined → the applicant
 - Task cancelled → everyone still waiting
 
@@ -192,15 +193,14 @@ Requires `INTERNAL_API_KEY` (shared with the chat service) and `CHAT_API_URL`.
 ## Business Rules
 
 ### Task Creation
-- Title and description required
-- Deadline must be at least 24 hours in future
-- Fee must be specified
+- Headline (≤5 words) and note (≤20 words) required, with no contact details
+- Expires 24 hours after posting unless someone applies
 - Creator cannot apply to own tasks
 
 ### Application Process
-- Apply with a proposed fee and an optional message
+- Apply with a short message (≤500 characters, no contact details)
 - One application per user per task; you can't apply to your own task
-- Only open tasks accept applications
+- Only open tasks accept applications, and not once a gig is past its 24 hours with no applications
 
 ### Task Assignment
 - Only the task creator can accept or decline, and only pending applications to that task

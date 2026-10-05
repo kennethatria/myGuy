@@ -1,7 +1,7 @@
 jest.mock('../src/config/database', () => ({ query: jest.fn(), getClient: jest.fn() }));
 jest.mock('../src/utils/logger', () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
 jest.mock('../src/services/bookingMessageService', () => ({}));
-jest.mock('../src/services/messageService', () => ({ sendMessage: jest.fn() }));
+jest.mock('../src/services/messageService', () => ({ sendMessage: jest.fn(), unlockContacts: jest.fn() }));
 
 const request = require('supertest');
 const express = require('express');
@@ -53,5 +53,25 @@ describe('POST /internal/task-message', () => {
     });
     expect(rooms).toEqual(['user:2', 'user:3']);
     expect(emit).toHaveBeenCalledWith('message:new', expect.objectContaining({ id: 42, message_type: 'system_alert' }));
+  });
+
+  it('unlocks contact sharing for an accepted application', async () => {
+    messageService.sendMessage.mockResolvedValue({ id: 43 });
+
+    const res = await post({ task_id: 1, sender_id: 9, recipient_id: 2, content: 'Accepted', unlock_contacts: true });
+
+    expect(res.status).toBe(201);
+    expect(messageService.unlockContacts).toHaveBeenCalledWith({ taskId: 1, userA: 9, userB: 2 });
+    // unlocked before the message is stored
+    expect(messageService.unlockContacts.mock.invocationCallOrder[0])
+      .toBeLessThan(messageService.sendMessage.mock.invocationCallOrder[0]);
+  });
+
+  it('leaves contacts locked for other task events', async () => {
+    messageService.sendMessage.mockResolvedValue({ id: 44 });
+
+    await post({ task_id: 1, sender_id: 2, recipient_id: 9, content: 'New application' });
+
+    expect(messageService.unlockContacts).not.toHaveBeenCalled();
   });
 });
