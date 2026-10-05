@@ -22,8 +22,8 @@
         </template>
         <template #footer>
           <span>@{{ request.requester?.username || 'someone' }}</span>
-          <span v-if="request.status === 'active' && request.deadline && expiryLabel(request.deadline)">
-            {{ expiryLabel(request.deadline) }}
+          <span v-if="request.status === 'active' && request.deadline && expiryLabel(request.deadline, now)">
+            {{ expiryLabel(request.deadline, now) }}
           </span>
         </template>
       </StickyNote>
@@ -84,6 +84,7 @@
               <template #footer>
                 <span>@{{ item.seller?.username || 'someone' }}</span>
                 <span v-if="listingPriceLabel(item)">{{ listingPriceLabel(item) }}</span>
+                <span v-if="item.deadline && expiryLabel(item.deadline, now)">{{ expiryLabel(item.deadline, now) }}</span>
               </template>
             </StickyNote>
           </li>
@@ -95,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import config from '@/config'
@@ -118,6 +119,7 @@ interface StoreItem {
   id: number
   title: string
   description: string
+  deadline?: string
   price_type?: string
   fixed_price?: number
   starting_bid?: number
@@ -135,6 +137,10 @@ const listings = ref<StoreItem[]>([])
 const loading = ref(true)
 const error = ref('')
 const busy = ref(false)
+
+// Countdowns move without refetching
+const now = ref(new Date())
+let clock: ReturnType<typeof setInterval> | undefined
 
 const isOwner = computed(() => request.value?.requester_id === authStore.user?.id)
 const statusLabel = computed(() => {
@@ -204,7 +210,14 @@ const remove = async () => {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  clock = setInterval(() => { now.value = new Date() }, 60_000)
+})
+
+onUnmounted(() => {
+  if (clock) clearInterval(clock)
+})
 </script>
 
 <style scoped>
