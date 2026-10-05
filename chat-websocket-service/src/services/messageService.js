@@ -29,7 +29,7 @@ class MessageService {
   /**
    * Send a new message
    */
-  async sendMessage({ taskId, applicationId, storeItemId, senderId, recipientId, content }) {
+  async sendMessage({ taskId, applicationId, storeItemId, senderId, recipientId, content, messageType }) {
     const client = await db.getClient();
 
     try {
@@ -38,8 +38,8 @@ class MessageService {
       // Filter content
       const { filtered, hasRemovedContent } = filterContent(content);
 
-      // Determine message type
-      const messageType = taskId ? 'task' : (applicationId ? 'application' : 'store');
+      // Determine message type (callers may set e.g. 'system_alert')
+      const type = messageType || (taskId ? 'task' : (applicationId ? 'application' : 'store'));
 
       // Store message
       const messageQuery = `
@@ -55,7 +55,7 @@ class MessageService {
         senderId,
         recipientId,
         filtered,
-        messageType
+        type
       ]);
 
       // Update user activity
@@ -86,7 +86,8 @@ class MessageService {
       await client.query('BEGIN');
 
       // Check if user owns the message
-      const checkQuery = 'SELECT * FROM messages WHERE id = $1 AND sender_id = $2';
+      // System messages (task events) record what happened: not editable
+      const checkQuery = "SELECT * FROM messages WHERE id = $1 AND sender_id = $2 AND message_type <> 'system_alert'";
       const checkResult = await client.query(checkQuery, [messageId, userId]);
 
       if (checkResult.rows.length === 0) {
@@ -132,7 +133,7 @@ class MessageService {
       SET is_deleted = true, 
           deleted_at = NOW(),
           content = '[Message deleted]'
-      WHERE id = $1 AND sender_id = $2
+      WHERE id = $1 AND sender_id = $2 AND message_type <> 'system_alert'
       RETURNING *
     `;
     

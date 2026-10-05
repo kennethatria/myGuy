@@ -33,7 +33,12 @@
       </div>
 
       <!-- Message List -->
-      <div v-for="message in messages" :key="message.id"
+      <template v-for="message in messages" :key="message.id">
+      <div v-if="message.message_type === 'system_alert'" class="system-message">
+        {{ message.content }}
+        <span class="system-message-time">{{ formatMessageTime(message.created_at) }}</span>
+      </div>
+      <div v-else
            class="message"
            :class="{ 'own-message': message.sender_id === authStore.user?.id }">
         <div class="message-header">
@@ -50,6 +55,7 @@
           <i class="bi bi-check-all"></i> Read
         </div>
       </div>
+      </template>
 
       <!-- Typing Indicator -->
       <div v-if="chatStore.activeTypingUsers.length > 0" class="typing-indicator">
@@ -539,5 +545,27 @@ watch(() => messages.value.length, async () => {
 
 .chat-messages::-webkit-scrollbar-thumb:hover {
   background: #555;
+}
+
+/* Task events (new application, accepted, declined): shown as a notice */
+.system-message {
+  align-self: center;
+  max-width: 90%;
+  margin: 0.5rem auto;
+  padding: 0.625rem 0.875rem;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 0.5rem;
+  color: #3730a3;
+  font-size: 0.875rem;
+  text-align: center;
+  white-space: pre-line;
+}
+
+.system-message-time {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: #6366f1;
 }
 </style>

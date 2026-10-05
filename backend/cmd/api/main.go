@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"myguy/internal/api"
+	"myguy/internal/chatnotify"
 	"myguy/internal/mailer"
 	"myguy/internal/middleware"
 	"myguy/internal/models"
@@ -65,7 +66,7 @@ func main() {
 
 	// Initialize services
 	userService := services.NewUserService(userRepo)
-	taskService := services.NewTaskService(taskRepo, applicationRepo)
+	taskService := services.NewTaskService(taskRepo, applicationRepo, newTaskNotifier())
 	reviewService := services.NewReviewService(reviewRepo, taskRepo, userRepo)
 
 	authService := services.NewAuthService(userRepo, loginCodeRepo, newCodeSender(), os.Getenv("JWT_SECRET"))
@@ -125,6 +126,7 @@ func main() {
 		// User-specific task routes
 		auth.GET("/user/tasks", handler.GetUserTasks)
 		auth.GET("/user/tasks/assigned", handler.GetAssignedTasks)
+		auth.GET("/user/applications", handler.GetUserApplications)
 
 
 		// Review routes
@@ -173,3 +175,19 @@ func newCodeSender() services.CodeSender {
 		From:     os.Getenv("SMTP_FROM"),
 	})
 }
+
+// newTaskNotifier posts task events (applications, decisions) into Messages
+// via the chat service, or does nothing if INTERNAL_API_KEY is unset.
+func newTaskNotifier() services.TaskNotifier {
+	apiKey := os.Getenv("INTERNAL_API_KEY")
+	if apiKey == "" {
+		log.Println("WARNING: INTERNAL_API_KEY not set; task events won't be posted to Messages")
+		return nil
+	}
+	chatAPIURL := os.Getenv("CHAT_API_URL")
+	if chatAPIURL == "" {
+		chatAPIURL = "http://localhost:8082/api/v1"
+	}
+	return chatnotify.New(chatAPIURL, apiKey)
+}
+

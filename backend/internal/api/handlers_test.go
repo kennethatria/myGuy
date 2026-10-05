@@ -29,7 +29,7 @@ func setupTestRouter() (*gin.Engine, *Handler, *tests.MockUserRepository, *tests
 	mockAppRepo := new(tests.MockApplicationRepository)
 
 	userService := services.NewUserService(mockUserRepo)
-	taskService := services.NewTaskService(mockTaskRepo, mockAppRepo)
+	taskService := services.NewTaskService(mockTaskRepo, mockAppRepo, nil)
 	reviewService := services.NewReviewService(mockReviewRepo, mockTaskRepo, mockUserRepo)
 	authMiddleware := middleware.NewJWTAuthMiddleware("test-secret")
 
@@ -441,6 +441,7 @@ func TestHandler_RespondToApplication(t *testing.T) {
 		task := &models.Task{ID: 1, CreatedBy: 1, Status: "open"}
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
 		mockAppRepo.On("GetByID", mock.Anything, uint(10)).Return(&models.Application{ID: 10, TaskID: 1, ApplicantID: 2, ProposedFee: 100, Status: "pending"}, nil)
+		mockAppRepo.On("ListByTask", mock.Anything, uint(1)).Return([]models.Application{}, nil)
 		mockTaskRepo.On("AssignIfOpen", mock.Anything, uint(1), uint(2), 100.0).Return(true, nil)
 		mockAppRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Application")).Return(nil)
 		mockAppRepo.On("DeclinePending", mock.Anything, uint(1), uint(10)).Return(nil)

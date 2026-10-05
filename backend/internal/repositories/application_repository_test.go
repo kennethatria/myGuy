@@ -54,6 +54,10 @@ func TestApplicationRepository(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotEmpty(t, apps)
 		assert.Equal(t, user.ID, apps[0].ApplicantID)
+		// The task and its poster come with it, for the "My applications" list
+		assert.Equal(t, task.ID, apps[0].Task.ID)
+		assert.Equal(t, task.Title, apps[0].Task.Title)
+		assert.Equal(t, task.CreatedBy, apps[0].Task.Creator.ID)
 	})
 
 	t.Run("Update", func(t *testing.T) {

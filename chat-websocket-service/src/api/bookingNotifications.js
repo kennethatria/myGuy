@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 const bookingMessageService = require('../services/bookingMessageService');
+const messageService = require('../services/messageService');
 const { authenticateHTTP } = require('../middleware/auth');
 
 /**
@@ -43,6 +44,49 @@ router.post('/internal/booking-created', async (req, res) => {
   } catch (error) {
     console.error('Error creating booking notification:', error);
     res.status(500).json({ error: 'Failed to create booking notification' });
+  }
+});
+
+/**
+ * Internal endpoint for the main API to post task events (new application,
+ * accepted, declined, cancelled) into the owner↔applicant task conversation.
+ * Stored as 'system_alert' so they can't be edited or deleted.
+ * Secured with the internal API key.
+ */
+router.post('/internal/task-message', async (req, res) => {
+  try {
+    const internalApiKey = req.headers['x-internal-api-key'];
+    if (!internalApiKey || internalApiKey !== process.env.INTERNAL_API_KEY) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const taskId = parseInt(req.body.task_id);
+    const senderId = parseInt(req.body.sender_id);
+    const recipientId = parseInt(req.body.recipient_id);
+    const content = typeof req.body.content === 'string' ? req.body.content.trim() : '';
+    if (!taskId || !senderId || !recipientId || !content) {
+      return res.status(400).json({ error: 'task_id, sender_id, recipient_id and content are required' });
+    }
+
+    const message = await messageService.sendMessage({
+      taskId, senderId, recipientId, content, messageType: 'system_alert'
+    });
+    const formatted = {
+      ...message,
+      sender: { id: senderId, username: 'User' },
+      recipient: { id: recipientId, username: 'User' }
+    };
+
+    // Deliver live to both participants (all their tabs)
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${senderId}`).to(`user:${recipientId}`).emit('message:new', formatted);
+    }
+
+    res.status(201).json({ id: message.id });
+  } catch (error) {
+    console.error('Error posting task message:', error);
+    res.status(500).json({ error: 'Failed to post task message' });
   }
 });
 

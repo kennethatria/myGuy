@@ -24,8 +24,12 @@
       
       <!-- Messages -->
       <template v-for="message in messages" :key="message.id">
+        <div v-if="message.message_type === 'system_alert'" class="system-message">
+          {{ message.content }}
+          <span class="system-message-time">{{ formatTime(message.created_at) }}</span>
+        </div>
         <BookingMessageBubble
-          v-if="isBookingMessage(message)"
+          v-else-if="isBookingMessage(message)"
           :message="message"
           :is-own-message="isOwnMessage(message)"
           @booking-action="handleBookingAction"
@@ -138,6 +142,11 @@ const typingText = computed(() => {
 
 function isOwnMessage(message: Message): boolean {
   return message.sender_id === authStore.user?.id;
+}
+
+function formatTime(date: string): string {
+  const d = new Date(date);
+  return isNaN(d.getTime()) ? '' : d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 function isBookingMessage(message: Message): boolean {
@@ -413,5 +422,27 @@ watch(() => props.messages.length, () => {
   .message-input-container {
     padding: 1rem;
   }
+}
+
+/* Task events (new application, accepted, declined): shown as a notice */
+.system-message {
+  align-self: center;
+  max-width: 90%;
+  margin: 0.5rem auto;
+  padding: 0.625rem 0.875rem;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 0.5rem;
+  color: #3730a3;
+  font-size: 0.875rem;
+  text-align: center;
+  white-space: pre-line;
+}
+
+.system-message-time {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: #6366f1;
 }
 </style>

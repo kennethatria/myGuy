@@ -138,3 +138,24 @@ func TestHandler_GetApplicationParticipants(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, get(99, "10").Code)
 	assert.Equal(t, http.StatusNotFound, get(1, "11").Code)
 }
+
+func TestHandler_GetUserApplications(t *testing.T) {
+	router, handler, _, _, _, mockAppRepo := setupTestRouter()
+	router.Use(func(c *gin.Context) { c.Set("userID", uint(2)); c.Next() })
+	router.GET("/user/applications", handler.GetUserApplications)
+	mockAppRepo.On("ListByUser", mock.Anything, uint(2)).Return([]models.Application{{
+		ID: 10, TaskID: 1, ApplicantID: 2, ProposedFee: 80, Status: "pending",
+		Task: models.Task{ID: 1, Title: "Paint fence", Status: "open", CreatedBy: 1,
+			Creator: models.User{ID: 1, Username: "ann", Email: "ann@example.com", PhoneNumber: "+256700000001"}},
+	}}, nil)
+
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/user/applications", nil))
+
+	assert.Equal(t, http.StatusOK, resp.Code)
+	assert.Contains(t, resp.Body.String(), `"title":"Paint fence"`)
+	assert.Contains(t, resp.Body.String(), `"username":"ann"`)
+	assert.NotContains(t, resp.Body.String(), "ann@example.com", "the poster's contact details stay hidden")
+	assert.NotContains(t, resp.Body.String(), "+2567")
+}
+

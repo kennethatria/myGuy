@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"myguy/internal/models"
 	"myguy/internal/repositories"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -22,15 +25,32 @@ var (
 	ErrTaskWasAssigned     = errors.New("a task that was assigned can't be deleted; cancel it instead")
 )
 
+// TaskNotifier tells the people involved about task events by posting a
+// message into their conversation about the task. Implementations must not
+// block or fail the caller (chat is best effort).
+type TaskNotifier interface {
+	TaskMessage(taskID, senderID, recipientID uint, content string)
+}
+
+type noopNotifier struct{}
+
+func (noopNotifier) TaskMessage(uint, uint, uint, string) {}
+
 type TaskService struct {
 	taskRepo        repositories.TaskRepository
 	applicationRepo repositories.ApplicationRepository
+	notifier        TaskNotifier
 }
 
-func NewTaskService(taskRepo repositories.TaskRepository, applicationRepo repositories.ApplicationRepository) *TaskService {
+// NewTaskService builds the service; notifier may be nil (no notifications).
+func NewTaskService(taskRepo repositories.TaskRepository, applicationRepo repositories.ApplicationRepository, notifier TaskNotifier) *TaskService {
+	if notifier == nil {
+		notifier = noopNotifier{}
+	}
 	return &TaskService{
 		taskRepo:        taskRepo,
 		applicationRepo: applicationRepo,
+		notifier:        notifier,
 	}
 }
 
@@ -227,7 +247,16 @@ func (s *TaskService) ApplyForTask(ctx context.Context, taskID, applicantID uint
 		Status:      "pending",
 	}
 
-	return s.applicationRepo.Create(ctx, application)
+	if err := s.applicationRepo.Create(ctx, application); err != nil {
+		return err
+	}
+
+	content := fmt.Sprintf("📩 New application for \"%s\": UGX %s proposed.", task.Title, formatUGX(proposedFee))
+	if trimmed := strings.TrimSpace(message); trimmed != "" {
+		content += "\n\n" + trimmed
+	}
+	s.notifier.TaskMessage(taskID, applicantID, task.CreatedBy, content)
+	return nil
 }
 
 // AssignTask accepts an application: the applicant gets the task at their
@@ -249,6 +278,12 @@ func (s *TaskService) AssignTask(ctx context.Context, taskID, applicationID uint
 		return nil, ErrApplicationNotPending
 	}
 
+	// Who is still waiting, to tell them once someone else is chosen.
+	others, err := s.pendingApplicants(ctx, taskID, applicationID)
+	if err != nil {
+		return nil, err
+	}
+
 	// Conditional update: only one acceptance can win, even when racing.
 	assigned, err := s.taskRepo.AssignIfOpen(ctx, taskID, application.ApplicantID, application.ProposedFee)
 	if err != nil {
@@ -264,6 +299,13 @@ func (s *TaskService) AssignTask(ctx context.Context, taskID, applicationID uint
 	}
 	if err := s.applicationRepo.DeclinePending(ctx, taskID, applicationID); err != nil {
 		return nil, err
+	}
+
+	s.notifier.TaskMessage(taskID, task.CreatedBy, application.ApplicantID,
+		fmt.Sprintf("✅ Your application for \"%s\" was accepted at UGX %s. Use this chat to arrange the details.", task.Title, formatUGX(application.ProposedFee)))
+	for _, applicantID := range others {
+		s.notifier.TaskMessage(taskID, task.CreatedBy, applicantID,
+			fmt.Sprintf("Your application for \"%s\" wasn't selected this time.", task.Title))
 	}
 
 	task.Status = "in_progress"
@@ -355,8 +397,16 @@ func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID uint, status 
 
 	// A cancelled task no longer needs anyone: tell waiting applicants.
 	if status == "cancelled" {
+		waiting, err := s.pendingApplicants(ctx, taskID, 0)
+		if err != nil {
+			return nil, err
+		}
 		if err := s.applicationRepo.DeclinePending(ctx, taskID, 0); err != nil {
 			return nil, err
+		}
+		for _, applicantID := range waiting {
+			s.notifier.TaskMessage(taskID, task.CreatedBy, applicantID,
+				fmt.Sprintf("\"%s\" was cancelled by the poster, so your application is closed.", task.Title))
 		}
 	}
 
@@ -377,7 +427,38 @@ func (s *TaskService) DeclineApplication(ctx context.Context, taskID, applicatio
 
 	application.Status = "declined"
 	application.UpdatedAt = time.Now()
-	return s.applicationRepo.Update(ctx, application)
+	if err := s.applicationRepo.Update(ctx, application); err != nil {
+		return err
+	}
+
+	s.notifier.TaskMessage(taskID, application.Task.CreatedBy, application.ApplicantID,
+		fmt.Sprintf("Your application for \"%s\" wasn't selected this time.", application.Task.Title))
+	return nil
+}
+
+// pendingApplicants lists the applicants still waiting on taskID, except
+// the application exceptID.
+func (s *TaskService) pendingApplicants(ctx context.Context, taskID, exceptID uint) ([]uint, error) {
+	applications, err := s.applicationRepo.ListByTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	var ids []uint
+	for _, app := range applications {
+		if app.Status == "pending" && app.ID != exceptID {
+			ids = append(ids, app.ApplicantID)
+		}
+	}
+	return ids, nil
+}
+
+// formatUGX renders 120000 as "120,000".
+func formatUGX(amount float64) string {
+	digits := strconv.FormatInt(int64(math.Round(amount)), 10)
+	for i := len(digits) - 3; i > 0; i -= 3 {
+		digits = digits[:i] + "," + digits[i:]
+	}
+	return digits
 }
 
 // ApplicationParticipants are the two people who may chat about an application.
@@ -405,6 +486,11 @@ func (s *TaskService) GetApplicationParticipants(ctx context.Context, applicatio
 		ApplicantID:   application.ApplicantID,
 		TaskOwnerID:   application.Task.CreatedBy,
 	}, nil
+}
+
+// ListUserApplications returns the applications userID has made.
+func (s *TaskService) ListUserApplications(ctx context.Context, userID uint) ([]models.Application, error) {
+	return s.applicationRepo.ListByUser(ctx, userID)
 }
 
 // GetTaskApplications returns all applications for a given task

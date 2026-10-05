@@ -43,9 +43,16 @@ func (r *GormApplicationRepository) ListByTask(ctx context.Context, taskID uint)
 	return applications, nil
 }
 
+// ListByUser returns userID's applications, newest first, with each task and
+// its poster loaded for the "My applications" list.
 func (r *GormApplicationRepository) ListByUser(ctx context.Context, userID uint) ([]models.Application, error) {
 	var applications []models.Application
-	err := r.db.WithContext(ctx).Where("applicant_id = ?", userID).Find(&applications).Error
+	err := r.db.WithContext(ctx).
+		Preload("Task").
+		Preload("Task.Creator").
+		Where("applicant_id = ?", userID).
+		Order("created_at DESC").
+		Find(&applications).Error
 	if err != nil {
 		return nil, err
 	}

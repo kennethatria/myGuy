@@ -80,6 +80,14 @@
           >
             Gigs Assigned to Me
           </button>
+          <button
+            class="tab-button"
+            :class="{ active: activeTab === 'applications' }"
+            @click="activeTab = 'applications'"
+          >
+            My Applications
+            <span v-if="waitingApplications > 0" class="tab-count">{{ waitingApplications }}</span>
+          </button>
         </div>
 
         <!-- Tab Content -->
@@ -120,8 +128,11 @@
                     <span class="task-deadline">Due: {{ formatDate(task.deadline) }}</span>
                   </div>
                   <div class="task-stats">
-                    <span v-if="task.applications?.length" class="applications-count">
-                      {{ task.applications.length }} applications
+                    <span v-if="pendingCount(task) > 0" class="applications-count">
+                      {{ pendingCount(task) }} awaiting your reply
+                    </span>
+                    <span v-else-if="task.applications?.length" class="text-sm text-gray">
+                      {{ task.applications.length }} {{ task.applications.length === 1 ? 'application' : 'applications' }}
                     </span>
                   </div>
                 </div>
@@ -170,6 +181,39 @@
               </div>
             </div>
           </div>
+
+          <!-- My Applications Tab -->
+          <div v-if="activeTab === 'applications'" class="tab-pane">
+            <div v-if="tasksStore.myApplications.length === 0" class="empty-state">
+              <h3>No applications yet</h3>
+              <p>Gigs you apply for show up here, with whether you got them.</p>
+              <router-link :to="{ name: 'tasks' }" class="btn btn-primary">Browse Available Gigs</router-link>
+            </div>
+            <div v-else class="task-list">
+              <div
+                v-for="application in tasksStore.myApplications"
+                :key="application.id"
+                class="task-item"
+                @click="navigateToTask(application.task_id)"
+              >
+                <div class="task-header">
+                  <h3 class="task-title">{{ application.task.title }}</h3>
+                  <span class="badge" :class="'application-' + application.status">
+                    {{ applicationStatusLabel[application.status] }}
+                  </span>
+                </div>
+                <div class="task-footer">
+                  <div class="task-meta">
+                    <span class="task-fee">Your offer: UGX {{ formatCurrency(application.proposed_fee || 0) }}</span>
+                    <span class="task-deadline">Applied {{ formatDate(application.created_at) }}</span>
+                  </div>
+                  <div class="task-creator">
+                    <span>Posted by {{ application.task.creator?.username || 'unknown' }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -193,7 +237,21 @@ const tasksStore = useTasksStore()
 const router = useRouter()
 const isLoading = ref(false)
 const error = ref('')
-const activeTab = ref<'created' | 'assigned'>('created')
+const activeTab = ref<'created' | 'assigned' | 'applications'>('created')
+
+const applicationStatusLabel = {
+  pending: 'Waiting for reply',
+  accepted: 'Accepted',
+  declined: 'Not selected'
+} as const
+
+const waitingApplications = computed(() =>
+  tasksStore.myApplications.filter(app => app.status === 'pending').length
+)
+
+// Applications on the user's own gig still waiting for their decision
+const pendingCount = (task: { applications?: { status?: string }[] }) =>
+  (task.applications || []).filter(app => app.status === 'pending').length
 
 const redirectToLogin = () => {
   const authStore = useAuthStore()
@@ -266,7 +324,9 @@ const fetchDashboardData = async () => {
     // Fetch real data from API
     await Promise.all([
       tasksStore.fetchUserTasks(),
-      tasksStore.fetchAssignedTasks()
+      tasksStore.fetchAssignedTasks(),
+      // A failure here shouldn't hide the rest of the dashboard
+      tasksStore.fetchMyApplications().catch(err => console.error('Failed to load applications:', err))
     ])
   } catch (err: unknown) {
     console.error('Failed to fetch dashboard data:', err)
@@ -403,6 +463,34 @@ onMounted(async () => {
 .tab-button:hover {
   background: #f8f9fa;
   color: #495057;
+}
+
+.tab-count {
+  display: inline-block;
+  min-width: 1.25rem;
+  margin-left: 0.375rem;
+  padding: 0 0.375rem;
+  border-radius: 9999px;
+  background: #4F46E5;
+  color: white;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  text-align: center;
+}
+
+.application-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.application-accepted {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.application-declined {
+  background: #f3f4f6;
+  color: #4b5563;
 }
 
 .tab-button.active {
@@ -619,6 +707,26 @@ onMounted(async () => {
 
   .page-title {
     font-size: 1.6rem;
+  }
+
+  /* Three tabs fit side by side; labels wrap instead of scrolling sideways */
+  .tab-button {
+    min-width: 0;
+    padding: 0.75rem 0.375rem;
+    font-size: 0.875rem;
+  }
+
+  .tab-pane {
+    padding: 1rem;
+  }
+
+  .task-item {
+    padding: 1rem;
+  }
+
+  .task-header {
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 
   /* Three compact counters side by side instead of a screen per card */

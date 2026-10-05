@@ -118,74 +118,45 @@
               :task-owner-id="task.created_by"
               @accept="handleAcceptApplication"
               @decline="handleDeclineApplication"
-              @message-sent="handleApplicationMessageSent"
+              @message="handleMessageApplicant"
             />
           </div>
         </div>
       </div>
 
-      <!-- Messages section -->
-      <div class="border-t border-gray-200">
+      <!-- Messages: one private conversation between the poster and each
+           person (applicant, assignee, or anyone asking a question) -->
+      <div ref="chatSection" class="border-t border-gray-200">
         <div class="p-4">
           <div class="gig-chat-header">
-            <h3 class="chat-title">Communication</h3>
+            <h3 class="chat-title">Messages</h3>
             <div class="chat-header-badges">
               <div class="chat-status">
                 <span v-if="task?.status === 'open'" class="status-badge status-open">Open for Applications</span>
                 <span v-else-if="task?.status === 'in_progress'" class="status-badge status-assigned">Task Assigned</span>
                 <span v-else-if="task?.status === 'completed'" class="status-badge status-completed">Completed</span>
               </div>
-              <div class="privacy-indicator">
-                <span v-if="isMessagesPrivate" class="privacy-badge privacy-private">
-                  🔒 Private Messages
-                </span>
-                <span v-else class="privacy-badge privacy-public">
-                  🌐 Public Messages
-                </span>
-              </div>
+              <span class="privacy-badge privacy-private">🔒 Only you two can see this</span>
             </div>
           </div>
-          
-          <div class="chat-content">
-            <div v-if="!canViewMessages && isMessagesPrivate" class="private-messages-notice">
-              <div class="privacy-lock-icon">
-                <i class="fas fa-lock"></i>
-              </div>
-              <p><strong>Private Messages</strong></p>
-              <p class="privacy-notice-subtitle">
-                Messages for this gig are private and only visible to the gig owner and assigned person.
-              </p>
-            </div>
 
+          <div class="chat-content">
             <ChatWindow
-              v-else-if="canViewMessages && task && chatRecipientId"
+              v-if="task && chatRecipientId"
+              :key="chatRecipientId"
               :conversation-id="task.id"
               conversation-type="task"
               :recipient-id="chatRecipientId"
               :recipient-name="chatRecipientName"
-              conversation-title="Task Communication"
-              :hide-input="!canSendMessage"
+              :conversation-title="chatHeading"
             />
-          </div>
 
-          <!-- Permission notices when can view but can't send -->
-          <div v-if="canViewMessages && !canSendMessage" class="chat-input-section">
-            <div v-if="isOwner && task?.status === 'open'" class="assignment-required">
+            <div v-else-if="isOwner" class="assignment-required">
               <div class="assignment-content">
-                <i class="fas fa-user-plus"></i>
+                <i class="fas fa-comments"></i>
                 <div>
-                  <p><strong>Assign this task to enable messaging</strong></p>
-                  <p>Messages will be available once you assign this task to an applicant.</p>
-                </div>
-              </div>
-            </div>
-
-            <div v-else-if="!isOwner && task?.status === 'open'" class="application-required">
-              <div class="application-content">
-                <i class="fas fa-paper-plane"></i>
-                <div>
-                  <p><strong>Apply for this gig to start messaging</strong></p>
-                  <p>Submit an application to communicate with the task owner.</p>
+                  <p><strong>Choose who to message</strong></p>
+                  <p>Press <em>Message</em> on an application to chat with that person. All your conversations are also in Messages.</p>
                 </div>
               </div>
             </div>
@@ -206,7 +177,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/stores/auth'
@@ -305,15 +276,6 @@ const canApply = computed(() => {
   )
 })
 
-const canSendMessage = computed(() => {
-  if (!task.value || !authStore.user) return false
-  
-  // Non-owners can always send messages to task creators
-  if (!isOwner.value) return true
-  
-  // Owners can only send messages if task is assigned
-  return task.value.assigned_to !== null && task.value.assigned_to !== undefined
-})
 
 const canComplete = computed(() => {
   if (!task.value || !authStore.user) return false
@@ -350,47 +312,9 @@ const visibleApplications = computed(() => {
   return applications.value.filter(app => app.applicant.id === authStore.user?.id)
 })
 
-const canViewMessages = computed(() => {
-  if (!task.value || !authStore.user) return false
-  
-  // If messages are public, anyone can view them
-  if (task.value.is_messages_public) return true
-  
-  // If messages are private, only task participants can view them
-  const userId = authStore.user.id
-  return (
-    userId === task.value.created_by || 
-    userId === task.value.assigned_to
-  )
-})
 
-const isMessagesPrivate = computed(() => {
-  return task.value?.is_messages_public === false
-})
 
-const chatRecipientId = computed(() => {
-  if (!task.value || !authStore.user) return null
 
-  // If current user is the owner, send to assigned person
-  if (isOwner.value) {
-    return task.value.assigned_to || null
-  }
-
-  // If current user is not the owner, send to task creator
-  return task.value.created_by || task.value.creator?.id || null
-})
-
-const chatRecipientName = computed(() => {
-  if (!task.value) return ''
-
-  if (isOwner.value) {
-    // Owner messaging assignee
-    return task.value.assignee?.username || 'Assigned Person'
-  }
-
-  // Non-owner messaging creator
-  return task.value.creator?.username || 'Task Owner'
-})
 
 const loadTaskData = async () => {
   const taskId = parseInt(route.params.id as string)
@@ -576,9 +500,32 @@ const handleDeclineApplication = async (applicationId: number) => {
   }
 }
 
-const handleApplicationMessageSent = () => {
-  // Optionally refresh applications or show a notification
-  console.log('Application message sent successfully')
+// The poster chats with whoever they pick (defaulting to the assignee);
+// everyone else chats with the poster.
+const chatWithUserId = ref<number | null>(null)
+const chatSection = ref<HTMLElement | null>(null)
+
+const chatRecipientId = computed<number | null>(() => {
+  if (!task.value || !authStore.user) return null
+  if (isOwner.value) return chatWithUserId.value ?? task.value.assigned_to ?? null
+  return task.value.created_by || task.value.creator?.id || null
+})
+
+const chatRecipientName = computed(() => {
+  if (!task.value) return ''
+  if (!isOwner.value) return task.value.creator?.username || 'the poster'
+  const applicant = applications.value.find(app => app.applicant_id === chatRecipientId.value)?.applicant
+  return applicant?.username
+    || (chatRecipientId.value === task.value.assigned_to ? task.value.assignee?.username : undefined)
+    || 'this person'
+})
+
+const chatHeading = computed(() => (isOwner.value && !chatRecipientId.value) ? 'Messages' : `Chat with ${chatRecipientName.value}`)
+
+const handleMessageApplicant = async (applicantId: number) => {
+  chatWithUserId.value = applicantId
+  await nextTick()
+  chatSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 // Message sending is now handled by ChatWindow component

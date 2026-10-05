@@ -16,8 +16,20 @@ import (
 func setupTaskService() (*TaskService, *tests.MockTaskRepository, *tests.MockApplicationRepository) {
 	taskRepo := new(tests.MockTaskRepository)
 	appRepo := new(tests.MockApplicationRepository)
-	service := NewTaskService(taskRepo, appRepo)
+	service := NewTaskService(taskRepo, appRepo, nil)
 	return service, taskRepo, appRepo
+}
+
+type sentMessage struct {
+	taskID, from, to uint
+	content          string
+}
+
+// recordingNotifier captures task event messages instead of posting them.
+type recordingNotifier struct{ sent []sentMessage }
+
+func (r *recordingNotifier) TaskMessage(taskID, from, to uint, content string) {
+	r.sent = append(r.sent, sentMessage{taskID, from, to, content})
 }
 
 // ==================== CreateTask Tests ====================
@@ -277,11 +289,15 @@ func TestDeleteTaskRules(t *testing.T) {
 }
 
 func TestCancelTaskDeclinesPendingApplications(t *testing.T) {
-	service, taskRepo, appRepo := setupTaskService()
+	taskRepo := new(tests.MockTaskRepository)
+	appRepo := new(tests.MockApplicationRepository)
+	notifier := &recordingNotifier{}
+	service := NewTaskService(taskRepo, appRepo, notifier)
 	ctx := context.Background()
 
-	taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, CreatedBy: 1, Status: "open"}, nil)
+	taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Title: "Paint fence", CreatedBy: 1, Status: "open"}, nil)
 	taskRepo.On("Update", ctx, mock.Anything).Return(nil)
+	appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{{ID: 5, ApplicantID: 7, Status: "pending"}}, nil)
 	appRepo.On("DeclinePending", ctx, uint(1), uint(0)).Return(nil)
 
 	task, err := service.UpdateTaskStatus(ctx, 1, "cancelled", 1)
@@ -289,6 +305,7 @@ func TestCancelTaskDeclinesPendingApplications(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "cancelled", task.Status)
 	appRepo.AssertExpectations(t)
+	assert.Equal(t, []sentMessage{{1, 1, 7, `"Paint fence" was cancelled by the poster, so your application is closed.`}}, notifier.sent)
 }
 
 func TestListTasks(t *testing.T) {
@@ -438,11 +455,19 @@ func TestAssignTask(t *testing.T) {
 	}
 
 	t.Run("successful assignment declines the other applicants", func(t *testing.T) {
-		service, taskRepo, appRepo := setupTaskService()
+		taskRepo := new(tests.MockTaskRepository)
+		appRepo := new(tests.MockApplicationRepository)
+		notifier := &recordingNotifier{}
+		service := NewTaskService(taskRepo, appRepo, notifier)
 		ctx := context.Background()
 
-		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Status: "open", Fee: 100}, nil)
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Title: "Paint fence", CreatedBy: 9, Status: "open", Fee: 100}, nil)
 		appRepo.On("GetByID", ctx, uint(1)).Return(pending(), nil)
+		appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{
+			{ID: 1, ApplicantID: 2, Status: "pending"},
+			{ID: 2, ApplicantID: 3, Status: "pending"},
+			{ID: 3, ApplicantID: 4, Status: "declined"},
+		}, nil)
 		taskRepo.On("AssignIfOpen", ctx, uint(1), uint(2), 80.0).Return(true, nil)
 		appRepo.On("Update", ctx, mock.MatchedBy(func(a *models.Application) bool {
 			return a.Status == "accepted"
@@ -457,6 +482,17 @@ func TestAssignTask(t *testing.T) {
 		assert.Equal(t, 80.0, result.Fee)
 		taskRepo.AssertExpectations(t)
 		appRepo.AssertExpectations(t)
+
+		// The chosen applicant hears they got it; the other pending one that
+		// they didn't; the already-declined one hears nothing new.
+		assert.Len(t, notifier.sent, 2)
+		assert.Equal(t, uint(2), notifier.sent[0].to)
+		assert.Contains(t, notifier.sent[0].content, "was accepted at UGX 80")
+		assert.Equal(t, uint(3), notifier.sent[1].to)
+		assert.Contains(t, notifier.sent[1].content, "wasn't selected")
+		for _, m := range notifier.sent {
+			assert.Equal(t, uint(9), m.from, "sent as the task owner")
+		}
 	})
 
 	t.Run("task not found", func(t *testing.T) {
@@ -517,6 +553,7 @@ func TestAssignTask(t *testing.T) {
 
 		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Status: "open"}, nil)
 		appRepo.On("GetByID", ctx, uint(1)).Return(pending(), nil)
+		appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{}, nil)
 		taskRepo.On("AssignIfOpen", ctx, uint(1), uint(2), 80.0).Return(false, nil)
 
 		_, err := service.AssignTask(ctx, 1, 1)
@@ -788,3 +825,43 @@ func TestListUserTasks(t *testing.T) {
 		assert.Len(t, result, 1)
 	})
 }
+
+func TestApplyAndDeclineNotify(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("applying tells the owner, with the fee and message", func(t *testing.T) {
+		taskRepo := new(tests.MockTaskRepository)
+		appRepo := new(tests.MockApplicationRepository)
+		notifier := &recordingNotifier{}
+		service := NewTaskService(taskRepo, appRepo, notifier)
+
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Title: "Paint fence", Status: "open", CreatedBy: 9}, nil)
+		appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{}, nil)
+		appRepo.On("Create", ctx, mock.Anything).Return(nil)
+
+		assert.NoError(t, service.ApplyForTask(ctx, 1, 2, 120000, "  I have a van  "))
+
+		assert.Equal(t, []sentMessage{{1, 2, 9, "📩 New application for \"Paint fence\": UGX 120,000 proposed.\n\nI have a van"}}, notifier.sent)
+	})
+
+	t.Run("declining tells the applicant", func(t *testing.T) {
+		taskRepo := new(tests.MockTaskRepository)
+		appRepo := new(tests.MockApplicationRepository)
+		notifier := &recordingNotifier{}
+		service := NewTaskService(taskRepo, appRepo, notifier)
+
+		appRepo.On("GetByID", ctx, uint(4)).Return(&models.Application{ID: 4, TaskID: 1, ApplicantID: 2, Status: "pending", Task: models.Task{ID: 1, Title: "Paint fence", CreatedBy: 9}}, nil)
+		appRepo.On("Update", ctx, mock.Anything).Return(nil)
+
+		assert.NoError(t, service.DeclineApplication(ctx, 1, 4))
+
+		assert.Equal(t, []sentMessage{{1, 9, 2, "Your application for \"Paint fence\" wasn't selected this time."}}, notifier.sent)
+	})
+}
+
+func TestFormatUGX(t *testing.T) {
+	for in, want := range map[float64]string{0: "0", 950: "950", 1000: "1,000", 120000: "120,000", 1234567.4: "1,234,567"} {
+		assert.Equal(t, want, formatUGX(in))
+	}
+}
+

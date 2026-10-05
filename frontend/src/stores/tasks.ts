@@ -43,10 +43,27 @@ interface Application {
 
 type ApplicationInput = Omit<Application, 'id' | 'status' | 'created_at' | 'taskId' | 'applicant'>
 
+// One of the current user's applications, with its task (for "My applications")
+export interface MyApplication {
+  id: number
+  task_id: number
+  proposed_fee: number
+  status: 'pending' | 'accepted' | 'declined'
+  created_at: string
+  task: {
+    id: number
+    title: string
+    status: string
+    deadline: string
+    creator?: { id: number; username: string }
+  }
+}
+
 export const useTasksStore = defineStore('tasks', () => {
   const tasks = ref<Task[]>([])
   const userTasks = ref<Task[]>([])
   const assignedTasks = ref<Task[]>([])
+  const myApplications = ref<MyApplication[]>([])
 
   const getTask = async (taskId: number): Promise<Task> => {
     const authStore = useAuthStore();
@@ -223,6 +240,16 @@ export const useTasksStore = defineStore('tasks', () => {
       console.error('Error fetching user tasks:', error)
       throw error
     }
+  }
+
+  // Applications the current user has made, newest first
+  const fetchMyApplications = async () => {
+    const authStore = useAuthStore()
+    const response = await fetch(`${config.API_URL}/user/applications`, {
+      headers: { 'Authorization': `Bearer ${authStore.token}` }
+    })
+    if (!response.ok) throw new Error('Failed to fetch your applications')
+    myApplications.value = await response.json()
   }
 
   const fetchAssignedTasks = async () => {
@@ -416,6 +443,8 @@ export const useTasksStore = defineStore('tasks', () => {
     tasks,
     userTasks,
     assignedTasks,
+    myApplications,
+    fetchMyApplications,
     getTask,
     getTaskApplications,
     fetchTasks,

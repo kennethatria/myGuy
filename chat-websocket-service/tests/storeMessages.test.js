@@ -436,14 +436,15 @@ describe('Store Messages API', () => {
   });
 
   describe('WebSocket Store Messaging Integration', () => {
-    let io, serverSocket, clientSocket;
-    const port = 3001;
-    
+    let io, serverSocket, clientSocket, port;
+
     beforeAll((done) => {
-      // Create WebSocket server
+      // Create WebSocket server on a free port (a fixed one can clash with
+      // local tunnels or dev servers)
       const httpServer = require('http').createServer();
       io = new Server(httpServer);
-      httpServer.listen(port, () => {
+      httpServer.listen(0, () => {
+        port = httpServer.address().port;
         done();
       });
     });

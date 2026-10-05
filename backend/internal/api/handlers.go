@@ -841,3 +841,20 @@ func (h *Handler) GetMyTaskReview(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"reviewed": true, "review": review})
 }
 
+// GetUserApplications lists the current user's applications with each task's
+// status, for the dashboard's "My applications" tab.
+func (h *Handler) GetUserApplications(c *gin.Context) {
+	userID := c.GetUint("userID")
+	applications, err := h.taskService.ListUserApplications(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve applications"})
+		return
+	}
+
+	for i := range applications {
+		applications[i].Task = taskForViewer(applications[i].Task, userID)
+		applications[i].Applicant = publicUser(applications[i].Applicant, userID)
+	}
+	c.JSON(http.StatusOK, applications)
+}
+

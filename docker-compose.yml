@@ -11,6 +11,9 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - DB_CONNECTION=host=postgres-db user=postgres password=${DB_PASSWORD} dbname=my_guy port=5432 sslmode=disable
       - ZIPKIN_URL=${ZIPKIN_URL:-http://zipkin:9411/api/v2/spans}
+      # Task events (applications, decisions) are posted into Messages via chat
+      - CHAT_API_URL=http://chat-websocket-service:8082/api/v1
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       # Login-code email. Unset SMTP_HOST logs codes instead (local dev only).
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
