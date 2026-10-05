@@ -49,7 +49,7 @@ func main() {
 	}
 
 	// Auto migrate database
-	if err := db.AutoMigrate(&models.StoreItem{}, &models.ItemImage{}, &models.Bid{}, &models.BookingRequest{}, &models.User{}); err != nil {
+	if err := db.AutoMigrate(&models.StoreItem{}, &models.ItemImage{}, &models.Bid{}, &models.BookingRequest{}, &models.User{}, &models.ItemRequest{}); err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
@@ -58,9 +58,12 @@ func main() {
 	bidRepo := repositories.NewBidRepository(db)
 	bookingRepo := repositories.NewBookingRequestRepository(db)
 	userRepo := repositories.NewUserRepository(db)
+	requestRepo := repositories.NewItemRequestRepository(db)
 
 	// Initialize services
-	storeService := services.NewStoreService(db, itemRepo, bidRepo, bookingRepo, userRepo)
+	storeService := services.NewStoreService(db, itemRepo, bidRepo, bookingRepo, userRepo).
+		WithRequests(requestRepo, services.NewHTTPChatNotifier())
+	requestService := services.NewRequestService(requestRepo, itemRepo)
 
 	// Listings from before notes had deadlines get a fresh 24 hours
 	if n, err := itemRepo.StartMissingDeadlines(time.Now().UTC().Add(services.ListingLifetime)); err != nil {
@@ -68,10 +71,11 @@ func main() {
 	} else if n > 0 {
 		log.Printf("gave %d listing(s) a 24 hour deadline", n)
 	}
-	go expireStaleItems(storeService)
+	go expireStaleNotes(storeService, requestService)
 
 	// Initialize handlers
 	storeHandler := handlers.NewStoreHandler(storeService)
+	requestHandler := handlers.NewRequestHandler(requestService)
 
 	// Initialize middleware
 	jwtSecret := os.Getenv("JWT_SECRET")
@@ -108,6 +112,9 @@ func main() {
 		api.GET("/items", storeHandler.GetItems)
 		api.GET("/items/:id", storeHandler.GetItem)
 		api.GET("/items/:id/bids", storeHandler.GetItemBids)
+		api.GET("/requests", requestHandler.GetRequests)
+		api.GET("/requests/:id", requestHandler.GetRequest)
+		api.GET("/requests/:id/listings", requestHandler.GetRequestListings)
 
 		// Protected routes
 		auth := api.Group("/")
@@ -118,6 +125,12 @@ func main() {
 			auth.PUT("/items/:id", storeHandler.UpdateItem)
 			auth.DELETE("/items/:id", storeHandler.DeleteItem)
 			auth.POST("/items/:id/repost", storeHandler.RepostItem)
+
+			// Requests ("wanted" notes)
+			auth.POST("/requests", requestHandler.CreateRequest)
+			auth.POST("/requests/:id/repost", requestHandler.RepostRequest)
+			auth.DELETE("/requests/:id", requestHandler.DeleteRequest)
+			auth.GET("/user/requests", requestHandler.GetUserRequests)
 			auth.POST("/items/:id/purchase", storeHandler.PurchaseItem)
 
 			// Bidding
@@ -159,16 +172,20 @@ func main() {
 		log.Fatal("Failed to start server:", err)
 	}
 }
-// expireStaleItems takes listings that got no bid or booking request within
-// their 24 hours off the board, checking every minute. Booking also checks
-// the deadline, so the gap between runs can't let a late request in.
-func expireStaleItems(storeService *services.StoreService) {
+// expireStaleNotes takes listings and requests that got no reaction within
+// their 24 hours off the board, checking every minute. Booking also checks a
+// listing's deadline, so the gap between runs can't let a late request in.
+func expireStaleNotes(storeService *services.StoreService, requestService *services.RequestService) {
 	for range time.Tick(time.Minute) {
-		n, err := storeService.ExpireStaleItems()
-		if err != nil {
+		if n, err := storeService.ExpireStaleItems(); err != nil {
 			log.Println("WARNING: expiring stale listings failed:", err)
 		} else if n > 0 {
 			log.Printf("expired %d listing(s) with no bids or booking requests", n)
+		}
+		if n, err := requestService.ExpireStaleRequests(); err != nil {
+			log.Println("WARNING: expiring stale requests failed:", err)
+		} else if n > 0 {
+			log.Printf("expired %d request(s) with no listings", n)
 		}
 	}
 }

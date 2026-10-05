@@ -151,6 +151,7 @@ A conversation is addressed by its context (`taskId`, `applicationId` or `itemId
 ### Internal (service-to-service, `X-Internal-API-Key: $INTERNAL_API_KEY`)
 -   `POST /api/v1/internal/booking-created` — from the store service.
 -   `POST /api/v1/internal/task-message` — from the main API: `{ task_id, sender_id, recipient_id, content }`, stored as `system_alert`.
+-   `POST /api/v1/internal/store-message` — from store-service: `{ store_item_id, sender_id, recipient_id, content }`, stored as `system_alert` in that item's conversation (a listing made for someone's request).
 
 ## 9. Message Lifecycle
 

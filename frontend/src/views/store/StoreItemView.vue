@@ -48,6 +48,14 @@
               </span>
             </template>
           </StickyNote>
+
+          <router-link
+            v-if="item.request"
+            :to="{ name: 'store-request', params: { id: item.request.id } }"
+            class="answers-request"
+          >
+            Listed for the request "{{ item.request.title }}"
+          </router-link>
           
           <div class="seller-info">
             <h3>Seller</h3>
@@ -325,6 +333,7 @@ interface StoreItem {
   status: string;
   deadline?: string;
   bid_deadline?: string;
+  request?: { id: number; title: string };
   price_type: string;
   fixed_price?: number;
   starting_bid?: number;
@@ -937,6 +946,21 @@ onMounted(() => {
   font-size: 1.15rem;
   line-height: 1.5;
   flex: 1;
+}
+
+.answers-request {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin: -1rem 0 1.5rem;
+  color: var(--color-primary, #4f46e5);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.answers-request:hover,
+.answers-request:focus-visible {
+  text-decoration: underline;
 }
 
 .owner-actions {

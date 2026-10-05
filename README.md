@@ -212,7 +212,9 @@ There is **one private conversation per pair** (poster ↔ each person) per gig,
 
 ### Marketplace listings
 
-Selling works the same way. A listing is a sticky note with a headline (≤ 5 words), a note (≤ 20 words) and up to three photos (the first is taped to the note). There are no price, category or condition fields: put the price in the note or agree it in chat. A buyer presses **Book Now**; once the seller approves, the two can share contact details in chat. A listing nobody books within 24 hours expires; the seller can repost or remove it from the item page or **Your listings**. Older auctions keep working and close when their note comes down.
+Selling works the same way. A listing is a sticky note with a headline (≤ 5 words), a note (≤ 20 words) and up to three photos (the first is taped to the note). There are no price, category or condition fields: put the price in the note or agree it in chat. A buyer presses **Book Now**; once the seller approves, the two can share contact details in chat. A listing nobody books within 24 hours expires; the seller can repost or remove it from the item page or the **Yours** tab. Older auctions keep working and close when their note comes down.
+
+**Requests.** Buyers can ask too. A request ("Printer wanted") is a note on the **Wanted** tab, with the same limits and 24-hour life. A seller who has the item presses **I have this** and posts a listing linked to the request; it goes on the board as usual, and the requester gets a message in Messages with a link to it. The requester books it like any listing, and once the seller approves that booking the request closes. A request no seller answers within 24 hours expires and can be reposted.
 
 ### Notifications
 

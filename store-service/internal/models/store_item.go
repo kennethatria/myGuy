@@ -27,6 +27,9 @@ type StoreItem struct {
 	Condition       string         `json:"condition" gorm:"index:idx_store_items_condition"` // new, like-new, good, fair, poor
 	Location        string         `json:"location"`
 	ShippingInfo    string         `json:"shipping_info"`
+	// RequestID links a listing made for someone's request ("printer wanted")
+	RequestID       *uint          `json:"request_id,omitempty" gorm:"index:idx_store_items_request_id"`
+	Request         *ItemRequest   `json:"request,omitempty" gorm:"foreignKey:RequestID"`
 	BuyerID         *uint          `json:"buyer_id,omitempty" gorm:"index:idx_store_items_buyer_id"`
 	SoldAt          *time.Time     `json:"sold_at,omitempty"`
 	Bids            []Bid          `json:"bids,omitempty" gorm:"foreignKey:ItemID"`
@@ -93,6 +96,48 @@ type ReceivedRating struct {
 	RatedAt   time.Time `json:"rated_at"`
 }
 
+// ItemRequest is a "wanted" note: someone asks for an item, and sellers
+// answer with listings linked to it. Like a listing it stays up for 24 hours
+// unless someone answers, and closes once the requester's booking on one of
+// those listings is approved.
+type ItemRequest struct {
+	ID              uint           `json:"id" gorm:"primaryKey"`
+	Title           string         `json:"title" gorm:"not null"`
+	Description     string         `json:"description"`
+	RequesterID     uint           `json:"requester_id" gorm:"not null;index:idx_item_requests_requester_id"`
+	Requester       *User          `json:"requester,omitempty" gorm:"foreignKey:RequesterID"`
+	Status          string         `json:"status" gorm:"default:'active';index:idx_item_requests_status"` // active, expired, fulfilled
+	Deadline        *time.Time     `json:"deadline,omitempty" gorm:"index:idx_item_requests_deadline"`
+	FulfilledItemID *uint          `json:"fulfilled_item_id,omitempty"`
+	OfferCount      int            `json:"offer_count" gorm:"-"`
+	CreatedAt       time.Time      `json:"created_at" gorm:"index:idx_item_requests_created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	DeletedAt       gorm.DeletedAt `json:"-" gorm:"index"`
+}
+
+// AfterFind counts the active listings made for this request
+func (r *ItemRequest) AfterFind(tx *gorm.DB) error {
+	var offers int64
+	tx.Model(&StoreItem{}).Where("request_id = ? AND status = ?", r.ID, "active").Count(&offers)
+	r.OfferCount = int(offers)
+	return nil
+}
+
+type CreateItemRequestRequest struct {
+	Title       string `json:"title" binding:"required"`
+	Description string `json:"description"`
+}
+
+type ItemRequestFilter struct {
+	Search             string
+	Status             string
+	ExcludeRequesterID uint
+	SortBy             string
+	SortOrder          string
+	Page               int
+	PerPage            int
+}
+
 // DTOs for API requests/responses
 type CreateStoreItemRequest struct {
 	Title           string    `json:"title" binding:"required"`
@@ -107,6 +152,8 @@ type CreateStoreItemRequest struct {
 	Condition       string    `json:"condition" binding:"omitempty,oneof=new like-new good fair poor"`
 	Location        string    `json:"location"`
 	ShippingInfo    string    `json:"shipping_info"`
+	// RequestID: the request this listing answers, if any
+	RequestID       *uint     `json:"request_id,omitempty"`
 }
 
 type UpdateStoreItemRequest struct {
@@ -143,6 +190,8 @@ type StoreItemFilter struct {
 	SellerID    uint
 	// ExcludeSellerID leaves out one seller's listings (the viewer's own)
 	ExcludeSellerID uint
+	// RequestID keeps only listings made for one request
+	RequestID   uint
 	Status      string
 	SortBy      string
 	SortOrder   string

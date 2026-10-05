@@ -21,3 +21,8 @@ export function listingPriceLabel(item: ListingPrice): string {
   }
   return item.fixed_price && item.fixed_price > 0 ? formatUGX(item.fixed_price) : ''
 }
+
+/** "1 offer", "3 offers": listings sellers made for a request. */
+export function offersLabel(count: number): string {
+  return count === 1 ? '1 offer' : `${count} offers`
+}

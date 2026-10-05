@@ -59,6 +59,9 @@ func (h *StoreHandler) CreateItem(c *gin.Context) {
 			Category:    category,
 			Condition:   condition,
 		}
+		if requestID, err := parseID(c.PostForm("request_id")); err == nil {
+			req.RequestID = &requestID
+		}
 		
 		if isAuction {
 			req.PriceType = "bidding"

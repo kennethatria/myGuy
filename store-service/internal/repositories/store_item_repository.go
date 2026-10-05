@@ -23,7 +23,7 @@ func (r *storeItemRepository) Create(item *models.StoreItem) error {
 
 func (r *storeItemRepository) GetByID(id uint) (*models.StoreItem, error) {
 	var item models.StoreItem
-	err := r.db.Preload("Seller").Preload("Images", func(db *gorm.DB) *gorm.DB {
+	err := r.db.Preload("Seller").Preload("Request").Preload("Images", func(db *gorm.DB) *gorm.DB {
 		return db.Order("\"order\" ASC")
 	}).Preload("Bids", "status = ?", "active").First(&item, id).Error
 	if err != nil {
@@ -81,6 +81,10 @@ func (r *storeItemRepository) GetAll(filter models.StoreItemFilter) ([]models.St
 
 	if filter.ExcludeSellerID > 0 {
 		query = query.Where("seller_id <> ?", filter.ExcludeSellerID)
+	}
+
+	if filter.RequestID > 0 {
+		query = query.Where("request_id = ?", filter.RequestID)
 	}
 
 	// Price filtering based on price type

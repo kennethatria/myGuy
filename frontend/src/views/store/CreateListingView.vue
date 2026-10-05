@@ -6,6 +6,12 @@
       marketplace for 24 hours; agree the details in chat with whoever asks to book it.
     </p>
 
+    <div v-if="answering" class="answering" role="status">
+      <span class="answering-label">Listing for a request</span>
+      <strong>{{ answering.title }}</strong>
+      <span class="text-muted">@{{ answering.requester?.username || 'someone' }} gets a message when you post.</span>
+    </div>
+
     <form @submit.prevent="handleSubmit" novalidate>
       <StickyNote :seed="colorSeed" size="large" flat :photo="photos[0]?.preview" photo-alt="Your first photo">
         <template #header>
@@ -74,8 +80,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import config from '@/config'
 import StickyNote from '@/components/StickyNote.vue'
@@ -96,8 +102,25 @@ interface Photo {
   preview: string
 }
 
+const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+
+// Opened from a request's "I have this": the listing answers that request
+const answering = ref<{ id: number; title: string; requester?: { username: string } } | null>(null)
+
+onMounted(async () => {
+  const requestId = Number(route.query.request)
+  if (!Number.isInteger(requestId) || requestId <= 0) return
+  try {
+    const response = await fetch(`${config.STORE_API_URL}/requests/${requestId}`, {
+      headers: { Authorization: `Bearer ${authStore.token}` }
+    })
+    if (response.ok) answering.value = await response.json()
+  } catch {
+    // Without it the listing is posted as a plain listing
+  }
+})
 
 const title = ref('')
 const description = ref('')
@@ -152,11 +175,12 @@ const handleSubmit = async () => {
     const form = new FormData()
     form.append('title', fields.title)
     form.append('description', fields.description)
+    if (answering.value) form.append('request_id', String(answering.value.id))
     photos.value.forEach((photo) => form.append('images', photo.file))
     body = form
   } else {
     headers['Content-Type'] = 'application/json'
-    body = JSON.stringify(fields)
+    body = JSON.stringify(answering.value ? { ...fields, request_id: answering.value.id } : fields)
   }
 
   try {
@@ -314,6 +338,25 @@ const handleSubmit = async () => {
 .photo-add:focus-within {
   outline: 3px solid var(--color-primary, #4f46e5);
   outline-offset: 2px;
+}
+
+.answering {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 1.25rem;
+  padding: 0.75rem 1rem;
+  border-left: 4px solid var(--color-primary, #4f46e5);
+  background: #fff;
+  border-radius: 0 0.375rem 0.375rem 0;
+}
+
+.answering-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-light, #6b7280);
 }
 
 .composer-hint {
