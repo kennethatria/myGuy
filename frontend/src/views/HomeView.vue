@@ -1,13 +1,3 @@
-<script setup lang="ts">
-import { useRouter } from 'vue-router'
-
-const router = useRouter()
-
-const navigateToLogin = () => {
-  router.push({ name: 'login' })
-}
-</script>
-
 <template>
   <div class="h-full flex flex-col justify-center p-4">
     <div class="container mx-auto max-width-md">
@@ -36,19 +26,12 @@ const navigateToLogin = () => {
           </div>
 
           <div class="mt-4 flex flex-col">
-            <button
-              @click="navigateToLogin"
-              class="btn btn-primary w-full mb-2"
-            >
-              Sign In
-            </button>
-            
-            <router-link
-              :to="{ name: 'login' }"
-              class="btn btn-outline w-full"
-            >
-              Create an Account
+            <router-link :to="{ name: 'login' }" class="btn btn-primary w-full">
+              Get started
             </router-link>
+            <p class="text-center text-sm mt-2">
+              Sign in or create an account with just your email.
+            </p>
           </div>
         </div>
       </div>

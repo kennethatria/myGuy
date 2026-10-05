@@ -14,7 +14,7 @@ const useModernLayout = true
 
 // Show layout only for routes that are not the homepage or auth pages
 const showLayout = computed(() => {
-  return !['home', 'login', 'register'].includes(route.name as string)
+  return !['home', 'login', 'register', 'not-found'].includes(route.name as string)
 })
 
 // Show chat widget on all authenticated pages except message center

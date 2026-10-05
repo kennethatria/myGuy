@@ -435,13 +435,13 @@ const handleSubmit = async () => {
 }
 
 .preset-btn:hover {
-  border-color: #1976d2;
-  color: #1976d2;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .preset-btn.active {
-  background: #1976d2;
-  border-color: #1976d2;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
   color: white;
 }
 
@@ -486,18 +486,18 @@ const handleSubmit = async () => {
 }
 
 .privacy-option:hover {
-  border-color: #1976d2;
+  border-color: var(--color-primary);
   background: #f8fafc;
 }
 
 .privacy-option:has(.privacy-radio:checked) {
-  border-color: #1976d2;
-  background: #e3f2fd;
+  border-color: var(--color-primary);
+  background: #eef2ff;
 }
 
 .privacy-radio {
   margin-top: 0.125rem;
-  accent-color: #1976d2;
+  accent-color: var(--color-primary);
 }
 
 .privacy-label {

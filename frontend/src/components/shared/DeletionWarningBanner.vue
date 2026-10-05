@@ -12,7 +12,7 @@
           </li>
         </ul>
         <p class="warning-note">
-          Messages are automatically deleted 6 months after task completion or 1 month after inactivity.
+          Messages are automatically deleted 6 months after a gig is completed or 1 month after inactivity.
         </p>
       </div>
       <button @click="dismissWarnings" class="dismiss-btn">

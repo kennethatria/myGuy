@@ -92,7 +92,7 @@ export const useTasksStore = defineStore('tasks', () => {
       
       if (!response.ok) {
         console.error(`Error response for task ${taskId}:`, response.status, response.statusText);
-        throw new Error('Failed to fetch task');
+        throw new Error('Failed to load the gig');
       }
       
       const taskData = await response.json();
@@ -168,7 +168,7 @@ export const useTasksStore = defineStore('tasks', () => {
           'Content-Type': 'application/json'
         }
       })
-      if (!response.ok) throw new Error('Failed to fetch tasks')
+      if (!response.ok) throw new Error('Failed to load gigs')
       
       // Get tasks from API
       const result = await response.json();
@@ -232,7 +232,7 @@ export const useTasksStore = defineStore('tasks', () => {
           authStore.logout();
           throw new Error('Please log in again to continue')
         }
-        throw new Error('Failed to fetch user tasks')
+        throw new Error('Failed to load your gigs')
       }
       
       userTasks.value = await response.json()
@@ -278,7 +278,7 @@ export const useTasksStore = defineStore('tasks', () => {
           authStore.logout();
           throw new Error('Please log in again to continue')
         }
-        throw new Error('Failed to fetch assigned tasks')
+        throw new Error('Failed to load gigs assigned to you')
       }
       
       const assignedTasksData = await response.json();

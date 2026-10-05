@@ -8,7 +8,7 @@
       <div class="sidebar-header">
         <router-link :to="{ name: 'dashboard' }" class="logo-link">
           <img class="logo-icon" src="../assets/myguy-icon.svg" alt="MyGuy" />
-          <span v-if="!isSidebarCollapsed" class="logo-text">myguy</span>
+          <span v-if="!isSidebarCollapsed" class="logo-text">MyGuy</span>
         </router-link>
       </div>
       
@@ -76,7 +76,7 @@
           <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none">
             <path d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
-          <input type="search" placeholder="Search tasks..." v-model="searchQuery" @keyup.enter="handleSearch">
+          <input type="search" placeholder="Search gigs..." v-model="searchQuery" @keyup.enter="handleSearch">
         </div>
         
       </header>
@@ -308,8 +308,8 @@ onMounted(async () => {
 }
 
 .nav-item.active {
-  background-color: #e3f2fd;
-  color: #1976d2;
+  background-color: #eef2ff;
+  color: var(--color-primary);
 }
 
 .nav-icon {
@@ -367,7 +367,7 @@ onMounted(async () => {
 .user-avatar {
   width: 40px;
   height: 40px;
-  background-color: #1976d2;
+  background-color: var(--color-primary);
   color: white;
   border-radius: 50%;
   display: flex;
@@ -487,7 +487,7 @@ onMounted(async () => {
 
 .search-bar input:focus {
   outline: none;
-  border-color: #1976d2;
+  border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
 }
 
@@ -507,7 +507,7 @@ onMounted(async () => {
 .user-avatar-small {
   width: 32px;
   height: 32px;
-  background-color: #1976d2;
+  background-color: var(--color-primary);
   color: white;
   border-radius: 50%;
   display: flex;

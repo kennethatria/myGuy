@@ -10,7 +10,7 @@
           @click="showFilters = !showFilters"
           class="btn btn-outline-secondary"
         >
-          <i class="bi" :class="showFilters ? 'bi-funnel-fill' : 'bi-funnel'"></i>
+          <i class="fas fa-filter" aria-hidden="true"></i>
           Filters
           <span v-if="hasActiveFilters" class="badge bg-primary ms-1">{{ activeFilterCount }}</span>
         </button>
@@ -18,7 +18,7 @@
           :to="{ name: 'create-task' }"
           class="btn btn-primary"
         >
-          Create Gig
+          Post a Gig
         </router-link>
       </div>
     </div>
@@ -142,16 +142,15 @@
 
               <div class="task-meta d-flex align-items-center gap-3 text-sm text-muted">
                 <span>
-                  <i class="bi bi-person"></i>
+                  <i class="fas fa-user" aria-hidden="true"></i>
                   {{ task.creator?.username || 'Unknown' }}
                 </span>
                 <span>
-                  <i class="bi bi-calendar"></i>
+                  <i class="far fa-calendar" aria-hidden="true"></i>
                   {{ formatDate(task.deadline) }}
                 </span>
                 <span v-if="task.fee" class="text-success fw-bold">
-                  <i class="bi bi-currency-dollar"></i>
-                  UGX {{ formatCurrency(task.fee) }}
+                                    UGX {{ formatCurrency(task.fee) }}
                 </span>
               </div>
             </div>
@@ -169,7 +168,7 @@
     <!-- Empty State -->
     <div v-else-if="!loading && paginatedResult?.tasks.length === 0" class="card">
       <div class="card-body text-center py-5">
-        <i class="bi bi-inbox display-1 text-muted"></i>
+        <i class="fas fa-inbox display-1 text-muted" aria-hidden="true"></i>
         <h3 class="mt-3">No gigs found</h3>
         <p class="text-muted">
           {{ searchQuery || hasActiveFilters ? 'Try adjusting your search or filters' : 'Be the first to create a gig!' }}
@@ -385,7 +384,7 @@ const fetchTasks = async () => {
     })
     
     if (!response.ok) {
-      throw new Error('Failed to fetch tasks')
+      throw new Error('Failed to load gigs')
     }
     
     paginatedResult.value = await response.json()
@@ -489,8 +488,8 @@ onMounted(() => {
 
 .btn-primary {
   color: #fff;
-  background-color: #0d6efd;
-  border-color: #0d6efd;
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .btn-outline-secondary {
@@ -526,8 +525,8 @@ onMounted(() => {
 
 .btn-primary:hover {
   color: #fff;
-  background-color: #0b5ed7;
-  border-color: #0a58ca;
+  background-color: var(--color-primary-dark);
+  border-color: var(--color-primary-dark);
 }
 
 .btn-secondary {
@@ -602,7 +601,7 @@ onMounted(() => {
   position: relative;
   display: block;
   padding: 0.375rem 0.75rem;
-  color: #0d6efd;
+  color: var(--color-primary);
   text-decoration: none;
   background-color: #fff;
   border: 1px solid #dee2e6;
@@ -610,7 +609,7 @@ onMounted(() => {
 
 .page-link:hover {
   z-index: 2;
-  color: #0a58ca;
+  color: var(--color-primary-dark);
   background-color: #e9ecef;
   border-color: #dee2e6;
 }
@@ -618,8 +617,8 @@ onMounted(() => {
 .page-item.active .page-link {
   z-index: 3;
   color: #fff;
-  background-color: #0d6efd;
-  border-color: #0d6efd;
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .page-item.disabled .page-link {

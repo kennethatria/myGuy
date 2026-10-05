@@ -13,10 +13,10 @@
         </div>
 
         <div v-else-if="!canReview" class="alert alert-warning">
-          <h4>Cannot Review This Task</h4>
+          <h4>Cannot Review This Gig</h4>
           <p>{{ reviewError }}</p>
           <router-link :to="`/tasks/${taskId}`" class="btn btn-primary mt-2">
-            Back to Task
+            Back to Gig
           </router-link>
         </div>
 
@@ -110,12 +110,12 @@ const checkCanReview = async () => {
   reviewError.value = ''
   
   if (!task.value) {
-    reviewError.value = 'Task not found'
+    reviewError.value = 'Gig not found'
     return
   }
   
   if (task.value.status !== 'completed') {
-    reviewError.value = 'This task must be completed before it can be reviewed.'
+    reviewError.value = 'This gig must be completed before it can be reviewed.'
     return
   }
   
@@ -129,7 +129,7 @@ const checkCanReview = async () => {
   const isAssignee = task.value.assignedTo === currentUserId.value
   
   if (!isCreator && !isAssignee) {
-    reviewError.value = 'You can only review tasks you created or were assigned to.'
+    reviewError.value = 'You can only review gigs you posted or were assigned to.'
     return
   }
   
@@ -142,7 +142,7 @@ const checkCanReview = async () => {
   try {
     const hasReviewed = await reviewsStore.hasReviewedTask(taskId.value)
     if (hasReviewed) {
-      reviewError.value = 'You have already reviewed this task.'
+      reviewError.value = 'You have already reviewed this gig.'
       return
     }
   } catch (err) {
@@ -167,7 +167,7 @@ onMounted(async () => {
     task.value = await tasksStore.getTask(taskId.value)
     await checkCanReview()
   } catch (err) {
-    error.value = 'Failed to load task details'
+    error.value = 'Failed to load gig details'
     console.error('Error loading task:', err)
   } finally {
     loading.value = false
@@ -213,7 +213,7 @@ onMounted(async () => {
   background: #f8f9fa;
   padding: 1.5rem;
   border-radius: 8px;
-  border-left: 4px solid #007bff;
+  border-left: 4px solid var(--color-primary);
 }
 
 .task-info h2 {
@@ -267,8 +267,8 @@ onMounted(async () => {
 
 .btn-primary {
   color: #fff;
-  background-color: #007bff;
-  border-color: #007bff;
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .btn-primary:hover {

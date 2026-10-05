@@ -1733,7 +1733,7 @@ onMounted(() => {
 
 /* Button Link Style */
 .btn-link {
-  color: #007bff;
+  color: var(--color-primary);
   text-decoration: none;
   background: none;
   border: none;

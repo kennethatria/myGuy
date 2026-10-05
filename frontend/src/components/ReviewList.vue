@@ -60,7 +60,7 @@
         </div>
         <div class="review-content">
           <p v-if="review.task" class="task-reference">
-            <small>Task: <em>{{ review.task.title }}</em></small>
+            <small>Gig: <em>{{ review.task.title }}</em></small>
           </p>
           <p v-else-if="review.item" class="task-reference">
             <small>

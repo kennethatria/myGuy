@@ -4,7 +4,7 @@
     <div class="page-header">
       <h1 class="page-title">My Dashboard</h1>
       <router-link :to="{ name: 'create-task' }" class="btn btn-primary">
-        + Post New Gig
+        + Post a Gig
       </router-link>
     </div>
 
@@ -494,8 +494,8 @@ onMounted(async () => {
 }
 
 .tab-button.active {
-  color: #1976d2;
-  border-bottom-color: #1976d2;
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
   background: #f8f9fa;
 }
 
@@ -525,7 +525,7 @@ onMounted(async () => {
 
 .task-item:hover {
   background: #e9ecef;
-  border-left-color: #1976d2;
+  border-left-color: var(--color-primary);
 }
 
 .task-header {
@@ -587,8 +587,8 @@ onMounted(async () => {
 }
 
 .applications-count {
-  background: #e3f2fd;
-  color: #1976d2;
+  background: #eef2ff;
+  color: var(--color-primary);
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
   font-size: 0.75rem;
@@ -616,8 +616,8 @@ onMounted(async () => {
 }
 
 .badge-completed {
-  background: #e3f2fd;
-  color: #1976d2;
+  background: #eef2ff;
+  color: var(--color-primary);
 }
 
 .badge-cancelled {
@@ -684,12 +684,12 @@ onMounted(async () => {
 }
 
 .btn-primary {
-  background-color: #1976d2;
+  background-color: var(--color-primary);
   color: white;
 }
 
 .btn-primary:hover {
-  background-color: #1565c0;
+  background-color: var(--color-primary-dark);
   color: white;
   text-decoration: none;
 }

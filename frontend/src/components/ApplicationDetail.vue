@@ -209,7 +209,7 @@ const formatDate = (date: string | undefined) => {
 }
 
 .btn-primary {
-  background-color: #007bff;
+  background-color: var(--color-primary);
   color: white;
 }
 
@@ -246,7 +246,7 @@ const formatDate = (date: string | undefined) => {
 }
 
 .text-primary {
-  color: #007bff;
+  color: var(--color-primary);
   text-decoration: none;
 }
 

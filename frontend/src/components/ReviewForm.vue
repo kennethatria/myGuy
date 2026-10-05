@@ -34,7 +34,7 @@
           class="form-input"
           :class="{ 'is-invalid': formErrors.comment }"
           rows="4"
-          placeholder="Share your experience working on this task..."
+          placeholder="Share your experience working on this gig..."
           required
         ></textarea>
         <div v-if="formErrors.comment" class="invalid-feedback">{{ formErrors.comment }}</div>
@@ -195,7 +195,7 @@ const handleSubmit = async () => {
 
 .form-input:focus {
   outline: none;
-  border-color: #007bff;
+  border-color: var(--color-primary);
   box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1);
 }
 
@@ -219,7 +219,7 @@ const handleSubmit = async () => {
 }
 
 .btn-primary {
-  background-color: #007bff;
+  background-color: var(--color-primary);
   color: white;
 }
 

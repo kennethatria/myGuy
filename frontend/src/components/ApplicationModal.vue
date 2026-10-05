@@ -3,7 +3,7 @@
     <div v-if="isOpen" class="modal-backdrop" @click="handleBackdropClick">
       <div class="modal-container" @click.stop>
         <div class="modal-header">
-          <h2>Apply for Task</h2>
+          <h2>Apply for Gig</h2>
           <button @click="close" class="close-btn" aria-label="Close">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 6L6 18M6 6l12 12"/>
@@ -57,7 +57,7 @@
                 rows="5"
                 class="form-input"
                 :class="{ 'is-invalid': errors.message }"
-                placeholder="Explain why you're the right person for this task..."
+                placeholder="Explain why you're the right person for this gig..."
               ></textarea>
               <div v-if="errors.message" class="invalid-feedback">
                 {{ errors.message }}
@@ -306,7 +306,7 @@ const handleBackdropClick = () => {
 
 .form-input:focus {
   outline: none;
-  border-color: #007bff;
+  border-color: var(--color-primary);
   box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1);
 }
 
@@ -361,7 +361,7 @@ textarea.form-input {
 }
 
 .btn-primary {
-  background-color: #007bff;
+  background-color: var(--color-primary);
   color: white;
 }
 

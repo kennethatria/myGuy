@@ -133,7 +133,7 @@
             <div class="chat-header-badges">
               <div class="chat-status">
                 <span v-if="task?.status === 'open'" class="status-badge status-open">Open for Applications</span>
-                <span v-else-if="task?.status === 'in_progress'" class="status-badge status-assigned">Task Assigned</span>
+                <span v-else-if="task?.status === 'in_progress'" class="status-badge status-assigned">Gig Assigned</span>
                 <span v-else-if="task?.status === 'completed'" class="status-badge status-completed">Completed</span>
               </div>
               <span class="privacy-badge privacy-private">🔒 Only you two can see this</span>
@@ -445,14 +445,14 @@ const handleApplicationSubmit = async (data: { proposedFee: number; message: str
     alert('Application submitted successfully!')
   } catch (error) {
     console.error('Failed to apply for task:', error)
-    alert(errorMessage(error, 'Failed to apply for task. Please try again.'))
+    alert(errorMessage(error, 'Failed to apply for the gig. Please try again.'))
   }
 }
 
 const handleComplete = async () => {
   if (!task.value) return
   
-  if (!confirm('Are you sure you want to mark this task as completed?')) {
+  if (!confirm('Mark this gig as completed?')) {
     return
   }
 
@@ -466,7 +466,7 @@ const handleComplete = async () => {
     }
   } catch (error) {
     console.error('Failed to complete task:', error)
-    alert('Failed to complete task. Please try again.')
+    alert('Failed to complete the gig. Please try again.')
   }
 }
 

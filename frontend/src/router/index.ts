@@ -7,7 +7,8 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: () => import('@/views/HomeView.vue')
+      component: () => import('@/views/HomeView.vue'),
+      meta: { requiresGuest: true } // signed-in users go to their dashboard
     },
     {
       path: '/login',
@@ -80,6 +81,12 @@ const router = createRouter({
       name: 'store-item',
       component: () => import('@/views/store/StoreItemView.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      // Anything unmatched (old or mistyped links)
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: () => import('@/views/NotFoundView.vue')
     }
   ]
 })

@@ -4,7 +4,7 @@
     <div class="chat-header">
       <h3>{{ headerTitle }}</h3>
       <button v-if="showCloseButton" @click="$emit('close')" class="close-btn">
-        <i class="bi bi-x-lg"></i>
+        <i class="fas fa-xmark" aria-hidden="true"></i>
       </button>
     </div>
 
@@ -27,7 +27,7 @@
 
       <!-- No Messages State -->
       <div v-if="messages.length === 0 && !chatStore.isLoadingMessages" class="no-messages">
-        <i class="bi bi-chat-dots"></i>
+        <i class="fas fa-comment-dots" aria-hidden="true"></i>
         <p>No messages yet</p>
         <p class="text-muted small">Start the conversation!</p>
       </div>
@@ -52,7 +52,7 @@
           <span v-if="message.is_edited" class="edited-badge">(edited)</span>
         </div>
         <div v-if="message.is_read && message.sender_id === authStore.user?.id" class="read-indicator">
-          <i class="bi bi-check-all"></i> Read
+          <i class="fas fa-check-double" aria-hidden="true"></i> Read
         </div>
       </div>
       </template>
@@ -85,7 +85,7 @@
           @click="handleSendMessage"
           class="btn btn-primary send-btn"
           :disabled="!canSend">
-          <i class="bi bi-send-fill"></i>
+          <i class="fas fa-paper-plane" aria-hidden="true"></i>
           <span class="d-none d-sm-inline ms-1">Send</span>
         </button>
       </div>
@@ -298,6 +298,7 @@ watch(() => messages.value.length, async () => {
   margin: 0;
   font-size: 1.1rem;
   font-weight: 600;
+  color: inherit; /* the header's white; the global heading colour is dark */
 }
 
 .close-btn {
