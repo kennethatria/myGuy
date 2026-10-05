@@ -6,6 +6,10 @@ on:
   schedule:
     - cron: '0 0 1 * *'  # First day of every month
 
+# Read-only by default; jobs that need more ask for it.
+permissions:
+  contents: read
+
 jobs:
   threat-model:
     runs-on: ubuntu-latest

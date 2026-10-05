@@ -5,6 +5,10 @@ on:
   schedule:
     - cron: '37 1 * * 5'
 
+# Read-only by default; jobs that need more ask for it.
+permissions:
+  contents: read
+
 jobs:
   analyze:
     name: Analyze
@@ -32,6 +36,15 @@ jobs:
       uses: github/codeql-action/init@v3
       with:
         languages: ${{ matrix.language }}
+        # Tests and generated reports aren't shipped code
+        config: |
+          paths-ignore:
+            - '**/tests/**'
+            - '**/__tests__/**'
+            - '**/e2e/**'
+            - '**/coverage/**'
+            - '**/node_modules/**'
+            - '**/dist/**'
         # If you wish to specify custom queries, you can do so here or in a config file.
         # By default, queries listed here will override any specified in a config file.
         # Prefix the list here with "+" to use these queries and those in the config file.
@@ -52,3 +65,8 @@ jobs:
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
+      with:
+        # One category for every run (schedule, pull request, push to main)
+        # so pull requests are compared with main and fixes close alerts.
+        # It keeps the name main's existing alerts were filed under.
+        category: .github/workflows/component.security.codeql.yml:analyze/language:${{ matrix.language }}

@@ -3,9 +3,16 @@ name: Run zap security webScan
 on: 
   workflow_call:
 
+# Read-only by default; jobs that need more ask for it.
+permissions:
+  contents: read
+
 jobs:
   zap_scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     name: Scan the webapplication
     steps:
       - name: Checkout

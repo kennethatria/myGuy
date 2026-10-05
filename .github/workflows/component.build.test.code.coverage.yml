@@ -3,6 +3,10 @@ name: Run tests and check code coverage
 on:
   workflow_call:
 
+# Read-only by default; jobs that need more ask for it.
+permissions:
+  contents: read
+
 jobs:
   backend-tests:
     name: Backend Tests (Go)

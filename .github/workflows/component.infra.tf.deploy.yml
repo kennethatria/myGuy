@@ -26,6 +26,10 @@ env:
   TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
 
 
+# Read-only by default; jobs that need more ask for it.
+permissions:
+  contents: read
+
 jobs:
   deploy-infra:
     name: 'Deploy to Development Environment'
