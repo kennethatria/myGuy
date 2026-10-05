@@ -157,3 +157,19 @@ describe('contentFilter', () => {
     });
   });
 });
+
+describe('filter performance (ReDoS)', () => {
+  // Quadratic patterns took ~300ms on 20k characters of these; linear ones
+  // finish 100k in a few ms. The bound is loose to stay stable on slow CI.
+  it.each([
+    ['one long word', 'a'.repeat(100000)],
+    ['dotted run', 'a.'.repeat(50000)],
+    ['dashed run', 'a-'.repeat(50000)],
+    ['email-like run', 'a@' + 'a.'.repeat(50000)],
+    ['spaced digits', '1 '.repeat(50000)]
+  ])('filters %s in linear time', (_, text) => {
+    const start = Date.now();
+    filterContent(text);
+    expect(Date.now() - start).toBeLessThan(200);
+  });
+});

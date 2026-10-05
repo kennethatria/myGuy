@@ -100,18 +100,33 @@ router.post('/internal/task-message', async (req, res) => {
  * Endpoint for handling booking actions from chat UI
  * User clicks approve/decline in the chat interface
  */
+// Chat action → store-service endpoint. Only these can be called.
+const STORE_BOOKING_ENDPOINTS = {
+  'approve': 'approve',
+  'decline': 'reject',
+  'confirm-received': 'confirm-received',
+  'confirm-delivery': 'confirm-delivery',
+  'rate-seller': 'rate-seller',
+  'rate-buyer': 'rate-buyer'
+};
+
 router.post('/booking-action', authenticateHTTP, async (req, res) => {
   try {
-    const { bookingId, action, rating, review } = req.body;
+    const { action, rating, review } = req.body;
     const userId = req.user.id;
 
     // Validate action
-    if (!['approve', 'decline', 'confirm-received', 'confirm-delivery', 'rate-seller', 'rate-buyer'].includes(action)) {
+    const endpoint = Object.prototype.hasOwnProperty.call(STORE_BOOKING_ENDPOINTS, action)
+      ? STORE_BOOKING_ENDPOINTS[action]
+      : null;
+    if (!endpoint) {
       return res.status(400).json({ error: 'Invalid action' });
     }
 
-    if (!bookingId) {
-      return res.status(400).json({ error: 'Missing bookingId' });
+    // The id goes into the store-service URL: accept only a positive integer
+    const bookingId = Number(req.body.bookingId);
+    if (!Number.isSafeInteger(bookingId) || bookingId <= 0) {
+      return res.status(400).json({ error: 'Missing or invalid bookingId' });
     }
 
     // Validate rating if it's a rating action
@@ -121,20 +136,6 @@ router.post('/booking-action', authenticateHTTP, async (req, res) => {
 
     // Call store-service to update booking status
     const storeApiUrl = process.env.STORE_API_URL || 'http://localhost:8081/api/v1';
-    let endpoint;
-    if (action === 'approve') {
-      endpoint = 'approve';
-    } else if (action === 'decline') {
-      endpoint = 'reject';
-    } else if (action === 'confirm-received') {
-      endpoint = 'confirm-received';
-    } else if (action === 'confirm-delivery') {
-      endpoint = 'confirm-delivery';
-    } else if (action === 'rate-seller') {
-      endpoint = 'rate-seller';
-    } else if (action === 'rate-buyer') {
-      endpoint = 'rate-buyer';
-    }
 
     console.log(`📞 Calling store service: ${storeApiUrl}/booking-requests/${bookingId}/${endpoint}`);
 

@@ -507,6 +507,16 @@ describe('MessageService', () => {
     });
   });
 
+  describe('message length', () => {
+    it('refuses messages over the hard limit before touching the database', async () => {
+      const content = 'a'.repeat(messageService.MAX_MESSAGE_LENGTH + 1);
+      await expect(messageService.sendMessage({ taskId: 1, senderId: 1, recipientId: 2, content }))
+        .rejects.toMatchObject({ status: 400 });
+      await expect(messageService.editMessage(1, 1, content)).rejects.toMatchObject({ status: 400 });
+      expect(db.getClient).not.toHaveBeenCalled();
+    });
+  });
+
   describe('contact unlocks', () => {
     const insertedContent = () =>
       mockClient.query.mock.calls.find(([sql]) => /INSERT INTO messages/.test(sql))[1][5];
