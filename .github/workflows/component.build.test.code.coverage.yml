@@ -102,6 +102,53 @@ jobs:
           path: store-service/coverage.out
           retention-days: 7
 
+  proximity-service-tests:
+    name: Proximity Service Tests (Go)
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: off
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+          cache-dependency-path: proximity-service/go.sum
+
+      - name: Download dependencies
+        working-directory: ./proximity-service
+        run: go mod download
+
+      - name: Run tests with coverage
+        working-directory: ./proximity-service
+        run: |
+          go test ./internal/... -v -coverprofile=coverage.out -covermode=atomic
+          go tool cover -func=coverage.out
+
+      - name: Check coverage threshold
+        working-directory: ./proximity-service
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
+          echo "Total coverage: ${COVERAGE}%"
+
+          # Check if coverage is above 70% (proximity-service threshold)
+          if (( $(echo "$COVERAGE < 70" | bc -l) )); then
+            echo "::error::Coverage ${COVERAGE}% is below 70% threshold"
+            exit 1
+          fi
+
+          echo "::notice::Coverage ${COVERAGE}% meets the 70% threshold"
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: proximity-service-coverage
+          path: proximity-service/coverage.out
+          retention-days: 7
+
   chat-service-tests:
     name: Chat Service Tests (Node.js)
     runs-on: ubuntu-latest

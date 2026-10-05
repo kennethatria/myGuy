@@ -119,7 +119,8 @@ jobs:
           for IMAGE in \
             ${{ env.REGISTRY }}/myguy-api:${{ steps.get_tag.outputs.image_tag }} \
             ${{ env.REGISTRY }}/myguy-store-service:${{ steps.get_tag.outputs.image_tag }} \
-            ${{ env.REGISTRY }}/myguy-chat-websocket-service:${{ steps.get_tag.outputs.image_tag }}; do
+            ${{ env.REGISTRY }}/myguy-chat-websocket-service:${{ steps.get_tag.outputs.image_tag }} \
+            ${{ env.REGISTRY }}/myguy-proximity-service:${{ steps.get_tag.outputs.image_tag }}; do
             echo "Verifying $IMAGE..."
             cosign verify \
               --certificate-identity-regexp "https://github.com/${{ github.repository }}/.github/workflows/.*" \
@@ -196,6 +197,7 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           DB_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+          PROXIMITY_REDIS_PASSWORD: ${{ secrets.PROXIMITY_REDIS_PASSWORD }}
           IMAGE_TAG: ${{ steps.get_tag.outputs.image_tag }}
           DOMAIN: ${{ vars.DOMAIN }}
           CERTBOT_EMAIL: ${{ secrets.CERTBOT_EMAIL }}
@@ -213,6 +215,7 @@ jobs:
                   --arg jwt_secret "$JWT_SECRET" \
                   --arg db_password "$DB_PASSWORD" \
                   --arg internal_api_key "$INTERNAL_API_KEY" \
+                  --arg proximity_redis_password "$PROXIMITY_REDIS_PASSWORD" \
                   --arg registry "$REGISTRY" \
                   --arg image_tag "$IMAGE_TAG" \
                   --arg github_repository "$GITHUB_REPOSITORY" \

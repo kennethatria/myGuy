@@ -5,6 +5,15 @@
 # there: services send traces to the monitoring server's Zipkin instead
 # (ZIPKIN_URL in the server's .env).
 services:
+  # A fixed password so the proximity Redis starts without a .env entry;
+  # production sets PROXIMITY_REDIS_PASSWORD from a repository secret.
+  proximity-service:
+    environment:
+      - REDIS_PASSWORD=local-dev-only
+  proximity-redis:
+    environment:
+      - REDIS_PASSWORD=local-dev-only
+
   zipkin:
     image: docker.io/openzipkin/zipkin:latest
     restart: unless-stopped

@@ -11,6 +11,7 @@ MyGuy is a microservices task marketplace: users post tasks, apply, chat in real
 | **Backend** | Go (Gin) | 8080 | `my_guy` | Core API: passwordless sign-in, users, tasks, applications, reviews |
 | **Store Service** | Go (Gin) | 8081 | `my_guy_store` | Marketplace items, fixed-price and auction bidding |
 | **Chat Service** | Node.js (Express + Socket.IO) | 8082 | `my_guy_chat` | Real-time WebSocket messaging |
+| **Proximity Service** | Go (Gin) | 8083 (internal only) | own Redis | Rough locations of gigs, listings and requests; distance buckets |
 | **Frontend** | Vue 3 + TypeScript (Vite) | 5173 | - | Single-page application |
 | **Database** | PostgreSQL 15 | 5432 (exposed 5433) | - | Shared server, multiple databases |
 | **Redis** | Redis 7 | 6379 | - | Optional Socket.IO adapter for multi-instance chat |
@@ -27,6 +28,7 @@ MyGuy is a microservices task marketplace: users post tasks, apply, chat in real
 8. **Gigs Are Sticky Notes** — A gig is a headline (≤5 words) and note (≤20 words); no fee or deadline input — price is agreed in chat. `deadline` is set to 24 h after posting; a minute ticker in the backend marks open gigs with no application `expired` (applications count as a reaction; applying also checks the deadline). Expired gigs can be reposted (back to `open` for 24 h) or cancelled.
 9. **Listings Are Sticky Notes Too** — A marketplace listing is a headline (≤5 words), note (≤20 words) and up to 3 photos; no price, category or condition input — price goes in the note or is agreed in chat (the API still accepts them optionally; older auctions keep working). `deadline` is 24 h after posting; a minute ticker in store-service marks active listings with no bid or booking request `expired` (booking also checks the deadline). Auctions close at the same deadline. Expired listings can be reposted (`POST /items/:id/repost`) or removed. **Requests** (`item_requests`, "wanted" notes) follow the same rules; a listing answers one through `request_id`, which posts a `system_alert` to the requester via chat's `POST /internal/store-message`, and approving the requester's booking on it marks the request `fulfilled`.
 10. **Events Are Messages** — Task events (new application, accepted, declined, cancelled) are posted by the backend (`internal/chatnotify`, best effort) to chat's `POST /internal/task-message` and stored as `system_alert` (not editable/deletable). The gig page has one poster↔person conversation per pair; there are no per-application threads. Application chats that do exist are authorized via `GET /applications/:id/participants`.
+11. **Rough Locations Only** — `proximity-service` keeps one cell (`floor(deg / 0.005 + 0.5)`, ~555 m) per gig, listing or request in its own Redis and answers distances only as buckets (`<1 km` … `10+ km`); exact coordinates and distances are never stored or returned. Every component that rounds a position tests against `shared/geo-cell-cases.json`. It is internal only (no nginx route), called by the backend and store-service with `INTERNAL_API_KEY`. Design: *Proximity Service — Design (Rev 4)*; release 1 ships the service alone.
 
 ## Engineering Docs
 
@@ -51,6 +53,7 @@ podman compose logs api | grep "login code"   # sign-in codes when SMTP_HOST is 
 Each service has a `.env.example` to copy. Constraints not visible from any single file:
 
 - **`JWT_SECRET`** must be identical across backend, store-service, and chat-websocket-service, or cross-service auth breaks.
+- **`PROXIMITY_REDIS_PASSWORD`** (repository secret) protects the proximity service's own Redis; the deploy refuses to run without it. Locally, `docker-compose.override.yml` sets a dev password.
 - **`INTERNAL_API_KEY`** must match between store-service and chat-websocket-service — it's what lets store-service notify chat of new bookings (`POST /internal/booking-created`). Without it, booking requests never appear in Messages.
 - **`SMTP_*`** (backend) sends sign-in codes. If `SMTP_HOST` is unset the backend *logs* codes instead — fine locally, but in production nobody could log in.
 - **`IMAGE_TAG`** selects the app image tag in `docker-compose.yml` (default `latest`); the deploy sets it to the tag whose Cosign signature it verified.

@@ -154,6 +154,7 @@ graph TB
 | :--- | :--- | :--- | :--- |
 | **Frontend** | TypeScript (Vue.js) | `5173` | The main user interface that communicates with all backend services. |
 | **Backend** | Go (Gin) | `8080` | The core API: passwordless sign-in, users, tasks, applications, and reviews. |
+| **Proximity Service** | Go (Gin) | `8083` (internal) | Rough locations of gigs, listings and requests; tells the other services how far each is, as a coarse bucket. Has its own Redis. |
 | **Store Service** | Go (Gin) | `8081` | Marketplace listings as sticky notes, with booking requests (and older auctions). |
 | **Chat Service** | JavaScript (Node.js) | `8082` | A real-time WebSocket service for all messaging features. |
 | **Database** | PostgreSQL | `5432` | Primary data store, with each service connecting to its own database. |
