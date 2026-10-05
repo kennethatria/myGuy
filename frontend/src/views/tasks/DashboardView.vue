@@ -124,9 +124,20 @@
                 <p class="task-description">{{ task.description }}</p>
                 <div class="task-footer">
                   <div class="task-meta">
-                    <span class="task-fee">UGX {{ formatCurrency(task.fee || 0) }}</span>
-                    <span class="task-deadline">Due: {{ formatDate(task.deadline) }}</span>
+                    <span v-if="task.status === 'expired'" class="task-deadline">No replies within 24 hours</span>
+                    <span v-else-if="task.status === 'open' && expiryLabel(task.deadline)" class="task-deadline">
+                      {{ expiryLabel(task.deadline) }}
+                    </span>
+                    <span v-else class="task-deadline">Posted {{ formatDate(task.created_at) }}</span>
                   </div>
+                  <button
+                    v-if="task.status === 'expired'"
+                    class="btn btn-primary btn-sm"
+                    :disabled="repostingId === task.id"
+                    @click.stop="repost(task.id)"
+                  >
+                    {{ repostingId === task.id ? 'Reposting...' : 'Repost' }}
+                  </button>
                   <div class="task-stats">
                     <span v-if="pendingCount(task) > 0" class="applications-count">
                       {{ pendingCount(task) }} awaiting your reply
@@ -171,8 +182,7 @@
                 <p class="task-description">{{ task.description }}</p>
                 <div class="task-footer">
                   <div class="task-meta">
-                    <span class="task-fee">UGX {{ formatCurrency(task.fee || 0) }}</span>
-                    <span class="task-deadline">Due: {{ formatDate(task.deadline) }}</span>
+                    <span class="task-deadline">Posted {{ formatDate(task.created_at) }}</span>
                   </div>
                   <div class="task-creator">
                     <span>Created by: {{ task.creator?.username || 'Anonymous' }}</span>
@@ -204,7 +214,6 @@
                 </div>
                 <div class="task-footer">
                   <div class="task-meta">
-                    <span class="task-fee">Your offer: UGX {{ formatCurrency(application.proposed_fee || 0) }}</span>
                     <span class="task-deadline">Applied {{ formatDate(application.created_at) }}</span>
                   </div>
                   <div class="task-creator">
@@ -226,6 +235,7 @@ import { format } from 'date-fns'
 import { useRouter } from 'vue-router'
 import { useTasksStore } from '@/stores/tasks'
 import { useAuthStore } from '@/stores/auth'
+import { expiryLabel } from '@/utils/gigNote'
 
 interface Stats {
   createdTasks: number,
@@ -289,11 +299,18 @@ const formatDate = (date: string) => {
   return format(new Date(date), 'MMM dd, yyyy')
 }
 
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-UG', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount)
+// Put an expired note back on the board for a fresh 24 hours
+const repostingId = ref<number | null>(null)
+const repost = async (taskId: number) => {
+  repostingId.value = taskId
+  try {
+    await tasksStore.updateTaskStatus(taskId, 'open')
+    await tasksStore.fetchUserTasks()
+  } catch (err) {
+    alert(err instanceof Error && err.message ? err.message : 'Could not repost the note. Please try again.')
+  } finally {
+    repostingId.value = null
+  }
 }
 
 const navigateToTask = (taskId: number) => {
@@ -568,12 +585,6 @@ onMounted(async () => {
   gap: 1rem;
   align-items: center;
   flex-wrap: wrap;
-}
-
-.task-fee {
-  font-weight: 600;
-  color: #28a745;
-  font-size: 1.1rem;
 }
 
 .task-deadline {

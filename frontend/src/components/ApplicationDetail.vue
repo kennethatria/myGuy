@@ -12,7 +12,6 @@
           </router-link>
         </h3>
         <div class="application-meta">
-          <span class="proposed-fee">UGX {{ formatCurrency(application.proposed_fee) }}</span>
           <span class="status-badge" :class="`status-${application.status}`">
             {{ application.status }}
           </span>
@@ -51,7 +50,6 @@ interface Application {
   id: number
   task_id: number
   applicant_id: number
-  proposed_fee: number
   status: string
   message?: string
   created_at?: string
@@ -81,13 +79,6 @@ const authStore = useAuthStore()
 
 const currentUserId = computed(() => authStore.user?.id)
 const isTaskOwner = computed(() => currentUserId.value === props.taskOwnerId)
-
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-UG', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount)
-}
 
 const formatDate = (date: string | undefined) => {
   if (!date) return 'Unknown date'
@@ -129,12 +120,6 @@ const formatDate = (date: string | undefined) => {
   gap: 1rem;
   align-items: center;
   font-size: 0.875rem;
-}
-
-.proposed-fee {
-  font-weight: bold;
-  color: #28a745;
-  font-size: 1rem;
 }
 
 .status-badge {

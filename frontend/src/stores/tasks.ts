@@ -7,11 +7,11 @@ interface Task {
   id: number
   title: string
   description: string
-  status: 'open' | 'in_progress' | 'completed'
+  status: 'open' | 'in_progress' | 'completed' | 'cancelled' | 'expired'
   createdBy: number
   assignedTo?: number
+  // When the note comes off the board: 24 hours after posting
   deadline: string
-  fee?: number
   created_at: string
   
   // Related data from database preloading
@@ -35,19 +35,17 @@ interface Application {
     id: number
     username: string
   }
-  proposedFee: number
   status: 'pending' | 'accepted' | 'declined'
   message?: string
   created_at: string
 }
 
-type ApplicationInput = Omit<Application, 'id' | 'status' | 'created_at' | 'taskId' | 'applicant'>
+type ApplicationInput = Pick<Application, 'message'>
 
 // One of the current user's applications, with its task (for "My applications")
 export interface MyApplication {
   id: number
   task_id: number
-  proposed_fee: number
   status: 'pending' | 'accepted' | 'declined'
   created_at: string
   task: {
@@ -309,7 +307,7 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
-  const createTask = async (task: Omit<Task, 'id' | 'status' | 'createdBy' | 'assignedTo' | 'created_at'>) => {
+  const createTask = async (task: Pick<Task, 'title' | 'description'>) => {
     const authStore = useAuthStore();
     const token = authStore.token;
     
@@ -366,11 +364,7 @@ export const useTasksStore = defineStore('tasks', () => {
     const token = authStore.token;
     
     try {
-      // Convert camelCase to snake_case for API
-      const apiPayload = {
-        proposed_fee: application.proposedFee,
-        message: application.message
-      }
+      const apiPayload = { message: application.message }
       
       const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}/apply`, {
         method: 'POST',

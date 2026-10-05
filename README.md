@@ -197,14 +197,18 @@ Codes are sent over SMTP with mandatory STARTTLS (production uses [Resend](https
 
 | Step | Poster | Applicant |
 | :--- | :--- | :--- |
-| **Post** | Creates a gig (title, description, fee, deadline ≥ 24 h away) | — |
-| **Apply** | Gets a 📩 *New application* message in Messages | Applies with a proposed fee and note; can't apply twice or to their own gig |
+| **Post** | Sticks a note on the board: a headline (≤ 5 words) and note (≤ 20 words), no contact details. It stays up 24 hours | — |
+| **Apply** | Gets a 📩 *New application* message in Messages | Replies with a short message; price is agreed in chat. Can't apply twice or to their own gig |
 | **Talk** | Presses **Message** on an application card to chat with that person | Chats with the poster from the gig page |
-| **Decide** | Accepts one application (the gig moves to *In progress* at the proposed fee) or declines | Gets ✅ *accepted* or *not selected*; everyone else still waiting is told they weren't selected |
+| **Decide** | Accepts one application (the gig moves to *In progress*, and the two can now share phone numbers in chat) or declines | Gets ✅ *accepted* or *not selected*; everyone else still waiting is told they weren't selected |
 | **Track** | Dashboard shows "*N awaiting your reply*" per gig | Dashboard → **My Applications** shows each application's status |
 | **Finish** | Either party marks it complete; both can then review each other | — |
 
 There is **one private conversation per pair** (poster ↔ each person) per gig, shown on the gig page and in Messages. Posters can cancel a gig (pending applicants are told) and delete gigs that were never assigned.
+
+**Expiry.** A note nobody applies to within 24 hours is marked *expired* and comes off the board; the poster can repost it from the gig page or dashboard for another 24 hours. A gig with at least one application stays open until the poster accepts someone or cancels.
+
+**Contact details follow consent.** Phone numbers, emails, links and @handles are refused on notes and applications, and masked in chat, until the two people are matched (an accepted application, or an approved store booking). After that, chat between them is unfiltered.
 
 ### Notifications
 
