@@ -23,3 +23,23 @@ func TestBuildLoginCodeMessage(t *testing.T) {
 	assert.Contains(t, body, "123456")
 	assert.NotContains(t, strings.ReplaceAll(msg, "\r\n", ""), "\n", "only CRLF line endings")
 }
+
+func TestRecipientAcceptsOnlyABareAddress(t *testing.T) {
+	to, err := recipient("kampala.fixer@example.com")
+	if err != nil || to.Address != "kampala.fixer@example.com" || to.Name != "" {
+		t.Fatalf("bare address rejected: %v %v", to, err)
+	}
+
+	for _, bad := range []string{
+		"a@example.com\r\nBcc: victim@example.com",
+		"a@example.com\nSubject: hi",
+		`"Evil" <a@example.com>`,
+		"Evil <a@example.com>",
+		"not-an-address",
+		"",
+	} {
+		if _, err := recipient(bad); err == nil {
+			t.Errorf("expected %q to be rejected", bad)
+		}
+	}
+}

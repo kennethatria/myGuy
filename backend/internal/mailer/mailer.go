@@ -42,9 +42,9 @@ func (s *SMTPSender) SendLoginCode(ctx context.Context, email, code string) erro
 	if err != nil {
 		return fmt.Errorf("invalid SMTP_FROM: %w", err)
 	}
-	to, err := mail.ParseAddress(email)
+	to, err := recipient(email)
 	if err != nil {
-		return fmt.Errorf("invalid recipient: %w", err)
+		return err
 	}
 	msg := buildLoginCodeMessage(from, to, code, time.Now())
 
@@ -94,6 +94,22 @@ func (s *SMTPSender) SendLoginCode(ctx context.Context, email, code string) erro
 		return err
 	}
 	return client.Quit()
+}
+
+var errInvalidRecipient = errors.New("invalid recipient: expected a bare email address")
+
+// recipient accepts only a bare address ("a@b.com"): no display name, no
+// line breaks. The address comes from the sign-in request and is written
+// into the To header, so anything else could inject headers.
+func recipient(email string) (*mail.Address, error) {
+	if strings.ContainsAny(email, "\r\n") {
+		return nil, errInvalidRecipient
+	}
+	addr, err := mail.ParseAddress(email)
+	if err != nil || addr.Name != "" || addr.Address != email {
+		return nil, errInvalidRecipient
+	}
+	return &mail.Address{Address: addr.Address}, nil
 }
 
 func buildLoginCodeMessage(from, to *mail.Address, code string, now time.Time) []byte {

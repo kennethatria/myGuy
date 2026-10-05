@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"store-service/internal/models"
 	"testing"
 	"time"
@@ -1937,3 +1938,32 @@ func TestGetUserRatings(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+
+func TestParseID(t *testing.T) {
+	id, err := parseID("42")
+	assert.NoError(t, err)
+	assert.Equal(t, uint(42), id)
+
+	for _, bad := range []string{"", "-1", "abc", "1.5", "4294967296"} {
+		_, err := parseID(bad)
+		assert.Error(t, err, bad)
+	}
+}
+
+func TestNegativeIDsAreRejectedNotWrapped(t *testing.T) {
+	mockService := new(MockStoreService)
+	router := setupTestRouter(NewStoreHandler(mockService))
+
+	for _, path := range []string{
+		"/api/v1/booking-requests/-1/approve",
+		"/api/v1/items/-1/booking-request",
+	} {
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("POST", path, strings.NewReader(`{"message":"hi"}`))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusBadRequest, w.Code, path)
+	}
+	mockService.AssertNotCalled(t, "ApproveBookingRequest", mock.Anything, mock.Anything)
+	mockService.AssertNotCalled(t, "CreateBookingRequest", mock.Anything, mock.Anything, mock.Anything)
+}
