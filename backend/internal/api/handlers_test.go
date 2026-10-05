@@ -616,3 +616,14 @@ func TestHandler_GetMyTaskReview(t *testing.T) {
 	assert.Equal(t, false, check(nil, gorm.ErrRecordNotFound)["reviewed"])
 }
 
+
+func TestParseID(t *testing.T) {
+	id, err := parseID("42")
+	assert.NoError(t, err)
+	assert.Equal(t, uint(42), id)
+
+	for _, bad := range []string{"", "-1", "abc", "1.5", "4294967296"} {
+		_, err := parseID(bad)
+		assert.Error(t, err, bad)
+	}
+}
