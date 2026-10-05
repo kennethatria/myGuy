@@ -9,14 +9,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type User struct {
 	ID       int
 	Username string
 	Email    string
-	Password string
 	FullName string
 }
 
@@ -59,30 +57,25 @@ func main() {
 
 	// Create test users
 	users := []User{
-		{Username: "alice_dev", Email: "alice@example.com", Password: "alice123", FullName: "Alice Johnson"},
-		{Username: "bob_designer", Email: "bob@example.com", Password: "bob123", FullName: "Bob Smith"},
-		{Username: "charlie_writer", Email: "charlie@example.com", Password: "charlie123", FullName: "Charlie Brown"},
-		{Username: "diana_coder", Email: "diana@example.com", Password: "diana123", FullName: "Diana Prince"},
+		{Username: "alice_dev", Email: "alice@example.com", FullName: "Alice Johnson"},
+		{Username: "bob_designer", Email: "bob@example.com", FullName: "Bob Smith"},
+		{Username: "charlie_writer", Email: "charlie@example.com", FullName: "Charlie Brown"},
+		{Username: "diana_coder", Email: "diana@example.com", FullName: "Diana Prince"},
 	}
 
-	// Hash passwords and insert users
+	// Insert users. Sign-in is by emailed code, so there is no password; the
+	// legacy password column is NOT NULL and stays empty.
 	for i := range users {
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(users[i].Password), bcrypt.DefaultCost)
-		if err != nil {
-			log.Fatalf("Failed to hash password: %v", err)
-		}
-
 		var userID int
-		err = db.QueryRow(ctx, `
-			INSERT INTO users (username, email, password_hash, full_name, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, NOW(), NOW())
+		err := db.QueryRow(ctx, `
+			INSERT INTO users (username, email, password, full_name, created_at, updated_at)
+			VALUES ($1, $2, '', $3, NOW(), NOW())
 			ON CONFLICT (username) DO UPDATE SET
 				email = EXCLUDED.email,
-				password_hash = EXCLUDED.password_hash,
 				full_name = EXCLUDED.full_name,
 				updated_at = NOW()
 			RETURNING id
-		`, users[i].Username, users[i].Email, string(hashedPassword), users[i].FullName).Scan(&userID)
+		`, users[i].Username, users[i].Email, users[i].FullName).Scan(&userID)
 		
 		if err != nil {
 			log.Fatalf("Failed to insert user %s: %v", users[i].Username, err)
@@ -321,13 +314,12 @@ func main() {
 		log.Printf("Warning: Failed to insert review: %v", err)
 	}
 
-	fmt.Println("\n=== Test User Login Details ===")
-	fmt.Println("All passwords are the username without the role + '123'")
+	fmt.Println("\n=== Test Users ===")
+	fmt.Println("Sign in with the email below; the code is logged by the API when SMTP_HOST is unset.")
 	fmt.Println()
 	for _, user := range users {
 		fmt.Printf("Username: %s\n", user.Username)
 		fmt.Printf("Email: %s\n", user.Email)
-		fmt.Printf("Password: %s\n", user.Password)
 		fmt.Printf("Full Name: %s\n", user.FullName)
 		fmt.Println("---")
 	}

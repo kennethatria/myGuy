@@ -3,10 +3,10 @@ package repositories
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 	"myguy/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type GormTaskRepository struct {
@@ -67,17 +67,15 @@ func (r *GormTaskRepository) ListWithPagination(ctx context.Context, filters map
 		perPage = pp
 	}
 	
-	// Apply sorting
+	// Sort by a known column only; the clause quotes it, so no request value
+	// is ever spliced into SQL.
 	sortBy := "created_at"
-	sortOrder := "DESC"
-	if sb, ok := filters["sort_by"].(string); ok {
-		switch sb {
-		case "deadline", "created_at":
-			sortBy = sb
-		}
+	if sb, ok := filters["sort_by"].(string); ok && (sb == "deadline" || sb == "created_at") {
+		sortBy = sb
 	}
-	if so, ok := filters["sort_order"].(string); ok && (so == "asc" || so == "desc") {
-		sortOrder = strings.ToUpper(so)
+	desc := true
+	if so, ok := filters["sort_order"].(string); ok && so == "asc" {
+		desc = false
 	}
 	
 	offset := (page - 1) * perPage
@@ -85,7 +83,7 @@ func (r *GormTaskRepository) ListWithPagination(ctx context.Context, filters map
 		Preload("Applications.Applicant").
 		Preload("Creator").
 		Preload("Assignee").
-		Order(fmt.Sprintf("%s %s", sortBy, sortOrder)).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: sortBy}, Desc: desc}).
 		Offset(offset).
 		Limit(perPage).
 		Find(&tasks).Error
@@ -117,17 +115,15 @@ func (r *GormTaskRepository) buildTaskQuery(ctx context.Context, filters map[str
 			query = query.Where("deadline <= ?", value)
 		case "exclude_created_by":
 			query = query.Where("created_by != ?", value)
-		case "status", "created_by", "assigned_to":
-			query = query.Where(fmt.Sprintf("%s = ?", key), value)
-		// Skip pagination and sorting params
-		case "page", "per_page", "sort_by", "sort_order":
-			// These are handled separately
-		default:
-			// For any other filters, apply them directly
-			if key != "" {
-				query = query.Where(fmt.Sprintf("%s = ?", key), value)
-			}
+		case "status":
+			query = query.Where("status = ?", value)
+		case "created_by":
+			query = query.Where("created_by = ?", value)
+		case "assigned_to":
+			query = query.Where("assigned_to = ?", value)
 		}
+		// Anything else (pagination, sorting, unknown keys) is not a
+		// filter; keys are never used as column names.
 	}
 	
 	return query
