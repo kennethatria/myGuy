@@ -29,7 +29,7 @@
       <div class="tabs-section">
         <!-- Tab Content -->
         <div class="tab-content">
-          <!-- My Created Gigs Tab -->
+          <!-- Created Gigs Tab -->
           <div v-if="activeTab === 'created'" class="tab-pane">
             <div v-if="createdTasks.length === 0" class="empty-state">
               <div class="empty-icon">
@@ -88,7 +88,7 @@
             </div>
           </div>
 
-          <!-- Gigs Assigned to Me Tab -->
+          <!-- Assignments Tab -->
           <div v-if="activeTab === 'assigned'" class="tab-pane">
             <div v-if="assignedTasks.length === 0" class="empty-state">
               <div class="empty-icon">
@@ -129,7 +129,7 @@
             </div>
           </div>
 
-          <!-- My Applications Tab -->
+          <!-- Applications Tab -->
           <div v-if="activeTab === 'applications'" class="tab-pane">
             <div v-if="tasksStore.myApplications.length === 0" class="empty-state">
               <h3>No applications yet</h3>
@@ -183,9 +183,9 @@ const error = ref('')
 // Which list: chosen from the side navigation (/my-gigs/created etc.)
 type Tab = 'created' | 'assigned' | 'applications'
 const TITLES: Record<Tab, string> = {
-  created: 'My Created Gigs',
-  assigned: 'Gigs Assigned to Me',
-  applications: 'My Applications'
+  created: 'Created Gigs',
+  assigned: 'Assignments',
+  applications: 'Applications'
 }
 const activeTab = computed<Tab>(() => {
   const tab = route.params.tab as Tab

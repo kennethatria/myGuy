@@ -1,6 +1,6 @@
 <template>
   <div class="container py-4 composer-page">
-    <h1 class="mb-2">Post a Listing</h1>
+    <h1 class="mb-2">Post Item</h1>
     <p class="text-muted mb-4">
       Say what you're selling in a few words, and add the price if you like. Your note stays on the
       marketplace for 24 hours; agree the details in chat with whoever asks to book it.

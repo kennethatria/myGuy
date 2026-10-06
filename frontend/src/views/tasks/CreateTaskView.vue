@@ -1,6 +1,6 @@
 <template>
   <div class="container py-4 composer-page">
-    <h1 class="mb-2">Post a Note</h1>
+    <h1 class="mb-2">Post a Gig</h1>
     <p class="text-muted mb-4">
       Say what you need in a few words. Your note stays on the board for 24 hours;
       agree the price and details in chat with whoever replies.
