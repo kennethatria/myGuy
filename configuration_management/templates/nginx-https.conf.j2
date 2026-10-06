@@ -28,6 +28,8 @@ server {
 
     error_log /var/log/nginx/error.log warn;
 
+    include /etc/nginx/snippets/myguy-security-headers.conf;
+
     modsecurity on;
     modsecurity_rules_file /etc/nginx/modsecurity/coraza.conf;
 
@@ -37,6 +39,7 @@ server {
     location /healthcheck/ {
         return 200 "healthcheck";
         add_header Content-Type text/plain;
+        include /etc/nginx/snippets/myguy-security-headers.conf;
     }
 
     location /health {
@@ -92,12 +95,14 @@ server {
     location /assets/ {
         try_files $uri =404;
         add_header Cache-Control "public, max-age=31536000, immutable";
+        include /etc/nginx/snippets/myguy-security-headers.conf;
     }
 
     # The page itself points at the current build's files: always revalidate
     # it, so tabs pick up a deploy on their next load.
     location = /index.html {
         add_header Cache-Control "no-cache";
+        include /etc/nginx/snippets/myguy-security-headers.conf;
     }
 
     location / {

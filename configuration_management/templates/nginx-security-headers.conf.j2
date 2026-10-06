@@ -1,0 +1,11 @@
+# Security headers for every response from the myguy site.  Included at
+# server level AND in each location that sets its own add_header: nginx
+# drops inherited add_header lines in a block that defines any.
+# `always` sends them on error responses too.
+add_header Strict-Transport-Security "max-age=31536000" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "DENY" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+# Location is used only by this site (gig, listing and request composers and
+# boards); everything else is off.
+add_header Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=(), usb=()" always;
