@@ -10,6 +10,7 @@ export interface NearbyPost {
   id: number
   title: string
   distance: string
+  // Index into BUCKETS, or -1 when the poster didn't share a location
   bucket: number
 }
 
@@ -19,8 +20,9 @@ export const REFRESH_MS = 5 * 60 * 1000
 const PER_KIND = 20
 
 /**
- * Other people's nearest live gigs, listings and requests (those with a
- * location), for the dashboard radar. Loads when a location is known, again
+ * Other people's nearest live gigs, marketplace items and requests for the
+ * Home radar, nearest first; those whose poster shared no location come
+ * last with bucket -1 (counted and listed, but not placed on the radar). Loads when a location is known, again
  * every 5 minutes while the page is visible, and on return to the tab if the
  * last load is older than that.
  */
@@ -38,7 +40,6 @@ export function useNearbyPosts(location: Ref<RoughLocation | null>) {
     const data = await response.json()
     return ((data[listKey] ?? []) as { id: number; title: string; distance?: string }[])
       .map((post) => ({ kind, id: post.id, title: post.title, distance: post.distance ?? '', bucket: bucketIndex(post.distance) }))
-      .filter((post) => post.bucket >= 0)
   }
 
   const load = async () => {
@@ -55,8 +56,10 @@ export function useNearbyPosts(location: Ref<RoughLocation | null>) {
     ])
     const loaded = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
     failed.value = results.every((r) => r.status === 'rejected')
-    // Nearest first; within a ring, keep each board's own order
-    posts.value = loaded.map((post, i) => ({ post, i })).sort((a, b) => a.post.bucket - b.post.bucket || a.i - b.i).map(({ post }) => post)
+    // Nearest first, posts without a location last; within a ring, keep
+    // each board's own order
+    const rank = (post: NearbyPost) => (post.bucket < 0 ? 99 : post.bucket)
+    posts.value = loaded.map((post, i) => ({ post, i })).sort((a, b) => rank(a.post) - rank(b.post) || a.i - b.i).map(({ post }) => post)
     lastLoad = Date.now()
     loading.value = false
   }

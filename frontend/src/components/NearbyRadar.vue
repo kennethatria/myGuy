@@ -15,7 +15,7 @@
           class="radar"
           viewBox="0 0 100 100"
           role="group"
-          :aria-label="`Distance radar: ${countsSentence(allCounts)} near you`"
+          :aria-label="`Distance radar: ${countsSentence(placedCounts)} placed by distance`"
         >
           <!-- Rings: one circle per distance bucket, nearest in the middle -->
           <g class="rings" aria-hidden="true">
@@ -43,7 +43,7 @@
           </g>
 
           <g
-            v-for="post in posts"
+            v-for="post in placed"
             :key="`${post.kind}-${post.id}`"
             class="dot"
             role="link"
@@ -75,12 +75,17 @@
             </li>
           </ul>
 
+          <p v-if="unplacedCount" class="radar-note">
+            🤷 {{ countsSentence(unplacedCounts) }} {{ unplacedCount === 1 ? "isn't" : "aren't" }} on the radar:
+            no location was shared.
+          </p>
+
           <p v-if="loading && !posts.length" class="radar-note">Finding what's near you...</p>
           <p v-else-if="failed" class="radar-note">
             Couldn't load nearby posts.
             <button type="button" class="link-button" @click="reload">Try again</button>
           </p>
-          <p v-else-if="!posts.length" class="radar-note">Nothing with a location near you yet.</p>
+          <p v-else-if="!posts.length" class="radar-note">Nothing posted by others yet.</p>
 
           <template v-else>
             <h3 class="closest-title">Closest to you</h3>
@@ -89,7 +94,8 @@
                 <router-link :to="routeFor(post)" class="closest-link">
                   <span class="legend-dot" :style="{ background: KIND_STYLE[post.kind].fill, borderColor: KIND_STYLE[post.kind].stroke }" aria-hidden="true"></span>
                   <span class="closest-name">{{ post.title }}</span>
-                  <span class="closest-distance">{{ post.distance }}</span>
+                  <span v-if="post.distance" class="closest-distance">{{ post.distance }}</span>
+                  <span v-else class="closest-distance" role="img" aria-label="Distance unknown: no location was shared">🤷</span>
                 </router-link>
               </li>
             </ul>
@@ -120,12 +126,17 @@ const countWhere = (keep: (post: NearbyPost) => boolean) => {
   for (const post of posts.value) if (keep(post)) counts[post.kind]++
   return counts
 }
+// On the radar: posts with a location. The rest are counted and listed only.
+const placed = computed(() => posts.value.filter((post) => post.bucket >= 0))
 const allCounts = computed(() => countWhere(() => true))
+const unplacedCounts = computed(() => countWhere((post) => post.bucket < 0))
+const placedCounts = computed(() => countWhere((post) => post.bucket >= 0))
+const unplacedCount = computed(() => posts.value.length - placed.value.length)
 // "Within 2 km" = the two innermost rings (<1 km and ~2 km)
-const closeCounts = computed(() => countWhere((post) => post.bucket <= 1))
+const closeCounts = computed(() => countWhere((post) => post.bucket >= 0 && post.bucket <= 1))
 
 // Dots sharing a ring are spaced evenly round it, so close posts never pile up
-const spots = computed(() => layoutDots(posts.value))
+const spots = computed(() => layoutDots(placed.value))
 const spot = (post: NearbyPost) => spots.value.get(`${post.kind}-${post.id}`) ?? { x: CENTRE, y: CENTRE }
 const label = (kind: PostKind) => LABELS[kind]
 
@@ -278,7 +289,7 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
 }
 
 .closest-title {
-  margin: 0 0 0.25rem;
+  margin: 0.75rem 0 0.25rem;
   font-size: 0.95rem;
   font-weight: 600;
 }
