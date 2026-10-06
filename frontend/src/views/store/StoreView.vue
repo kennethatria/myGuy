@@ -32,24 +32,6 @@
 
     <NearbyBanner v-if="view !== 'mine'" :state="viewer.state.value" @request="viewer.request" />
 
-    <div v-if="view !== 'mine'" class="board-controls">
-      <label class="visually-hidden" for="board-search">Search notes</label>
-      <input
-        id="board-search"
-        v-model="searchQuery"
-        type="search"
-        class="board-input"
-        placeholder="Search notes..."
-        @input="debouncedSearch"
-      />
-      <label class="visually-hidden" for="board-sort">Sort notes</label>
-      <select id="board-sort" v-model="sortBy" class="board-input board-sort" @change="applySort">
-        <option v-if="viewer.location.value" value="distance">Nearest first</option>
-        <option value="created_at">Newest first</option>
-        <option value="deadline">Expiring soon</option>
-      </select>
-    </div>
-
     <div v-if="loading" class="text-center py-5">
       <div class="spinner-border" role="status">
         <span class="visually-hidden">Loading...</span>
@@ -85,7 +67,7 @@
       <div v-else class="empty-board">
         <h2 class="h5">No notes on the board</h2>
         <p class="text-muted">
-          {{ searchQuery ? 'Nothing matches that search.' : 'Be the first to sell something.' }}
+          Be the first to sell something.
         </p>
         <router-link :to="{ name: 'create-listing' }" class="btn btn-primary mt-2">Post a Listing</router-link>
       </div>
@@ -113,7 +95,7 @@
       <div v-else class="empty-board">
         <h2 class="h5">Nobody is looking for anything yet</h2>
         <p class="text-muted">
-          {{ searchQuery ? 'Nothing matches that search.' : 'Ask for something you need, and sellers can list it for you.' }}
+          Ask for something you need, and sellers can list it for you.
         </p>
         <router-link :to="{ name: 'create-request' }" class="btn btn-primary mt-2">Post a Request</router-link>
       </div>
@@ -206,7 +188,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { debounce } from 'lodash-es'
 import { useAuthStore } from '@/stores/auth'
 import config from '@/config'
 import StickyNote from '@/components/StickyNote.vue'
@@ -265,16 +246,15 @@ const requests = ref<ItemRequest[]>([])
 const myItems = ref<StoreItem[]>([])
 const myRequests = ref<ItemRequest[]>([])
 const total = ref(0)
-const searchQuery = ref('')
 const currentPage = ref(1)
 const perPage = 24
 // Nearest first once the viewer's rough location is known
 const viewer = useViewerLocation(() => {
-  sortBy.value = 'distance'
   currentPage.value = 1
   if (view.value !== 'mine') load()
 })
-const sortBy = ref<'distance' | 'created_at' | 'deadline'>(viewer.location.value ? 'distance' : 'created_at')
+// No sort picker: nearest first when the viewer's area is known, else newest
+const sortBy = computed(() => (viewer.location.value ? 'distance' : 'created_at'))
 const busyId = ref<string | null>(null)
 const totalPages = computed(() => Math.ceil(total.value / perPage))
 const showUnknownItems = computed(() => hasDistances(items.value))
@@ -314,11 +294,10 @@ const getJSON = async (path: string, failure: string) => {
 const boardParams = (excludeKey: string) => {
   const params = new URLSearchParams({
     sort_by: sortBy.value,
-    sort_order: sortBy.value === 'deadline' ? 'asc' : 'desc',
+    sort_order: 'desc',
     page: String(currentPage.value),
     per_page: String(perPage)
   })
-  if (searchQuery.value) params.append('search', searchQuery.value)
   if (authStore.user?.id) params.append(excludeKey, String(authStore.user.id))
   // The viewer's rough location sorts (or just tags) the notes by distance
   if (viewer.location.value) params.append('near', nearParam(viewer.location.value))
@@ -401,16 +380,6 @@ const remove = async (kind: Kind, note: { id: number; title: string }) => {
   }
 }
 
-const debouncedSearch = debounce(() => {
-  currentPage.value = 1
-  load()
-}, 300)
-
-const applySort = () => {
-  currentPage.value = 1
-  load()
-}
-
 const goToPage = (page: number) => {
   if (page >= 1 && page <= totalPages.value) {
     currentPage.value = page
@@ -482,37 +451,6 @@ onUnmounted(() => {
   outline: 3px solid var(--color-primary, #4f46e5);
   outline-offset: 2px;
 }
-
-.board-controls {
-  display: flex;
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
-}
-
-.board-input {
-  min-height: 44px;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-border, #e5e7eb);
-  border-radius: 0.375rem;
-  font-size: 1rem;
-  background: #fff;
-}
-
-.board-input:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
-}
-
-.board-controls .board-input:first-of-type {
-  flex: 1;
-  min-width: 0;
-}
-
-.board-sort {
-  flex: 0 0 auto;
-}
-
 .note-board {
   list-style: none;
   margin: 0;
@@ -624,10 +562,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 480px) {
-  .board-controls {
-    flex-direction: column;
-  }
-
   .note-board {
     grid-template-columns: 1fr;
   }

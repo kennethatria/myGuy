@@ -17,25 +17,23 @@
           role="group"
           :aria-label="`Distance radar: ${countsSentence(allCounts)} near you`"
         >
-          <!-- Rings: one square per distance bucket, nearest in the middle -->
+          <!-- Rings: one circle per distance bucket, nearest in the middle -->
           <g class="rings" aria-hidden="true">
-            <rect
-              v-for="(half, i) in RING_HALF"
-              :key="half"
-              :x="CENTRE - half"
-              :y="CENTRE - half"
-              :width="half * 2"
-              :height="half * 2"
-              :class="['ring', { outer: i === RING_HALF.length - 1 }]"
-              rx="1.5"
+            <circle
+              v-for="(radius, i) in RING_RADIUS"
+              :key="radius"
+              :cx="CENTRE"
+              :cy="CENTRE"
+              :r="radius"
+              :class="['ring', { outer: i === RING_RADIUS.length - 1 }]"
             />
             <text
-              v-for="(half, i) in RING_HALF"
-              :key="`label-${half}`"
-              :x="CENTRE + half - 1"
-              :y="CENTRE - half + 3.2"
+              v-for="(radius, i) in RING_RADIUS"
+              :key="`label-${radius}`"
+              :x="labelPoint(i).x"
+              :y="labelPoint(i).y"
               class="ring-label"
-              text-anchor="end"
+              text-anchor="middle"
             >{{ BUCKETS[i] }}</text>
           </g>
 
@@ -108,10 +106,10 @@ import { useRouter } from 'vue-router'
 import NearbyBanner from '@/components/NearbyBanner.vue'
 import { useViewerLocation } from '@/composables/useViewerLocation'
 import { useNearbyPosts, type NearbyPost } from '@/composables/useNearbyPosts'
-import { BUCKETS, CENTRE, KIND_STYLE, RING_HALF, countsSentence, layoutDots, type PostKind } from '@/utils/radar'
+import { BUCKETS, CENTRE, KIND_STYLE, RING_RADIUS, countsSentence, labelPoint, layoutDots, type PostKind } from '@/utils/radar'
 
 const KINDS: PostKind[] = ['task', 'item', 'request']
-const LABELS: Record<PostKind, string> = { task: 'Gigs', item: 'Listings', request: 'Requests' }
+const LABELS: Record<PostKind, string> = { task: 'Gigs', item: 'Marketplace', request: 'Requests' }
 
 const router = useRouter()
 const viewer = useViewerLocation()
@@ -180,8 +178,7 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   width: 100%;
   aspect-ratio: 1;
   display: block;
-  background: #f8fafc;
-  border-radius: 0.5rem;
+  background: radial-gradient(circle, #f8fafc 0 70%, transparent 71%);
 }
 
 .ring {

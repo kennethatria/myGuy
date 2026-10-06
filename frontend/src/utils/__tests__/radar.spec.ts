@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bucketIndex, radarPoint, layoutDots, countsSentence, RING_HALF, CENTRE, labelGap } from '../radar'
+import { bucketIndex, radarPoint, layoutDots, countsSentence, dotRadius, labelPoint, RING_RADIUS, CENTRE, LABEL_ANGLE, LABEL_CLEAR } from '../radar'
 
 describe('radar', () => {
   it('maps distance tags to rings', () => {
@@ -9,17 +9,12 @@ describe('radar', () => {
     expect(bucketIndex('far')).toBe(-1)
   })
 
-  it('puts each dot on its own ring, inside the square', () => {
+  it('puts each dot on its own circle, inside the radar', () => {
     for (let bucket = 0; bucket < 5; bucket++) {
       for (let id = 1; id <= 50; id++) {
         const { x, y } = radarPoint('item', id, bucket)
-        const half = Math.max(Math.abs(x - CENTRE), Math.abs(y - CENTRE))
-        const inner = bucket === 0 ? 4 : RING_HALF[bucket - 1]
-        expect(half).toBeCloseTo((inner + RING_HALF[bucket]) / 2, 5)
-        expect(x).toBeGreaterThanOrEqual(0)
-        expect(x).toBeLessThanOrEqual(100)
-        expect(y).toBeGreaterThanOrEqual(0)
-        expect(y).toBeLessThanOrEqual(100)
+        expect(Math.hypot(x - CENTRE, y - CENTRE)).toBeCloseTo(dotRadius(bucket), 5)
+        expect(Math.hypot(x - CENTRE, y - CENTRE)).toBeLessThan(RING_RADIUS[4])
       }
     }
   })
@@ -31,22 +26,26 @@ describe('radar', () => {
     expect(spots.size).toBeGreaterThan(25)
   })
 
-  it('keeps each ring label corner clear of dots', () => {
+  it('keeps the arc around each ring label clear of dots', () => {
     for (let bucket = 0; bucket < 5; bucket++) {
-      const inner = bucket === 0 ? 4 : RING_HALF[bucket - 1]
-      const half = (inner + RING_HALF[bucket]) / 2
-      const top = CENTRE - half
-      const right = CENTRE + half
       for (let id = 1; id <= 300; id++) {
         const { x, y } = radarPoint('task', id, bucket)
-        const onTopEdge = Math.abs(y - top) < 1e-9
-        expect(onTopEdge && x > right - labelGap(2 * half) + 1e-9).toBe(false)
+        // clockwise angle from 12 o'clock
+        const deg = ((Math.atan2(x - CENTRE, CENTRE - y) * 180) / Math.PI + 360) % 360
+        expect(Math.abs(deg - LABEL_ANGLE)).toBeGreaterThanOrEqual(LABEL_CLEAR - 1e-6)
       }
     }
   })
 
+  it('places ring labels inside the radar', () => {
+    for (let bucket = 0; bucket < 5; bucket++) {
+      const { x, y } = labelPoint(bucket)
+      expect(Math.hypot(x - CENTRE, y - CENTRE)).toBeLessThan(RING_RADIUS[bucket])
+    }
+  })
+
   it('spaces dots that share a ring so they never overlap', () => {
-    // up to 8 posts on the smallest ring, dots 3.2 units wide
+    // up to 8 posts on the smallest circle, dots 3.2 units wide
     const posts = Array.from({ length: 8 }, (_, i) => ({ kind: (['task', 'item', 'request'] as const)[i % 3], id: i + 1, bucket: 0 }))
     const spots = [...layoutDots(posts).values()]
     expect(spots).toHaveLength(8)
@@ -70,8 +69,8 @@ describe('radar', () => {
   })
 
   it('summarises counts in words', () => {
-    expect(countsSentence({ task: 3, item: 1, request: 2 })).toBe('3 gigs, 1 listing and 2 requests')
-    expect(countsSentence({ task: 0, item: 2, request: 1 })).toBe('2 listings and 1 request')
+    expect(countsSentence({ task: 3, item: 1, request: 2 })).toBe('3 gigs, 1 marketplace item and 2 requests')
+    expect(countsSentence({ task: 0, item: 2, request: 1 })).toBe('2 marketplace items and 1 request')
     expect(countsSentence({ task: 1, item: 0, request: 0 })).toBe('1 gig')
     expect(countsSentence({ task: 0, item: 0, request: 0 })).toBe('nothing yet')
   })
