@@ -153,6 +153,35 @@ router.post('/internal/store-message', async (req, res) => {
 });
 
 /**
+ * Internal endpoint for store-service to change a booking's status in chat
+ * on the seller's behalf (e.g. declining waiting bookings when a listing is
+ * removed), with a note to the buyer. Secured with the internal API key.
+ */
+const INTERNAL_BOOKING_STATUSES = new Set(['rejected']);
+
+router.post('/internal/booking-status', async (req, res) => {
+  try {
+    if (!hasInternalKey(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const bookingId = parseInt(req.body.booking_id);
+    const actorId = parseInt(req.body.actor_id);
+    const status = req.body.status;
+    const note = typeof req.body.note === 'string' ? req.body.note.trim() : '';
+    if (!bookingId || !actorId || !INTERNAL_BOOKING_STATUSES.has(status) || !note) {
+      return res.status(400).json({ error: 'booking_id, actor_id, a known status and note are required' });
+    }
+
+    await bookingMessageService.updateBookingMessageStatus(bookingId, status, actorId, req.app.get('io'), null, note);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating booking status:', error);
+    res.status(500).json({ error: 'Failed to update booking status' });
+  }
+});
+
+/**
  * Endpoint for handling booking actions from chat UI
  * User clicks approve/decline in the chat interface
  */
