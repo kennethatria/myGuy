@@ -14,9 +14,20 @@
       
       <nav class="sidebar-nav">
         <ul class="nav-list">
-          <li v-for="item in mainNavigation" :key="item.name">
+          <li v-for="item in mainNavigation" :key="item.key">
+            <button
+              v-if="item.action === 'sign-out'"
+              type="button"
+              class="nav-item nav-button"
+              :title="item.text"
+              @click="handleSignOut"
+            >
+              <span class="nav-icon" v-html="item.icon"></span>
+              <span v-if="!isSidebarCollapsed" class="nav-text">{{ item.text }}</span>
+            </button>
             <router-link
-              :to="item.to"
+              v-else
+              :to="item.to!"
               class="nav-item"
               :class="{ 'active': isActiveRoute(item) }"
               :title="item.text"
@@ -28,9 +39,9 @@
           </li>
         </ul>
       </nav>
-      
+
       <div class="sidebar-footer">
-        <div class="user-section" @click="toggleUserMenu">
+        <router-link :to="{ name: 'profile' }" class="user-section" :title="user?.fullName || 'Profile'">
           <div class="user-avatar">
             <span>{{ userInitials }}</span>
           </div>
@@ -38,27 +49,7 @@
             <div class="user-name">{{ user?.fullName || 'User' }}</div>
             <div class="user-email">{{ user?.email || '' }}</div>
           </div>
-        </div>
-        
-        <transition name="slide-up">
-          <div v-if="isUserMenuOpen && !isSidebarCollapsed" class="user-menu">
-            <router-link :to="{ name: 'profile' }" class="menu-item" @click="isUserMenuOpen = false">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="menu-icon">
-                <path d="M20 21V19C20 17.9391 19.5786 16.9217 18.8284 16.1716C18.0783 15.4214 17.0609 15 16 15H8C6.93913 15 5.92172 15.4214 5.17157 16.1716C4.42143 16.9217 4 17.9391 4 19V21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M12 11C14.2091 11 16 9.20914 16 7C16 4.79086 14.2091 3 12 3C9.79086 3 8 4.79086 8 7C8 9.20914 9.79086 11 12 11Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              Profile
-            </router-link>
-            <a href="#" class="menu-item" @click="handleSignOut">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="menu-icon">
-                <path d="M9 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M16 17L21 12L16 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              Sign out
-            </a>
-          </div>
-        </transition>
+        </router-link>
       </div>
     </aside>
     
@@ -72,12 +63,6 @@
           </svg>
         </button>
         
-        <div class="search-bar">
-          <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <path d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-          <input type="search" placeholder="Search gigs..." v-model="searchQuery" @keyup.enter="handleSearch">
-        </div>
         
       </header>
       
@@ -91,7 +76,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter, useRoute, type RouteLocationRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
 
@@ -110,8 +95,6 @@ const onViewportChange = (e: MediaQueryListEvent) => {
   isMobile.value = e.matches
   if (!e.matches) isMobileMenuOpen.value = false
 }
-const isUserMenuOpen = ref(false)
-const searchQuery = ref('')
 
 const user = computed(() => authStore.user)
 const totalUnreadCount = computed(() => {
@@ -123,38 +106,33 @@ const totalUnreadCount = computed(() => {
   }
 })
 
-const mainNavigation = computed(() => [
-  { 
-    name: 'dashboard', 
-    to: { name: 'dashboard' }, 
-    text: 'Home',
-    icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 9L12 2L21 9V20C21 20.5304 20.7893 21.0391 20.4142 21.4142C20.0391 21.7893 19.5304 22 19 22H5C4.46957 22 3.96086 21.7893 3.58579 21.4142C3.21071 21.0391 3 20.5304 3 20V9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-  },
-  { 
-    name: 'tasks', 
-    to: { name: 'tasks' }, 
-    text: 'Browse Gigs',
-    icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
-  },
-  { 
-    name: 'create-task', 
-    to: { name: 'create-task' }, 
-    text: 'Post a Gig',
-    icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-  },
-  { 
-    name: 'messages', 
-    to: { name: 'messages' }, 
-    text: 'Messages',
+interface NavItem {
+  key: string
+  text: string
+  icon: string
+  to?: RouteLocationRaw
+  // Highlighted when on this route (and, for My Gigs, this list)
+  route?: string
+  tab?: string
+  badge?: number
+  action?: 'sign-out'
+}
+
+// One list: the pages, then your own gigs, then your account
+const mainNavigation = computed<NavItem[]>(() => [
+  { key: 'home', route: 'dashboard', to: { name: 'dashboard' }, text: 'Home', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 9L12 2L21 9V20C21 20.5304 20.7893 21.0391 20.4142 21.4142C20.0391 21.7893 19.5304 22 19 22H5C4.46957 22 3.96086 21.7893 3.58579 21.4142C3.21071 21.0391 3 20.5304 3 20V9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
+  { key: 'tasks', route: 'tasks', to: { name: 'tasks' }, text: 'Browse Gigs', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' },
+  { key: 'store', route: 'store', to: { name: 'store' }, text: 'Marketplace', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 9V21H21V9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 9H21L19 3H5L3 9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 3V9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
+  {
+    key: 'messages', route: 'messages', to: { name: 'messages' }, text: 'Messages',
     badge: totalUnreadCount.value > 0 ? totalUnreadCount.value : undefined,
     icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 15C21 15.5304 20.7893 16.0391 20.4142 16.4142C20.0391 16.7893 19.5304 17 19 17H7L3 21V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H19C19.5304 3 20.0391 3.21071 20.4142 3.58579C20.7893 3.96086 21 4.46957 21 5V15Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
   },
-  { 
-    name: 'store', 
-    to: { name: 'store' }, 
-    text: 'Marketplace',
-    icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 9V21H21V9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 9H21L19 3H5L3 9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 3V9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-  }
+  { key: 'created', route: 'my-gigs', tab: 'created', to: { name: 'my-gigs', params: { tab: 'created' } }, text: 'My Created Gigs', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 2V8H20M8 13H16M8 17H16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
+  { key: 'assigned', route: 'my-gigs', tab: 'assigned', to: { name: 'my-gigs', params: { tab: 'assigned' } }, text: 'Gigs Assigned to Me', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M16 21V19C16 16.8 14.2 15 12 15H5C2.8 15 1 16.8 1 19V21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="8.5" cy="7" r="4" stroke="currentColor" stroke-width="2"/><path d="M17 11L19 13L23 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
+  { key: 'applications', route: 'my-gigs', tab: 'applications', to: { name: 'my-gigs', params: { tab: 'applications' } }, text: 'My Applications', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
+  { key: 'profile', route: 'profile', to: { name: 'profile' }, text: 'Profile', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M20 21V19C20 16.8 18.2 15 16 15H8C5.8 15 4 16.8 4 19V21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7" r="4" stroke="currentColor" stroke-width="2"/></svg>' },
+  { key: 'sign-out', text: 'Sign out', action: 'sign-out', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M9 21H5C3.9 21 3 20.1 3 19V5C3 3.9 3.9 3 5 3H9M16 17L21 12L16 7M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' }
 ])
 
 const userInitials = computed(() => {
@@ -181,16 +159,10 @@ const toggleSidebar = () => {
 // Close the drawer once the user has picked a page
 watch(() => route.fullPath, () => {
   isMobileMenuOpen.value = false
-  isUserMenuOpen.value = false
 })
-
-const toggleUserMenu = () => {
-  isUserMenuOpen.value = !isUserMenuOpen.value
-}
 
 const handleSignOut = async () => {
   try {
-    isUserMenuOpen.value = false
     authStore.logout()
     await router.push({ name: 'login' })
   } catch (error) {
@@ -198,18 +170,8 @@ const handleSignOut = async () => {
   }
 }
 
-const handleSearch = () => {
-  if (searchQuery.value.trim()) {
-    router.push({ 
-      name: 'tasks', 
-      query: { search: searchQuery.value.trim() } 
-    })
-  }
-}
-
-const isActiveRoute = (item: { name: string }) => {
-  return route.name === item.name
-}
+const isActiveRoute = (item: NavItem) =>
+  route.name === item.route && (!item.tab || route.params.tab === item.tab)
 
 onBeforeUnmount(() => mobileQuery.removeEventListener('change', onViewportChange))
 
@@ -289,6 +251,15 @@ onMounted(async () => {
   margin: 0;
 }
 
+.nav-button {
+  width: 100%;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .nav-item {
   display: flex;
   align-items: center;
@@ -351,6 +322,8 @@ onMounted(async () => {
 }
 
 .user-section {
+  text-decoration: none;
+  color: inherit;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -403,38 +376,6 @@ onMounted(async () => {
   display: none;
 }
 
-.user-menu {
-  position: absolute;
-  bottom: 100%;
-  left: 1rem;
-  right: 1rem;
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  margin-bottom: 0.5rem;
-  overflow: hidden;
-}
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  color: #212529;
-  text-decoration: none;
-  font-size: 0.875rem;
-  transition: background-color 0.2s;
-}
-
-.menu-item:hover {
-  background-color: #f8f9fa;
-}
-
-.menu-icon {
-  flex-shrink: 0;
-}
-
 /* Main Wrapper */
 .main-wrapper {
   flex: 1;
@@ -470,36 +411,6 @@ onMounted(async () => {
   color: #212529;
 }
 
-.search-bar {
-  flex: 1;
-  max-width: 600px;
-  position: relative;
-}
-
-.search-bar input {
-  width: 100%;
-  padding: 0.5rem 1rem 0.5rem 2.5rem;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  transition: all 0.2s;
-}
-
-.search-bar input:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
-}
-
-.search-icon {
-  position: absolute;
-  left: 0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #6c757d;
-  pointer-events: none;
-}
-
 
 
 
@@ -530,18 +441,6 @@ onMounted(async () => {
   background-color: #f5f5f5;
 }
 
-/* Transitions */
-.slide-up-enter-active,
-.slide-up-leave-active {
-  transition: all 0.3s ease;
-}
-
-.slide-up-enter-from,
-.slide-up-leave-to {
-  transform: translateY(10px);
-  opacity: 0;
-}
-
 /* Responsive */
 @media (max-width: 768px) {
   .sidebar {
@@ -568,10 +467,6 @@ onMounted(async () => {
   
   .main-wrapper {
     margin-left: 0;
-  }
-  
-  .search-bar {
-    display: none;
   }
   
   .top-bar {

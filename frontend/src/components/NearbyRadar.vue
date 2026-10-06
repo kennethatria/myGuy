@@ -15,57 +15,58 @@
           class="radar"
           viewBox="0 0 100 100"
           role="group"
-          :aria-label="`Distance radar: ${countsSentence(allCounts)} near you`"
+          :aria-label="`Distance radar: ${countsSentence(totals)} posted by others`"
         >
-          <!-- Rings: one square per distance bucket, nearest in the middle -->
+          <!-- Rings: one circle per distance bucket, nearest in the middle,
+               and a dotted edge ring for posts with no shared location -->
           <g class="rings" aria-hidden="true">
-            <rect
-              v-for="(half, i) in RING_HALF"
-              :key="half"
-              :x="CENTRE - half"
-              :y="CENTRE - half"
-              :width="half * 2"
-              :height="half * 2"
-              :class="['ring', { outer: i === RING_HALF.length - 1 }]"
-              rx="1.5"
+            <circle
+              v-for="ring in RINGS"
+              :key="ring"
+              :cx="CENTRE"
+              :cy="CENTRE"
+              :r="ringRadius(ring)"
+              :class="['ring', { unknown: ring === UNKNOWN_RING }]"
             />
             <text
-              v-for="(half, i) in RING_HALF"
-              :key="`label-${half}`"
-              :x="CENTRE + half - 1"
-              :y="CENTRE - half + 3.2"
+              v-for="ring in RINGS"
+              :key="`label-${ring}`"
+              :x="labelPoint(ring).x"
+              :y="labelPoint(ring).y"
               class="ring-label"
-              text-anchor="end"
-            >{{ BUCKETS[i] }}</text>
+              text-anchor="middle"
+            >{{ RING_LABELS[ring] }}</text>
           </g>
 
-          <g class="you" aria-hidden="true">
-            <circle :cx="CENTRE" :cy="CENTRE" r="1.8" class="you-dot" />
-            <text :x="CENTRE" :y="CENTRE + 4.6" text-anchor="middle" class="you-label">You</text>
-          </g>
 
           <g
-            v-for="post in posts"
+            v-for="post in drawn"
             :key="`${post.kind}-${post.id}`"
             class="dot"
             role="link"
             tabindex="0"
-            :aria-label="`${KIND_STYLE[post.kind].one}: ${post.title}, ${post.distance}`"
+            :aria-label="`${KIND_STYLE[post.kind].one}: ${post.title}, ${post.distance || 'no location shared'}`"
             @click="open(post)"
             @keydown.enter.prevent="open(post)"
             @keydown.space.prevent="open(post)"
           >
-            <title>{{ post.title }} · {{ post.distance }}</title>
+            <title>{{ post.title }} · {{ post.distance || 'no location shared' }}</title>
             <!-- A larger, invisible circle makes the dot easier to tap -->
             <circle :cx="spot(post).x" :cy="spot(post).y" r="5" class="dot-hit" />
             <circle
               :cx="spot(post).x"
               :cy="spot(post).y"
               r="1.6"
-              :fill="KIND_STYLE[post.kind].fill"
-              :stroke="KIND_STYLE[post.kind].stroke"
-              stroke-width="0.45"
+              :fill="post.bucket < 0 ? '#fff' : KIND_STYLE[post.kind].fill"
+              :stroke="post.bucket < 0 ? KIND_STYLE[post.kind].fill : KIND_STYLE[post.kind].stroke"
+              :stroke-width="post.bucket < 0 ? 0.8 : 0.45"
             />
+          </g>
+
+          <!-- Drawn last so dots on a busy inner ring never hide it -->
+          <g class="you" aria-hidden="true">
+            <circle :cx="CENTRE" :cy="CENTRE" r="1.8" class="you-dot" />
+            <text :x="CENTRE" :y="CENTRE + 3.6" text-anchor="middle" class="you-label">You</text>
           </g>
         </svg>
 
@@ -73,16 +74,26 @@
           <ul class="legend" aria-label="Key">
             <li v-for="kind in KINDS" :key="kind">
               <span class="legend-dot" :style="{ background: KIND_STYLE[kind].fill, borderColor: KIND_STYLE[kind].stroke }" aria-hidden="true"></span>
-              {{ label(kind) }} <span class="legend-count">{{ allCounts[kind] }}</span>
+              {{ label(kind) }} <span class="legend-count">{{ totals[kind] }}</span>
             </li>
           </ul>
+
+          <p v-if="unplacedCount" class="radar-note">
+            Hollow dots on the dotted edge ring had no location shared, so their distance is unknown.
+          </p>
+          <p v-if="moreThanShown" class="radar-note">
+            The radar shows the 5 nearest of each kind. See the boards for everything.
+          </p>
+          <p v-if="hiddenSentence" class="radar-note">
+            Busy around you: {{ hiddenSentence }} {{ hiddenTotal === 1 ? "isn't" : "aren't" }} drawn.
+          </p>
 
           <p v-if="loading && !posts.length" class="radar-note">Finding what's near you...</p>
           <p v-else-if="failed" class="radar-note">
             Couldn't load nearby posts.
             <button type="button" class="link-button" @click="reload">Try again</button>
           </p>
-          <p v-else-if="!posts.length" class="radar-note">Nothing with a location near you yet.</p>
+          <p v-else-if="!posts.length" class="radar-note">Nothing posted by others yet.</p>
 
           <template v-else>
             <h3 class="closest-title">Closest to you</h3>
@@ -91,7 +102,8 @@
                 <router-link :to="routeFor(post)" class="closest-link">
                   <span class="legend-dot" :style="{ background: KIND_STYLE[post.kind].fill, borderColor: KIND_STYLE[post.kind].stroke }" aria-hidden="true"></span>
                   <span class="closest-name">{{ post.title }}</span>
-                  <span class="closest-distance">{{ post.distance }}</span>
+                  <span v-if="post.distance" class="closest-distance">{{ post.distance }}</span>
+                  <span v-else class="closest-distance" role="img" aria-label="Distance unknown: no location was shared">🤷</span>
                 </router-link>
               </li>
             </ul>
@@ -108,27 +120,46 @@ import { useRouter } from 'vue-router'
 import NearbyBanner from '@/components/NearbyBanner.vue'
 import { useViewerLocation } from '@/composables/useViewerLocation'
 import { useNearbyPosts, type NearbyPost } from '@/composables/useNearbyPosts'
-import { BUCKETS, CENTRE, KIND_STYLE, RING_HALF, countsSentence, layoutDots, type PostKind } from '@/utils/radar'
+import { CENTRE, KIND_STYLE, RING_LABELS, UNKNOWN_RING, countsSentence, labelPoint, layoutDots, ringRadius, type PostKind } from '@/utils/radar'
 
 const KINDS: PostKind[] = ['task', 'item', 'request']
-const LABELS: Record<PostKind, string> = { task: 'Gigs', item: 'Listings', request: 'Requests' }
+const LABELS: Record<PostKind, string> = { task: 'Gigs', item: 'Marketplace', request: 'Requests' }
 
 const router = useRouter()
 const viewer = useViewerLocation()
-const { posts, loading, failed, reload } = useNearbyPosts(viewer.location)
+const { posts, totals, loading, failed, reload } = useNearbyPosts(viewer.location)
+const RINGS = Array.from({ length: UNKNOWN_RING + 1 }, (_, i) => i)
 
 const countWhere = (keep: (post: NearbyPost) => boolean) => {
   const counts: Record<PostKind, number> = { task: 0, item: 0, request: 0 }
   for (const post of posts.value) if (keep(post)) counts[post.kind]++
   return counts
 }
-const allCounts = computed(() => countWhere(() => true))
+const unplacedCount = computed(() => drawn.value.filter((post) => post.bucket < 0).length)
 // "Within 2 km" = the two innermost rings (<1 km and ~2 km)
-const closeCounts = computed(() => countWhere((post) => post.bucket <= 1))
+const closeCounts = computed(() => countWhere((post) => post.bucket >= 0 && post.bucket <= 1))
 
-// Dots sharing a ring are spaced evenly round it, so close posts never pile up
-const spots = computed(() => layoutDots(posts.value))
-const spot = (post: NearbyPost) => spots.value.get(`${post.kind}-${post.id}`) ?? { x: CENTRE, y: CENTRE }
+// The radar shows the nearest PER_KIND_ON_RADAR of each kind (15 dots at
+// most); the key and summary still count everything
+const PER_KIND_ON_RADAR = 5
+const onRadar = computed(() => {
+  const taken: Record<PostKind, number> = { task: 0, item: 0, request: 0 }
+  return posts.value.filter((post) => taken[post.kind]++ < PER_KIND_ON_RADAR)
+})
+const moreThanShown = computed(() => posts.value.length > onRadar.value.length)
+
+// Dots sharing a ring are spaced evenly round it; a busy ring draws as many
+// as fit (nearest first) and counts the rest
+const layout = computed(() => layoutDots(onRadar.value))
+const drawn = computed(() => onRadar.value.filter((post) => layout.value.spots.has(`${post.kind}-${post.id}`)))
+const spot = (post: NearbyPost) => layout.value.spots.get(`${post.kind}-${post.id}`) ?? { x: CENTRE, y: CENTRE }
+const hiddenTotal = computed(() => [...layout.value.hidden.values()].reduce((a, b) => a + b, 0))
+const hiddenSentence = computed(() =>
+  [...layout.value.hidden.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([ring, n]) => (ring === UNKNOWN_RING ? `${n} more without a location` : `${n} more within ${RING_LABELS[ring]}`))
+    .join(', ')
+)
 const label = (kind: PostKind) => LABELS[kind]
 
 const routeFor = (post: NearbyPost) => {
@@ -180,8 +211,7 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   width: 100%;
   aspect-ratio: 1;
   display: block;
-  background: #f8fafc;
-  border-radius: 0.5rem;
+  background: radial-gradient(circle, #f8fafc 0 69%, transparent 70%);
 }
 
 .ring {
@@ -191,8 +221,11 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   stroke-dasharray: 1.2 1;
 }
 
-.ring.outer {
-  stroke-dasharray: none;
+.ring.unknown {
+  stroke: #94a3b8;
+  stroke-dasharray: 0.4 1.2;
+  stroke-linecap: round;
+  stroke-width: 0.6;
 }
 
 .ring-label {
@@ -208,6 +241,9 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   font-size: 3px;
   font-weight: 600;
   fill: #111827;
+  stroke: #fff;
+  stroke-width: 0.8px;
+  paint-order: stroke;
 }
 
 .dot {
@@ -265,7 +301,7 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
 }
 
 .radar-note {
-  margin: 0;
+  margin: 0 0 0.4rem;
   font-size: 0.9rem;
   color: var(--color-text-light, #6b7280);
 }
@@ -281,7 +317,7 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
 }
 
 .closest-title {
-  margin: 0 0 0.25rem;
+  margin: 0.75rem 0 0.25rem;
   font-size: 0.95rem;
   font-weight: 600;
 }

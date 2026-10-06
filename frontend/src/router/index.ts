@@ -73,6 +73,13 @@ const router = createRouter({
       meta: { title: 'Messages', requiresAuth: true }
     },
     {
+      // Your own gigs and applications, one list each (side navigation)
+      path: '/my-gigs/:tab(created|assigned|applications)',
+      name: 'my-gigs',
+      component: () => import('@/views/tasks/MyGigsView.vue'),
+      meta: { title: 'My Gigs', requiresAuth: true }
+    },
+    {
       path: '/store',
       name: 'store',
       component: () => import('@/views/store/StoreView.vue'),

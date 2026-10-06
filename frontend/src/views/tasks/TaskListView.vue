@@ -12,24 +12,6 @@
 
     <NearbyBanner :state="viewer.state.value" @request="viewer.request" />
 
-    <div class="board-controls">
-      <label class="visually-hidden" for="gig-search">Search gigs</label>
-      <input
-        id="gig-search"
-        v-model="searchQuery"
-        type="search"
-        class="board-input"
-        placeholder="Search notes..."
-        @input="debouncedSearch"
-      />
-      <label class="visually-hidden" for="gig-sort">Sort notes</label>
-      <select id="gig-sort" v-model="sortBy" class="board-input board-sort" @change="applySort">
-        <option v-if="viewer.location.value" value="distance">Nearest first</option>
-        <option value="created_at">Newest first</option>
-        <option value="deadline">Expiring soon</option>
-      </select>
-    </div>
-
     <div v-if="loading" class="text-center py-5">
       <div class="spinner-border" role="status">
         <span class="visually-hidden">Loading...</span>
@@ -62,7 +44,7 @@
       <div v-else class="empty-board">
         <h2 class="h5">No notes on the board</h2>
         <p class="text-muted">
-          {{ searchQuery ? 'Nothing matches that search.' : 'Be the first to ask for a hand.' }}
+          Be the first to ask for a hand.
         </p>
         <router-link :to="{ name: 'create-task' }" class="btn btn-primary mt-2">Post a Note</router-link>
       </div>
@@ -106,7 +88,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { debounce } from 'lodash-es'
 import config from '@/config'
 import StickyNote from '@/components/StickyNote.vue'
 import NearbyBanner from '@/components/NearbyBanner.vue'
@@ -142,17 +123,16 @@ const authStore = useAuthStore()
 const loading = ref(false)
 const error = ref('')
 const paginatedResult = ref<PaginatedResult | null>(null)
-const searchQuery = ref('')
 const currentPage = ref(1)
 const perPage = 24
 const showUnknownDistance = computed(() => hasDistances(paginatedResult.value?.tasks ?? []))
 // Nearest first once the viewer's rough location is known
 const viewer = useViewerLocation(() => {
-  sortBy.value = 'distance'
   currentPage.value = 1
   fetchTasks()
 })
-const sortBy = ref<'distance' | 'created_at' | 'deadline'>(viewer.location.value ? 'distance' : 'created_at')
+// No sort picker: nearest first when the viewer's area is known, else newest
+const sortBy = computed(() => (viewer.location.value ? 'distance' : 'created_at'))
 
 // Countdowns move without refetching
 const now = ref(new Date())
@@ -197,15 +177,12 @@ const buildQueryParams = () => {
   if (authStore.user?.id) {
     params.append('exclude_created_by', String(authStore.user.id))
   }
-  if (searchQuery.value) {
-    params.append('search', searchQuery.value)
-  }
   // The viewer's rough location sorts (or just tags) the notes by distance
   if (viewer.location.value) {
     params.append('near', nearParam(viewer.location.value))
   }
   params.append('sort_by', sortBy.value)
-  params.append('sort_order', sortBy.value === 'deadline' ? 'asc' : 'desc')
+  params.append('sort_order', 'desc')
   params.append('page', String(currentPage.value))
   params.append('per_page', String(perPage))
 
@@ -235,16 +212,6 @@ const fetchTasks = async () => {
   } finally {
     loading.value = false
   }
-}
-
-const debouncedSearch = debounce(() => {
-  currentPage.value = 1
-  fetchTasks()
-}, 300)
-
-const applySort = () => {
-  currentPage.value = 1
-  fetchTasks()
 }
 
 const goToPage = (page: number) => {
@@ -279,36 +246,6 @@ onUnmounted(() => {
   gap: 1rem;
   margin-bottom: 1.25rem;
 }
-
-.board-controls {
-  display: flex;
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
-}
-
-.board-input {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-border, #e5e7eb);
-  border-radius: 0.375rem;
-  font-size: 1rem;
-  background: #fff;
-}
-
-.board-input:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
-}
-
-.board-controls .board-input:first-of-type {
-  flex: 1;
-  min-width: 0;
-}
-
-.board-sort {
-  flex: 0 0 auto;
-}
-
 .note-board {
   list-style: none;
   margin: 0;
@@ -376,10 +313,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 480px) {
-  .board-controls {
-    flex-direction: column;
-  }
-
   .note-board {
     grid-template-columns: 1fr;
   }

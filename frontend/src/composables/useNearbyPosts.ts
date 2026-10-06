@@ -10,35 +10,40 @@ export interface NearbyPost {
   id: number
   title: string
   distance: string
+  // Index into BUCKETS, or -1 when the poster didn't share a location
   bucket: number
 }
 
 // Posts last 24 hours and distances don't move, so a few minutes is fresh
 // enough (and cheap on mobile data)
 export const REFRESH_MS = 5 * 60 * 1000
-const PER_KIND = 20
+// The nearest 50 of each kind; the radar draws as many as fit
+const PER_KIND = 50
 
 /**
- * Other people's nearest live gigs, listings and requests (those with a
- * location), for the dashboard radar. Loads when a location is known, again
+ * Other people's nearest live gigs, marketplace items and requests for the
+ * Home radar, nearest first; those whose poster shared no location come
+ * last with bucket -1 (counted and listed, but not placed on the radar). Loads when a location is known, again
  * every 5 minutes while the page is visible, and on return to the tab if the
  * last load is older than that.
  */
 export function useNearbyPosts(location: Ref<RoughLocation | null>) {
   const posts = ref<NearbyPost[]>([])
+  // Each board's full count (live posts by others), beyond the PER_KIND fetched
+  const totals = ref<Record<PostKind, number>>({ task: 0, item: 0, request: 0 })
   const loading = ref(false)
   const failed = ref(false)
   let lastLoad = 0
   let timer: ReturnType<typeof setInterval> | undefined
   const authStore = useAuthStore()
 
-  const fetchKind = async (kind: PostKind, url: string, listKey: string): Promise<NearbyPost[]> => {
+  const fetchKind = async (kind: PostKind, url: string, listKey: string): Promise<{ list: NearbyPost[]; total: number }> => {
     const response = await fetch(url, { headers: { Authorization: `Bearer ${authStore.token}` } })
     if (!response.ok) throw new Error(`${kind} ${response.status}`)
     const data = await response.json()
-    return ((data[listKey] ?? []) as { id: number; title: string; distance?: string }[])
+    const list = ((data[listKey] ?? []) as { id: number; title: string; distance?: string }[])
       .map((post) => ({ kind, id: post.id, title: post.title, distance: post.distance ?? '', bucket: bucketIndex(post.distance) }))
-      .filter((post) => post.bucket >= 0)
+    return { list, total: typeof data.total === 'number' ? data.total : list.length }
   }
 
   const load = async () => {
@@ -53,10 +58,19 @@ export function useNearbyPosts(location: Ref<RoughLocation | null>) {
       fetchKind('item', `${config.STORE_API_URL}/items?status=active&exclude_seller_id=${me}&${common}`, 'items'),
       fetchKind('request', `${config.STORE_API_URL}/requests?exclude_requester_id=${me}&${common}`, 'requests')
     ])
-    const loaded = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+    const loaded = results.flatMap((r) => (r.status === 'fulfilled' ? r.value.list : []))
+    const kinds: PostKind[] = ['task', 'item', 'request']
+    totals.value = Object.fromEntries(
+      kinds.map((kind, i) => {
+        const r = results[i]
+        return [kind, r.status === 'fulfilled' ? r.value.total : 0]
+      })
+    ) as Record<PostKind, number>
     failed.value = results.every((r) => r.status === 'rejected')
-    // Nearest first; within a ring, keep each board's own order
-    posts.value = loaded.map((post, i) => ({ post, i })).sort((a, b) => a.post.bucket - b.post.bucket || a.i - b.i).map(({ post }) => post)
+    // Nearest first, posts without a location last; within a ring, keep
+    // each board's own order
+    const rank = (post: NearbyPost) => (post.bucket < 0 ? 99 : post.bucket)
+    posts.value = loaded.map((post, i) => ({ post, i })).sort((a, b) => rank(a.post) - rank(b.post) || a.i - b.i).map(({ post }) => post)
     lastLoad = Date.now()
     loading.value = false
   }
@@ -80,5 +94,5 @@ export function useNearbyPosts(location: Ref<RoughLocation | null>) {
     if (now && (!before || now.lat !== before.lat || now.lng !== before.lng)) load()
   })
 
-  return { posts, loading, failed, reload: load }
+  return { posts, totals, loading, failed, reload: load }
 }
