@@ -17,27 +17,20 @@
           role="group"
           :aria-label="`Distance radar: ${countsSentence(totals)} posted by others`"
         >
-          <!-- Rings: one circle per distance bucket, nearest in the middle,
-               and a dotted edge ring for posts with no shared location -->
+          <!-- Bands: one shaded disc per distance bucket, darker nearer you
+               (drawn outermost first), and a dotted edge ring for posts with
+               no shared location -->
           <g class="rings" aria-hidden="true">
+            <circle :cx="CENTRE" :cy="CENTRE" :r="ringRadius(UNKNOWN_RING)" class="ring unknown" />
             <circle
-              v-for="ring in RINGS"
+              v-for="ring in BANDS"
               :key="ring"
               :cx="CENTRE"
               :cy="CENTRE"
               :r="ringRadius(ring)"
-              :class="['ring', { unknown: ring === UNKNOWN_RING }]"
+              :class="['band', `band-${ring}`]"
             />
-            <text
-              v-for="ring in RINGS"
-              :key="`label-${ring}`"
-              :x="labelPoint(ring).x"
-              :y="labelPoint(ring).y"
-              class="ring-label"
-              text-anchor="middle"
-            >{{ RING_LABELS[ring] }}</text>
           </g>
-
 
           <g
             v-for="post in drawn"
@@ -53,20 +46,37 @@
             <title>{{ post.title }} · {{ post.distance || 'no location shared' }}</title>
             <!-- A larger, invisible circle makes the dot easier to tap -->
             <circle :cx="spot(post).x" :cy="spot(post).y" r="5" class="dot-hit" />
+            <!-- Solid dots get a white edge to stand out on the bands -->
             <circle
               :cx="spot(post).x"
               :cy="spot(post).y"
-              r="1.6"
+              r="1.9"
               :fill="post.bucket < 0 ? '#fff' : KIND_STYLE[post.kind].fill"
-              :stroke="post.bucket < 0 ? KIND_STYLE[post.kind].fill : KIND_STYLE[post.kind].stroke"
-              :stroke-width="post.bucket < 0 ? 0.8 : 0.45"
+              :stroke="post.bucket < 0 ? KIND_STYLE[post.kind].fill : '#fff'"
+              :stroke-width="post.bucket < 0 ? 0.8 : 0.6"
             />
+          </g>
+
+          <!-- Labels sit in pills over the dots' gap (LABEL_CLEAR), so they
+               read on any band -->
+          <g class="labels" aria-hidden="true">
+            <g v-for="ring in RINGS" :key="`label-${ring}`">
+              <rect
+                :x="labelPoint(ring).x - pillWidth(ring) / 2"
+                :y="labelPoint(ring).y - 2.6"
+                :width="pillWidth(ring)"
+                height="3.6"
+                rx="1.8"
+                :class="['label-pill', { unknown: ring === UNKNOWN_RING }]"
+              />
+              <text :x="labelPoint(ring).x" :y="labelPoint(ring).y" class="ring-label" text-anchor="middle">{{ RING_LABELS[ring] }}</text>
+            </g>
           </g>
 
           <!-- Drawn last so dots on a busy inner ring never hide it -->
           <g class="you" aria-hidden="true">
-            <circle :cx="CENTRE" :cy="CENTRE" r="1.8" class="you-dot" />
-            <text :x="CENTRE" :y="CENTRE + 3.6" text-anchor="middle" class="you-label">You</text>
+            <circle :cx="CENTRE" :cy="CENTRE" r="2.4" class="you-dot" />
+            <text :x="CENTRE" :y="CENTRE + 5.2" text-anchor="middle" class="you-label">You</text>
           </g>
         </svg>
 
@@ -79,7 +89,7 @@
           </ul>
 
           <p v-if="unplacedCount" class="radar-note">
-            Hollow dots on the dotted edge ring had no location shared, so their distance is unknown.
+            Hollow dots indicate no location shared.
           </p>
           <p v-if="moreThanShown" class="radar-note">
             The radar shows the 5 nearest of each kind. See the boards for everything.
@@ -129,6 +139,10 @@ const router = useRouter()
 const viewer = useViewerLocation()
 const { posts, totals, loading, failed, reload } = useNearbyPosts(viewer.location)
 const RINGS = Array.from({ length: UNKNOWN_RING + 1 }, (_, i) => i)
+// Distance bands, outermost first so nearer ones paint over them
+const BANDS = RINGS.slice(0, UNKNOWN_RING).reverse()
+// SVG can't size a box to its text: about 1.35 units per character at 2.4px
+const pillWidth = (ring: number) => RING_LABELS[ring].length * 1.35 + 2.4
 
 const countWhere = (keep: (post: NearbyPost) => boolean) => {
   const counts: Record<PostKind, number> = { task: 0, item: 0, request: 0 }
@@ -211,37 +225,52 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   width: 100%;
   aspect-ratio: 1;
   display: block;
-  background: radial-gradient(circle, #f8fafc 0 69%, transparent 70%);
 }
 
-.ring {
-  fill: none;
-  stroke: #cbd5e1;
-  stroke-width: 0.4;
-  stroke-dasharray: 1.2 1;
-}
-
-.ring.unknown {
-  stroke: #94a3b8;
-  stroke-dasharray: 0.4 1.2;
-  stroke-linecap: round;
+/* Darkest nearest you, fading outwards; white edges keep bands distinct */
+.band {
+  stroke: #fff;
   stroke-width: 0.6;
 }
 
+.band-0 { fill: #c7d2fe; }
+.band-1 { fill: #d5ddfe; }
+.band-2 { fill: #e2e8ff; }
+.band-3 { fill: #ebeffe; }
+.band-4 { fill: #f3f5ff; }
+
+.ring.unknown {
+  fill: none;
+  stroke: #c7cbd6;
+  stroke-width: 0.4;
+  stroke-dasharray: 1 1.2;
+}
+
+.label-pill {
+  fill: #fff;
+}
+
+.label-pill.unknown {
+  fill: #f3f4f6;
+}
+
 .ring-label {
-  font-size: 2.6px;
-  fill: #64748b;
+  font-size: 2.4px;
+  font-weight: 600;
+  fill: #3730a3;
 }
 
 .you-dot {
-  fill: #111827;
+  fill: var(--color-primary, #4f46e5);
+  stroke: #fff;
+  stroke-width: 0.8;
 }
 
 .you-label {
   font-size: 3px;
-  font-weight: 600;
-  fill: #111827;
-  stroke: #fff;
+  font-weight: 700;
+  fill: #312e81;
+  stroke: #c7d2fe;
   stroke-width: 0.8px;
   paint-order: stroke;
 }
