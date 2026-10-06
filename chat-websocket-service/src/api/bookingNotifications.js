@@ -160,6 +160,7 @@ router.post('/internal/store-message', async (req, res) => {
 const STORE_BOOKING_ENDPOINTS = {
   'approve': 'approve',
   'decline': 'reject',
+  'release': 'release',
   'confirm-received': 'confirm-received',
   'confirm-delivery': 'confirm-delivery',
   'rate-seller': 'rate-seller',

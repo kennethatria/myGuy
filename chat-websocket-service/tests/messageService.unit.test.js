@@ -95,6 +95,16 @@ describe('MessageService', () => {
         'Message not found or unauthorized'
       );
     });
+
+    it('never deletes a record of what happened (events, booking notes)', async () => {
+      db.query.mockResolvedValue({ rows: [{ id: 1 }] });
+      await messageService.deleteMessage(1, 10);
+      const sql = db.query.mock.calls[0][0];
+      for (const type of ['system_alert', 'booking_approved', 'booking_item_received', 'booking_completed']) {
+        expect(sql).toContain(`'${type}'`);
+      }
+      expect(sql).toContain('NOT IN');
+    });
   });
 
   describe('markAsRead', () => {

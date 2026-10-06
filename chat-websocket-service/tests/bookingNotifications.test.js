@@ -212,6 +212,25 @@ describe('bookingNotifications router', () => {
         .expect(200);
     });
 
+    it('passes a release on to store-service and records the new status', async () => {
+      const token = createUserToken(1);
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ status: 'released', item_id: 9, requester_id: 2 })
+      });
+      bookingMessageService.updateBookingMessageStatus.mockResolvedValue({ id: 3 });
+
+      await request(app)
+        .post('/booking-action')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ bookingId: 5, action: 'release' })
+        .expect(200);
+
+      expect(global.fetch.mock.calls[0][0]).toMatch(/\/booking-requests\/5\/release$/);
+      expect(bookingMessageService.updateBookingMessageStatus)
+        .toHaveBeenCalledWith(5, 'released', 1, expect.anything(), expect.objectContaining({ status: 'released' }));
+    });
+
     it('handles confirm-received action', async () => {
       const token = createUserToken(1);
       const mockBooking = { status: 'item_received' };
