@@ -15,6 +15,7 @@ import (
 
 	"store-service/internal/media"
 	"store-service/internal/models"
+	"store-service/internal/proximity"
 	"store-service/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -135,6 +136,27 @@ func respondError(c *gin.Context, status int, err error) {
 	}
 }
 
+// parseNear reads an optional "lat,lng" query value as a rough location.
+func parseNear(raw string) (*proximity.Location, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	if len(parts) != 2 {
+		return nil, services.ErrInvalidLocation
+	}
+	lat, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	lng, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if err1 != nil || err2 != nil {
+		return nil, services.ErrInvalidLocation
+	}
+	at, err := proximity.Parse(&lat, &lng)
+	if err != nil {
+		return nil, services.ErrInvalidLocation
+	}
+	return at, nil
+}
+
 // formFloat reads an optional number from a multipart form.
 func formFloat(c *gin.Context, field string) *float64 {
 	v, err := strconv.ParseFloat(c.PostForm(field), 64)
@@ -245,7 +267,23 @@ func (h *StoreHandler) GetItems(c *gin.Context) {
 		}
 	}
 
-	items, total, err := h.service.GetItems(filter)
+	// The viewer's rough position ("lat,lng"), for distance sort and tags
+	near, err := parseNear(c.Query("near"))
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	var items []models.StoreItem
+	var total int64
+	if near != nil && filter.SortBy == "distance" {
+		items, total, err = h.service.GetItemsNear(filter, *near)
+	} else {
+		items, total, err = h.service.GetItems(filter)
+		if err == nil && near != nil {
+			h.service.TagItemDistances(items, *near)
+		}
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve items"})
 		return

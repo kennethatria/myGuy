@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { roughLocation, type RoughLocation } from '@/utils/geoCell'
+import { cacheLocation } from '@/composables/useViewerLocation'
 
 export type LocationState = 'idle' | 'asking' | 'added' | 'denied' | 'unavailable'
 
@@ -21,6 +22,7 @@ export function useRoughLocation() {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         location.value = roughLocation(position.coords.latitude, position.coords.longitude)
+        cacheLocation(location.value) // boards can sort by it too
         state.value = 'added'
       },
       (error) => {

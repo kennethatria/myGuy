@@ -14,8 +14,9 @@ services:
       # Task events (applications, decisions) are posted into Messages via chat
       - CHAT_API_URL=http://chat-websocket-service:8082/api/v1
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
-      # Rough locations of gigs
+      # Rough locations of gigs; "false" turns distance sorting off (rollback)
       - PROXIMITY_URL=http://proximity-service:8083
+      - PROXIMITY_SORT_ENABLED=true
       # Login-code email. Unset SMTP_HOST logs codes instead (local dev only).
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
@@ -41,8 +42,10 @@ services:
       # Chat service integration for booking notifications
       - CHAT_API_URL=http://chat-websocket-service:8082/api/v1
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
-      # Rough locations of listings and requests
+      # Rough locations of listings and requests; "false" turns distance
+      # sorting off (rollback)
       - PROXIMITY_URL=http://proximity-service:8083
+      - PROXIMITY_SORT_ENABLED=true
       - ZIPKIN_URL=${ZIPKIN_URL:-http://zipkin:9411/api/v2/spans}
     volumes:
       - store-uploads:/app/uploads

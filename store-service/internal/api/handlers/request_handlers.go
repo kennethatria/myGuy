@@ -63,7 +63,22 @@ func (h *RequestHandler) GetRequests(c *gin.Context) {
 		filter.PerPage = pp
 	}
 
-	requests, total, err := h.service.GetRequests(filter)
+	near, err := parseNear(c.Query("near"))
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	var requests []models.ItemRequest
+	var total int64
+	if near != nil && filter.SortBy == "distance" {
+		requests, total, err = h.service.GetRequestsNear(filter, *near)
+	} else {
+		requests, total, err = h.service.GetRequests(filter)
+		if err == nil && near != nil {
+			h.service.TagRequestDistances(requests, *near)
+		}
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve requests"})
 		return

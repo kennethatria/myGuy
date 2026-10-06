@@ -82,6 +82,7 @@
               :to="{ name: 'store-item', params: { id: item.id } }"
             >
               <template #footer>
+                <DistanceTag :distance="item.distance" :show-unknown="showUnknownListings" />
                 <span>@{{ item.seller?.username || 'someone' }}</span>
                 <span v-if="listingPriceLabel(item)">{{ listingPriceLabel(item) }}</span>
                 <span v-if="item.deadline && expiryLabel(item.deadline, now)">{{ expiryLabel(item.deadline, now) }}</span>
@@ -101,6 +102,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import config from '@/config'
 import StickyNote from '@/components/StickyNote.vue'
+import DistanceTag from '@/components/DistanceTag.vue'
+import { hasDistances } from '@/utils/distance'
 import { expiryLabel } from '@/utils/gigNote'
 import { listingPriceLabel } from '@/utils/listingNote'
 import { setPageTitle } from '@/utils/pageTitle'
@@ -120,6 +123,7 @@ interface StoreItem {
   title: string
   description: string
   deadline?: string
+  distance?: string
   price_type?: string
   fixed_price?: number
   starting_bid?: number
@@ -142,6 +146,7 @@ const busy = ref(false)
 const now = ref(new Date())
 let clock: ReturnType<typeof setInterval> | undefined
 
+const showUnknownListings = computed(() => hasDistances(listings.value))
 const isOwner = computed(() => request.value?.requester_id === authStore.user?.id)
 const statusLabel = computed(() => {
   const status = request.value?.status ?? ''

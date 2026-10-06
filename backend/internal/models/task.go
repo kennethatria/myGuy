@@ -20,6 +20,8 @@ type Task struct {
 
 	// Define relationships for preloading
 	Creator   User          `json:"creator" gorm:"foreignKey:CreatedBy"`
+	// Distance is a rough distance tag ("~2 km") for the viewer, when known
+	Distance  string        `json:"distance,omitempty" gorm:"-"`
 	Assignee  *User         `json:"assignee" gorm:"foreignKey:AssignedTo"`
 	Applications []Application `json:"applications" gorm:"foreignKey:TaskID"`
 }

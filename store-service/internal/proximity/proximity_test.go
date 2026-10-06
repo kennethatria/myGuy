@@ -88,3 +88,93 @@ func TestClient(t *testing.T) {
 
 	assert.Error(t, (&Client{baseURL: "http://127.0.0.1:1", client: &http.Client{Timeout: 50 * time.Millisecond}}).do("DELETE", "/x", nil))
 }
+func TestBucketLabel(t *testing.T) {
+	assert.Equal(t, "<1 km", BucketLabel(0))
+	assert.Equal(t, "10+ km", BucketLabel(4))
+	assert.Equal(t, "", BucketLabel(5))
+	assert.Equal(t, "", BucketLabel(-1))
+}
+
+func TestDistances(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		assert.Equal(t, "/internal/distances/task", r.URL.Path)
+		assert.Equal(t, "k", r.Header.Get("X-Internal-API-Key"))
+		var in struct {
+			Lat, Lng float64
+			IDs      []uint
+		}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		assert.Equal(t, 0.35, in.Lat)
+		// every id but those divisible by 3 has a location, bucket = id % 5
+		results := []map[string]interface{}{}
+		for _, id := range in.IDs {
+			if id%3 != 0 {
+				results = append(results, map[string]interface{}{"id": id, "bucket": id % 5})
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"results": results})
+	}))
+	defer server.Close()
+	c := New(server.URL, "k")
+
+	ids := make([]uint, 0, 2500)
+	for i := uint(1); i <= 2500; i++ {
+		ids = append(ids, i)
+	}
+	got, err := c.Distances("task", Location{Lat: 0.35, Lng: 32.585}, ids)
+
+	require.NoError(t, err)
+	assert.Equal(t, 3, calls, "sent in batches of 1000")
+	assert.Equal(t, 1, got[1])
+	assert.Equal(t, 2, got[7])
+	_, has := got[3]
+	assert.False(t, has, "ids without a location are left out")
+
+	empty, err := c.Distances("task", Location{}, nil)
+	require.NoError(t, err)
+	assert.Empty(t, empty)
+	assert.Equal(t, 3, calls, "no call for no ids")
+}
+
+func TestDistancesErrors(t *testing.T) {
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer failing.Close()
+	_, err := New(failing.URL, "k").Distances("task", Location{}, []uint{1})
+	assert.ErrorContains(t, err, "503")
+
+	garbled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("not json"))
+	}))
+	defer garbled.Close()
+	_, err = New(garbled.URL, "k").Distances("task", Location{}, []uint{1})
+	assert.Error(t, err)
+
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(500 * time.Millisecond)
+	}))
+	defer slow.Close()
+	start := time.Now()
+	_, err = New(slow.URL, "k").Distances("task", Location{}, []uint{1})
+	assert.Error(t, err)
+	assert.Less(t, time.Since(start), 450*time.Millisecond, "gives up after 300 ms")
+}
+
+func TestDistancesFrom(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/internal/distances/item", r.URL.Path)
+		var in map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		assert.Equal(t, map[string]interface{}{"kind": "request", "id": float64(31)}, in["from"])
+		assert.Nil(t, in["lat"])
+		_, _ = w.Write([]byte(`{"results":[{"id":51,"bucket":1}]}`))
+	}))
+	defer server.Close()
+
+	got, err := New(server.URL, "k").DistancesFrom("item", "request", 31, []uint{51, 52})
+	require.NoError(t, err)
+	assert.Equal(t, map[uint]int{51: 1}, got)
+}

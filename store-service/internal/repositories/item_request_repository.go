@@ -32,18 +32,7 @@ func (r *itemRequestRepository) GetAll(filter models.ItemRequestFilter) ([]model
 	var requests []models.ItemRequest
 	var total int64
 
-	status := filter.Status
-	if status == "" {
-		status = "active"
-	}
-	query := r.db.Model(&models.ItemRequest{}).Where("status = ?", status)
-	if filter.Search != "" {
-		pattern := "%" + filter.Search + "%"
-		query = query.Where("LOWER(title) LIKE LOWER(?) OR LOWER(description) LIKE LOWER(?)", pattern, pattern)
-	}
-	if filter.ExcludeRequesterID > 0 {
-		query = query.Where("requester_id <> ?", filter.ExcludeRequesterID)
-	}
+	query := r.filtered(filter)
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
@@ -68,6 +57,41 @@ func (r *itemRequestRepository) GetAll(filter models.ItemRequestFilter) ([]model
 	err := query.Offset((filter.Page - 1) * filter.PerPage).Limit(filter.PerPage).
 		Preload("Requester").Find(&requests).Error
 	return requests, total, err
+}
+
+// filtered applies an ItemRequestFilter's conditions (live requests unless
+// another status is asked for), not sorting or paging.
+func (r *itemRequestRepository) filtered(filter models.ItemRequestFilter) *gorm.DB {
+	status := filter.Status
+	if status == "" {
+		status = "active"
+	}
+	query := r.db.Model(&models.ItemRequest{}).Where("status = ?", status)
+	if filter.Search != "" {
+		pattern := "%" + filter.Search + "%"
+		query = query.Where("LOWER(title) LIKE LOWER(?) OR LOWER(description) LIKE LOWER(?)", pattern, pattern)
+	}
+	if filter.ExcludeRequesterID > 0 {
+		query = query.Where("requester_id <> ?", filter.ExcludeRequesterID)
+	}
+	return query
+}
+
+// ListIDs returns the ids of every request matching filter, newest first.
+func (r *itemRequestRepository) ListIDs(filter models.ItemRequestFilter) ([]uint, error) {
+	var ids []uint
+	err := r.filtered(filter).Order("created_at DESC").Order("id DESC").Pluck("id", &ids).Error
+	return ids, err
+}
+
+// GetByIDs loads requests with their requester, in no particular order.
+func (r *itemRequestRepository) GetByIDs(ids []uint) ([]models.ItemRequest, error) {
+	var requests []models.ItemRequest
+	if len(ids) == 0 {
+		return requests, nil
+	}
+	err := r.db.Where("id IN ?", ids).Preload("Requester").Find(&requests).Error
+	return requests, err
 }
 
 func (r *itemRequestRepository) GetByRequesterID(requesterID uint) ([]models.ItemRequest, error) {

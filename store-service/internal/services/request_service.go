@@ -1,7 +1,9 @@
 package services
 
 import (
+	"log"
 	"store-service/internal/models"
+	"store-service/internal/proximity"
 	"store-service/internal/repositories"
 	"time"
 )
@@ -11,6 +13,8 @@ type RequestServiceInterface interface {
 	CreateRequest(userID uint, req models.CreateItemRequestRequest) (*models.ItemRequest, error)
 	GetRequest(id uint) (*models.ItemRequest, error)
 	GetRequests(filter models.ItemRequestFilter) ([]models.ItemRequest, int64, error)
+	GetRequestsNear(filter models.ItemRequestFilter, at proximity.Location) ([]models.ItemRequest, int64, error)
+	TagRequestDistances(requests []models.ItemRequest, at proximity.Location)
 	GetRequestListings(id uint) ([]models.StoreItem, error)
 	GetUserRequests(userID uint) ([]models.ItemRequest, error)
 	RepostRequest(id uint, userID uint) (*models.ItemRequest, error)
@@ -24,10 +28,17 @@ type RequestService struct {
 	requestRepo repositories.ItemRequestRepository
 	itemRepo    repositories.StoreItemRepository
 	locator     Locator
+	distancer   Distancer // nil: no distance sorting or tags
 }
 
 func NewRequestService(requestRepo repositories.ItemRequestRepository, itemRepo repositories.StoreItemRepository) *RequestService {
 	return &RequestService{requestRepo: requestRepo, itemRepo: itemRepo, locator: noopLocator{}}
+}
+
+// WithDistancer turns on distance sorting and tags (nil leaves them off).
+func (s *RequestService) WithDistancer(distancer Distancer) *RequestService {
+	s.distancer = distancer
+	return s
 }
 
 // WithLocator saves requests' rough locations through locator (nil = don't).
@@ -77,10 +88,90 @@ func (s *RequestService) GetRequests(filter models.ItemRequestFilter) ([]models.
 	return s.requestRepo.GetAll(filter)
 }
 
-// GetRequestListings lists the live listings sellers made for a request.
+// GetRequestsNear is GetRequests ordered by distance from at, the way
+// StoreService.GetItemsNear orders listings, with the same fallback.
+func (s *RequestService) GetRequestsNear(filter models.ItemRequestFilter, at proximity.Location) ([]models.ItemRequest, int64, error) {
+	if s.distancer == nil {
+		return s.GetRequests(filter)
+	}
+	ids, err := s.requestRepo.ListIDs(filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	buckets, err := s.distancer.Distances("request", at, ids)
+	if err != nil {
+		log.Printf("WARNING: distance sort unavailable, showing newest first: %v", err)
+		return s.GetRequests(filter)
+	}
+	rankByDistance(ids, buckets)
+	pageIDs := pageOf(ids, filter.Page, filter.PerPage)
+
+	loaded, err := s.requestRepo.GetByIDs(pageIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	byID := make(map[uint]models.ItemRequest, len(loaded))
+	for _, request := range loaded {
+		byID[request.ID] = request
+	}
+	requests := make([]models.ItemRequest, 0, len(pageIDs))
+	for _, id := range pageIDs {
+		if request, ok := byID[id]; ok {
+			request.Distance = tagFor(buckets, id)
+			requests = append(requests, request)
+		}
+	}
+	return requests, int64(len(ids)), nil
+}
+
+// TagRequestDistances adds a rough distance tag from at to each request
+// that has a location. Best effort.
+func (s *RequestService) TagRequestDistances(requests []models.ItemRequest, at proximity.Location) {
+	if s.distancer == nil || len(requests) == 0 {
+		return
+	}
+	ids := make([]uint, len(requests))
+	for i, request := range requests {
+		ids[i] = request.ID
+	}
+	buckets, err := s.distancer.Distances("request", at, ids)
+	if err != nil {
+		log.Printf("WARNING: distance tags unavailable: %v", err)
+		return
+	}
+	for i := range requests {
+		requests[i].Distance = tagFor(buckets, requests[i].ID)
+	}
+}
+
+// GetRequestListings lists the live listings sellers made for a request,
+// nearest to the requester first (tagged with that distance) when both have
+// a location; otherwise newest first.
 func (s *RequestService) GetRequestListings(id uint) ([]models.StoreItem, error) {
 	items, _, err := s.itemRepo.GetAll(models.StoreItemFilter{RequestID: id, Status: "active", PerPage: 100})
-	return items, err
+	if err != nil || s.distancer == nil || len(items) == 0 {
+		return items, err
+	}
+	ids := make([]uint, len(items))
+	for i, item := range items {
+		ids[i] = item.ID
+	}
+	buckets, derr := s.distancer.DistancesFrom("item", "request", id, ids)
+	if derr != nil {
+		log.Printf("WARNING: distance sort for request %d unavailable: %v", id, derr)
+		return items, nil
+	}
+	rankByDistance(ids, buckets)
+	byID := make(map[uint]models.StoreItem, len(items))
+	for _, item := range items {
+		byID[item.ID] = item
+	}
+	ranked := make([]models.StoreItem, len(ids))
+	for i, itemID := range ids {
+		ranked[i] = byID[itemID]
+		ranked[i].Distance = tagFor(buckets, itemID)
+	}
+	return ranked, nil
 }
 
 func (s *RequestService) GetUserRequests(userID uint) ([]models.ItemRequest, error) {

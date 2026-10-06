@@ -10,6 +10,8 @@
       </router-link>
     </div>
 
+    <NearbyBanner :state="viewer.state.value" @request="viewer.request" />
+
     <div class="board-controls">
       <label class="visually-hidden" for="gig-search">Search gigs</label>
       <input
@@ -22,6 +24,7 @@
       />
       <label class="visually-hidden" for="gig-sort">Sort notes</label>
       <select id="gig-sort" v-model="sortBy" class="board-input board-sort" @change="applySort">
+        <option v-if="viewer.location.value" value="distance">Nearest first</option>
         <option value="created_at">Newest first</option>
         <option value="deadline">Expiring soon</option>
       </select>
@@ -48,6 +51,7 @@
             :to="{ name: 'task-detail', params: { id: task.id } }"
           >
             <template #footer>
+              <DistanceTag :distance="task.distance" :show-unknown="showUnknownDistance" />
               <span>@{{ task.creator?.username || 'someone' }}</span>
               <span v-if="expiryLabel(task.deadline, now)">{{ expiryLabel(task.deadline, now) }}</span>
             </template>
@@ -105,6 +109,10 @@ import { useAuthStore } from '@/stores/auth'
 import { debounce } from 'lodash-es'
 import config from '@/config'
 import StickyNote from '@/components/StickyNote.vue'
+import NearbyBanner from '@/components/NearbyBanner.vue'
+import DistanceTag from '@/components/DistanceTag.vue'
+import { hasDistances } from '@/utils/distance'
+import { useViewerLocation, nearParam } from '@/composables/useViewerLocation'
 import { expiryLabel } from '@/utils/gigNote'
 
 interface Task {
@@ -113,6 +121,8 @@ interface Task {
   description: string
   status: string
   deadline: string
+  // Rough distance from the viewer ("~2 km"), when both have a location
+  distance?: string
   creator?: {
     id: number
     username: string
@@ -135,7 +145,14 @@ const paginatedResult = ref<PaginatedResult | null>(null)
 const searchQuery = ref('')
 const currentPage = ref(1)
 const perPage = 24
-const sortBy = ref<'created_at' | 'deadline'>('created_at')
+const showUnknownDistance = computed(() => hasDistances(paginatedResult.value?.tasks ?? []))
+// Nearest first once the viewer's rough location is known
+const viewer = useViewerLocation(() => {
+  sortBy.value = 'distance'
+  currentPage.value = 1
+  fetchTasks()
+})
+const sortBy = ref<'distance' | 'created_at' | 'deadline'>(viewer.location.value ? 'distance' : 'created_at')
 
 // Countdowns move without refetching
 const now = ref(new Date())
@@ -182,6 +199,10 @@ const buildQueryParams = () => {
   }
   if (searchQuery.value) {
     params.append('search', searchQuery.value)
+  }
+  // The viewer's rough location sorts (or just tags) the notes by distance
+  if (viewer.location.value) {
+    params.append('near', nearParam(viewer.location.value))
   }
   params.append('sort_by', sortBy.value)
   params.append('sort_order', sortBy.value === 'deadline' ? 'asc' : 'desc')

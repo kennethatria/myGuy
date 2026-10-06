@@ -43,10 +43,8 @@ func (r *storeItemRepository) GetByIDForUpdate(id uint) (*models.StoreItem, erro
 	return &item, nil
 }
 
-func (r *storeItemRepository) GetAll(filter models.StoreItemFilter) ([]models.StoreItem, int64, error) {
-	var items []models.StoreItem
-	var totalCount int64
-
+// filtered applies every StoreItemFilter condition (not sorting or paging).
+func (r *storeItemRepository) filtered(filter models.StoreItemFilter) *gorm.DB {
 	query := r.db.Model(&models.StoreItem{})
 
 	// Apply filters
@@ -106,6 +104,15 @@ func (r *storeItemRepository) GetAll(filter models.StoreItemFilter) ([]models.St
 		}
 	}
 
+	return query
+}
+
+func (r *storeItemRepository) GetAll(filter models.StoreItemFilter) ([]models.StoreItem, int64, error) {
+	var items []models.StoreItem
+	var totalCount int64
+
+	query := r.filtered(filter)
+
 	// Count total records
 	query.Count(&totalCount)
 
@@ -148,6 +155,26 @@ func (r *storeItemRepository) GetAll(filter models.StoreItemFilter) ([]models.St
 	}
 
 	return items, totalCount, nil
+}
+
+// ListIDs returns the ids of every listing matching filter, newest first,
+// ignoring sorting and paging.
+func (r *storeItemRepository) ListIDs(filter models.StoreItemFilter) ([]uint, error) {
+	var ids []uint
+	err := r.filtered(filter).Order("created_at DESC").Order("id DESC").Pluck("id", &ids).Error
+	return ids, err
+}
+
+// GetByIDs loads listings with their photos and seller, in no particular order.
+func (r *storeItemRepository) GetByIDs(ids []uint) ([]models.StoreItem, error) {
+	var items []models.StoreItem
+	if len(ids) == 0 {
+		return items, nil
+	}
+	err := r.db.Where("id IN ?", ids).Preload("Images", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
+	}).Preload("Seller").Find(&items).Error
+	return items, err
 }
 
 func (r *storeItemRepository) Update(item *models.StoreItem) error {

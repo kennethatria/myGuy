@@ -10,6 +10,8 @@ type StoreItemRepository interface {
 	GetByID(id uint) (*models.StoreItem, error)
 	GetByIDForUpdate(id uint) (*models.StoreItem, error)
 	GetAll(filter models.StoreItemFilter) ([]models.StoreItem, int64, error)
+	ListIDs(filter models.StoreItemFilter) ([]uint, error)
+	GetByIDs(ids []uint) ([]models.StoreItem, error)
 	Update(item *models.StoreItem) error
 	Delete(id uint) error
 	GetBySellerID(sellerID uint) ([]models.StoreItem, error)
@@ -24,6 +26,8 @@ type ItemRequestRepository interface {
 	Create(request *models.ItemRequest) error
 	GetByID(id uint) (*models.ItemRequest, error)
 	GetAll(filter models.ItemRequestFilter) ([]models.ItemRequest, int64, error)
+	ListIDs(filter models.ItemRequestFilter) ([]uint, error)
+	GetByIDs(ids []uint) ([]models.ItemRequest, error)
 	GetByRequesterID(requesterID uint) ([]models.ItemRequest, error)
 	Update(request *models.ItemRequest) error
 	Delete(id uint) error

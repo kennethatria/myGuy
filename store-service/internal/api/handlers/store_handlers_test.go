@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"store-service/internal/models"
+	"store-service/internal/proximity"
 	"store-service/internal/services"
 	"testing"
 	"time"
@@ -49,6 +50,18 @@ func (m *MockStoreService) GetItem(id uint) (*models.StoreItem, error) {
 func (m *MockStoreService) GetItems(filter models.StoreItemFilter) ([]models.StoreItem, int64, error) {
 	args := m.Called(filter)
 	return args.Get(0).([]models.StoreItem), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *MockStoreService) GetItemsNear(filter models.StoreItemFilter, at proximity.Location) ([]models.StoreItem, int64, error) {
+	args := m.Called(filter, at)
+	return args.Get(0).([]models.StoreItem), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *MockStoreService) TagItemDistances(items []models.StoreItem, at proximity.Location) {
+	m.Called(items, at)
+	if len(items) > 0 {
+		items[0].Distance = "~2 km"
+	}
 }
 
 func (m *MockStoreService) UpdateItem(id uint, userID uint, req models.UpdateStoreItemRequest) (*models.StoreItem, error) {
@@ -487,6 +500,30 @@ func TestCreateItem_FormLocation(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 	mockService.AssertExpectations(t)
+}
+
+func TestGetItems_Near(t *testing.T) {
+	mockService := new(MockStoreService)
+	router := setupTestRouter(NewStoreHandler(mockService))
+	near := mock.MatchedBy(func(at proximity.Location) bool { return at.Lng > 32.584 && at.Lng < 32.586 })
+	mockService.On("GetItemsNear", mock.Anything, near).Return([]models.StoreItem{{ID: 5, Distance: "<1 km"}}, int64(1), nil)
+	mockService.On("GetItems", mock.Anything).Return([]models.StoreItem{{ID: 6}}, int64(1), nil)
+	mockService.On("TagItemDistances", mock.Anything, near).Return()
+
+	get := func(q string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/api/v1/items?"+q, nil)
+		router.ServeHTTP(w, req)
+		return w
+	}
+
+	w := get("near=0.35,32.585&sort_by=distance")
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"distance":"\u003c1 km"`)
+	w = get("near=0.35,32.585")
+	assert.Contains(t, w.Body.String(), `"distance":"~2 km"`, "other sorts are tagged")
+	assert.Equal(t, http.StatusBadRequest, get("near=x").Code)
+	assert.Equal(t, http.StatusBadRequest, get("near=1,2,3").Code)
 }
 
 func TestGetItem(t *testing.T) {

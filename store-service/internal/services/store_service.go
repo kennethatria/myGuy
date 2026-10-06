@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"log"
 	"store-service/internal/contacts"
 	"store-service/internal/models"
 	"store-service/internal/proximity"
@@ -85,6 +86,7 @@ type StoreService struct {
 	requestRepo     repositories.ItemRequestRepository
 	chat            ChatNotifier
 	locator         Locator
+	distancer       Distancer // nil: no distance sorting or tags
 }
 
 func NewStoreService(db *gorm.DB, itemRepo repositories.StoreItemRepository, bidRepo repositories.BidRepository, bookingRepo repositories.BookingRequestRepository, userRepo repositories.UserRepository) *StoreService {
@@ -97,6 +99,12 @@ func NewStoreService(db *gorm.DB, itemRepo repositories.StoreItemRepository, bid
 		chat:        noopChatNotifier{},
 		locator:     noopLocator{},
 	}
+}
+
+// WithDistancer turns on distance sorting and tags (nil leaves them off).
+func (s *StoreService) WithDistancer(distancer Distancer) *StoreService {
+	s.distancer = distancer
+	return s
 }
 
 // WithLocator saves listings' rough locations through locator (nil = don't).
@@ -266,6 +274,64 @@ func (s *StoreService) GetItem(id uint) (*models.StoreItem, error) {
 
 func (s *StoreService) GetItems(filter models.StoreItemFilter) ([]models.StoreItem, int64, error) {
 	return s.itemRepo.GetAll(filter)
+}
+
+// GetItemsNear is GetItems ordered by distance from at: nearest bucket
+// first, newest first within a bucket, listings without a location last.
+// Every match is ranked before the page is cut, so paging and totals work as
+// usual. If distances can't be had, it falls back to GetItems.
+func (s *StoreService) GetItemsNear(filter models.StoreItemFilter, at proximity.Location) ([]models.StoreItem, int64, error) {
+	if s.distancer == nil {
+		return s.GetItems(filter)
+	}
+	ids, err := s.itemRepo.ListIDs(filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	buckets, err := s.distancer.Distances("item", at, ids)
+	if err != nil {
+		log.Printf("WARNING: distance sort unavailable, showing newest first: %v", err)
+		return s.GetItems(filter)
+	}
+	rankByDistance(ids, buckets)
+	pageIDs := pageOf(ids, filter.Page, filter.PerPage)
+
+	loaded, err := s.itemRepo.GetByIDs(pageIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	byID := make(map[uint]models.StoreItem, len(loaded))
+	for _, item := range loaded {
+		byID[item.ID] = item
+	}
+	items := make([]models.StoreItem, 0, len(pageIDs))
+	for _, id := range pageIDs {
+		if item, ok := byID[id]; ok {
+			item.Distance = tagFor(buckets, id)
+			items = append(items, item)
+		}
+	}
+	return items, int64(len(ids)), nil
+}
+
+// TagItemDistances adds a rough distance tag from at to each listing that
+// has a location. Best effort: without distances, no tags.
+func (s *StoreService) TagItemDistances(items []models.StoreItem, at proximity.Location) {
+	if s.distancer == nil || len(items) == 0 {
+		return
+	}
+	ids := make([]uint, len(items))
+	for i, item := range items {
+		ids[i] = item.ID
+	}
+	buckets, err := s.distancer.Distances("item", at, ids)
+	if err != nil {
+		log.Printf("WARNING: distance tags unavailable: %v", err)
+		return
+	}
+	for i := range items {
+		items[i].Distance = tagFor(buckets, items[i].ID)
+	}
 }
 
 func (s *StoreService) UpdateItem(id uint, userID uint, req models.UpdateStoreItemRequest) (*models.StoreItem, error) {

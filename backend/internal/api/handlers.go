@@ -315,8 +315,23 @@ func (h *Handler) ListTasks(c *gin.Context) {
 		}
 	}
 	
+	// The viewer's rough position ("lat,lng"), for distance sort and tags
+	near, err := parseNear(c.Query("near"))
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+
 	// Get tasks with the provided filters
-	result, err := h.taskService.ListTasksWithPagination(c.Request.Context(), filters)
+	var result *services.PaginatedTasksResult
+	if near != nil && c.Query("sort_by") == "distance" {
+		result, err = h.taskService.ListTasksNear(c.Request.Context(), filters, *near)
+	} else {
+		result, err = h.taskService.ListTasksWithPagination(c.Request.Context(), filters)
+		if err == nil && near != nil {
+			h.taskService.TagDistances(result.Tasks, *near)
+		}
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve tasks"})
 		return
@@ -807,6 +822,23 @@ func respondError(c *gin.Context, status int, err error) {
 	}
 	log.Printf("%s %s failed: %v", c.Request.Method, c.FullPath(), err)
 	c.JSON(http.StatusInternalServerError, gin.H{"error": "something went wrong; please try again"})
+}
+
+// parseNear reads an optional "lat,lng" query value as a rough location.
+func parseNear(raw string) (*proximity.Location, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	if len(parts) != 2 {
+		return nil, proximity.ErrInvalidLocation
+	}
+	lat, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	lng, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if err1 != nil || err2 != nil {
+		return nil, proximity.ErrInvalidLocation
+	}
+	return proximity.Parse(&lat, &lng)
 }
 
 func publicUser(user models.User, viewerID uint) models.User {
