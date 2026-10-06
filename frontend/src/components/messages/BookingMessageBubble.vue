@@ -200,36 +200,15 @@ watch(
 onUnmounted(resetProcessing);
 </script>
 
+<style scoped src="./eventCard.css"></style>
+
 <style scoped>
-/* Matches the gig event cards (TaskEventMessage) */
-.system-message {
-  align-self: center;
-  max-width: min(90%, 28rem);
-  margin: 0.5rem auto;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #c7d2fe;
-  border-radius: 0.5rem;
-  background: #eef2ff;
-  color: #3730a3;
-  font-size: 0.875rem;
-  text-align: center;
-}
-
-.event-text,
-.event-quote,
-.event-note {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
+/* The buyer's own note on the booking */
 .event-quote {
-  margin-top: 0.25rem;
+  margin: 0.25rem 0 0;
   color: #4338ca;
   font-style: italic;
-}
-
-.event-note {
-  margin-top: 0.5rem;
+  overflow-wrap: anywhere;
 }
 
 .event-note.done {
@@ -257,64 +236,5 @@ onUnmounted(resetProcessing);
 .status-released {
   background: #fee2e2;
   color: #991b1b;
-}
-
-.system-message-time {
-  display: block;
-  margin-top: 0.25rem;
-  font-size: 0.75rem;
-  color: #6366f1;
-}
-
-.event-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.5rem;
-  margin-top: 0.625rem;
-}
-
-/* Thumb-sized on phones */
-.event-actions .btn,
-.event-review .btn {
-  min-height: 44px;
-  min-width: 6.5rem;
-}
-
-.event-review {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.625rem;
-}
-
-.stars {
-  display: flex;
-  gap: 0.25rem;
-}
-
-.star {
-  min-width: 44px;
-  min-height: 44px;
-  border: none;
-  background: none;
-  font-size: 1.6rem;
-  line-height: 1;
-  color: #c7d2fe;
-  cursor: pointer;
-}
-
-.star.on {
-  color: #f59e0b;
-}
-
-.event-comment {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #c7d2fe;
-  border-radius: 0.375rem;
-  font: inherit;
-  resize: vertical;
 }
 </style>
