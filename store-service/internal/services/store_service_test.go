@@ -1874,3 +1874,50 @@ func TestGetMyRatings(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestReleaseBooking(t *testing.T) {
+	approved := func(seller uint) *models.BookingRequest {
+		return &models.BookingRequest{ID: 1, ItemID: 9, RequesterID: 2, Status: "approved",
+			Item: &models.StoreItem{ID: 9, SellerID: seller}}
+	}
+
+	t.Run("the seller puts the item back on the board for 24 hours", func(t *testing.T) {
+		service, itemRepo, _, bookingRepo := setupService()
+		past := time.Now().Add(-time.Hour)
+		item := &models.StoreItem{ID: 9, SellerID: 1, PriceType: "fixed", Status: "reserved", Deadline: &past}
+		bookingRepo.On("GetByID", uint(1)).Return(approved(1), nil).Once()
+		bookingRepo.On("UpdateStatus", uint(1), "released").Return(nil)
+		itemRepo.On("GetByID", uint(9)).Return(item, nil)
+		itemRepo.On("Update", item).Return(nil)
+		bookingRepo.On("GetByID", uint(1)).Return(&models.BookingRequest{ID: 1, Status: "released"}, nil).Once()
+
+		got, err := service.ReleaseBooking(1, 1)
+
+		assert.NoError(t, err)
+		assert.Equal(t, "released", got.Status)
+		assert.Equal(t, "active", item.Status)
+		assert.WithinDuration(t, time.Now().Add(ListingLifetime), *item.Deadline, time.Minute)
+		bookingRepo.AssertExpectations(t)
+	})
+
+	t.Run("only the seller", func(t *testing.T) {
+		service, _, _, bookingRepo := setupService()
+		bookingRepo.On("GetByID", uint(1)).Return(approved(1), nil)
+
+		_, err := service.ReleaseBooking(1, 2)
+
+		assert.EqualError(t, err, "only the seller can release a reservation")
+		assert.True(t, IsUserError(err))
+	})
+
+	t.Run("only an approved booking", func(t *testing.T) {
+		service, _, _, bookingRepo := setupService()
+		pending := approved(1)
+		pending.Status = "pending"
+		bookingRepo.On("GetByID", uint(1)).Return(pending, nil)
+
+		_, err := service.ReleaseBooking(1, 1)
+
+		assert.EqualError(t, err, "only an approved booking can be released")
+	})
+}
+

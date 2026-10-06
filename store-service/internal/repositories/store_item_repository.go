@@ -220,7 +220,7 @@ func (r *storeItemRepository) ExpireUnanswered(now time.Time) (int64, error) {
 	res := r.db.Model(&models.StoreItem{}).
 		Where("status = ? AND deadline < ?", "active", now).
 		Where("NOT EXISTS (SELECT 1 FROM bids WHERE bids.item_id = store_items.id AND bids.deleted_at IS NULL)").
-		Where("NOT EXISTS (SELECT 1 FROM booking_requests WHERE booking_requests.item_id = store_items.id AND booking_requests.deleted_at IS NULL)").
+		Where("NOT EXISTS (SELECT 1 FROM booking_requests WHERE booking_requests.item_id = store_items.id AND booking_requests.deleted_at IS NULL AND booking_requests.status <> 'released')").
 		Update("status", "expired")
 	return res.RowsAffected, res.Error
 }
