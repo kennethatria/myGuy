@@ -85,16 +85,18 @@
         <p v-if="isOwner && task.status === 'expired'" class="expired-note">
           Nobody replied within 24 hours, so this note came off the board.
         </p>
-        <p v-if="cancelError" class="apply-error" role="alert">{{ cancelError }}</p>
-        <p v-if="confirmingCancel" class="cancel-question">
-          Cancel this gig? Anyone who applied or is doing it will be told in Messages.
+        <p v-if="endError" class="apply-error" role="alert">{{ endError }}</p>
+        <p v-if="confirming" class="cancel-question">
+          {{ confirming === 'remove'
+            ? 'Remove this gig for good? Anyone who applied will be told in Messages.'
+            : 'Cancel this gig? The person doing it will be told in Messages.' }}
         </p>
         <div class="task-actions flex justify-end space-x-3">
-          <template v-if="confirmingCancel">
-            <button @click="handleCancel" class="btn btn-danger" :disabled="cancelling">
-              {{ cancelling ? 'Cancelling...' : 'Yes, cancel gig' }}
+          <template v-if="confirming">
+            <button @click="handleEnd" class="btn btn-danger" :disabled="ending">
+              {{ ending ? 'One moment...' : confirming === 'remove' ? 'Yes, remove gig' : 'Yes, cancel gig' }}
             </button>
-            <button @click="confirmingCancel = false" class="btn btn-outline" :disabled="cancelling">Keep it</button>
+            <button @click="confirming = null" class="btn btn-outline" :disabled="ending">Keep it</button>
           </template>
           <button
             v-if="isOwner && (task.status === 'expired' || task.status === 'cancelled')"
@@ -125,10 +127,19 @@
           >
             Answer in Messages
           </button>
+          <!-- Nobody assigned: remove it. Someone doing it: cancel (the
+               history and any reviews are kept). -->
           <button
-            v-if="canCancel && !confirmingCancel"
-            @click="confirmingCancel = true"
-            class="btn btn-outline cancel-gig"
+            v-if="canRemove && !confirming"
+            @click="confirming = 'remove'"
+            class="btn btn-outline-danger"
+          >
+            Remove gig
+          </button>
+          <button
+            v-if="canCancel && !confirming"
+            @click="confirming = 'cancel'"
+            class="btn btn-outline-danger"
           >
             Cancel gig
           </button>
@@ -142,7 +153,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { setPageTitle } from '@/utils/pageTitle'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/stores/auth'
 import { useTasksStore } from '@/stores/tasks'
@@ -152,6 +163,7 @@ import StickyNote from '@/components/StickyNote.vue'
 import { expiryLabel } from '@/utils/gigNote'
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const tasksStore = useTasksStore()
 const chatStore = useChatStore()
@@ -359,26 +371,34 @@ const handleApply = async () => {
   }
 }
 
-// The poster can cancel a gig until it's done; the backend tells
-// applicants and the assignee in their conversations.
+// The poster can end a gig: remove it while nobody is assigned, or cancel
+// it while someone is doing it. The backend tells the people involved.
+const canRemove = computed(() =>
+  isOwner.value && !task.value?.assigned_to && ['open', 'expired', 'cancelled'].includes(task.value?.status ?? ''))
 const canCancel = computed(() =>
-  isOwner.value && ['open', 'in_progress', 'pending_approval', 'expired'].includes(task.value?.status ?? ''))
-const confirmingCancel = ref(false)
-const cancelling = ref(false)
-const cancelError = ref('')
+  isOwner.value && !!task.value?.assigned_to && ['in_progress', 'pending_approval'].includes(task.value?.status ?? ''))
+const confirming = ref<'remove' | 'cancel' | null>(null)
+const ending = ref(false)
+const endError = ref('')
 
-const handleCancel = async () => {
-  if (!task.value) return
-  cancelling.value = true
-  cancelError.value = ''
+const handleEnd = async () => {
+  if (!task.value || !confirming.value) return
+  ending.value = true
+  endError.value = ''
   try {
+    if (confirming.value === 'remove') {
+      await tasksStore.deleteTask(task.value.id)
+      router.push({ name: 'my-gigs', params: { tab: 'created' } })
+      return
+    }
     await tasksStore.updateTaskStatus(task.value.id, 'cancelled')
-    confirmingCancel.value = false
+    confirming.value = null
     await loadTaskData()
   } catch (error) {
-    cancelError.value = errorMessage(error, 'Could not cancel the gig. Please try again.')
+    endError.value = errorMessage(error, 'That didn\'t work. Please try again.')
+    confirming.value = null
   } finally {
-    cancelling.value = false
+    ending.value = false
   }
 }
 
@@ -411,8 +431,8 @@ const chatPartner = computed<{ id: number; name: string } | null>(() => {
 
 // Whether the action area has anything to show (no empty band otherwise)
 const hasActions = computed(() => !!(
-  applyNotice.value || applyError.value || cancelError.value || pendingApplications.value ||
-  canApply.value || chatPartner.value || canCancel.value ||
+  applyNotice.value || applyError.value || endError.value || pendingApplications.value ||
+  canApply.value || chatPartner.value || canCancel.value || canRemove.value ||
   (isOwner.value && (task.value?.status === 'expired' || task.value?.status === 'cancelled'))
 ))
 
@@ -467,10 +487,6 @@ const openChat = () => {
   color: var(--color-danger, #dc2626);
 }
 
-.cancel-gig {
-  color: var(--color-danger, #dc2626);
-  border-color: currentColor;
-}
 
 /* Mobile responsiveness */
 @media (max-width: 768px) {

@@ -128,6 +128,7 @@
                   >
                     {{ loadingBookingRequest ? 'Sending Request...' : 'Book Now' }}
                   </button>
+                  <p v-if="bookingError" class="owner-error" role="alert">{{ bookingError }}</p>
                   <p class="booking-info">Ask to book it, then agree the price and pickup in chat</p>
                 </div>
                 
@@ -185,80 +186,55 @@
           </div>
           
           <div v-if="item.seller.id === userId" class="owner-section">
-            <div class="owner-status">
-              <p class="owner-message">This is your listing</p>
-              <p v-if="item.status === 'expired'" class="status-info">
-                Nobody asked to book it within 24 hours. Repost it for another 24 hours, or remove it.
-              </p>
-              <p v-else class="status-info">Status: {{ statusLabel }}</p>
-              <div v-if="item.status === 'expired'" class="owner-actions">
-                <button class="btn btn-primary btn-sm" :disabled="ownerBusy" @click="repostItem">
+            <!-- The seller's own listing: repost or remove it, as with gigs and requests -->
+            <p v-if="item.status === 'expired'" class="owner-note">
+              Nobody asked to book it within 24 hours. Repost it for another 24 hours, or remove it.
+            </p>
+            <p v-else-if="item.status === 'reserved'" class="owner-note">
+              Reserved for a buyer. To sell it to someone else, release the reservation in your conversation with them.
+            </p>
+            <!-- Bookings are answered in each buyer's conversation, as on gigs -->
+            <p v-if="pendingBookings" class="owner-note">
+              {{ pendingBookings }} {{ pendingBookings === 1 ? 'person has' : 'people have' }} asked to book it.
+              Approve or decline in Messages.
+            </p>
+            <div v-if="pendingBookings || reservedFor || messageCount > 0" class="owner-actions">
+              <button v-if="pendingBookings" @click="openGeneralStoreChat" class="btn btn-primary btn-sm">
+                Answer in Messages
+              </button>
+              <button
+                v-else-if="reservedFor"
+                @click="openStoreChatWithUser(reservedFor.id)"
+                class="btn btn-primary btn-sm message-approved-btn"
+              >
+                Message {{ reservedFor.username }}
+              </button>
+              <button v-else @click="openGeneralStoreChat" class="btn btn-outline btn-sm">
+                View messages
+              </button>
+            </div>
+            <p v-if="confirmingRemove" class="owner-note">
+              Remove "{{ item.title }}" for good? Anyone waiting on a booking will be told.
+            </p>
+            <p v-if="ownerError" class="owner-error" role="alert">{{ ownerError }}</p>
+            <div v-if="canRemove" class="owner-actions">
+              <template v-if="confirmingRemove">
+                <button class="btn btn-danger btn-sm" :disabled="ownerBusy" @click="removeItem">
+                  {{ ownerBusy ? 'Removing...' : 'Yes, remove' }}
+                </button>
+                <button class="btn btn-outline btn-sm" :disabled="ownerBusy" @click="confirmingRemove = false">Keep it</button>
+              </template>
+              <template v-else>
+                <button v-if="item.status === 'expired'" class="btn btn-primary btn-sm" :disabled="ownerBusy" @click="repostItem">
                   {{ ownerBusy ? 'Reposting...' : 'Repost for 24 hours' }}
                 </button>
-                <button class="btn btn-outline btn-sm" :disabled="ownerBusy" @click="removeItem">Remove</button>
-              </div>
-            </div>
-            
-            <!-- General Messages for Owner -->
-            <div v-if="messageCount > 0" class="owner-messages">
-              <h4>Messages about this item</h4>
-              <div class="message-summary">
-                <p>{{ messageCount }} message{{ messageCount === 1 ? '' : 's' }} from interested buyers</p>
-                <button 
-                  @click="openGeneralStoreChat" 
-                  class="btn btn-primary btn-sm message-view-btn"
-                >
-                  <i class="fas fa-comment"></i> View Messages
+                <button class="btn btn-outline-danger btn-sm" :disabled="ownerBusy" @click="confirmingRemove = true">
+                  Remove listing
                 </button>
-              </div>
+              </template>
             </div>
             
-            <!-- Booking Request Management for Owner -->
-            <div v-if="bookingRequests.length > 0" class="booking-management">
-              <h4>Booking Requests ({{ bookingRequests.length }})</h4>
-              
-              <div v-for="request in bookingRequests" :key="request.id" class="booking-request-card">
-                <div class="requester-info">
-                  <p><strong>Request from:</strong> {{ request.requester?.username || 'Unknown User' }}</p>
-                  <p class="request-time">{{ formatDate(request.created_at) }}</p>
-                  <p v-if="request.message" class="request-message">{{ request.message }}</p>
-                  <span :class="`status-badge status-${request.status}`">{{ request.status.toUpperCase() }}</span>
-                </div>
-                
-                <div v-if="request.status === 'pending'" class="booking-actions">
-                  <button 
-                    @click="approveBookingRequest(request)" 
-                    class="btn btn-success btn-sm"
-                    :disabled="loadingBookingRequest"
-                    data-testid="approve-booking-btn"
-                  >
-                    Approve
-                  </button>
-                  <button 
-                    @click="rejectBookingRequest(request)" 
-                    class="btn btn-danger btn-sm"
-                    :disabled="loadingBookingRequest"
-                    data-testid="reject-booking-btn"
-                  >
-                    Decline
-                  </button>
-                </div>
-                
-                <div v-else-if="request.status === 'approved'" class="booking-approved">
-                  <p class="approved-text">✓ Approved - You can now coordinate via messages</p>
-                  <button
-                    @click="openStoreChatWithUser(request.requester!.id)"
-                    class="btn btn-primary btn-sm message-approved-btn"
-                  >
-                    <i class="fas fa-comment"></i> Message {{ request.requester?.username }}
-                  </button>
-                </div>
-                
-                <div v-else-if="request.status === 'rejected'" class="booking-rejected">
-                  <p class="rejected-text">✗ Declined</p>
-                </div>
-              </div>
-            </div>
+
           </div>
           
           <!-- (the buyer holding the reservation follows it in their booking above) -->
@@ -399,6 +375,11 @@ const showBookingConfirmationModal = ref(false);
 
 // Message indicators for owners
 const messageCount = ref(0);
+// The seller's view of bookings: how many wait for an answer, and who the
+// item is reserved for (approved, or picked up but not yet confirmed)
+const pendingBookings = computed(() => bookingRequests.value.filter(r => r.status === 'pending').length);
+const reservedFor = computed(() =>
+  bookingRequests.value.find(r => r.status === 'approved' || r.status === 'item_received')?.requester ?? null);
 const hasUnreadMessages = ref(false);
 
 const userId = computed(() => authStore.user?.id);
@@ -424,8 +405,14 @@ const statusLabel = computed(() => {
 // Seller actions on an expired note
 const ownerBusy = ref(false);
 
+// A live or expired listing can be removed (a reserved one is released first)
+const canRemove = computed(() => item.value?.status === 'active' || item.value?.status === 'expired');
+const confirmingRemove = ref(false);
+const ownerError = ref('');
+
 async function repostItem() {
   ownerBusy.value = true;
+  ownerError.value = '';
   try {
     const response = await fetch(`${config.STORE_API_URL}/items/${itemId.value}/repost`, {
       method: 'POST',
@@ -435,15 +422,16 @@ async function repostItem() {
     if (!response.ok) throw new Error(data.error || 'Could not repost the listing. Please try again.');
     await loadItem();
   } catch (err) {
-    alert(err instanceof Error ? err.message : 'Could not repost the listing. Please try again.');
+    ownerError.value = err instanceof Error ? err.message : 'Could not repost the listing. Please try again.';
   } finally {
     ownerBusy.value = false;
   }
 }
 
 async function removeItem() {
-  if (!item.value || !confirm(`Remove "${item.value.title}" for good?`)) return;
+  if (!item.value) return;
   ownerBusy.value = true;
+  ownerError.value = '';
   try {
     const response = await fetch(`${config.STORE_API_URL}/items/${itemId.value}`, {
       method: 'DELETE',
@@ -453,7 +441,8 @@ async function removeItem() {
     if (!response.ok) throw new Error(data.error || 'Could not remove the listing. Please try again.');
     router.push({ name: 'store' });
   } catch (err) {
-    alert(err instanceof Error ? err.message : 'Could not remove the listing. Please try again.');
+    ownerError.value = err instanceof Error ? err.message : 'Could not remove the listing. Please try again.';
+    confirmingRemove.value = false;
   } finally {
     ownerBusy.value = false;
   }
@@ -623,10 +612,13 @@ async function placeBid() {
 }
 
 // Booking request functions
+const bookingError = ref('');
+
 async function sendBookingRequest() {
   if (!item.value || loadingBookingRequest.value) return;
 
   loadingBookingRequest.value = true;
+  bookingError.value = '';
   try {
     const response = await fetch(`${config.STORE_API_URL}/items/${itemId.value}/booking-request`, {
       method: 'POST',
@@ -647,78 +639,12 @@ async function sendBookingRequest() {
       // Show confirmation modal instead of redirect
       showBookingConfirmationModal.value = true;
     } else {
-      const error = await response.json();
-      alert(error.error || 'Failed to send booking request');
+      const error = await response.json().catch(() => ({}));
+      bookingError.value = error.error || 'Failed to send booking request';
     }
   } catch (err) {
     console.error('Error sending booking request:', err);
-    alert('Error sending booking request');
-  } finally {
-    loadingBookingRequest.value = false;
-  }
-}
-
-async function approveBookingRequest(request = bookingRequest.value) {
-  if (!request || loadingBookingRequest.value) return;
-  
-  loadingBookingRequest.value = true;
-  try {
-    const response = await fetch(`${config.STORE_API_URL}/booking-requests/${request.id}/approve`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    });
-    
-    if (response.ok) {
-      request.status = 'approved';
-      // Update both arrays
-      if (bookingRequest.value && bookingRequest.value.id === request.id) {
-        bookingRequest.value.status = 'approved';
-      }
-      alert('Booking request approved! The requester can now message you.');
-    } else {
-      const error = await response.json();
-      alert(error.error || 'Failed to approve booking request');
-    }
-  } catch (err) {
-    console.error('Error approving booking request:', err);
-    alert('Error approving booking request');
-  } finally {
-    loadingBookingRequest.value = false;
-  }
-}
-
-async function rejectBookingRequest(request = bookingRequest.value) {
-  if (!request || loadingBookingRequest.value) return;
-  
-  if (!confirm('Are you sure you want to decline this booking request?')) {
-    return;
-  }
-  
-  loadingBookingRequest.value = true;
-  try {
-    const response = await fetch(`${config.STORE_API_URL}/booking-requests/${request.id}/reject`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    });
-    
-    if (response.ok) {
-      request.status = 'rejected';
-      // Update both arrays
-      if (bookingRequest.value && bookingRequest.value.id === request.id) {
-        bookingRequest.value.status = 'rejected';
-      }
-      alert('Booking request declined.');
-    } else {
-      const error = await response.json();
-      alert(error.error || 'Failed to decline booking request');
-    }
-  } catch (err) {
-    console.error('Error declining booking request:', err);
-    alert('Error declining booking request');
+    bookingError.value = 'Could not send the booking request. Please try again.';
   } finally {
     loadingBookingRequest.value = false;
   }
@@ -1088,7 +1014,9 @@ onMounted(() => {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
-  border: none;
+  /* Width and style only: the shared .btn and .btn-outline* give the colour */
+  border-width: 1px;
+  border-style: solid;
   font-size: 1rem;
 }
 
@@ -1118,24 +1046,21 @@ onMounted(() => {
   font-weight: 500;
 }
 
-.owner-status {
-  background: #e0f2fe;
-  padding: 1rem;
-  border-radius: 0.375rem;
-  text-align: center;
-  border: 1px solid #b3e5fc;
+.owner-note {
+  margin: 0 0 0.75rem;
+  color: #4b5563;
+  font-size: 0.9rem;
 }
 
-.owner-message {
-  color: #0277bd;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
+.owner-error {
+  margin: 0 0 0.75rem;
+  color: #dc2626;
+  font-size: 0.9rem;
 }
 
-.status-info {
-  color: #0288d1;
-  font-size: 0.875rem;
-  margin: 0;
+/* The remove question sits apart from the buttons above it */
+.owner-actions + .owner-note {
+  margin-top: 0.75rem;
 }
 
 .bid-history {
@@ -1339,50 +1264,6 @@ onMounted(() => {
   border: 1px solid #b3e5fc;
 }
 
-.booking-management {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid #b3e5fc;
-}
-
-.booking-management h4 {
-  margin: 0 0 0.75rem 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: #0277bd;
-}
-
-.booking-request-card {
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.375rem;
-  padding: 1rem;
-  margin-bottom: 1rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-
-.requester-info {
-  flex: 1;
-}
-
-.requester-info p {
-  margin: 0 0 0.25rem 0;
-}
-
-.request-time {
-  font-size: 0.75rem;
-  color: #6b7280;
-}
-
-.request-message {
-  font-size: 0.875rem;
-  color: #4b5563;
-  font-style: italic;
-  margin: 0.5rem 0;
-}
-
 .status-badge {
   display: inline-block;
   padding: 0.25rem 0.5rem;
@@ -1406,26 +1287,6 @@ onMounted(() => {
 .status-rejected {
   background: #fee2e2;
   color: #991b1b;
-}
-
-.booking-approved {
-  margin-top: 1rem;
-}
-
-.approved-text {
-  color: #059669;
-  font-weight: 500;
-  margin: 0;
-}
-
-.booking-rejected {
-  margin-top: 1rem;
-}
-
-.rejected-text {
-  color: #dc2626;
-  font-weight: 500;
-  margin: 0;
 }
 
 .message-approved-btn {
@@ -1460,20 +1321,6 @@ onMounted(() => {
   background: #dc2626;
 }
 
-.booking-approved-owner {
-  margin-top: 1rem;
-  padding: 1rem;
-  background: #d1fae5;
-  border: 1px solid #10b981;
-  border-radius: 0.375rem;
-  color: #065f46;
-}
-
-.booking-approved-owner h4 {
-  margin: 0 0 0.5rem 0;
-  color: #065f46;
-}
-
 .limit-info {
   font-size: 0.75rem;
   color: #059669;
@@ -1484,51 +1331,6 @@ onMounted(() => {
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid #b3e5fc;
-}
-
-.owner-messages h4 {
-  margin: 0 0 0.75rem 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: #0277bd;
-}
-
-.message-summary {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: white;
-  padding: 0.75rem;
-  border-radius: 0.375rem;
-  border: 1px solid #e5e7eb;
-}
-
-.message-summary p {
-  margin: 0;
-  color: #374151;
-  font-size: 0.875rem;
-}
-
-.message-view-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: #4f46e5;
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.message-view-btn:hover {
-  background: #4338ca;
-}
-
-.message-view-btn i {
-  font-size: 0.875rem;
 }
 
 @media (max-width: 768px) {
