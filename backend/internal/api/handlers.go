@@ -658,7 +658,7 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 
 // UpdateTaskStatusRequest contains the data for updating a task's status
 type UpdateTaskStatusRequest struct {
-	Status string `json:"status" binding:"required,oneof=open in_progress completed cancelled"`
+	Status string `json:"status" binding:"required,oneof=open in_progress pending_approval completed cancelled"`
 	// Optional fresh rough location when reposting (status open)
 	Lat *float64 `json:"lat"`
 	Lng *float64 `json:"lng"`

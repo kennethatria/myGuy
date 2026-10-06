@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"myguy/internal/chatnotify"
 	"myguy/internal/models"
 	"myguy/tests"
 
@@ -21,21 +22,11 @@ func setupTaskService() (*TaskService, *tests.MockTaskRepository, *tests.MockApp
 	return service, taskRepo, appRepo
 }
 
-type sentMessage struct {
-	taskID, from, to uint
-	content          string
-	match            bool
-}
-
 // recordingNotifier captures task event messages instead of posting them.
-type recordingNotifier struct{ sent []sentMessage }
+type recordingNotifier struct{ sent []chatnotify.Message }
 
-func (r *recordingNotifier) TaskMessage(taskID, from, to uint, content string) {
-	r.sent = append(r.sent, sentMessage{taskID, from, to, content, false})
-}
-
-func (r *recordingNotifier) TaskMatch(taskID, from, to uint, content string) {
-	r.sent = append(r.sent, sentMessage{taskID, from, to, content, true})
+func (r *recordingNotifier) Post(m chatnotify.Message) {
+	r.sent = append(r.sent, m)
 }
 
 // ==================== CreateTask Tests ====================
@@ -288,7 +279,7 @@ func TestCancelTaskDeclinesPendingApplications(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "cancelled", task.Status)
 	appRepo.AssertExpectations(t)
-	assert.Equal(t, []sentMessage{{1, 1, 7, `"Paint fence" was cancelled by the poster, so your application is closed.`, false}}, notifier.sent)
+	assert.Equal(t, []chatnotify.Message{{TaskID: 1, SenderID: 1, RecipientID: 7, Content: `"Paint fence" was cancelled by the poster, so your application is closed.`, Event: chatnotify.EventCancelled}}, notifier.sent)
 }
 
 func TestListTasks(t *testing.T) {
@@ -560,14 +551,16 @@ func TestAssignTask(t *testing.T) {
 		// The chosen applicant hears they got it; the other pending one that
 		// they didn't; the already-declined one hears nothing new.
 		assert.Len(t, notifier.sent, 2)
-		assert.Equal(t, uint(2), notifier.sent[0].to)
-		assert.Contains(t, notifier.sent[0].content, "was accepted")
-		assert.True(t, notifier.sent[0].match, "acceptance unlocks contact sharing")
-		assert.False(t, notifier.sent[1].match)
-		assert.Equal(t, uint(3), notifier.sent[1].to)
-		assert.Contains(t, notifier.sent[1].content, "wasn't selected")
+		assert.Equal(t, uint(2), notifier.sent[0].RecipientID)
+		assert.Contains(t, notifier.sent[0].Content, "was accepted")
+		assert.Equal(t, chatnotify.EventAccepted, notifier.sent[0].Event)
+		assert.True(t, notifier.sent[0].UnlockContacts, "acceptance unlocks chat and contact sharing")
+		assert.False(t, notifier.sent[1].UnlockContacts)
+		assert.Equal(t, uint(3), notifier.sent[1].RecipientID)
+		assert.Contains(t, notifier.sent[1].Content, "wasn't selected")
+		assert.Equal(t, chatnotify.EventDeclined, notifier.sent[1].Event)
 		for _, m := range notifier.sent {
-			assert.Equal(t, uint(9), m.from, "sent as the task owner")
+			assert.Equal(t, uint(9), m.SenderID, "sent as the task owner")
 		}
 	})
 
@@ -636,65 +629,6 @@ func TestAssignTask(t *testing.T) {
 
 		assert.Equal(t, ErrTaskNotOpen, err)
 		appRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
-	})
-}
-
-// ==================== CompleteTask Tests ====================
-
-func TestCompleteTask(t *testing.T) {
-	t.Run("creator completes task", func(t *testing.T) {
-		service, taskRepo, _ := setupTaskService()
-		ctx := context.Background()
-
-		task := &models.Task{ID: 1, CreatedBy: 1, Status: "in_progress"}
-		taskRepo.On("GetByID", ctx, uint(1)).Return(task, nil)
-		taskRepo.On("Update", ctx, mock.MatchedBy(func(t *models.Task) bool {
-			return t.Status == "completed" && t.CompletedAt != nil
-		})).Return(nil)
-
-		err := service.CompleteTask(ctx, 1, 1)
-
-		assert.NoError(t, err)
-		taskRepo.AssertExpectations(t)
-	})
-
-	t.Run("assignee completes task", func(t *testing.T) {
-		service, taskRepo, _ := setupTaskService()
-		ctx := context.Background()
-
-		assignedTo := uint(2)
-		task := &models.Task{ID: 1, CreatedBy: 1, AssignedTo: &assignedTo, Status: "in_progress"}
-		taskRepo.On("GetByID", ctx, uint(1)).Return(task, nil)
-		taskRepo.On("Update", ctx, mock.Anything).Return(nil)
-
-		err := service.CompleteTask(ctx, 1, 2)
-
-		assert.NoError(t, err)
-	})
-
-	t.Run("unauthorized user", func(t *testing.T) {
-		service, taskRepo, _ := setupTaskService()
-		ctx := context.Background()
-
-		task := &models.Task{ID: 1, CreatedBy: 1, AssignedTo: nil}
-		taskRepo.On("GetByID", ctx, uint(1)).Return(task, nil)
-
-		err := service.CompleteTask(ctx, 1, 3) // Neither creator nor assignee
-
-		assert.Error(t, err)
-		assert.Equal(t, ErrUnauthorized, err)
-	})
-
-	t.Run("task not found", func(t *testing.T) {
-		service, taskRepo, _ := setupTaskService()
-		ctx := context.Background()
-
-		taskRepo.On("GetByID", ctx, uint(999)).Return(nil, errors.New("not found"))
-
-		err := service.CompleteTask(ctx, 999, 1)
-
-		assert.Error(t, err)
-		assert.Equal(t, ErrTaskNotFound, err)
 	})
 }
 
@@ -775,20 +709,117 @@ func TestUpdateTaskStatus(t *testing.T) {
 		assert.Nil(t, result)
 	})
 
-	t.Run("assignee can mark completed", func(t *testing.T) {
+	t.Run("assignee can't complete a gig themselves", func(t *testing.T) {
 		service, taskRepo, _ := setupTaskService()
 		ctx := context.Background()
 
 		assignedTo := uint(2)
-		task := &models.Task{ID: 1, CreatedBy: 1, AssignedTo: &assignedTo, Status: "in_progress"}
-		taskRepo.On("GetByID", ctx, uint(1)).Return(task, nil)
-		taskRepo.On("Update", ctx, mock.Anything).Return(nil)
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, CreatedBy: 1, AssignedTo: &assignedTo, Status: "in_progress"}, nil)
 
-		result, err := service.UpdateTaskStatus(ctx, 1, "completed", 2) // Assignee
+		_, err := service.UpdateTaskStatus(ctx, 1, "completed", 2)
+
+		assert.Equal(t, ErrUnauthorized, err)
+	})
+}
+
+func TestCompletionNeedsApproval(t *testing.T) {
+	ctx := context.Background()
+	assignee := uint(2)
+	// A gig for poster 1 and assignee 2 in status, and what it posts to chat
+	setup := func(status string) (*TaskService, *recordingNotifier) {
+		taskRepo := new(tests.MockTaskRepository)
+		notifier := &recordingNotifier{}
+		service := NewTaskService(taskRepo, new(tests.MockApplicationRepository), notifier)
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Title: "Fix sink", CreatedBy: 1, AssignedTo: &assignee, Status: status}, nil)
+		taskRepo.On("Update", ctx, mock.Anything).Return(nil)
+		return service, notifier
+	}
+
+	t.Run("the assignee marks it done, which asks the poster", func(t *testing.T) {
+		service, notifier := setup("in_progress")
+
+		task, err := service.UpdateTaskStatus(ctx, 1, "pending_approval", 2)
 
 		assert.NoError(t, err)
-		assert.Equal(t, "completed", result.Status)
+		assert.Equal(t, "pending_approval", task.Status)
+		assert.Len(t, notifier.sent, 1)
+		assert.Equal(t, chatnotify.EventDone, notifier.sent[0].Event)
+		assert.Equal(t, uint(2), notifier.sent[0].SenderID)
+		assert.Equal(t, uint(1), notifier.sent[0].RecipientID)
 	})
+
+	t.Run("only the assignee marks it done", func(t *testing.T) {
+		service, _ := setup("in_progress")
+		_, err := service.UpdateTaskStatus(ctx, 1, "pending_approval", 1)
+		assert.Equal(t, ErrUnauthorized, err)
+	})
+
+	t.Run("the poster approves it", func(t *testing.T) {
+		service, notifier := setup("pending_approval")
+
+		task, err := service.UpdateTaskStatus(ctx, 1, "completed", 1)
+
+		assert.NoError(t, err)
+		assert.Equal(t, "completed", task.Status)
+		assert.NotNil(t, task.CompletedAt)
+		assert.Equal(t, chatnotify.EventCompleted, notifier.sent[0].Event)
+		assert.Equal(t, uint(2), notifier.sent[0].RecipientID)
+	})
+
+	t.Run("the poster says not yet", func(t *testing.T) {
+		service, notifier := setup("pending_approval")
+
+		task, err := service.UpdateTaskStatus(ctx, 1, "in_progress", 1)
+
+		assert.NoError(t, err)
+		assert.Equal(t, "in_progress", task.Status)
+		assert.Equal(t, chatnotify.EventNotDone, notifier.sent[0].Event)
+	})
+
+	t.Run("the assignee can't approve their own work", func(t *testing.T) {
+		service, _ := setup("pending_approval")
+		_, err := service.UpdateTaskStatus(ctx, 1, "completed", 2)
+		assert.Equal(t, ErrUnauthorized, err)
+	})
+
+	t.Run("an open gig can't be marked done", func(t *testing.T) {
+		taskRepo := new(tests.MockTaskRepository)
+		service := NewTaskService(taskRepo, new(tests.MockApplicationRepository), nil)
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, CreatedBy: 1, AssignedTo: &assignee, Status: "open"}, nil)
+		_, err := service.UpdateTaskStatus(ctx, 1, "pending_approval", 2)
+		assert.Equal(t, ErrInvalidStatus, err)
+	})
+}
+
+type recordingUnlocker struct {
+	pairs [][3]uint
+	err   error
+}
+
+func (r *recordingUnlocker) Unlock(taskID, a, b uint) error {
+	r.pairs = append(r.pairs, [3]uint{taskID, a, b})
+	return r.err
+}
+
+func TestUnlockMatchedChats(t *testing.T) {
+	ctx := context.Background()
+	appRepo := new(tests.MockApplicationRepository)
+	service := NewTaskService(new(tests.MockTaskRepository), appRepo, nil)
+	appRepo.On("ListAccepted", ctx).Return([]models.Application{
+		{TaskID: 1, ApplicantID: 2, Task: models.Task{CreatedBy: 9}},
+		{TaskID: 3, ApplicantID: 4, Task: models.Task{CreatedBy: 9}},
+	}, nil)
+
+	unlocker := &recordingUnlocker{}
+	n, err := service.UnlockMatchedChats(ctx, unlocker)
+
+	assert.NoError(t, err)
+	assert.Equal(t, 2, n)
+	assert.Equal(t, [][3]uint{{1, 9, 2}, {3, 9, 4}}, unlocker.pairs)
+
+	failing := &recordingUnlocker{err: errors.New("chat down")}
+	_, err = service.UnlockMatchedChats(ctx, failing)
+	assert.Error(t, err)
 }
 
 // ==================== DeclineApplication Tests ====================
@@ -917,7 +948,10 @@ func TestApplyAndDeclineNotify(t *testing.T) {
 
 		assert.NoError(t, service.ApplyForTask(ctx, 1, 2, "  I have a van  "))
 
-		assert.Equal(t, []sentMessage{{1, 2, 9, "📩 New application for \"Paint fence\".\n\nI have a van", false}}, notifier.sent)
+		assert.Equal(t, []chatnotify.Message{{
+			TaskID: 1, SenderID: 2, RecipientID: 9, Content: "📩 New application for \"Paint fence\".\n\nI have a van",
+			Event: chatnotify.EventApplication,
+		}}, notifier.sent)
 	})
 
 	t.Run("declining tells the applicant", func(t *testing.T) {
@@ -931,7 +965,10 @@ func TestApplyAndDeclineNotify(t *testing.T) {
 
 		assert.NoError(t, service.DeclineApplication(ctx, 1, 4))
 
-		assert.Equal(t, []sentMessage{{1, 9, 2, "Your application for \"Paint fence\" wasn't selected this time.", false}}, notifier.sent)
+		assert.Equal(t, []chatnotify.Message{{
+			TaskID: 1, SenderID: 9, RecipientID: 2, Content: "Your application for \"Paint fence\" wasn't selected this time.",
+			Event: chatnotify.EventDeclined, ApplicationID: 4,
+		}}, notifier.sent)
 	})
 }
 

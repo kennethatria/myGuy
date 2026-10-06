@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"myguy/internal/chatnotify"
 	"myguy/internal/contacts"
 	"myguy/internal/models"
 	"myguy/internal/proximity"
@@ -77,16 +78,12 @@ func validateGigText(title, description string) (string, string, error) {
 // message into their conversation about the task. Implementations must not
 // block or fail the caller (chat is best effort).
 type TaskNotifier interface {
-	TaskMessage(taskID, senderID, recipientID uint, content string)
-	// TaskMatch posts the acceptance message and lets the two people share
-	// contact details in that conversation from now on.
-	TaskMatch(taskID, senderID, recipientID uint, content string)
+	Post(chatnotify.Message)
 }
 
 type noopNotifier struct{}
 
-func (noopNotifier) TaskMessage(uint, uint, uint, string) {}
-func (noopNotifier) TaskMatch(uint, uint, uint, string)   {}
+func (noopNotifier) Post(chatnotify.Message) {}
 
 // Locator keeps the rough location of posts in the proximity service.
 // Implementations must not block or fail the caller (it is best effort).
@@ -448,7 +445,10 @@ func (s *TaskService) ApplyForTask(ctx context.Context, taskID, applicantID uint
 	if message != "" {
 		content += "\n\n" + message
 	}
-	s.notifier.TaskMessage(taskID, applicantID, task.CreatedBy, content)
+	s.notifier.Post(chatnotify.Message{
+		TaskID: taskID, SenderID: applicantID, RecipientID: task.CreatedBy, Content: content,
+		Event: chatnotify.EventApplication, ApplicationID: application.ID,
+	})
 	return nil
 }
 
@@ -494,11 +494,19 @@ func (s *TaskService) AssignTask(ctx context.Context, taskID, applicationID uint
 		return nil, err
 	}
 
-	s.notifier.TaskMatch(taskID, task.CreatedBy, application.ApplicantID,
-		fmt.Sprintf("✅ Your application for \"%s\" was accepted. You can now share phone numbers here to arrange the details.", task.Title))
+	s.notifier.Post(chatnotify.Message{
+		TaskID: taskID, SenderID: task.CreatedBy, RecipientID: application.ApplicantID,
+		Content:        fmt.Sprintf("✅ Your application for \"%s\" was accepted. You can now chat and share phone numbers here to arrange the details. Mark it as done when you've finished.", task.Title),
+		Event:          chatnotify.EventAccepted,
+		ApplicationID:  application.ID,
+		UnlockContacts: true,
+	})
 	for _, applicantID := range others {
-		s.notifier.TaskMessage(taskID, task.CreatedBy, applicantID,
-			fmt.Sprintf("Your application for \"%s\" wasn't selected this time.", task.Title))
+		s.notifier.Post(chatnotify.Message{
+			TaskID: taskID, SenderID: task.CreatedBy, RecipientID: applicantID,
+			Content: fmt.Sprintf("Your application for \"%s\" wasn't selected this time.", task.Title),
+			Event:   chatnotify.EventDeclined,
+		})
 	}
 
 	task.Status = "in_progress"
@@ -506,42 +514,24 @@ func (s *TaskService) AssignTask(ctx context.Context, taskID, applicationID uint
 	return task, nil
 }
 
-func (s *TaskService) CompleteTask(ctx context.Context, taskID uint, userID uint) error {
-	task, err := s.taskRepo.GetByID(ctx, taskID)
-	if err != nil {
-		return ErrTaskNotFound
-	}
-
-	if task.CreatedBy != userID && (task.AssignedTo == nil || *task.AssignedTo != userID) {
-		return ErrUnauthorized
-	}
-
-	task.Status = "completed"
-	now := time.Now()
-	task.CompletedAt = &now
-	return s.taskRepo.Update(ctx, task)
-}
-
-// UpdateTaskStatus updates the status of a task
-// Task creator can update any status, assigned users can only mark as completed
+// UpdateTaskStatus moves a gig along. The assignee marks it done
+// (pending_approval); everything else is the poster's: approving it
+// (completed), sending it back (in_progress), cancelling or reposting.
 func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID uint, status string, userID uint) (*models.Task, error) {
 	task, err := s.taskRepo.GetByID(ctx, taskID)
 	if err != nil {
 		return nil, ErrTaskNotFound
 	}
 
-	// Check authorization based on the status being set
-	if status == "completed" {
-		// Both task creator and assigned user can mark as completed
-		if task.CreatedBy != userID && (task.AssignedTo == nil || *task.AssignedTo != userID) {
+	isAssignee := task.AssignedTo != nil && *task.AssignedTo == userID
+	if status == "pending_approval" {
+		if !isAssignee {
 			return nil, ErrUnauthorized
 		}
-	} else {
-		// Only task creator can change to other statuses
-		if task.CreatedBy != userID {
-			return nil, ErrUnauthorized
-		}
+	} else if task.CreatedBy != userID {
+		return nil, ErrUnauthorized
 	}
+	previous := task.Status
 
 	// Validate status transitions
 	// This enforces a simple workflow where tasks generally move forward
@@ -554,8 +544,11 @@ func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID uint, status 
 		// application (AssignTask), so a task is never in progress unassigned.
 		validTransition = status == "cancelled" || (status == "in_progress" && task.AssignedTo != nil)
 	case "in_progress":
-		// From in_progress: can move to completed or cancelled
-		validTransition = status == "completed" || status == "cancelled"
+		// Marked done by the assignee, or completed or cancelled by the poster
+		validTransition = status == "pending_approval" || status == "completed" || status == "cancelled"
+	case "pending_approval":
+		// The poster approves (completed), says not yet (in_progress) or cancels
+		validTransition = status == "completed" || status == "in_progress" || status == "cancelled"
 	case "completed":
 		// From completed: can move to cancelled
 		validTransition = status == "cancelled"
@@ -592,6 +585,8 @@ func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID uint, status 
 		return nil, err
 	}
 
+	s.postStatusEvent(task, previous)
+
 	// A cancelled task no longer needs anyone: tell waiting applicants.
 	if status == "cancelled" {
 		waiting, err := s.pendingApplicants(ctx, taskID, 0)
@@ -602,14 +597,65 @@ func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID uint, status 
 			return nil, err
 		}
 		for _, applicantID := range waiting {
-			s.notifier.TaskMessage(taskID, task.CreatedBy, applicantID,
-				fmt.Sprintf("\"%s\" was cancelled by the poster, so your application is closed.", task.Title))
+			s.notifier.Post(chatnotify.Message{
+				TaskID: taskID, SenderID: task.CreatedBy, RecipientID: applicantID,
+				Content: fmt.Sprintf("\"%s\" was cancelled by the poster, so your application is closed.", task.Title),
+				Event:   chatnotify.EventCancelled,
+			})
 		}
 	}
 
 	return task, nil
 }
 
+
+// ChatUnlocker records in chat that two people were matched on a gig.
+type ChatUnlocker interface {
+	Unlock(taskID, userA, userB uint) error
+}
+
+// UnlockMatchedChats records every accepted pair in chat, so that people
+// matched before chat kept that record can still talk. Safe to repeat. It
+// returns how many pairs were recorded.
+func (s *TaskService) UnlockMatchedChats(ctx context.Context, unlocker ChatUnlocker) (int, error) {
+	applications, err := s.applicationRepo.ListAccepted(ctx)
+	if err != nil {
+		return 0, err
+	}
+	unlocked := 0
+	for _, app := range applications {
+		if err := unlocker.Unlock(app.TaskID, app.Task.CreatedBy, app.ApplicantID); err != nil {
+			return unlocked, err
+		}
+		unlocked++
+	}
+	return unlocked, nil
+}
+
+// postStatusEvent tells the other person in the gig's conversation that the
+// assignee marked it done, or that the poster approved it or sent it back.
+func (s *TaskService) postStatusEvent(task *models.Task, previous string) {
+	if task.AssignedTo == nil {
+		return
+	}
+	poster, assignee := task.CreatedBy, *task.AssignedTo
+	msg := chatnotify.Message{TaskID: task.ID, SenderID: poster, RecipientID: assignee}
+	switch {
+	case task.Status == "pending_approval":
+		msg.SenderID, msg.RecipientID = assignee, poster
+		msg.Content = fmt.Sprintf("🏁 \"%s\" is marked as done. Approve it if you're happy, or say not yet.", task.Title)
+		msg.Event = chatnotify.EventDone
+	case task.Status == "in_progress" && previous == "pending_approval":
+		msg.Content = fmt.Sprintf("↩️ Not done yet: \"%s\" needs a bit more. Mark it as done again when it's finished.", task.Title)
+		msg.Event = chatnotify.EventNotDone
+	case task.Status == "completed":
+		msg.Content = fmt.Sprintf("🎉 \"%s\" is complete. Leave each other a review.", task.Title)
+		msg.Event = chatnotify.EventCompleted
+	default:
+		return
+	}
+	s.notifier.Post(msg)
+}
 
 // DeclineApplication declines a pending application to taskID.
 func (s *TaskService) DeclineApplication(ctx context.Context, taskID, applicationID uint) error {
@@ -628,8 +674,12 @@ func (s *TaskService) DeclineApplication(ctx context.Context, taskID, applicatio
 		return err
 	}
 
-	s.notifier.TaskMessage(taskID, application.Task.CreatedBy, application.ApplicantID,
-		fmt.Sprintf("Your application for \"%s\" wasn't selected this time.", application.Task.Title))
+	s.notifier.Post(chatnotify.Message{
+		TaskID: taskID, SenderID: application.Task.CreatedBy, RecipientID: application.ApplicantID,
+		Content:       fmt.Sprintf("Your application for \"%s\" wasn't selected this time.", application.Task.Title),
+		Event:         chatnotify.EventDeclined,
+		ApplicationID: application.ID,
+	})
 	return nil
 }
 

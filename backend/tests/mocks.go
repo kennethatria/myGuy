@@ -100,6 +100,11 @@ func (m *MockApplicationRepository) ListByTask(ctx context.Context, taskID uint)
 	return args.Get(0).([]models.Application), args.Error(1)
 }
 
+func (m *MockApplicationRepository) ListAccepted(ctx context.Context) ([]models.Application, error) {
+	args := m.Called(ctx)
+	return args.Get(0).([]models.Application), args.Error(1)
+}
+
 func (m *MockApplicationRepository) ListByUser(ctx context.Context, userID uint) ([]models.Application, error) {
 	args := m.Called(ctx, userID)
 	return args.Get(0).([]models.Application), args.Error(1)

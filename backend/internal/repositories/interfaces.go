@@ -47,6 +47,7 @@ type ApplicationRepository interface {
 	GetByID(ctx context.Context, id uint) (*models.Application, error)
 	ListByTask(ctx context.Context, taskID uint) ([]models.Application, error)
 	ListByUser(ctx context.Context, userID uint) ([]models.Application, error)
+	ListAccepted(ctx context.Context) ([]models.Application, error)
 	Update(ctx context.Context, application *models.Application) error
 	DeclinePending(ctx context.Context, taskID, exceptID uint) error
 }

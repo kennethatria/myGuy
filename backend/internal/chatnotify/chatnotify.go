@@ -30,36 +30,63 @@ func New(chatAPIURL, apiKey string) *Notifier {
 	}
 }
 
+// Events name what a message is about, so the app can show the matching
+// action on it (accept an application, mark a gig done, approve it, review).
+const (
+	EventApplication = "application" // applicant → poster: accept or decline
+	EventAccepted    = "accepted"    // poster → applicant: mark as done when finished
+	EventDeclined    = "declined"
+	EventCancelled   = "cancelled"
+	EventDone        = "done"      // assignee → poster: approve, or not yet
+	EventNotDone     = "not_done"  // poster → assignee: mark as done again later
+	EventCompleted   = "completed" // both may now review each other
+)
+
+// Message is one event in the conversation between two people about a gig.
+type Message struct {
+	TaskID, SenderID, RecipientID uint
+	Content                       string
+	Event                         string
+	ApplicationID                 uint
+	// UnlockContacts lets the two share contact details, and chat with each
+	// other, from now on: they agreed to work together.
+	UnlockContacts bool
+}
+
+type metadata struct {
+	Event         string `json:"event,omitempty"`
+	ApplicationID uint   `json:"application_id,omitempty"`
+}
+
 type taskMessage struct {
-	TaskID      uint   `json:"task_id"`
-	SenderID    uint   `json:"sender_id"`
-	RecipientID uint   `json:"recipient_id"`
-	Content     string `json:"content"`
-	// UnlockContacts tells chat the two people agreed to work together, so
-	// contact details are no longer filtered between them for this task.
-	UnlockContacts bool `json:"unlock_contacts,omitempty"`
+	TaskID         uint      `json:"task_id"`
+	SenderID       uint      `json:"sender_id"`
+	RecipientID    uint      `json:"recipient_id"`
+	Content        string    `json:"content,omitempty"`
+	UnlockContacts bool      `json:"unlock_contacts,omitempty"`
+	Metadata       *metadata `json:"metadata,omitempty"`
 }
 
-// TaskMessage delivers content in the background as a system message from
-// senderID to recipientID in their conversation about taskID. Best effort:
-// failures are logged, never returned, so a chat outage can't block the task
-// action that triggered it.
-func (n *Notifier) TaskMessage(taskID, senderID, recipientID uint, content string) {
-	n.post(taskMessage{TaskID: taskID, SenderID: senderID, RecipientID: recipientID, Content: content})
-}
-
-// TaskMatch is TaskMessage for an accepted application: it also unlocks
-// contact sharing between the two people in that conversation.
-func (n *Notifier) TaskMatch(taskID, senderID, recipientID uint, content string) {
-	n.post(taskMessage{TaskID: taskID, SenderID: senderID, RecipientID: recipientID, Content: content, UnlockContacts: true})
-}
-
-func (n *Notifier) post(msg taskMessage) {
+// Post sends m to the chat service in the background; failures are logged.
+func (n *Notifier) Post(m Message) {
+	msg := taskMessage{
+		TaskID: m.TaskID, SenderID: m.SenderID, RecipientID: m.RecipientID,
+		Content: m.Content, UnlockContacts: m.UnlockContacts,
+	}
+	if m.Event != "" {
+		msg.Metadata = &metadata{Event: m.Event, ApplicationID: m.ApplicationID}
+	}
 	go func() {
 		if err := n.send(msg); err != nil {
 			log.Printf("chat notification for task %d failed: %v", msg.TaskID, err)
 		}
 	}()
+}
+
+// Unlock records that two people were matched on a gig, without posting a
+// message. Used to catch up matches made before chat recorded them.
+func (n *Notifier) Unlock(taskID, userA, userB uint) error {
+	return n.send(taskMessage{TaskID: taskID, SenderID: userA, RecipientID: userB, UnlockContacts: true})
 }
 
 func (n *Notifier) send(msg taskMessage) error {
