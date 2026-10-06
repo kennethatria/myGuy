@@ -84,14 +84,15 @@ type BookingRequest struct {
 	DeletedAt                gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
-// ReceivedRating is one rating a user received from a completed booking:
+// BookingRating is one rating a user received from a completed booking:
 // from the buyer when they sold the item, or from the seller when they bought.
-type ReceivedRating struct {
+type BookingRating struct {
 	BookingID uint      `json:"booking_id"`
 	ItemID    uint      `json:"item_id"`
 	ItemTitle string    `json:"item_title"`
 	RaterID   uint      `json:"rater_id"`
-	RatedAs   string    `json:"rated_as"` // "seller" or "buyer"
+	RatedID   uint      `json:"rated_id"`
+	RatedAs   string    `json:"rated_as"` // the rated user's side: "seller" or "buyer"
 	Rating    int       `json:"rating"`
 	Review    string    `json:"review"`
 	RatedAt   time.Time `json:"rated_at"`

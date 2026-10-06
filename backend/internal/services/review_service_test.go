@@ -369,6 +369,21 @@ func TestGetUserReviews(t *testing.T) {
 	})
 }
 
+func TestGetMyReviews(t *testing.T) {
+	service, reviewRepo, _, _ := setupReviewService()
+	ctx := context.Background()
+	reviewRepo.On("ListInvolving", ctx, uint(1)).Return([]models.Review{
+		{ID: 1, ReviewerID: 1, ReviewedUserID: 2},
+		{ID: 2, ReviewerID: 3, ReviewedUserID: 1},
+	}, nil)
+
+	reviews, err := service.GetMyReviews(ctx, 1)
+
+	assert.NoError(t, err)
+	assert.Len(t, reviews, 2)
+	reviewRepo.AssertExpectations(t)
+}
+
 // ==================== GetTaskReview Tests ====================
 
 func TestGetTaskReview(t *testing.T) {

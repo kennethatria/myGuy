@@ -555,14 +555,30 @@ func (h *Handler) GetUserReviews(c *gin.Context) {
 		return
 	}
 
-	viewerID := c.GetUint("userID")
+	c.JSON(http.StatusOK, reviewsForViewer(reviews, c.GetUint("userID")))
+}
+
+// GetMyReviews lists the gig reviews the signed-in user wrote or received.
+func (h *Handler) GetMyReviews(c *gin.Context) {
+	userID := c.GetUint("userID")
+	reviews, err := h.reviewService.GetMyReviews(c.Request.Context(), userID)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, reviewsForViewer(reviews, userID))
+}
+
+// reviewsForViewer strips what viewerID may not see from the people and gigs
+// in reviews.
+func reviewsForViewer(reviews []models.Review, viewerID uint) []models.Review {
 	for i := range reviews {
 		reviews[i].Reviewer = publicUser(reviews[i].Reviewer, viewerID)
 		reviews[i].ReviewedUser = publicUser(reviews[i].ReviewedUser, viewerID)
 		reviews[i].Task = taskForViewer(reviews[i].Task, viewerID)
 	}
-
-	c.JSON(http.StatusOK, reviews)
+	return reviews
 }
 
 // GetUserByID handles retrieving a user by their ID

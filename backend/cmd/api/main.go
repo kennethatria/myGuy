@@ -136,6 +136,7 @@ func main() {
 		auth.POST("/tasks/:id/reviews", handler.CreateReview)
 		auth.GET("/tasks/:id/reviews/mine", handler.GetMyTaskReview)
 		auth.GET("/users/:id/reviews", handler.GetUserReviews)
+		auth.GET("/user/reviews", handler.GetMyReviews)
 		// User routes
 		auth.GET("/users/:id", handler.GetUserByID)
 

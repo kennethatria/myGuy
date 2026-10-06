@@ -53,4 +53,22 @@ func TestReviewRepository(t *testing.T) {
 		assert.NotEmpty(t, reviews)
 		assert.Equal(t, reviewed.ID, reviews[0].ReviewedUserID)
 	})
+
+	t.Run("ListInvolving", func(t *testing.T) {
+		outsider := &models.User{Username: "outsider", Email: "outsider@example.com"}
+		db.Create(outsider)
+
+		// The reviewer sees the review they wrote, the reviewed user the one
+		// they received, and nobody else sees either.
+		for _, id := range []uint{reviewer.ID, reviewed.ID} {
+			reviews, err := repo.ListInvolving(ctx, id)
+			assert.NoError(t, err)
+			assert.Len(t, reviews, 1)
+			assert.Equal(t, "reviewer", reviews[0].Reviewer.Username)
+			assert.Equal(t, "reviewed", reviews[0].ReviewedUser.Username)
+		}
+		reviews, err := repo.ListInvolving(ctx, outsider.ID)
+		assert.NoError(t, err)
+		assert.Empty(t, reviews)
+	})
 }

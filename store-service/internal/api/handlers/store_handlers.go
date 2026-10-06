@@ -667,6 +667,17 @@ func (h *StoreHandler) GetUserRatings(c *gin.Context) {
 	c.JSON(http.StatusOK, ratings)
 }
 
+// GetMyRatings lists the store ratings the signed-in user gave or received.
+func (h *StoreHandler) GetMyRatings(c *gin.Context) {
+	ratings, err := h.service.GetMyRatings(c.GetUint("userID"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve ratings"})
+		return
+	}
+
+	c.JSON(http.StatusOK, ratings)
+}
+
 // ConfirmItemReceived allows buyer to confirm they received the item
 func (h *StoreHandler) ConfirmItemReceived(c *gin.Context) {
 	userID := c.GetUint("userID")

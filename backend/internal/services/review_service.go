@@ -94,6 +94,11 @@ func (s *ReviewService) GetUserReviews(ctx context.Context, userID uint) ([]mode
 	return s.reviewRepo.ListByUser(ctx, userID)
 }
 
+// GetMyReviews lists the reviews userID wrote or received: their network.
+func (s *ReviewService) GetMyReviews(ctx context.Context, userID uint) ([]models.Review, error) {
+	return s.reviewRepo.ListInvolving(ctx, userID)
+}
+
 func (s *ReviewService) GetTaskReview(ctx context.Context, taskID, reviewerID uint) (*models.Review, error) {
 	return s.reviewRepo.GetTaskReview(ctx, taskID, reviewerID)
 }

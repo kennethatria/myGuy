@@ -181,6 +181,11 @@ func (m *MockBookingRequestRepository) GetRatingsReceived(userID uint) ([]models
 	return args.Get(0).([]models.BookingRequest), args.Error(1)
 }
 
+func (m *MockBookingRequestRepository) GetRatingsInvolving(userID uint) ([]models.BookingRequest, error) {
+	args := m.Called(userID)
+	return args.Get(0).([]models.BookingRequest), args.Error(1)
+}
+
 func (m *MockBookingRequestRepository) GetByRequesterID(requesterID uint) ([]models.BookingRequest, error) {
 	args := m.Called(requesterID)
 	return args.Get(0).([]models.BookingRequest), args.Error(1)
@@ -1837,9 +1842,32 @@ func TestGetUserRatings(t *testing.T) {
 	ratings, err := service.GetUserRatings(1)
 
 	assert.NoError(t, err)
-	assert.Equal(t, []models.ReceivedRating{
-		{BookingID: 10, ItemID: 1, ItemTitle: "Bike", RaterID: 2, RatedAs: "seller", Rating: 5, Review: "great seller"},
-		{BookingID: 11, ItemID: 2, ItemTitle: "Desk", RaterID: 2, RatedAs: "buyer", Rating: 4, Review: "good buyer"},
+	assert.Equal(t, []models.BookingRating{
+		{BookingID: 10, ItemID: 1, ItemTitle: "Bike", RaterID: 2, RatedID: 1, RatedAs: "seller", Rating: 5, Review: "great seller"},
+		{BookingID: 11, ItemID: 2, ItemTitle: "Desk", RaterID: 2, RatedID: 1, RatedAs: "buyer", Rating: 4, Review: "good buyer"},
 	}, ratings)
+}
+
+func TestGetMyRatings(t *testing.T) {
+	service, _, _, bookingRepo := setupService()
+	rating := func(v int) *int { return &v }
+	soldBy2 := &models.StoreItem{ID: 2, Title: "Desk", SellerID: 2}
+
+	// User 1 bought from user 2 and both rated: one given, one received.
+	bookingRepo.On("GetRatingsInvolving", uint(1)).Return([]models.BookingRequest{
+		{ID: 11, ItemID: 2, Item: soldBy2, RequesterID: 1, SellerRating: rating(4), SellerReview: "good buyer", BuyerRating: rating(3), BuyerReview: "late"},
+	}, nil)
+
+	ratings, err := service.GetMyRatings(1)
+
+	assert.NoError(t, err)
+	assert.Equal(t, []models.BookingRating{
+		{BookingID: 11, ItemID: 2, ItemTitle: "Desk", RaterID: 1, RatedID: 2, RatedAs: "seller", Rating: 3, Review: "late"},
+		{BookingID: 11, ItemID: 2, ItemTitle: "Desk", RaterID: 2, RatedID: 1, RatedAs: "buyer", Rating: 4, Review: "good buyer"},
+	}, ratings)
+
+	bookingRepo.On("GetRatingsInvolving", uint(9)).Return([]models.BookingRequest{}, assert.AnError)
+	_, err = service.GetMyRatings(9)
+	assert.Error(t, err)
 }
 

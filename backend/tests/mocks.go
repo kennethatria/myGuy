@@ -125,6 +125,11 @@ func (m *MockReviewRepository) ListByUser(ctx context.Context, userID uint) ([]m
 	return args.Get(0).([]models.Review), args.Error(1)
 }
 
+func (m *MockReviewRepository) ListInvolving(ctx context.Context, userID uint) ([]models.Review, error) {
+	args := m.Called(ctx, userID)
+	return args.Get(0).([]models.Review), args.Error(1)
+}
+
 func (m *MockReviewRepository) GetTaskReview(ctx context.Context, taskID uint, reviewerID uint) (*models.Review, error) {
 	args := m.Called(ctx, taskID, reviewerID)
 	if args.Get(0) == nil {

@@ -114,3 +114,16 @@ func (r *bookingRequestRepository) GetRatingsReceived(userID uint) ([]models.Boo
 		Find(&requests).Error
 	return requests, err
 }
+
+// GetRatingsInvolving returns bookings with a rating in which userID was the
+// seller or the buyer: ratings they gave or received. Newest first.
+func (r *bookingRequestRepository) GetRatingsInvolving(userID uint) ([]models.BookingRequest, error) {
+	var requests []models.BookingRequest
+	err := r.db.Preload("Item").
+		Joins("JOIN store_items ON store_items.id = booking_requests.item_id").
+		Where("(store_items.seller_id = ? OR booking_requests.requester_id = ?) AND "+
+			"(booking_requests.buyer_rating IS NOT NULL OR booking_requests.seller_rating IS NOT NULL)", userID, userID).
+		Order("booking_requests.updated_at DESC").
+		Find(&requests).Error
+	return requests, err
+}
