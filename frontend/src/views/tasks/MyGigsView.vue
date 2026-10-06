@@ -446,6 +446,11 @@ onMounted(async () => {
   color: #f57c00;
 }
 
+.badge-pending_approval {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
 .badge-completed {
   background: #eef2ff;
   color: var(--color-primary);

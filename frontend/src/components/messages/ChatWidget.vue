@@ -74,6 +74,7 @@
           :typing-users="chatStore.activeTypingUsers"
           :loading="chatStore.isLoadingMessages"
           :has-more="chatStore.activeHasMoreMessages"
+          :locked="chatStore.activeLocked"
           @send-message="sendMessage"
           @edit-message="chatStore.editMessage"
           @delete-message="chatStore.deleteMessage"

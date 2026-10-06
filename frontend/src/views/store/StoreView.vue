@@ -56,7 +56,8 @@
               <DistanceTag :distance="item.distance" :show-unknown="showUnknownItems" />
               <span>@{{ item.seller?.username || 'someone' }}</span>
               <span v-if="listingPriceLabel(item)">{{ listingPriceLabel(item) }}</span>
-              <span v-if="item.deadline && expiryLabel(item.deadline, now)">{{ expiryLabel(item.deadline, now) }}</span>
+              <span v-if="item.status === 'reserved'" class="reserved-tag">Reserved</span>
+              <span v-else-if="item.deadline && expiryLabel(item.deadline, now)">{{ expiryLabel(item.deadline, now) }}</span>
             </template>
           </StickyNote>
         </li>
@@ -308,8 +309,8 @@ const load = async () => {
   error.value = ''
   try {
     if (view.value === 'board') {
+      // No status: the board's default, items for sale and reserved ones
       const params = boardParams('exclude_seller_id')
-      params.append('status', 'active')
       const data = await getJSON(`/items?${params}`, 'Failed to load listings')
       items.value = data.items ?? []
       total.value = data.total ?? 0
@@ -579,5 +580,14 @@ onUnmounted(() => {
   .note-board {
     grid-template-columns: 1fr;
   }
+}
+
+/* Booked by someone: still shown, no longer open to bookings */
+.reserved-tag {
+  padding: 0 0.4rem;
+  border-radius: 0.25rem;
+  background: #7c3aed;
+  color: #fff;
+  font-weight: 600;
 }
 </style>

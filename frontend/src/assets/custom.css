@@ -631,6 +631,12 @@ input[type="datetime-local"].form-input {
   background-color: rgba(245, 158, 11, 0.1);
 }
 
+/* Marked done, waiting for the poster's approval */
+.badge-pending_approval {
+  color: #7C3AED;
+  background-color: rgba(124, 58, 237, 0.1);
+}
+
 .badge-completed {
   color: #10B981;
   background-color: rgba(16, 185, 129, 0.1);
