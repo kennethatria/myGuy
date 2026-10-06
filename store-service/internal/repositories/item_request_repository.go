@@ -116,6 +116,14 @@ func (r *itemRequestRepository) MarkFulfilled(id uint, itemID uint) (bool, error
 	return res.RowsAffected > 0, res.Error
 }
 
+// Reopen puts a fulfilled request back on the board until deadline, as if
+// nothing had met it. It reports whether the request was fulfilled.
+func (r *itemRequestRepository) Reopen(id uint, deadline time.Time) (bool, error) {
+	res := r.db.Model(&models.ItemRequest{}).Where("id = ? AND status = ?", id, "fulfilled").
+		Updates(map[string]interface{}{"status": "active", "fulfilled_item_id": nil, "deadline": deadline})
+	return res.RowsAffected > 0, res.Error
+}
+
 // ExpireUnanswered takes requests whose deadline passed before any seller
 // listed something for them off the board, returning how many changed.
 func (r *itemRequestRepository) ExpireUnanswered(now time.Time) (int64, error) {

@@ -412,6 +412,23 @@ func (s *StoreService) DeleteItem(id uint, userID uint) error {
 		return NewUserError("only a live or expired listing can be removed")
 	}
 
+	// Booking requests still waiting are declined, so none can be approved
+	// for a listing that's gone, and each buyer is told why in chat.
+	bookings, err := s.bookingRepo.GetAllByItemID(id)
+	if err != nil {
+		return err
+	}
+	for _, booking := range bookings {
+		if booking.Status != "pending" {
+			continue
+		}
+		if err := s.bookingRepo.UpdateStatus(booking.ID, "rejected"); err != nil {
+			return err
+		}
+		s.chat.BookingClosed(booking.ID, userID,
+			fmt.Sprintf("The seller removed \"%s\", so this booking is closed.", item.Title))
+	}
+
 	if err := s.itemRepo.Delete(id); err != nil {
 		return err
 	}
@@ -704,6 +721,11 @@ func (s *StoreService) ApproveBookingRequest(requestID uint, ownerID uint) (*mod
 		return nil, err
 	}
 
+	// The listing may have been removed since
+	if request.Item == nil {
+		return nil, NewUserError("this listing was removed")
+	}
+
 	// Verify the owner is actually the item owner
 	if request.Item.SellerID != ownerID {
 		return nil, NewUserError("unauthorized: you are not the owner of this item")
@@ -755,6 +777,21 @@ func (s *StoreService) fulfilRequest(booking *models.BookingRequest) {
 	}
 	if _, err := s.requestRepo.MarkFulfilled(wanted.ID, booking.ItemID); err != nil {
 		fmt.Printf("Error closing request %d: %v\n", wanted.ID, err)
+	}
+}
+
+// reopenRequest puts a request back on the Wanted board when the
+// reservation that fulfilled it was released: the requester still wants it.
+func (s *StoreService) reopenRequest(booking *models.BookingRequest, item *models.StoreItem) {
+	if s.requestRepo == nil || item.RequestID == nil {
+		return
+	}
+	wanted, err := s.requestRepo.GetByID(*item.RequestID)
+	if err != nil || wanted.RequesterID != booking.RequesterID || wanted.Status != "fulfilled" {
+		return
+	}
+	if _, err := s.requestRepo.Reopen(wanted.ID, time.Now().UTC().Add(ListingLifetime)); err != nil {
+		fmt.Printf("Error reopening request %d: %v\n", wanted.ID, err)
 	}
 }
 
@@ -812,6 +849,7 @@ func (s *StoreService) ReleaseBooking(requestID uint, sellerID uint) (*models.Bo
 	if err := s.itemRepo.Update(item); err != nil {
 		return nil, err
 	}
+	s.reopenRequest(request, item)
 
 	return s.bookingRepo.GetByID(requestID)
 }

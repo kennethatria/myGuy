@@ -107,11 +107,15 @@ func markNotificationFailed(bookingID uint, bookingRepo repositories.BookingRequ
 // best effort).
 type ChatNotifier interface {
 	StoreMessage(itemID, senderID, recipientID uint, content string)
+	// BookingClosed marks a booking's message in chat as declined by the
+	// seller, with note telling the buyer why.
+	BookingClosed(bookingID, sellerID uint, note string)
 }
 
 type noopChatNotifier struct{}
 
 func (noopChatNotifier) StoreMessage(uint, uint, uint, string) {}
+func (noopChatNotifier) BookingClosed(uint, uint, string)     {}
 
 // HTTPChatNotifier posts to chat's /internal/store-message in the background.
 type HTTPChatNotifier struct {
@@ -143,14 +147,29 @@ func (n *HTTPChatNotifier) StoreMessage(itemID, senderID, recipientID uint, cont
 	}()
 }
 
+func (n *HTTPChatNotifier) BookingClosed(bookingID, sellerID uint, note string) {
+	go func() {
+		err := n.postJSON("/internal/booking-status", map[string]interface{}{
+			"booking_id": bookingID, "actor_id": sellerID, "status": "rejected", "note": note,
+		})
+		if err != nil {
+			log.Printf("⚠️ booking %d closure not delivered: %v", bookingID, err)
+		}
+	}()
+}
+
 func (n *HTTPChatNotifier) post(itemID, senderID, recipientID uint, content string) error {
-	body, err := json.Marshal(map[string]interface{}{
+	return n.postJSON("/internal/store-message", map[string]interface{}{
 		"store_item_id": itemID, "sender_id": senderID, "recipient_id": recipientID, "content": content,
 	})
+}
+
+func (n *HTTPChatNotifier) postJSON(path string, payload map[string]interface{}) error {
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodPost, n.baseURL+"/internal/store-message", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, n.baseURL+path, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -161,7 +180,7 @@ func (n *HTTPChatNotifier) post(itemID, senderID, recipientID uint, content stri
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("chat returned %d", resp.StatusCode)
 	}
 	return nil

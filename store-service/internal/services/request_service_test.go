@@ -62,6 +62,11 @@ func (m *MockItemRequestRepository) MarkFulfilled(id uint, itemID uint) (bool, e
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockItemRequestRepository) Reopen(id uint, deadline time.Time) (bool, error) {
+	args := m.Called(id, deadline)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *MockItemRequestRepository) ExpireUnanswered(now time.Time) (int64, error) {
 	args := m.Called(now)
 	return args.Get(0).(int64), args.Error(1)
@@ -69,8 +74,16 @@ func (m *MockItemRequestRepository) ExpireUnanswered(now time.Time) (int64, erro
 
 // fakeChat records store messages instead of posting them
 type fakeChat struct {
-	mu   sync.Mutex
-	sent []string
+	mu     sync.Mutex
+	sent   []string
+	closed []uint // bookings closed in chat
+}
+
+func (f *fakeChat) BookingClosed(bookingID, sellerID uint, note string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closed = append(f.closed, bookingID)
+	f.sent = append(f.sent, note)
 }
 
 func (f *fakeChat) StoreMessage(itemID, senderID, recipientID uint, content string) {
