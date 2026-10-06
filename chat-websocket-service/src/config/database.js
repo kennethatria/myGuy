@@ -1,8 +1,14 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 const logger = require('../utils/logger');
+const { parseUtcTimestamp } = require('./timestamps');
+
+// Timestamps without a time zone are UTC: write them in UTC (the session's
+// NOW()) and read them as UTC, whatever the time zone of either machine.
+types.setTypeParser(types.builtins.TIMESTAMP, parseUtcTimestamp);
 
 const pool = new Pool({
   connectionString: process.env.DB_CONNECTION || 'postgresql://postgres:mysecretpassword@localhost:5433/my_guy',
+  options: '-c TimeZone=UTC',
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
