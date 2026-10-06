@@ -636,6 +636,24 @@ func (h *StoreHandler) RejectBookingRequest(c *gin.Context) {
 	c.JSON(http.StatusOK, booking)
 }
 
+// ReleaseBooking lets the seller put an approved booking's item back on
+// the board.
+func (h *StoreHandler) ReleaseBooking(c *gin.Context) {
+	requestID, err := parseID(c.Param("requestId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request ID"})
+		return
+	}
+
+	booking, err := h.service.ReleaseBooking(requestID, c.GetUint("userID"))
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, booking)
+}
+
 // GetUserBookingRequests retrieves all booking requests by a user
 func (h *StoreHandler) GetUserBookingRequests(c *gin.Context) {
 	userID := c.GetUint("userID")

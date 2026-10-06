@@ -33,6 +33,10 @@ function unlockKey({ taskId, storeItemId, userA, userB }) {
   return [type, parseInt(id), Math.min(a, b), Math.max(a, b)];
 }
 
+// Messages that record what happened (gig events, booking status notes):
+// nobody may edit or delete them.
+const RECORD_TYPES = "('system_alert', 'booking_approved', 'booking_declined', 'booking_item_received', 'booking_completed', 'booking_status_update')";
+
 // The app's message box allows 1000 characters; this is the hard ceiling for
 // anything sent to the API directly, which also bounds filtering work.
 const MAX_MESSAGE_LENGTH = 2000;
@@ -179,8 +183,8 @@ class MessageService {
       await client.query('BEGIN');
 
       // Check if user owns the message
-      // System messages (task events) record what happened: not editable
-      const checkQuery = "SELECT * FROM messages WHERE id = $1 AND sender_id = $2 AND message_type <> 'system_alert'";
+      // Records of what happened (events, booking notes) are not editable
+      const checkQuery = `SELECT * FROM messages WHERE id = $1 AND sender_id = $2 AND message_type NOT IN ${RECORD_TYPES}`;
       const checkResult = await client.query(checkQuery, [messageId, userId]);
 
       if (checkResult.rows.length === 0) {
@@ -231,7 +235,7 @@ class MessageService {
       SET is_deleted = true, 
           deleted_at = NOW(),
           content = '[Message deleted]'
-      WHERE id = $1 AND sender_id = $2 AND message_type <> 'system_alert'
+      WHERE id = $1 AND sender_id = $2 AND message_type NOT IN ${RECORD_TYPES}
       RETURNING *
     `;
     

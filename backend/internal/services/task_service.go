@@ -633,7 +633,8 @@ func (s *TaskService) UnlockMatchedChats(ctx context.Context, unlocker ChatUnloc
 }
 
 // postStatusEvent tells the other person in the gig's conversation that the
-// assignee marked it done, or that the poster approved it or sent it back.
+// assignee marked it done, or that the poster approved it, sent it back or
+// cancelled it while it was being done.
 func (s *TaskService) postStatusEvent(task *models.Task, previous string) {
 	if task.AssignedTo == nil {
 		return
@@ -651,6 +652,9 @@ func (s *TaskService) postStatusEvent(task *models.Task, previous string) {
 	case task.Status == "completed":
 		msg.Content = fmt.Sprintf("🎉 \"%s\" is complete. Leave each other a review.", task.Title)
 		msg.Event = chatnotify.EventCompleted
+	case task.Status == "cancelled" && (previous == "in_progress" || previous == "pending_approval"):
+		msg.Content = fmt.Sprintf("🚫 \"%s\" was cancelled by the poster.", task.Title)
+		msg.Event = chatnotify.EventCancelled
 	default:
 		return
 	}

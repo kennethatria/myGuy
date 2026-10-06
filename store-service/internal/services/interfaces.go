@@ -29,6 +29,7 @@ type StoreServiceInterface interface {
 	GetUserBookingRequests(userID uint) ([]models.BookingRequest, error)
 	GetUserRatings(userID uint) ([]models.BookingRating, error)
 	GetMyRatings(userID uint) ([]models.BookingRating, error)
+	ReleaseBooking(requestID uint, sellerID uint) (*models.BookingRequest, error)
 	ConfirmItemReceived(requestID uint, buyerID uint) (*models.BookingRequest, error)
 	ConfirmDelivery(requestID uint, sellerID uint) (*models.BookingRequest, error)
 	SubmitBuyerRating(requestID uint, buyerID uint, rating int, review string) (*models.BookingRequest, error)

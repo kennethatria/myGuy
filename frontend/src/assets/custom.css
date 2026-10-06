@@ -241,6 +241,17 @@ input[type="datetime-local"].form-input {
   border-color: var(--color-primary-dark);
 }
 
+.btn-danger {
+  color: #fff;
+  background-color: #dc2626;
+  border-color: #dc2626;
+}
+
+.btn-danger:hover {
+  background-color: #b91c1c;
+  border-color: #b91c1c;
+}
+
 .btn-secondary {
   color: #fff;
   background-color: var(--color-secondary);

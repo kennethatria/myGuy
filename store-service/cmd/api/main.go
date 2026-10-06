@@ -158,6 +158,7 @@ func main() {
 			auth.GET("/items/:id/booking-requests", storeHandler.GetAllBookingRequests)
 			auth.POST("/booking-requests/:requestId/approve", storeHandler.ApproveBookingRequest)
 			auth.POST("/booking-requests/:requestId/reject", storeHandler.RejectBookingRequest)
+			auth.POST("/booking-requests/:requestId/release", storeHandler.ReleaseBooking)
 			auth.POST("/booking-requests/:requestId/confirm-received", storeHandler.ConfirmItemReceived)
 			auth.POST("/booking-requests/:requestId/confirm-delivery", storeHandler.ConfirmDelivery)
 			auth.POST("/booking-requests/:requestId/rate-seller", storeHandler.SubmitBuyerRating)

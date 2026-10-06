@@ -679,6 +679,7 @@ func TestStoreItemRepository_ExpireUnanswered(t *testing.T) {
 		"unanswered": {Title: "Lamp", SellerID: 1, PriceType: "fixed", Deadline: &past, Status: "active"},
 		"bid on":     {Title: "Bike", SellerID: 1, PriceType: "bidding", Deadline: &past, Status: "active"},
 		"booked":     {Title: "Desk", SellerID: 1, PriceType: "fixed", Deadline: &past, Status: "active"},
+		"released":   {Title: "Chair", SellerID: 1, PriceType: "fixed", Deadline: &past, Status: "active"},
 		"still live": {Title: "Sofa", SellerID: 1, PriceType: "fixed", Deadline: &future, Status: "active"},
 		"sold":       {Title: "Fan", SellerID: 1, PriceType: "fixed", Deadline: &past, Status: "sold"},
 	}
@@ -687,12 +688,14 @@ func TestStoreItemRepository_ExpireUnanswered(t *testing.T) {
 	}
 	assert.NoError(t, db.Create(&models.Bid{ItemID: items["bid on"].ID, BidderID: 2, Amount: 10, Status: "active"}).Error)
 	assert.NoError(t, db.Create(&models.BookingRequest{ItemID: items["booked"].ID, RequesterID: 2, Status: "pending"}).Error)
+	// A released booking no longer holds the item up
+	assert.NoError(t, db.Create(&models.BookingRequest{ItemID: items["released"].ID, RequesterID: 2, Status: "released"}).Error)
 
 	n, err := repo.ExpireUnanswered(time.Now())
 
 	assert.NoError(t, err)
-	assert.Equal(t, int64(1), n)
-	want := map[string]string{"unanswered": "expired", "bid on": "active", "booked": "active", "still live": "active", "sold": "sold"}
+	assert.Equal(t, int64(2), n)
+	want := map[string]string{"unanswered": "expired", "bid on": "active", "booked": "active", "released": "expired", "still live": "active", "sold": "sold"}
 	for name, item := range items {
 		var got models.StoreItem
 		assert.NoError(t, db.First(&got, item.ID).Error)

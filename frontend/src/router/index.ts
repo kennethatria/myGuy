@@ -67,10 +67,9 @@ const router = createRouter({
       meta: { title: 'Reviews', requiresAuth: true }
     },
     {
+      // Reviews are left in the gig's conversation now; old links go to the gig
       path: '/reviews/create/:taskId',
-      name: 'create-review',
-      component: () => import('@/views/reviews/CreateReviewView.vue'),
-      meta: { title: 'Leave a Review', requiresAuth: true }
+      redirect: to => ({ name: 'task-detail', params: { id: to.params.taskId } })
     },
     {
       path: '/messages',

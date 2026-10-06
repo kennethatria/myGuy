@@ -782,6 +782,26 @@ func TestCompletionNeedsApproval(t *testing.T) {
 		assert.Equal(t, ErrUnauthorized, err)
 	})
 
+	t.Run("cancelling a gig being done tells the assignee", func(t *testing.T) {
+		for _, status := range []string{"in_progress", "pending_approval"} {
+			taskRepo := new(tests.MockTaskRepository)
+			appRepo := new(tests.MockApplicationRepository)
+			notifier := &recordingNotifier{}
+			service := NewTaskService(taskRepo, appRepo, notifier)
+			taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Title: "Fix sink", CreatedBy: 1, AssignedTo: &assignee, Status: status}, nil)
+			taskRepo.On("Update", ctx, mock.Anything).Return(nil)
+			appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{}, nil)
+			appRepo.On("DeclinePending", ctx, uint(1), uint(0)).Return(nil)
+
+			_, err := service.UpdateTaskStatus(ctx, 1, "cancelled", 1)
+
+			assert.NoError(t, err, status)
+			assert.Equal(t, []chatnotify.Message{{
+				TaskID: 1, SenderID: 1, RecipientID: 2, Content: `🚫 "Fix sink" was cancelled by the poster.`, Event: chatnotify.EventCancelled,
+			}}, notifier.sent, status)
+		}
+	})
+
 	t.Run("an open gig can't be marked done", func(t *testing.T) {
 		taskRepo := new(tests.MockTaskRepository)
 		service := NewTaskService(taskRepo, new(tests.MockApplicationRepository), nil)

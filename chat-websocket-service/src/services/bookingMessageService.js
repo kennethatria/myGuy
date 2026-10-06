@@ -107,15 +107,17 @@ async function updateBookingMessageStatus(bookingId, status, approverId, io, boo
     );
 
     // Check if a status message for this booking and status already exists
-    // This prevents duplicate messages if the function is called multiple times
+    // This prevents duplicate messages if the function is called multiple times.
+    // The request itself (just given this status above) doesn't count.
     const existingStatusMessage = await db.query(
       `SELECT * FROM messages
        WHERE store_item_id = $1
        AND metadata->>'booking_id' = $2
        AND metadata->>'status' = $3
+       AND id <> $4
        ORDER BY created_at DESC
        LIMIT 1`,
-      [requestMessage.store_item_id, bookingId.toString(), status]
+      [requestMessage.store_item_id, bookingId.toString(), status, requestMessage.id]
     );
 
     let statusMessage;
@@ -141,6 +143,10 @@ async function updateBookingMessageStatus(bookingId, status, approverId, io, boo
       } else if (status === 'completed') {
         messageType = 'booking_completed';
         content = '✅ Transaction completed! Both parties have confirmed.';
+      } else if (status === 'released') {
+        // A note to both, not anyone's message to edit or delete
+        messageType = 'system_alert';
+        content = '↩️ The seller released the reservation. The item is back on the board.';
       } else {
         messageType = 'booking_status_update';
         content = `Booking status updated to: ${status}`;

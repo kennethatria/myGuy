@@ -158,6 +158,20 @@ describe('bookingMessageService', () => {
       expect(result.message_type).toBe('booking_completed');
     });
 
+    it('tells both people as a system note when the seller releases the reservation', async () => {
+      db.query
+        .mockResolvedValueOnce({ rows: [mockRequestMessage] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ id: 24, message_type: 'system_alert' }] });
+
+      await updateBookingMessageStatus(100, 'released', 3, null);
+
+      const insert = db.query.mock.calls[3];
+      expect(insert[1][3]).toBe('system_alert');
+      expect(insert[1][4]).toContain('released the reservation');
+    });
+
     it('creates a generic "booking_status_update" for an unknown status', async () => {
       const mockStatusMsg = { id: 24, message_type: 'booking_status_update' };
       db.query
@@ -182,6 +196,20 @@ describe('bookingMessageService', () => {
 
       expect(result.id).toBe(25);
       expect(db.query).toHaveBeenCalledTimes(3); // no INSERT for new status msg
+    });
+
+    it('does not mistake the request itself for an existing status message', async () => {
+      db.query
+        .mockResolvedValueOnce({ rows: [mockRequestMessage] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ id: 27 }] });
+
+      await updateBookingMessageStatus(100, 'approved', 3, null);
+
+      // the lookup leaves out the request message, which now has the status too
+      expect(db.query.mock.calls[2][1]).toContain(mockRequestMessage.id);
+      expect(db.query.mock.calls[2][0]).toMatch(/id <> \$4/);
     });
 
     it('emits to both users via WebSocket when io is provided', async () => {

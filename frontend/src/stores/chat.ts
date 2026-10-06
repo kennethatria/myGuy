@@ -5,7 +5,7 @@ import { useAuthStore } from './auth';
 import { useUserStore } from './user';
 import { useContextStore } from './context';
 import config from '@/config';
-import type { Message, ConversationSummary } from './messages';
+import type { Message, ConversationSummary, BookingAction } from './messages';
 
 interface TypingUser {
   userId: number;
@@ -838,7 +838,7 @@ export const useChatStore = defineStore('chat', () => {
 
   async function handleBookingAction(
     bookingId: number,
-    action: 'approve' | 'decline' | 'confirm-received' | 'confirm-delivery' | 'rate-seller' | 'rate-buyer',
+    action: BookingAction,
     rating?: number,
     review?: string
   ) {

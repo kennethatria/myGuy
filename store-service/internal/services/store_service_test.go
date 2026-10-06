@@ -1322,6 +1322,19 @@ func TestCreateBookingRequest_ListingRules(t *testing.T) {
 		assert.ErrorContains(t, err, "already have a booking request")
 	})
 
+	t.Run("a buyer whose reservation was released can't book again", func(t *testing.T) {
+		service, itemRepo, _, bookingRepo := setupService()
+		itemRepo.On("GetByID", uint(1)).Return(&models.StoreItem{ID: 1, SellerID: 2, Status: "active"}, nil)
+		bookingRepo.On("GetByItemAndRequester", uint(1), uint(1)).Return(&models.BookingRequest{ID: 6, Status: "released"}, nil)
+
+		request, err := service.CreateBookingRequest(1, 1, "")
+
+		assert.EqualError(t, err, "the seller released your reservation, so you can't book this item again")
+		assert.True(t, IsUserError(err))
+		assert.Nil(t, request)
+		bookingRepo.AssertNotCalled(t, "Create", mock.Anything)
+	})
+
 	t.Run("contact details refused before approval", func(t *testing.T) {
 		service, itemRepo, _, _ := setupService()
 		itemRepo.On("GetByID", uint(1)).Return(&models.StoreItem{ID: 1, SellerID: 2, Status: "active"}, nil)
@@ -1872,5 +1885,52 @@ func TestGetMyRatings(t *testing.T) {
 	bookingRepo.On("GetRatingsInvolving", uint(9)).Return([]models.BookingRequest{}, assert.AnError)
 	_, err = service.GetMyRatings(9)
 	assert.Error(t, err)
+}
+
+func TestReleaseBooking(t *testing.T) {
+	approved := func(seller uint) *models.BookingRequest {
+		return &models.BookingRequest{ID: 1, ItemID: 9, RequesterID: 2, Status: "approved",
+			Item: &models.StoreItem{ID: 9, SellerID: seller}}
+	}
+
+	t.Run("the seller puts the item back on the board for 24 hours", func(t *testing.T) {
+		service, itemRepo, _, bookingRepo := setupService()
+		past := time.Now().Add(-time.Hour)
+		item := &models.StoreItem{ID: 9, SellerID: 1, PriceType: "fixed", Status: "reserved", Deadline: &past}
+		bookingRepo.On("GetByID", uint(1)).Return(approved(1), nil).Once()
+		bookingRepo.On("UpdateStatus", uint(1), "released").Return(nil)
+		itemRepo.On("GetByID", uint(9)).Return(item, nil)
+		itemRepo.On("Update", item).Return(nil)
+		bookingRepo.On("GetByID", uint(1)).Return(&models.BookingRequest{ID: 1, Status: "released"}, nil).Once()
+
+		got, err := service.ReleaseBooking(1, 1)
+
+		assert.NoError(t, err)
+		assert.Equal(t, "released", got.Status)
+		assert.Equal(t, "active", item.Status)
+		assert.WithinDuration(t, time.Now().Add(ListingLifetime), *item.Deadline, time.Minute)
+		bookingRepo.AssertExpectations(t)
+	})
+
+	t.Run("only the seller", func(t *testing.T) {
+		service, _, _, bookingRepo := setupService()
+		bookingRepo.On("GetByID", uint(1)).Return(approved(1), nil)
+
+		_, err := service.ReleaseBooking(1, 2)
+
+		assert.EqualError(t, err, "only the seller can release a reservation")
+		assert.True(t, IsUserError(err))
+	})
+
+	t.Run("only an approved booking", func(t *testing.T) {
+		service, _, _, bookingRepo := setupService()
+		pending := approved(1)
+		pending.Status = "pending"
+		bookingRepo.On("GetByID", uint(1)).Return(pending, nil)
+
+		_, err := service.ReleaseBooking(1, 1)
+
+		assert.EqualError(t, err, "only an approved booking can be released")
+	})
 }
 

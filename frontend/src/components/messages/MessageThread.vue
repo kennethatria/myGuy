@@ -33,7 +33,7 @@
           :current-user-id="authStore.user?.id"
           :latest="message.id === latestEventId"
         />
-        <div v-else-if="message.message_type === 'system_alert'" class="system-message">
+        <div v-else-if="isNote(message)" class="system-message">
           {{ message.content }}
           <span class="system-message-time">{{ formatTime(message.created_at) }}</span>
         </div>
@@ -93,7 +93,7 @@ import { useAuthStore } from '@/stores/auth';
 import MessageBubble from './MessageBubble.vue';
 import BookingMessageBubble from './BookingMessageBubble.vue';
 import TaskEventMessage from './TaskEventMessage.vue';
-import type { Message, ConversationSummary } from '@/stores/messages';
+import type { Message, ConversationSummary, BookingAction } from '@/stores/messages';
 
 const props = defineProps<{
   conversation: ConversationSummary;
@@ -112,7 +112,7 @@ const emit = defineEmits<{
   'load-more': [];
   'typing-start': [];
   'typing-stop': [];
-  'booking-action': [bookingId: number, action: 'approve' | 'decline' | 'confirm-received' | 'confirm-delivery' | 'rate-seller' | 'rate-buyer', rating?: number, review?: string];
+  'booking-action': [bookingId: number, action: BookingAction, rating?: number, review?: string];
 }>();
 
 const authStore = useAuthStore();
@@ -197,13 +197,19 @@ function formatTime(date: string): string {
   return isNaN(d.getTime()) ? '' : d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+// Notes recording what happened: shown centred, never editable
+const NOTE_TYPES = ['system_alert', 'booking_item_received', 'booking_completed', 'booking_status_update'];
+function isNote(message: Message): boolean {
+  return NOTE_TYPES.includes(message.message_type);
+}
+
 function isBookingMessage(message: Message): boolean {
   return ['booking_request', 'booking_approved', 'booking_declined'].includes(message.message_type);
 }
 
 function handleBookingAction(
   bookingId: number,
-  action: 'approve' | 'decline' | 'confirm-received' | 'confirm-delivery' | 'rate-seller' | 'rate-buyer',
+  action: BookingAction,
   rating?: number,
   review?: string
 ) {

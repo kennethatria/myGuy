@@ -227,7 +227,13 @@ func (s *StoreService) hasReactions(item *models.StoreItem) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return len(requests) > 0, nil
+	for _, request := range requests {
+		// A released booking no longer holds the item up
+		if request.Status != "released" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // pastDeadline reports whether item's note has come off the board for new
@@ -613,9 +619,13 @@ func (s *StoreService) CreateBookingRequest(itemID uint, requesterID uint, messa
 		return nil, ErrListingExpired
 	}
 
-	// Check if user already has a booking request for this item
+	// One booking request per buyer per item, whatever became of it: a
+	// buyer whose reservation the seller released can't book it again.
 	existing, err := s.bookingRepo.GetByItemAndRequester(itemID, requesterID)
 	if err == nil && existing != nil {
+		if existing.Status == "released" {
+			return nil, NewUserError("the seller released your reservation, so you can't book this item again")
+		}
 		return nil, NewUserError("you already have a booking request for this item")
 	}
 
@@ -771,6 +781,38 @@ func (s *StoreService) RejectBookingRequest(requestID uint, ownerID uint) (*mode
 	}
 
 	// Get and return the updated booking request
+	return s.bookingRepo.GetByID(requestID)
+}
+
+// ReleaseBooking lets the seller undo an approval that went nowhere: the
+// booking is released and the item goes back on the board, open to bookings
+// again, for a fresh ListingLifetime.
+func (s *StoreService) ReleaseBooking(requestID uint, sellerID uint) (*models.BookingRequest, error) {
+	request, err := s.bookingRepo.GetByID(requestID)
+	if err != nil {
+		return nil, err
+	}
+	if request.Item == nil || request.Item.SellerID != sellerID {
+		return nil, NewUserError("only the seller can release a reservation")
+	}
+	if request.Status != "approved" {
+		return nil, NewUserError("only an approved booking can be released")
+	}
+
+	if err := s.bookingRepo.UpdateStatus(requestID, "released"); err != nil {
+		return nil, err
+	}
+
+	item, err := s.itemRepo.GetByID(request.ItemID)
+	if err != nil {
+		return nil, err
+	}
+	item.Status = "active"
+	startListing(item)
+	if err := s.itemRepo.Update(item); err != nil {
+		return nil, err
+	}
+
 	return s.bookingRepo.GetByID(requestID)
 }
 

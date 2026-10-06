@@ -170,6 +170,14 @@ func (m *MockStoreService) GetMyRatings(userID uint) ([]models.BookingRating, er
 	return args.Get(0).([]models.BookingRating), args.Error(1)
 }
 
+func (m *MockStoreService) ReleaseBooking(requestID uint, sellerID uint) (*models.BookingRequest, error) {
+	args := m.Called(requestID, sellerID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.BookingRequest), args.Error(1)
+}
+
 func (m *MockStoreService) GetUserBookingRequests(userID uint) ([]models.BookingRequest, error) {
 	args := m.Called(userID)
 	return args.Get(0).([]models.BookingRequest), args.Error(1)
@@ -2216,3 +2224,28 @@ func TestStoreErrorsDontLeak(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.JSONEq(t, `{"error":"invalid request body"}`, w.Body.String(), "no struct or field names")
 }
+
+func TestReleaseBooking(t *testing.T) {
+	mockService := new(MockStoreService)
+	handler := NewStoreHandler(mockService)
+	router := setupTestRouter(handler)
+	router.POST("/api/v1/booking-requests/:requestId/release", handler.ReleaseBooking)
+
+	// setupTestRouter signs requests in as user 1
+	mockService.On("ReleaseBooking", uint(3), uint(1)).Return(&models.BookingRequest{ID: 3, Status: "released"}, nil).Once()
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/booking-requests/3/release", nil))
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"status":"released"`)
+
+	mockService.On("ReleaseBooking", uint(3), uint(1)).Return(nil, services.NewUserError("only an approved booking can be released")).Once()
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/booking-requests/3/release", nil))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "only an approved booking can be released")
+
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/booking-requests/abc/release", nil))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+

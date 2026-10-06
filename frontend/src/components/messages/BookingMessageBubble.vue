@@ -67,6 +67,24 @@
           </button>
         </div>
 
+        <!-- Seller, approved: waiting for the buyer, or release the item if the
+             sale went nowhere (asks once more first) -->
+        <div
+          v-else-if="!isOwnMessage && message.metadata?.status === 'approved'"
+          class="booking-release"
+        >
+          <p class="approved">✅ Booking approved - Waiting for buyer to confirm receipt</p>
+          <div class="booking-actions">
+            <button v-if="!confirmingRelease" @click="confirmingRelease = true" class="btn-release" :disabled="isProcessing">
+              Release reservation
+            </button>
+            <template v-else>
+              <span class="release-question">Put it back on the board for others?</span>
+              <button @click="handleRelease" class="btn-decline" :disabled="isProcessing">Yes, release</button>
+              <button @click="confirmingRelease = false" class="btn-keep" :disabled="isProcessing">Keep it</button>
+            </template>
+          </div>
+        </div>
         <!-- Action Button for Seller: Confirm Delivery (item_received status) -->
         <div
           v-else-if="!isOwnMessage && message.metadata?.status === 'item_received'"
@@ -106,6 +124,10 @@
           <!-- Declined -->
           <p v-else-if="message.metadata?.status === 'rejected'" class="declined">
             ❌ Booking declined
+          </p>
+          <!-- Released by the seller: the item is back on the board -->
+          <p v-else-if="message.metadata?.status === 'released'" class="declined">
+            ↩️ Reservation released
           </p>
         </div>
 
@@ -202,7 +224,7 @@
 import { ref, computed, watch, onUnmounted } from 'vue';
 import { useUserStore } from '@/stores/user';
 import config from '@/config';
-import type { Message } from '@/stores/messages';
+import type { Message, BookingAction } from '@/stores/messages';
 
 const props = defineProps<{
   message: Message;
@@ -210,7 +232,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  bookingAction: [bookingId: number, action: 'approve' | 'decline' | 'confirm-received' | 'confirm-delivery' | 'rate-seller' | 'rate-buyer', rating?: number, review?: string];
+  bookingAction: [bookingId: number, action: BookingAction, rating?: number, review?: string];
 }>();
 
 const userStore = useUserStore();
@@ -261,6 +283,7 @@ const statusText = computed(() => {
   if (status === 'rejected') return 'Declined';
   if (status === 'item_received') return 'Item Received';
   if (status === 'completed') return 'Completed';
+  if (status === 'released') return 'Released';
   return '';
 });
 
@@ -335,6 +358,15 @@ async function handleDecline() {
   if (!props.message.metadata?.booking_id) return;
   startProcessing();
   emit('bookingAction', props.message.metadata.booking_id, 'decline');
+}
+
+const confirmingRelease = ref(false);
+
+async function handleRelease() {
+  if (!props.message.metadata?.booking_id) return;
+  startProcessing();
+  confirmingRelease.value = false;
+  emit('bookingAction', props.message.metadata.booking_id, 'release');
 }
 
 async function handleConfirmReceived() {
@@ -594,6 +626,37 @@ onUnmounted(() => {
 
 .btn-decline:hover:not(:disabled) {
   background: #dc2626;
+}
+
+.btn-release,
+.btn-keep {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.btn-release:hover:not(:disabled),
+.btn-keep:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.booking-release .booking-actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.release-question {
+  width: 100%;
+  font-size: 0.8rem;
+  color: #374151;
+}
+
+/* Phones: thumb-sized booking buttons */
+@media (max-width: 640px) {
+  .booking-actions button {
+    min-height: 44px;
+    padding: 0.5rem 0.875rem;
+    font-size: 0.875rem;
+  }
 }
 
 .btn-confirm-received {

@@ -3,6 +3,9 @@ import { ref } from 'vue'
 import config from '@/config'
 import { useAuthStore } from './auth'
 
+// What someone can do to a store booking from its message in chat
+export type BookingAction = 'approve' | 'decline' | 'release' | 'confirm-received' | 'confirm-delivery' | 'rate-seller' | 'rate-buyer'
+
 export type TaskEvent = 'application' | 'accepted' | 'declined' | 'cancelled' | 'done' | 'not_done' | 'completed'
 
 export interface Message {
@@ -14,7 +17,7 @@ export interface Message {
   sender_id: number
   recipient_id: number
   content: string
-  message_type: 'text' | 'booking_request' | 'booking_approved' | 'booking_declined' | 'booking_item_received' | 'booking_completed' | 'system_alert'
+  message_type: 'text' | 'booking_request' | 'booking_approved' | 'booking_declined' | 'booking_item_received' | 'booking_completed' | 'booking_status_update' | 'system_alert'
   metadata?: {
     // Gig events: what happened, for the action shown on the message
     event?: TaskEvent
@@ -23,7 +26,7 @@ export interface Message {
     item_id?: number
     item_title?: string
     item_image?: string
-    status?: 'pending' | 'approved' | 'rejected' | 'item_received' | 'completed'
+    status?: 'pending' | 'approved' | 'rejected' | 'item_received' | 'completed' | 'released'
     buyer_rating?: number
     buyer_review?: string
     seller_rating?: number
