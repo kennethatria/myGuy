@@ -15,26 +15,27 @@
           class="radar"
           viewBox="0 0 100 100"
           role="group"
-          :aria-label="`Distance radar: ${countsSentence(placedCounts)} placed by distance`"
+          :aria-label="`Distance radar: ${countsSentence(totals)} posted by others`"
         >
-          <!-- Rings: one circle per distance bucket, nearest in the middle -->
+          <!-- Rings: one circle per distance bucket, nearest in the middle,
+               and a dotted edge ring for posts with no shared location -->
           <g class="rings" aria-hidden="true">
             <circle
-              v-for="(radius, i) in RING_RADIUS"
-              :key="radius"
+              v-for="ring in RINGS"
+              :key="ring"
               :cx="CENTRE"
               :cy="CENTRE"
-              :r="radius"
-              :class="['ring', { outer: i === RING_RADIUS.length - 1 }]"
+              :r="ringRadius(ring)"
+              :class="['ring', { unknown: ring === UNKNOWN_RING }]"
             />
             <text
-              v-for="(radius, i) in RING_RADIUS"
-              :key="`label-${radius}`"
-              :x="labelPoint(i).x"
-              :y="labelPoint(i).y"
+              v-for="ring in RINGS"
+              :key="`label-${ring}`"
+              :x="labelPoint(ring).x"
+              :y="labelPoint(ring).y"
               class="ring-label"
               text-anchor="middle"
-            >{{ BUCKETS[i] }}</text>
+            >{{ RING_LABELS[ring] }}</text>
           </g>
 
           <g class="you" aria-hidden="true">
@@ -43,26 +44,26 @@
           </g>
 
           <g
-            v-for="post in placed"
+            v-for="post in drawn"
             :key="`${post.kind}-${post.id}`"
             class="dot"
             role="link"
             tabindex="0"
-            :aria-label="`${KIND_STYLE[post.kind].one}: ${post.title}, ${post.distance}`"
+            :aria-label="`${KIND_STYLE[post.kind].one}: ${post.title}, ${post.distance || 'no location shared'}`"
             @click="open(post)"
             @keydown.enter.prevent="open(post)"
             @keydown.space.prevent="open(post)"
           >
-            <title>{{ post.title }} · {{ post.distance }}</title>
+            <title>{{ post.title }} · {{ post.distance || 'no location shared' }}</title>
             <!-- A larger, invisible circle makes the dot easier to tap -->
             <circle :cx="spot(post).x" :cy="spot(post).y" r="5" class="dot-hit" />
             <circle
               :cx="spot(post).x"
               :cy="spot(post).y"
               r="1.6"
-              :fill="KIND_STYLE[post.kind].fill"
-              :stroke="KIND_STYLE[post.kind].stroke"
-              stroke-width="0.45"
+              :fill="post.bucket < 0 ? '#fff' : KIND_STYLE[post.kind].fill"
+              :stroke="post.bucket < 0 ? KIND_STYLE[post.kind].fill : KIND_STYLE[post.kind].stroke"
+              :stroke-width="post.bucket < 0 ? 0.8 : 0.45"
             />
           </g>
         </svg>
@@ -71,13 +72,16 @@
           <ul class="legend" aria-label="Key">
             <li v-for="kind in KINDS" :key="kind">
               <span class="legend-dot" :style="{ background: KIND_STYLE[kind].fill, borderColor: KIND_STYLE[kind].stroke }" aria-hidden="true"></span>
-              {{ label(kind) }} <span class="legend-count">{{ allCounts[kind] }}</span>
+              {{ label(kind) }} <span class="legend-count">{{ totals[kind] }}</span>
             </li>
           </ul>
 
           <p v-if="unplacedCount" class="radar-note">
-            🤷 {{ countsSentence(unplacedCounts) }} {{ unplacedCount === 1 ? "isn't" : "aren't" }} on the radar:
-            no location was shared.
+            Hollow dots on the dotted edge ring had no location shared, so their distance is unknown.
+          </p>
+          <p v-if="hiddenSentence" class="radar-note">
+            Busy around you: {{ hiddenSentence }} {{ hiddenTotal === 1 ? "isn't" : "aren't" }} drawn.
+            See the boards for everything.
           </p>
 
           <p v-if="loading && !posts.length" class="radar-note">Finding what's near you...</p>
@@ -112,32 +116,37 @@ import { useRouter } from 'vue-router'
 import NearbyBanner from '@/components/NearbyBanner.vue'
 import { useViewerLocation } from '@/composables/useViewerLocation'
 import { useNearbyPosts, type NearbyPost } from '@/composables/useNearbyPosts'
-import { BUCKETS, CENTRE, KIND_STYLE, RING_RADIUS, countsSentence, labelPoint, layoutDots, type PostKind } from '@/utils/radar'
+import { CENTRE, KIND_STYLE, RING_LABELS, UNKNOWN_RING, countsSentence, labelPoint, layoutDots, ringRadius, type PostKind } from '@/utils/radar'
 
 const KINDS: PostKind[] = ['task', 'item', 'request']
 const LABELS: Record<PostKind, string> = { task: 'Gigs', item: 'Marketplace', request: 'Requests' }
 
 const router = useRouter()
 const viewer = useViewerLocation()
-const { posts, loading, failed, reload } = useNearbyPosts(viewer.location)
+const { posts, totals, loading, failed, reload } = useNearbyPosts(viewer.location)
+const RINGS = Array.from({ length: UNKNOWN_RING + 1 }, (_, i) => i)
 
 const countWhere = (keep: (post: NearbyPost) => boolean) => {
   const counts: Record<PostKind, number> = { task: 0, item: 0, request: 0 }
   for (const post of posts.value) if (keep(post)) counts[post.kind]++
   return counts
 }
-// On the radar: posts with a location. The rest are counted and listed only.
-const placed = computed(() => posts.value.filter((post) => post.bucket >= 0))
-const allCounts = computed(() => countWhere(() => true))
-const unplacedCounts = computed(() => countWhere((post) => post.bucket < 0))
-const placedCounts = computed(() => countWhere((post) => post.bucket >= 0))
-const unplacedCount = computed(() => posts.value.length - placed.value.length)
+const unplacedCount = computed(() => posts.value.filter((post) => post.bucket < 0).length)
 // "Within 2 km" = the two innermost rings (<1 km and ~2 km)
 const closeCounts = computed(() => countWhere((post) => post.bucket >= 0 && post.bucket <= 1))
 
-// Dots sharing a ring are spaced evenly round it, so close posts never pile up
-const spots = computed(() => layoutDots(placed.value))
-const spot = (post: NearbyPost) => spots.value.get(`${post.kind}-${post.id}`) ?? { x: CENTRE, y: CENTRE }
+// Dots sharing a ring are spaced evenly round it; a busy ring draws as many
+// as fit (nearest first) and counts the rest
+const layout = computed(() => layoutDots(posts.value))
+const drawn = computed(() => posts.value.filter((post) => layout.value.spots.has(`${post.kind}-${post.id}`)))
+const spot = (post: NearbyPost) => layout.value.spots.get(`${post.kind}-${post.id}`) ?? { x: CENTRE, y: CENTRE }
+const hiddenTotal = computed(() => [...layout.value.hidden.values()].reduce((a, b) => a + b, 0))
+const hiddenSentence = computed(() =>
+  [...layout.value.hidden.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([ring, n]) => (ring === UNKNOWN_RING ? `${n} more without a location` : `${n} more within ${RING_LABELS[ring]}`))
+    .join(', ')
+)
 const label = (kind: PostKind) => LABELS[kind]
 
 const routeFor = (post: NearbyPost) => {
@@ -189,7 +198,7 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   width: 100%;
   aspect-ratio: 1;
   display: block;
-  background: radial-gradient(circle, #f8fafc 0 70%, transparent 71%);
+  background: radial-gradient(circle, #f8fafc 0 69%, transparent 70%);
 }
 
 .ring {
@@ -199,8 +208,11 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   stroke-dasharray: 1.2 1;
 }
 
-.ring.outer {
-  stroke-dasharray: none;
+.ring.unknown {
+  stroke: #94a3b8;
+  stroke-dasharray: 0.4 1.2;
+  stroke-linecap: round;
+  stroke-width: 0.6;
 }
 
 .ring-label {
@@ -273,7 +285,7 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
 }
 
 .radar-note {
-  margin: 0;
+  margin: 0 0 0.4rem;
   font-size: 0.9rem;
   color: var(--color-text-light, #6b7280);
 }
