@@ -110,12 +110,16 @@ type ChatNotifier interface {
 	// BookingClosed marks a booking's message in chat as declined by the
 	// seller, with note telling the buyer why.
 	BookingClosed(bookingID, sellerID uint, note string)
+	// Unlock records that a seller and buyer agreed to deal on an item, so
+	// they can chat about it, without posting a message.
+	Unlock(itemID, sellerID, buyerID uint) error
 }
 
 type noopChatNotifier struct{}
 
 func (noopChatNotifier) StoreMessage(uint, uint, uint, string) {}
 func (noopChatNotifier) BookingClosed(uint, uint, string)     {}
+func (noopChatNotifier) Unlock(uint, uint, uint) error        { return nil }
 
 // HTTPChatNotifier posts to chat's /internal/store-message in the background.
 type HTTPChatNotifier struct {
@@ -158,6 +162,12 @@ func (n *HTTPChatNotifier) BookingClosed(bookingID, sellerID uint, note string) 
 	}()
 }
 
+func (n *HTTPChatNotifier) Unlock(itemID, sellerID, buyerID uint) error {
+	return n.postJSON("/internal/store-message", map[string]interface{}{
+		"store_item_id": itemID, "sender_id": sellerID, "recipient_id": buyerID, "unlock_contacts": true,
+	})
+}
+
 func (n *HTTPChatNotifier) post(itemID, senderID, recipientID uint, content string) error {
 	return n.postJSON("/internal/store-message", map[string]interface{}{
 		"store_item_id": itemID, "sender_id": senderID, "recipient_id": recipientID, "content": content,
@@ -180,7 +190,7 @@ func (n *HTTPChatNotifier) postJSON(path string, payload map[string]interface{})
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("chat returned %d", resp.StatusCode)
 	}
 	return nil

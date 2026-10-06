@@ -35,7 +35,7 @@ router.post('/internal/booking-created', async (req, res) => {
       itemImage: itemImage || null,
       buyerId,
       sellerId,
-      message: message || `Booking request for ${itemTitle || `Item #${itemId}`}`,
+      message: message || '',
       io
     });
 
@@ -140,8 +140,17 @@ router.post('/internal/store-message', async (req, res) => {
     const senderId = parseInt(req.body.sender_id);
     const recipientId = parseInt(req.body.recipient_id);
     const content = typeof req.body.content === 'string' ? req.body.content.trim() : '';
-    if (!storeItemId || !senderId || !recipientId || !content) {
+    const unlock = req.body.unlock_contacts === true;
+    // Content may be left out only to record a match (catching up old ones)
+    if (!storeItemId || !senderId || !recipientId || (!content && !unlock)) {
       return res.status(400).json({ error: 'store_item_id, sender_id, recipient_id and content are required' });
+    }
+
+    if (unlock) {
+      await messageService.unlockContacts({ storeItemId, userA: senderId, userB: recipientId });
+    }
+    if (!content) {
+      return res.status(204).end();
     }
 
     const message = await postSystemMessage(req, { storeItemId }, senderId, recipientId, content);

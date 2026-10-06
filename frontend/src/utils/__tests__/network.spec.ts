@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { connectionsFrom, layoutNetwork, tierOf, tierCapacity, CENTRE, TIER_RADIUS, type Interaction, type Connection } from '../network'
+import { connectionsFrom, layoutNetwork, formatRating, COLUMNS, YOU, type Interaction, type Connection } from '../network'
 
 const review = (over: Partial<Interaction>): Interaction => ({
   otherId: 2,
@@ -14,8 +14,9 @@ const review = (over: Partial<Interaction>): Interaction => ({
   ...over
 })
 
-const person = (userId: number, deals: number): Connection => ({
-  userId, deals, interactions: [], ratingOfYou: null, yourRating: null, via: 'gig', latest: '2026-10-01T10:00:00Z'
+const person = (userId: number): Connection => ({
+  userId, deals: 1, interactions: [], ratingOfYou: null, yourRating: null, averageRating: 4,
+  via: 'gig', latest: '2026-10-01T10:00:00Z'
 })
 
 describe('network', () => {
@@ -30,16 +31,16 @@ describe('network', () => {
     expect(ann.deals).toBe(2)
     expect(ann.ratingOfYou).toBe(4.5)
     expect(ann.yourRating).toBe(5)
+    expect(ann.averageRating).toBe(4.7)
     expect(ann.via).toBe('both')
     expect(ann.interactions[0].at).toBe('2026-10-02T10:00:00Z')
-    expect(ann.latest).toBe('2026-10-02T10:00:00Z')
   })
 
   it('leaves a rating out until it is given', () => {
     const [ann] = connectionsFrom([review({ direction: 'given', rating: 3 })])
     expect(ann.ratingOfYou).toBeNull()
     expect(ann.yourRating).toBe(3)
-    expect(ann.via).toBe('gig')
+    expect(ann.averageRating).toBe(3)
   })
 
   it('lists people with more deals first, then the most recent', () => {
@@ -52,30 +53,29 @@ describe('network', () => {
     expect(order).toEqual([3, 4, 2])
   })
 
-  it('puts more deals on an inner ring', () => {
-    expect(tierOf(1)).toBe(2)
-    expect(tierOf(2)).toBe(1)
-    expect(tierOf(3)).toBe(0)
-    expect(tierOf(10)).toBe(0)
+  it('shows ratings with one decimal, whole numbers plain', () => {
+    expect(formatRating(4.2)).toBe('4.2')
+    expect(formatRating(3)).toBe('3')
+    expect(formatRating(4.25)).toBe('4.3')
   })
 
-  it('places each person on their ring, apart from each other', () => {
-    const { placed, hidden } = layoutNetwork([person(1, 3), person(2, 2), person(3, 1), person(4, 1)])
-    expect(hidden).toBe(0)
-    for (const node of placed) {
-      expect(Math.hypot(node.x - CENTRE, node.y - CENTRE)).toBeCloseTo(TIER_RADIUS[tierOf(node.connection.deals)], 5)
-    }
-    const [a, b] = placed.filter(n => n.tier === 2)
-    expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan(8)
+  it('hangs the first row from you, and each later person from the one above', () => {
+    const { placed, height } = layoutNetwork([1, 2, 3, 4, 5].map(person))
+
+    // First row: three columns, every line starting at you
+    expect(placed.slice(0, COLUMNS).map(n => n.from)).toEqual([YOU, YOU, YOU].map(p => ({ x: p.x, y: p.y })))
+    expect(new Set(placed.slice(0, COLUMNS).map(n => n.y)).size).toBe(1)
+    // Second row: below the first, each line from the person above
+    expect(placed[3].x).toBe(placed[0].x)
+    expect(placed[3].from).toEqual({ x: placed[0].x, y: placed[0].y })
+    expect(placed[4].from).toEqual({ x: placed[1].x, y: placed[1].y })
+    expect(placed[3].y).toBeGreaterThan(placed[0].y)
+    // Labels halfway along their lines; the drawing is tall enough for every row
+    expect(placed[3].label).toEqual({ x: placed[0].x, y: (placed[0].y + placed[3].y) / 2 })
+    expect(height).toBeGreaterThan(placed[4].y)
   })
 
-  it('passes a full ring outward and counts who does not fit', () => {
-    const inner = Array.from({ length: tierCapacity(0) + 2 }, (_, i) => person(i + 1, 5))
-    const { placed } = layoutNetwork(inner)
-    expect(placed.filter(n => n.tier === 0)).toHaveLength(tierCapacity(0))
-    expect(placed.filter(n => n.tier === 1)).toHaveLength(2)
-
-    const crowd = Array.from({ length: tierCapacity(2) + 4 }, (_, i) => person(i + 1, 1))
-    expect(layoutNetwork(crowd).hidden).toBe(4)
+  it('is as short as one row with nobody in it', () => {
+    expect(layoutNetwork([]).placed).toEqual([])
   })
 })

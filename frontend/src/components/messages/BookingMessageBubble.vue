@@ -1,233 +1,83 @@
 <template>
-  <div class="booking-message" :class="messageTypeClass">
-    <div class="booking-icon">
-      <i :class="iconClass"></i>
+  <!-- A booking in the conversation, shown like a gig event: what happened,
+       then the step it asks of whoever acts next. -->
+  <div class="system-message booking-event">
+    <p class="event-text">{{ headline }}</p>
+    <p v-if="note" class="event-quote">“{{ note }}”</p>
+    <span v-if="statusText" :class="['event-status', `status-${status}`]">{{ statusText }}</span>
+    <span class="system-message-time">{{ formatTime(message.created_at) }}</span>
+
+    <!-- Seller: answer the request -->
+    <div v-if="isSeller && status === 'pending'" class="event-actions">
+      <button type="button" class="btn btn-primary btn-sm btn-approve" :disabled="isProcessing" @click="act('approve')">Approve</button>
+      <button type="button" class="btn btn-outline btn-sm btn-decline-request" :disabled="isProcessing" @click="act('decline')">Decline</button>
     </div>
 
-    <div class="booking-content">
-      <!-- Booking Request -->
-      <div v-if="message.message_type === 'booking_request'" class="booking-request">
-        <div class="booking-header">
-          <h4>Booking Request</h4>
-          <span :class="statusBadgeClass">{{ statusText }}</span>
-        </div>
-
-        <div class="item-details">
-          <img
-            v-if="message.metadata?.item_image"
-            :src="getImageUrl(message.metadata.item_image)"
-            :alt="message.metadata?.item_title"
-            class="item-thumbnail"
-          />
-          <div class="item-info">
-            <p class="item-title">{{ message.metadata?.item_title || 'Store Item' }}</p>
-            <p class="requester">
-              {{ isOwnMessage ? 'You requested this item' : `${senderName} wants to book this item` }}
-            </p>
-          </div>
-        </div>
-
-        <!-- Display the user's message -->
-        <div v-if="message.content" class="booking-message-text">
-          <p>{{ message.content }}</p>
-        </div>
-
-        <!-- Action Buttons for Seller: Approve/Decline (pending status) -->
-        <div
-          v-if="!isOwnMessage && message.metadata?.status === 'pending'"
-          class="booking-actions"
-        >
-          <button
-            @click="handleApprove"
-            class="btn-approve"
-            :disabled="isProcessing"
-          >
-            <i class="fas fa-check"></i> Approve
-          </button>
-          <button
-            @click="handleDecline"
-            class="btn-decline"
-            :disabled="isProcessing"
-          >
-            <i class="fas fa-times"></i> Decline
-          </button>
-        </div>
-
-        <!-- Action Button for Buyer: Confirm Receipt (approved status) -->
-        <div
-          v-else-if="isOwnMessage && message.metadata?.status === 'approved'"
-          class="booking-actions"
-        >
-          <button
-            @click="handleConfirmReceived"
-            class="btn-confirm-received"
-            :disabled="isProcessing"
-          >
-            <i class="fas fa-box-open"></i> I Received Item
-          </button>
-        </div>
-
-        <!-- Seller, approved: waiting for the buyer, or release the item if the
-             sale went nowhere (asks once more first) -->
-        <div
-          v-else-if="!isOwnMessage && message.metadata?.status === 'approved'"
-          class="booking-release"
-        >
-          <p class="approved">✅ Booking approved - Waiting for buyer to confirm receipt</p>
-          <div class="booking-actions">
-            <button v-if="!confirmingRelease" @click="confirmingRelease = true" class="btn-release" :disabled="isProcessing">
-              Release reservation
-            </button>
-            <template v-else>
-              <span class="release-question">Put it back on the board for others?</span>
-              <button @click="handleRelease" class="btn-decline" :disabled="isProcessing">Yes, release</button>
-              <button @click="confirmingRelease = false" class="btn-keep" :disabled="isProcessing">Keep it</button>
-            </template>
-          </div>
-        </div>
-        <!-- Action Button for Seller: Confirm Delivery (item_received status) -->
-        <div
-          v-else-if="!isOwnMessage && message.metadata?.status === 'item_received'"
-          class="booking-actions"
-        >
-          <button
-            @click="handleConfirmDelivery"
-            class="btn-confirm-delivery"
-            :disabled="isProcessing"
-          >
-            <i class="fas fa-check-circle"></i> Confirm Delivery
-          </button>
-        </div>
-
-        <!-- Status Messages -->
-        <div v-else class="booking-status">
-          <!-- Pending: Waiting for seller -->
-          <p v-if="message.metadata?.status === 'pending' && isOwnMessage" class="pending">
-            ⏳ Waiting for seller response...
-          </p>
-
-          <!-- Approved: Waiting for buyer to receive -->
-          <p v-else-if="message.metadata?.status === 'approved' && !isOwnMessage" class="approved">
-            ✅ Booking approved - Waiting for buyer to confirm receipt
-          </p>
-
-          <!-- Item Received: Waiting for seller confirmation -->
-          <p v-else-if="message.metadata?.status === 'item_received' && isOwnMessage" class="item-received">
-            📦 Item received - Waiting for seller to confirm delivery
-          </p>
-
-          <!-- Completed -->
-          <p v-else-if="message.metadata?.status === 'completed'" class="completed">
-            ✅ Transaction completed!
-          </p>
-
-          <!-- Declined -->
-          <p v-else-if="message.metadata?.status === 'rejected'" class="declined">
-            ❌ Booking declined
-          </p>
-          <!-- Released by the seller: the item is back on the board -->
-          <p v-else-if="message.metadata?.status === 'released'" class="declined">
-            ↩️ Reservation released
-          </p>
-        </div>
-
-        <!-- Rating Section (only show when completed) -->
-        <div v-if="message.metadata?.status === 'completed'" class="rating-section">
-          <!-- Buyer's Rating of Seller -->
-          <div v-if="isOwnMessage && !hasRated" class="rating-input">
-            <h5>Rate your experience with the seller</h5>
-            <div class="star-rating">
-              <span
-                v-for="star in 5"
-                :key="star"
-                @click="selectRating(star)"
-                @mouseenter="hoverRating = star"
-                @mouseleave="hoverRating = 0"
-                class="star"
-                :class="{ filled: star <= (hoverRating || selectedRating) }"
-              >
-                ★
-              </span>
-            </div>
-            <textarea
-              v-model="reviewText"
-              placeholder="Share your experience (optional)"
-              class="review-input"
-              rows="2"
-            ></textarea>
-            <button
-              @click="submitRating"
-              :disabled="!selectedRating || isProcessing"
-              class="btn-submit-rating"
-            >
-              Submit Rating
-            </button>
-          </div>
-
-          <!-- Seller's Rating of Buyer -->
-          <div v-else-if="!isOwnMessage && !hasRated" class="rating-input">
-            <h5>Rate your experience with the buyer</h5>
-            <div class="star-rating">
-              <span
-                v-for="star in 5"
-                :key="star"
-                @click="selectRating(star)"
-                @mouseenter="hoverRating = star"
-                @mouseleave="hoverRating = 0"
-                class="star"
-                :class="{ filled: star <= (hoverRating || selectedRating) }"
-              >
-                ★
-              </span>
-            </div>
-            <textarea
-              v-model="reviewText"
-              placeholder="Share your experience (optional)"
-              class="review-input"
-              rows="2"
-            ></textarea>
-            <button
-              @click="submitRating"
-              :disabled="!selectedRating || isProcessing"
-              class="btn-submit-rating"
-            >
-              Submit Rating
-            </button>
-          </div>
-
-          <!-- Display Submitted Rating -->
-          <div v-else-if="hasRated" class="rating-display">
-            <div class="rating-submitted">
-              <span class="rating-label">{{ isOwnMessage ? 'You rated:' : 'They rated you:' }}</span>
-              <div class="star-display">
-                <span v-for="star in 5" :key="star" class="star" :class="{ filled: star <= displayedRating }">
-                  ★
-                </span>
-              </div>
-              <p v-if="displayedReview" class="review-text">{{ displayedReview }}</p>
-            </div>
-          </div>
-        </div>
+    <!-- Seller, approved: waiting for the buyer, or release it if the sale
+         went nowhere (asks once more first) -->
+    <template v-else-if="isSeller && status === 'approved'">
+      <p class="event-note">Reserved. Waiting for the buyer to collect it.</p>
+      <p v-if="confirmingRelease" class="event-note">Put it back on the board for others?</p>
+      <div class="event-actions">
+        <button v-if="!confirmingRelease" type="button" class="btn btn-outline btn-sm btn-release" :disabled="isProcessing" @click="confirmingRelease = true">
+          Release reservation
+        </button>
+        <template v-else>
+          <button type="button" class="btn btn-danger btn-sm btn-decline" :disabled="isProcessing" @click="release">Yes, release</button>
+          <button type="button" class="btn btn-outline btn-sm btn-keep" :disabled="isProcessing" @click="confirmingRelease = false">Keep it</button>
+        </template>
       </div>
+    </template>
 
-      <!-- Status Update Messages -->
-      <div v-else class="booking-status-update">
-        <p>{{ message.content }}</p>
-      </div>
-
-      <span class="timestamp">{{ formatTime(message.created_at) }}</span>
+    <!-- Buyer, approved: say when it's collected -->
+    <div v-else-if="!isSeller && status === 'approved'" class="event-actions">
+      <button type="button" class="btn btn-primary btn-sm btn-confirm-received" :disabled="isProcessing" @click="act('confirm-received')">
+        I've collected it
+      </button>
     </div>
+
+    <!-- Seller, collected: confirm the handover to finish -->
+    <div v-else-if="isSeller && status === 'item_received'" class="event-actions">
+      <button type="button" class="btn btn-primary btn-sm btn-confirm-delivery" :disabled="isProcessing" @click="act('confirm-delivery')">
+        Confirm handover
+      </button>
+    </div>
+
+    <!-- Completed: both review each other, comment optional -->
+    <form v-else-if="status === 'completed' && !hasRated" class="event-review" @submit.prevent="submitRating">
+      <div class="stars" role="radiogroup" :aria-label="isSeller ? 'Rate the buyer' : 'Rate the seller'">
+        <button
+          v-for="star in 5"
+          :key="star"
+          type="button"
+          role="radio"
+          :aria-checked="selectedRating === star"
+          :aria-label="`${star} star${star === 1 ? '' : 's'}`"
+          :class="['star', { on: star <= selectedRating }]"
+          @click="selectedRating = star"
+        >★</button>
+      </div>
+      <textarea v-model="reviewText" rows="2" maxlength="500" placeholder="Add a comment (optional)" class="event-comment"></textarea>
+      <button type="submit" class="btn btn-primary btn-sm" :disabled="isProcessing || !selectedRating">Leave review</button>
+    </form>
+
+    <p v-else-if="status === 'completed'" class="event-note done">
+      You gave ★ {{ displayedRating }}<template v-if="displayedReview">: “{{ displayedReview }}”</template>
+    </p>
+
+    <!-- Waiting on the other person, or closed -->
+    <p v-else-if="waitingNote" class="event-note">{{ waitingNote }}</p>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from 'vue';
 import { useUserStore } from '@/stores/user';
-import config from '@/config';
 import type { Message, BookingAction } from '@/stores/messages';
 
 const props = defineProps<{
   message: Message;
+  // The booking request is the buyer's own message
   isOwnMessage: boolean;
 }>();
 
@@ -238,90 +88,65 @@ const emit = defineEmits<{
 const userStore = useUserStore();
 const isProcessing = ref(false);
 const processingTimeout = ref<number | null>(null);
-
-// Rating state
+const confirmingRelease = ref(false);
 const selectedRating = ref(0);
-const hoverRating = ref(0);
 const reviewText = ref('');
 
+// The buyer sent the request; the seller received it
+const isSeller = computed(() => !props.isOwnMessage);
+const status = computed(() => props.message.metadata?.status);
+
 const senderName = computed(() => {
-  if (props.message.sender?.username) {
-    return props.message.sender.username;
-  }
-  if (props.message.sender_id) {
-    const user = userStore.getUserById(props.message.sender_id);
-    if (user) return user.username;
-  }
-  return 'Unknown User';
+  if (props.message.sender?.username) return props.message.sender.username;
+  const user = props.message.sender_id ? userStore.getUserById(props.message.sender_id) : undefined;
+  return user?.username || 'Someone';
 });
 
-const messageTypeClass = computed(() => {
-  return `message-type-${props.message.message_type}`;
+// What the buyer wrote, if anything. Older bookings kept it as the text.
+const note = computed(() => {
+  const metadata = props.message.metadata as { note?: string } | undefined;
+  return metadata && 'note' in metadata ? metadata.note : props.message.content;
 });
 
-const iconClass = computed(() => {
-  switch (props.message.message_type) {
-    case 'booking_request':
-      return 'fas fa-calendar-check';
-    case 'booking_approved':
-      return 'fas fa-check-circle';
-    case 'booking_declined':
-      return 'fas fa-times-circle';
-    case 'booking_item_received':
-      return 'fas fa-box-open';
-    case 'booking_completed':
-      return 'fas fa-check-double';
-    default:
-      return 'fas fa-info-circle';
-  }
+const headline = computed(() => {
+  const title = props.message.metadata?.item_title || 'this item';
+  return props.isOwnMessage
+    ? `📩 You asked to book "${title}".`
+    : `📩 ${senderName.value} asked to book "${title}".`;
 });
 
 const statusText = computed(() => {
-  const status = props.message.metadata?.status;
-  if (status === 'pending') return 'Pending';
-  if (status === 'approved') return 'Approved';
-  if (status === 'rejected') return 'Declined';
-  if (status === 'item_received') return 'Item Received';
-  if (status === 'completed') return 'Completed';
-  if (status === 'released') return 'Released';
-  return '';
+  switch (status.value) {
+    case 'pending': return 'Pending';
+    case 'approved': return 'Approved';
+    case 'rejected': return 'Declined';
+    case 'item_received': return 'Collected';
+    case 'completed': return 'Completed';
+    case 'released': return 'Released';
+    default: return '';
+  }
 });
 
-const statusBadgeClass = computed(() => {
-  const status = props.message.metadata?.status;
-  return `status-badge status-${status}`;
+const waitingNote = computed(() => {
+  switch (status.value) {
+    case 'pending': return 'Waiting for the seller to answer.';
+    case 'item_received': return 'Waiting for the seller to confirm the handover.';
+    case 'rejected': return '❌ Booking declined';
+    case 'released': return '↩️ Reservation released';
+    default: return '';
+  }
 });
 
-// Check if user has already rated
+// Whether the viewer already reviewed the other person
 const hasRated = computed(() => {
-  if (props.isOwnMessage) {
-    // Buyer checking if they rated the seller
-    return props.message.metadata?.buyer_rating !== undefined && props.message.metadata?.buyer_rating !== null;
-  } else {
-    // Seller checking if they rated the buyer
-    return props.message.metadata?.seller_rating !== undefined && props.message.metadata?.seller_rating !== null;
-  }
+  const rating = props.isOwnMessage ? props.message.metadata?.buyer_rating : props.message.metadata?.seller_rating;
+  return rating !== undefined && rating !== null;
 });
+const displayedRating = computed(() =>
+  (props.isOwnMessage ? props.message.metadata?.buyer_rating : props.message.metadata?.seller_rating) || 0);
+const displayedReview = computed(() =>
+  (props.isOwnMessage ? props.message.metadata?.buyer_review : props.message.metadata?.seller_review) || '');
 
-// Get the rating to display
-const displayedRating = computed(() => {
-  if (props.isOwnMessage) {
-    return props.message.metadata?.buyer_rating || 0;
-  } else {
-    return props.message.metadata?.seller_rating || 0;
-  }
-});
-
-// Get the review to display
-const displayedReview = computed(() => {
-  if (props.isOwnMessage) {
-    return props.message.metadata?.buyer_review || '';
-  } else {
-    return props.message.metadata?.seller_review || '';
-  }
-});
-
-// Processing state management
 function resetProcessing() {
   isProcessing.value = false;
   if (processingTimeout.value) {
@@ -332,546 +157,164 @@ function resetProcessing() {
 
 function startProcessing() {
   isProcessing.value = true;
-
-  // Fallback: reset after 10 seconds if no response
-  processingTimeout.value = window.setTimeout(() => {
-    console.warn('Booking action timeout - resetting processing state');
-    resetProcessing();
-  }, 10000);
+  // Fallback: reset after 10 seconds if no update arrives
+  processingTimeout.value = window.setTimeout(resetProcessing, 10000);
 }
 
-function getImageUrl(imagePath: string): string {
-  if (imagePath.startsWith('http')) {
-    return imagePath;
-  }
-  // Use STORE_API_BASE_URL (without /api/v1) since uploads are served at root level
-  return `${config.STORE_API_BASE_URL}${imagePath}`;
-}
-
-async function handleApprove() {
-  if (!props.message.metadata?.booking_id) return;
+// Runs a step; its result arrives as an update to this message
+function act(action: BookingAction) {
+  const bookingId = props.message.metadata?.booking_id;
+  if (!bookingId) return;
   startProcessing();
-  emit('bookingAction', props.message.metadata.booking_id, 'approve');
+  emit('bookingAction', bookingId, action);
 }
 
-async function handleDecline() {
-  if (!props.message.metadata?.booking_id) return;
-  startProcessing();
-  emit('bookingAction', props.message.metadata.booking_id, 'decline');
-}
-
-const confirmingRelease = ref(false);
-
-async function handleRelease() {
-  if (!props.message.metadata?.booking_id) return;
-  startProcessing();
+function release() {
   confirmingRelease.value = false;
-  emit('bookingAction', props.message.metadata.booking_id, 'release');
+  act('release');
 }
 
-async function handleConfirmReceived() {
-  if (!props.message.metadata?.booking_id) return;
+function submitRating() {
+  const bookingId = props.message.metadata?.booking_id;
+  if (!bookingId || !selectedRating.value) return;
   startProcessing();
-  emit('bookingAction', props.message.metadata.booking_id, 'confirm-received');
-}
-
-async function handleConfirmDelivery() {
-  if (!props.message.metadata?.booking_id) return;
-  startProcessing();
-  emit('bookingAction', props.message.metadata.booking_id, 'confirm-delivery');
-}
-
-function selectRating(rating: number) {
-  selectedRating.value = rating;
-}
-
-async function submitRating() {
-  if (!props.message.metadata?.booking_id || !selectedRating.value) return;
-
-  startProcessing();
-  const action = props.isOwnMessage ? 'rate-seller' : 'rate-buyer';
-
-  emit(
-    'bookingAction',
-    props.message.metadata.booking_id,
-    action,
-    selectedRating.value,
-    reviewText.value
-  );
+  emit('bookingAction', bookingId, props.isOwnMessage ? 'rate-seller' : 'rate-buyer', selectedRating.value, reviewText.value.trim());
 }
 
 function formatTime(timestamp: string): string {
-  const date = new Date(timestamp);
-  const now = new Date();
-
-  if (date.toDateString() === now.toDateString()) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (date.toDateString() === yesterday.toDateString()) {
-    return `Yesterday ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-  }
-
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const d = new Date(timestamp);
+  return isNaN(d.getTime()) ? '' : d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-// Watch for message metadata changes to detect completion
+// The step is done once the message's status or ratings change
 watch(
   () => props.message.metadata,
-  (newMetadata, oldMetadata) => {
-    // If action completed (status changed or rating added), reset processing state
-    if (isProcessing.value) {
-      const statusChanged = newMetadata?.status !== oldMetadata?.status;
-      const buyerRatingAdded = newMetadata?.buyer_rating && !oldMetadata?.buyer_rating;
-      const sellerRatingAdded = newMetadata?.seller_rating && !oldMetadata?.seller_rating;
-
-      if (statusChanged || buyerRatingAdded || sellerRatingAdded) {
-        console.log('Booking action completed - resetting processing state');
-        resetProcessing();
-      }
+  (next, prev) => {
+    if (next?.status !== prev?.status || next?.buyer_rating !== prev?.buyer_rating || next?.seller_rating !== prev?.seller_rating) {
+      resetProcessing();
     }
   },
   { deep: true }
 );
 
-// Cleanup on unmount
-onUnmounted(() => {
-  if (processingTimeout.value) {
-    clearTimeout(processingTimeout.value);
-  }
-});
+onUnmounted(resetProcessing);
 </script>
 
 <style scoped>
-.booking-message {
-  margin: 0.5rem 0;
-  padding: 0.75rem;
-  background: #f0f9ff;
-  border-left: 3px solid #0284c7;
-  border-radius: 0.375rem;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-}
-
-.message-type-booking_approved {
-  background: #f0fdf4;
-  border-left-color: #10b981;
-}
-
-.message-type-booking_declined {
-  background: #fef2f2;
-  border-left-color: #ef4444;
-}
-
-.booking-icon {
-  font-size: 1.125rem;
-  color: #0284c7;
-  margin-bottom: 0.5rem;
-}
-
-.message-type-booking_approved .booking-icon {
-  color: #10b981;
-}
-
-.message-type-booking_declined .booking-icon {
-  color: #ef4444;
-}
-
-.booking-content {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.booking-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.25rem;
-}
-
-.booking-header h4 {
-  margin: 0;
+/* Matches the gig event cards (TaskEventMessage) */
+.system-message {
+  align-self: center;
+  max-width: min(90%, 28rem);
+  margin: 0.5rem auto;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #c7d2fe;
+  border-radius: 0.5rem;
+  background: #eef2ff;
+  color: #3730a3;
   font-size: 0.875rem;
-  font-weight: 600;
-  color: #111827;
+  text-align: center;
 }
 
-.status-badge {
-  padding: 0.125rem 0.5rem;
-  border-radius: 9999px;
-  font-size: 0.6875rem;
-  font-weight: 600;
-}
-
-.status-pending {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.status-approved {
-  background: #d1fae5;
-  color: #065f46;
-}
-
-.status-declined {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.status-rejected {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.status-item_received {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.status-completed {
-  background: #d1fae5;
-  color: #065f46;
-}
-
-.item-details {
-  display: flex;
-  gap: 0.625rem;
-  padding: 0.5rem;
-  background: white;
-  border-radius: 0.25rem;
-}
-
-.item-thumbnail {
-  width: 48px;
-  height: 48px;
-  object-fit: cover;
-  border-radius: 0.25rem;
-  flex-shrink: 0;
-}
-
-.item-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.item-title {
-  margin: 0 0 0.125rem 0;
-  font-weight: 600;
-  color: #111827;
-  font-size: 0.8125rem;
-}
-
-.requester {
+.event-text,
+.event-quote,
+.event-note {
   margin: 0;
-  font-size: 0.75rem;
-  color: #6b7280;
+  overflow-wrap: anywhere;
 }
 
-.booking-message-text {
-  margin-top: 0.5rem;
-  padding: 0.5rem;
-  background: white;
-  border-radius: 0.25rem;
-  border-left: 2px solid #0284c7;
-}
-
-.booking-message-text p {
-  margin: 0;
-  font-size: 0.875rem;
-  color: #374151;
-  line-height: 1.5;
-}
-
-.booking-actions {
-  display: flex;
-  gap: 0.5rem;
+.event-quote {
   margin-top: 0.25rem;
-}
-
-.booking-actions button {
-  padding: 0.375rem 0.625rem;
-  border: none;
-  border-radius: 0.25rem;
-  font-weight: 600;
-  font-size: 0.75rem;
-  cursor: pointer;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.375rem;
-  min-width: 90px;
-}
-
-.booking-actions button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-approve {
-  background: #10b981;
-  color: white;
-}
-
-.btn-approve:hover:not(:disabled) {
-  background: #059669;
-}
-
-.btn-decline {
-  background: #ef4444;
-  color: white;
-}
-
-.btn-decline:hover:not(:disabled) {
-  background: #dc2626;
-}
-
-.btn-release,
-.btn-keep {
-  background: #f3f4f6;
-  color: #374151;
-}
-
-.btn-release:hover:not(:disabled),
-.btn-keep:hover:not(:disabled) {
-  background: #e5e7eb;
-}
-
-.booking-release .booking-actions {
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.release-question {
-  width: 100%;
-  font-size: 0.8rem;
-  color: #374151;
-}
-
-/* Phones: thumb-sized booking buttons */
-@media (max-width: 640px) {
-  .booking-actions button {
-    min-height: 44px;
-    padding: 0.5rem 0.875rem;
-    font-size: 0.875rem;
-  }
-}
-
-.btn-confirm-received {
-  background: #3b82f6;
-  color: white;
-}
-
-.btn-confirm-received:hover:not(:disabled) {
-  background: #2563eb;
-}
-
-.btn-confirm-delivery {
-  background: #10b981;
-  color: white;
-}
-
-.btn-confirm-delivery:hover:not(:disabled) {
-  background: #059669;
-}
-
-/* Rating Section */
-.rating-section {
-  margin-top: 0.75rem;
-  padding: 0.75rem;
-  background: #f8fafc;
-  border-radius: 0.375rem;
-  border: 1px solid #e2e8f0;
-}
-
-.rating-input h5 {
-  margin: 0 0 0.5rem 0;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #374151;
-}
-
-.star-rating {
-  display: flex;
-  gap: 0.25rem;
-  margin-bottom: 0.5rem;
-}
-
-.star {
-  font-size: 2rem;
-  color: #d1d5db;
-  cursor: pointer;
-  transition: all 0.2s;
-  user-select: none;
-}
-
-.star.filled {
-  color: #fbbf24;
-}
-
-.star:hover {
-  transform: scale(1.1);
-}
-
-.review-input {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-family: inherit;
-  resize: vertical;
-  margin-bottom: 0.5rem;
-}
-
-.review-input:focus {
-  outline: none;
-  border-color: #3b82f6;
-  ring: 2px;
-  ring-color: #3b82f6;
-}
-
-.btn-submit-rating {
-  padding: 0.5rem 1rem;
-  background: #3b82f6;
-  color: white;
-  border: none;
-  border-radius: 0.375rem;
-  font-weight: 600;
-  font-size: 0.875rem;
-  cursor: pointer;
-  transition: all 0.15s;
-  width: 100%;
-}
-
-.btn-submit-rating:hover:not(:disabled) {
-  background: #2563eb;
-}
-
-.btn-submit-rating:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.rating-display {
-  padding: 0.5rem;
-}
-
-.rating-submitted {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.rating-label {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #6b7280;
-}
-
-.star-display {
-  display: flex;
-  gap: 0.125rem;
-}
-
-.star-display .star {
-  font-size: 1.25rem;
-  color: #d1d5db;
-  cursor: default;
-}
-
-.star-display .star.filled {
-  color: #fbbf24;
-}
-
-.review-text {
-  margin: 0;
-  padding: 0.5rem;
-  background: white;
-  border-radius: 0.25rem;
-  font-size: 0.875rem;
-  color: #374151;
-  border: 1px solid #e5e7eb;
+  color: #4338ca;
   font-style: italic;
 }
 
-.booking-status {
-  margin-top: 0.25rem;
+.event-note {
+  margin-top: 0.5rem;
 }
 
-.booking-status p {
-  margin: 0;
-  padding: 0.375rem 0.5rem;
-  border-radius: 0.25rem;
-  text-align: center;
-  font-weight: 600;
+.event-note.done {
+  color: #166534;
+}
+
+.event-status {
+  display: inline-block;
+  margin-top: 0.375rem;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  background: #e0e7ff;
   font-size: 0.75rem;
+  font-weight: 600;
 }
 
-.booking-status .approved {
-  background: #d1fae5;
-  color: #065f46;
+.status-approved,
+.status-item_received,
+.status-completed {
+  background: #dcfce7;
+  color: #166534;
 }
 
-.booking-status .declined {
+.status-rejected,
+.status-released {
   background: #fee2e2;
   color: #991b1b;
 }
 
-.booking-status .pending {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.booking-status .item-received {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.booking-status .completed {
-  background: #d1fae5;
-  color: #065f46;
-}
-
-.booking-status-update {
-  padding: 0.25rem;
-}
-
-.booking-status-update p {
-  margin: 0;
-  font-size: 0.8125rem;
-  color: #111827;
-  font-weight: 500;
-}
-
-.timestamp {
-  font-size: 0.6875rem;
-  color: #9ca3af;
-  text-align: right;
+.system-message-time {
   display: block;
   margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: #6366f1;
 }
 
-/* Mobile Responsive */
-@media (max-width: 768px) {
-  .booking-message {
-    margin: 0.5rem 0;
-    padding: 0.625rem;
-  }
+.event-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.625rem;
+}
 
-  .item-thumbnail {
-    width: 40px;
-    height: 40px;
-  }
+/* Thumb-sized on phones */
+.event-actions .btn,
+.event-review .btn {
+  min-height: 44px;
+  min-width: 6.5rem;
+}
 
-  .booking-actions {
-    flex-direction: column;
-  }
+.event-review {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.625rem;
+}
 
-  .booking-actions button {
-    width: 100%;
-  }
+.stars {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.star {
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  background: none;
+  font-size: 1.6rem;
+  line-height: 1;
+  color: #c7d2fe;
+  cursor: pointer;
+}
+
+.star.on {
+  color: #f59e0b;
+}
+
+.event-comment {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #c7d2fe;
+  border-radius: 0.375rem;
+  font: inherit;
+  resize: vertical;
 }
 </style>

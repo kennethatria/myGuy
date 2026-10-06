@@ -129,10 +129,17 @@ const latestEventId = computed(() => {
   return null;
 });
 
-// Before a match the poster is the one who can open the chat
+// Before a match, the poster or seller is the one who can open the chat
 const lockedNote = computed(() => {
+  const me = authStore.user?.id;
+  if (props.conversation.item_id || props.conversation.conversation_type === 'store') {
+    const booking = [...props.messages].reverse().find(m => m.message_type === 'booking_request');
+    if (booking && booking.recipient_id === me) return 'Approve the booking to start chatting.';
+    if (booking) return 'You can chat once the seller approves your booking.';
+    return 'Book the item to ask the seller. You can chat once they approve.';
+  }
   const latest = props.messages.find(m => m.id === latestEventId.value);
-  const isPoster = latest?.metadata?.event === 'application' && latest.recipient_id === authStore.user?.id;
+  const isPoster = latest?.metadata?.event === 'application' && latest.recipient_id === me;
   return isPoster
     ? 'Accept the application to start chatting.'
     : 'You can chat once the poster accepts the application.';
@@ -198,13 +205,13 @@ function formatTime(date: string): string {
 }
 
 // Notes recording what happened: shown centred, never editable
-const NOTE_TYPES = ['system_alert', 'booking_item_received', 'booking_completed', 'booking_status_update'];
+const NOTE_TYPES = ['system_alert', 'booking_approved', 'booking_declined', 'booking_item_received', 'booking_completed', 'booking_status_update'];
 function isNote(message: Message): boolean {
   return NOTE_TYPES.includes(message.message_type);
 }
 
 function isBookingMessage(message: Message): boolean {
-  return ['booking_request', 'booking_approved', 'booking_declined'].includes(message.message_type);
+  return message.message_type === 'booking_request';
 }
 
 function handleBookingAction(

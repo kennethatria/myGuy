@@ -78,12 +78,10 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute, type RouteLocationRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { useChatStore } from '@/stores/chat'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
-const chatStore = useChatStore()
 
 const isSidebarCollapsed = ref(false)
 const isMobileMenuOpen = ref(false)
@@ -97,14 +95,6 @@ const onViewportChange = (e: MediaQueryListEvent) => {
 }
 
 const user = computed(() => authStore.user)
-const totalUnreadCount = computed(() => {
-  try {
-    return chatStore.totalUnreadCount || 0
-  } catch (error) {
-    console.warn('Chat store unavailable:', error)
-    return 0
-  }
-})
 
 interface NavItem {
   key: string
@@ -119,22 +109,17 @@ interface NavItem {
   divider?: boolean
 }
 
-// One list: the pages, then your own gigs and requests, then sign out
+// One list: the pages, then your own gigs, then sign out. Messages open
+// from the floating chat button; your requests are under Marketplace.
 const mainNavigation = computed<NavItem[]>(() => [
   { key: 'home', route: 'dashboard', to: { name: 'dashboard' }, text: 'Home', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 9L12 2L21 9V20C21 20.5304 20.7893 21.0391 20.4142 21.4142C20.0391 21.7893 19.5304 22 19 22H5C4.46957 22 3.96086 21.7893 3.58579 21.4142C3.21071 21.0391 3 20.5304 3 20V9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
   { key: 'tasks', route: 'tasks', to: { name: 'tasks' }, text: 'Gigs', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' },
   { key: 'store', route: 'store', to: { name: 'store' }, text: 'Marketplace', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 9V21H21V9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 9H21L19 3H5L3 9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 3V9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
-  {
-    key: 'messages', route: 'messages', to: { name: 'messages' }, text: 'Messages',
-    badge: totalUnreadCount.value > 0 ? totalUnreadCount.value : undefined,
-    icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 15C21 15.5304 20.7893 16.0391 20.4142 16.4142C20.0391 16.7893 19.5304 17 19 17H7L3 21V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H19C19.5304 3 20.0391 3.21071 20.4142 3.58579C20.7893 3.96086 21 4.46957 21 5V15Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-  },
   { key: 'reviews', route: 'reviews', to: { name: 'reviews' }, text: 'Reviews', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><circle cx="4" cy="5" r="2" stroke="currentColor" stroke-width="2"/><circle cx="20" cy="6" r="2" stroke="currentColor" stroke-width="2"/><circle cx="19" cy="19" r="2" stroke="currentColor" stroke-width="2"/><path d="M5.6 6.3L9.7 10M18.3 7.1L14.6 10.4M17.6 17.6L14.2 14.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' },
   { key: 'mine-divider', text: '', icon: '', divider: true },
   { key: 'created', route: 'my-gigs', tab: 'created', to: { name: 'my-gigs', params: { tab: 'created' } }, text: 'Created Gigs', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 2V8H20M8 13H16M8 17H16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
   { key: 'assigned', route: 'my-gigs', tab: 'assigned', to: { name: 'my-gigs', params: { tab: 'assigned' } }, text: 'Assignments', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M16 21V19C16 16.8 14.2 15 12 15H5C2.8 15 1 16.8 1 19V21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="8.5" cy="7" r="4" stroke="currentColor" stroke-width="2"/><path d="M17 11L19 13L23 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
   { key: 'applications', route: 'my-gigs', tab: 'applications', to: { name: 'my-gigs', params: { tab: 'applications' } }, text: 'Applications', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
-  { key: 'my-requests', route: 'store', tab: 'mine', to: { name: 'store', query: { tab: 'mine' } }, text: 'My Requests', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M9 5H7C5.9 5 5 5.9 5 7V19C5 20.1 5.9 21 7 21H17C18.1 21 19 20.1 19 19V7C19 5.9 18.1 5 17 5H15M9 5C9 6.1 9.9 7 11 7H13C14.1 7 15 6.1 15 5M9 5C9 3.9 9.9 3 11 3H13C14.1 3 15 3.9 15 5M9 12H15M9 16H13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
   { key: 'sign-out-divider', text: '', icon: '', divider: true },
   { key: 'sign-out', text: 'Sign out', action: 'sign-out', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M9 21H5C3.9 21 3 20.1 3 19V5C3 3.9 3.9 3 5 3H9M16 17L21 12L16 7M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' }
 ])
@@ -187,8 +172,6 @@ onMounted(async () => {
   mobileQuery.addEventListener('change', onViewportChange)
   if (authStore.token) {
     await authStore.checkAuth()
-    // Temporarily disable chat connection until SQL issues are fixed
-    // chatStore.connectSocket()
   }
 })
 </script>

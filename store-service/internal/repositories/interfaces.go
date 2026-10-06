@@ -62,6 +62,7 @@ type BookingRequestRepository interface {
 	UpdateSellerRating(id uint, rating int, review string) error
 	GetRatingsReceived(userID uint) ([]models.BookingRequest, error)
 	GetRatingsInvolving(userID uint) ([]models.BookingRequest, error)
+	ListMatched() ([]models.BookingRequest, error)
 }
 
 type UserRepository interface {

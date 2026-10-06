@@ -70,6 +70,22 @@ func TestHTTPChatNotifier(t *testing.T) {
 		}
 	})
 
+	t.Run("records a match without a message", func(t *testing.T) {
+		var body map[string]interface{}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "/internal/store-message", r.URL.Path)
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer server.Close()
+		n := &HTTPChatNotifier{baseURL: server.URL, apiKey: "x", client: server.Client()}
+
+		assert.NoError(t, n.Unlock(9, 1, 2))
+		assert.Equal(t, true, body["unlock_contacts"])
+		assert.Equal(t, float64(9), body["store_item_id"])
+		assert.Nil(t, body["content"])
+	})
+
 	t.Run("reports a refusal", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
