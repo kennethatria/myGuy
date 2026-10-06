@@ -63,6 +63,8 @@
         </div>
       </div>
 
+      <NearbyRadar />
+
       <!-- Tab Navigation -->
       <div class="tabs-section">
         <div class="tab-nav">
@@ -231,6 +233,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import NearbyRadar from '@/components/NearbyRadar.vue'
 import { format } from 'date-fns'
 import { useRouter } from 'vue-router'
 import { useTasksStore } from '@/stores/tasks'
