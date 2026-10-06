@@ -132,7 +132,7 @@ jobs:
             if ! docker manifest inspect "$REGISTRY/myguy-$service:$tag" >/dev/null 2>&1; then
               echo "No $REGISTRY/myguy-$service:$tag yet; building it"
               build="$build $service"
-              [[ $deploy == all ]] || deploy="$deploy $service"
+              [[ $deploy == all || " $deploy " == *" $service "* ]] || deploy="$deploy $service"
             fi
           done
 
