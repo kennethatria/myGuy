@@ -1,6 +1,6 @@
 <template>
   <div class="container py-4 composer-page">
-    <h1 class="mb-2">Post a Request</h1>
+    <h1 class="mb-2">Post Request</h1>
     <p class="text-muted mb-4">
       Say what you're looking for in a few words. Sellers who have it can list it for you, and you get a
       message in Messages. Your note stays up for 24 hours.

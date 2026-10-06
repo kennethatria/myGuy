@@ -42,7 +42,7 @@ interface Application {
 
 type ApplicationInput = Pick<Application, 'message'>
 
-// One of the current user's applications, with its task (for "My applications")
+// One of the current user's applications, with its task (for "Applications")
 export interface MyApplication {
   id: number
   task_id: number

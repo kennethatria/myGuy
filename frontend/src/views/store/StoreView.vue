@@ -9,12 +9,10 @@
             : 'Things people are selling. Each note stays up for 24 hours.' }}
         </p>
       </div>
-      <router-link v-if="view === 'wanted'" :to="{ name: 'create-request' }" class="btn btn-primary">
-        Post a Request
-      </router-link>
-      <router-link v-else :to="{ name: 'create-listing' }" class="btn btn-primary">
-        Post a Listing
-      </router-link>
+      <div class="board-actions">
+        <router-link :to="{ name: 'create-listing' }" class="btn btn-primary">Post Item</router-link>
+        <router-link :to="{ name: 'create-request' }" class="btn btn-outline">Post Request</router-link>
+      </div>
     </div>
 
     <div class="board-tabs" role="tablist" aria-label="Marketplace views">
@@ -69,7 +67,7 @@
         <p class="text-muted">
           Be the first to sell something.
         </p>
-        <router-link :to="{ name: 'create-listing' }" class="btn btn-primary mt-2">Post a Listing</router-link>
+        <router-link :to="{ name: 'create-listing' }" class="btn btn-primary mt-2">Post Item</router-link>
       </div>
     </template>
 
@@ -97,7 +95,7 @@
         <p class="text-muted">
           Ask for something you need, and sellers can list it for you.
         </p>
-        <router-link :to="{ name: 'create-request' }" class="btn btn-primary mt-2">Post a Request</router-link>
+        <router-link :to="{ name: 'create-request' }" class="btn btn-primary mt-2">Post Request</router-link>
       </div>
     </template>
 
@@ -130,7 +128,7 @@
       </ul>
       <div v-else class="empty-board">
         <p class="text-muted">You haven't listed anything.</p>
-        <router-link :to="{ name: 'create-listing' }" class="btn btn-primary mt-2">Post a Listing</router-link>
+        <router-link :to="{ name: 'create-listing' }" class="btn btn-primary mt-2">Post Item</router-link>
       </div>
 
       <h2 class="section-title">Your requests</h2>
@@ -161,7 +159,7 @@
       </ul>
       <div v-else class="empty-board">
         <p class="text-muted">You haven't asked for anything.</p>
-        <router-link :to="{ name: 'create-request' }" class="btn btn-primary mt-2">Post a Request</router-link>
+        <router-link :to="{ name: 'create-request' }" class="btn btn-primary mt-2">Post Request</router-link>
       </div>
     </template>
 
@@ -186,7 +184,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import config from '@/config'
@@ -238,7 +236,8 @@ const route = useRoute()
 const router = useRouter()
 
 // The tab is kept in the URL so back and shared links land on it
-const view = ref<View>(tabs.some((tab) => tab.view === route.query.tab) ? (route.query.tab as View) : 'board')
+const tabFromQuery = (tab: unknown): View => tabs.find((t) => t.view === tab)?.view ?? 'board'
+const view = ref<View>(tabFromQuery(route.query.tab))
 const loading = ref(false)
 const error = ref('')
 const items = ref<StoreItem[]>([])
@@ -340,6 +339,15 @@ const showView = (next: View) => {
   load()
 }
 
+// Links to another tab (the side navigation's My Requests) while already here
+watch(() => route.query.tab, (tab) => {
+  const next = tabFromQuery(tab)
+  if (next === view.value) return
+  view.value = next
+  currentPage.value = 1
+  load()
+})
+
 // Put an expired note back on the board for a fresh 24 hours
 const repost = async (kind: Kind, note: { id: number }) => {
   busyId.value = `${kind}-${note.id}`
@@ -411,6 +419,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 1rem;
   margin-bottom: 1rem;
+}
+
+.board-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .section-title {

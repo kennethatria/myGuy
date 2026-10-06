@@ -6,7 +6,7 @@
         <p class="text-muted mt-1">Short notes from people who need a hand. Each stays up for 24 hours.</p>
       </div>
       <router-link :to="{ name: 'create-task' }" class="btn btn-primary">
-        Post a Note
+        Post a Gig
       </router-link>
     </div>
 
@@ -46,7 +46,7 @@
         <p class="text-muted">
           Be the first to ask for a hand.
         </p>
-        <router-link :to="{ name: 'create-task' }" class="btn btn-primary mt-2">Post a Note</router-link>
+        <router-link :to="{ name: 'create-task' }" class="btn btn-primary mt-2">Post a Gig</router-link>
       </div>
     </template>
 
