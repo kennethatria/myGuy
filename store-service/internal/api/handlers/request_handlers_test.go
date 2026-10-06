@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"store-service/internal/models"
+	"store-service/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -89,7 +90,7 @@ func TestRequestHandlers_Create(t *testing.T) {
 	s := new(MockRequestService)
 	r := setupRequestRouter(s)
 	s.On("CreateRequest", uint(1), models.CreateItemRequestRequest{Title: "Printer wanted", Description: "Any"}).Return(&models.ItemRequest{ID: 3}, nil)
-	s.On("CreateRequest", uint(1), models.CreateItemRequestRequest{Title: "Printer", Description: "call 0772123456"}).Return(nil, errors.New("remove phone numbers"))
+	s.On("CreateRequest", uint(1), models.CreateItemRequestRequest{Title: "Printer", Description: "call 0772123456"}).Return(nil, services.NewUserError("remove phone numbers"))
 
 	assert.Equal(t, http.StatusCreated, call(r, "POST", "/requests", `{"title":"Printer wanted","description":"Any"}`).Code)
 	bad := call(r, "POST", "/requests", `{"title":"Printer","description":"call 0772123456"}`)
@@ -122,9 +123,9 @@ func TestRequestHandlers_Reads(t *testing.T) {
 func TestRequestHandlers_ReadFailures(t *testing.T) {
 	s := new(MockRequestService)
 	r := setupRequestRouter(s)
-	s.On("GetRequests", mock.Anything).Return([]models.ItemRequest{}, int64(0), errors.New("db"))
-	s.On("GetRequestListings", uint(3)).Return([]models.StoreItem{}, errors.New("db"))
-	s.On("GetUserRequests", uint(1)).Return([]models.ItemRequest{}, errors.New("db"))
+	s.On("GetRequests", mock.Anything).Return([]models.ItemRequest{}, int64(0), services.NewUserError("db"))
+	s.On("GetRequestListings", uint(3)).Return([]models.StoreItem{}, services.NewUserError("db"))
+	s.On("GetUserRequests", uint(1)).Return([]models.ItemRequest{}, services.NewUserError("db"))
 
 	assert.Equal(t, http.StatusInternalServerError, call(r, "GET", "/requests", "").Code)
 	assert.Equal(t, http.StatusInternalServerError, call(r, "GET", "/requests/3/listings", "").Code)
@@ -135,7 +136,7 @@ func TestRequestHandlers_RepostAndDelete(t *testing.T) {
 	s := new(MockRequestService)
 	r := setupRequestRouter(s)
 	s.On("RepostRequest", uint(3), uint(1)).Return(&models.ItemRequest{ID: 3, Status: "active"}, nil)
-	s.On("RepostRequest", uint(4), uint(1)).Return(nil, errors.New("only an expired request can be reposted"))
+	s.On("RepostRequest", uint(4), uint(1)).Return(nil, services.NewUserError("only an expired request can be reposted"))
 	s.On("DeleteRequest", uint(3), uint(1)).Return(nil)
 	s.On("DeleteRequest", uint(4), uint(1)).Return(gorm.ErrRecordNotFound)
 
@@ -145,4 +146,22 @@ func TestRequestHandlers_RepostAndDelete(t *testing.T) {
 	assert.Equal(t, http.StatusOK, call(r, "DELETE", "/requests/3", "").Code)
 	assert.Equal(t, http.StatusNotFound, call(r, "DELETE", "/requests/4", "").Code)
 	assert.Equal(t, http.StatusBadRequest, call(r, "DELETE", "/requests/x", "").Code)
+}
+
+func TestUnexpectedErrorsDontLeak(t *testing.T) {
+	s := new(MockRequestService)
+	r := setupRequestRouter(s)
+	dbErr := errors.New(`pq: duplicate key value violates unique constraint "idx_item_requests_requester_id" (SQLSTATE 23505)`)
+	s.On("CreateRequest", uint(1), mock.Anything).Return(nil, dbErr)
+	s.On("RepostRequest", uint(3), uint(1)).Return(nil, dbErr)
+
+	for _, w := range []*httptest.ResponseRecorder{
+		call(r, "POST", "/requests", `{"title":"Printer","description":"Any"}`),
+		call(r, "POST", "/requests/3/repost", ""),
+	} {
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+		assert.NotContains(t, w.Body.String(), "SQLSTATE")
+		assert.NotContains(t, w.Body.String(), "idx_item_requests")
+		assert.Contains(t, w.Body.String(), "something went wrong")
+	}
 }

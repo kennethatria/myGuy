@@ -4,19 +4,24 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/jpeg"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"store-service/internal/models"
+	"store-service/internal/services"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
@@ -321,7 +326,7 @@ func TestCreateItem(t *testing.T) {
 			Condition:  "new",
 		}
 
-		mockService.On("CreateItem", uint(1), mock.AnythingOfType("models.CreateStoreItemRequest")).Return(nil, errors.New("service error"))
+		mockService.On("CreateItem", uint(1), mock.AnythingOfType("models.CreateStoreItemRequest")).Return(nil, services.NewUserError("service error"))
 
 		jsonData, _ := json.Marshal(req)
 		w := httptest.NewRecorder()
@@ -414,6 +419,50 @@ func TestCreateItem(t *testing.T) {
 		assert.Equal(t, http.StatusCreated, w.Code)
 		mockService.AssertExpectations(t)
 	})
+}
+
+func TestCreateItem_PhotosAreCleaned(t *testing.T) {
+	UploadsDir = t.TempDir()
+	defer func() { UploadsDir = "./uploads/store" }()
+
+	// A JPEG carrying an EXIF block with a GPS-like secret
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	raw := &bytes.Buffer{}
+	require.NoError(t, jpeg.Encode(raw, img, nil))
+	secret := "GPS 0.3476N 32.5842E"
+	payload := append([]byte("Exif\x00\x00MM\x00\x2a\x00\x00\x00\x08\x00\x00"), secret...)
+	app1 := []byte{0xFF, 0xE1, byte((len(payload) + 2) >> 8), byte(len(payload) + 2)}
+	withExif := append(append(append([]byte{}, raw.Bytes()[:2]...), append(app1, payload...)...), raw.Bytes()[2:]...)
+
+	mockService := new(MockStoreService)
+	router := setupTestRouter(NewStoreHandler(mockService))
+	var saved []string
+	mockService.On("CreateItem", uint(1), mock.MatchedBy(func(req models.CreateStoreItemRequest) bool {
+		saved = req.Images
+		return true
+	})).Return(&models.StoreItem{ID: 4}, nil)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("title", "Lamp")
+	writer.WriteField("description", "Brass desk lamp")
+	part, _ := writer.CreateFormFile("images", "IMG_0001.HEIC.jpg")
+	part.Write(withExif)
+	junk, _ := writer.CreateFormFile("images", "evil.jpg")
+	junk.Write([]byte("<?php system($_GET['c']); ?>"))
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	httpReq, _ := http.NewRequest("POST", "/api/v1/items", body)
+	httpReq.Header.Set("Content-Type", writer.FormDataContentType())
+	router.ServeHTTP(w, httpReq)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	require.Len(t, saved, 1, "the non-image is dropped")
+	assert.Regexp(t, `^/uploads/store/[0-9a-f]{32}\.jpg$`, saved[0], "random name, no seller id or timestamp")
+	stored, err := os.ReadFile(filepath.Join(UploadsDir, filepath.Base(saved[0])))
+	require.NoError(t, err)
+	assert.NotContains(t, string(stored), secret)
 }
 
 func TestGetItem(t *testing.T) {
@@ -509,7 +558,7 @@ func TestGetItems(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("GetItems", mock.AnythingOfType("models.StoreItemFilter")).Return([]models.StoreItem{}, int64(0), errors.New("service error"))
+		mockService.On("GetItems", mock.AnythingOfType("models.StoreItemFilter")).Return([]models.StoreItem{}, int64(0), services.NewUserError("service error"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("GET", "/api/v1/items", nil)
@@ -575,7 +624,7 @@ func TestUpdateItem(t *testing.T) {
 			Title: "Updated Item",
 		}
 
-		mockService.On("UpdateItem", uint(1), uint(1), req).Return(nil, errors.New("unauthorized"))
+		mockService.On("UpdateItem", uint(1), uint(1), req).Return(nil, services.NewUserError("unauthorized"))
 
 		jsonData, _ := json.Marshal(req)
 		w := httptest.NewRecorder()
@@ -624,7 +673,7 @@ func TestDeleteItem(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("DeleteItem", uint(1), uint(1)).Return(errors.New("unauthorized"))
+		mockService.On("DeleteItem", uint(1), uint(1)).Return(services.NewUserError("unauthorized"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("DELETE", "/api/v1/items/1", nil)
@@ -645,7 +694,7 @@ func TestRepostItem(t *testing.T) {
 		status int
 	}{
 		{"reposted", "/api/v1/items/1/repost", &models.StoreItem{ID: 1, Status: "active"}, nil, http.StatusOK},
-		{"not expired", "/api/v1/items/1/repost", nil, errors.New("only an expired listing can be reposted"), http.StatusBadRequest},
+		{"not expired", "/api/v1/items/1/repost", nil, services.NewUserError("only an expired listing can be reposted"), http.StatusBadRequest},
 		{"missing", "/api/v1/items/1/repost", nil, gorm.ErrRecordNotFound, http.StatusNotFound},
 		{"invalid ID", "/api/v1/items/x/repost", nil, nil, http.StatusBadRequest},
 	}
@@ -709,7 +758,7 @@ func TestPlaceBid(t *testing.T) {
 			Amount: 50.0,
 		}
 
-		mockService.On("PlaceBid", uint(1), uint(1), req).Return(nil, errors.New("bid amount too low"))
+		mockService.On("PlaceBid", uint(1), uint(1), req).Return(nil, services.NewUserError("bid amount too low"))
 
 		jsonData, _ := json.Marshal(req)
 		w := httptest.NewRecorder()
@@ -750,7 +799,7 @@ func TestGetItemBids(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("GetItemBids", uint(1)).Return([]models.Bid{}, errors.New("service error"))
+		mockService.On("GetItemBids", uint(1)).Return([]models.Bid{}, services.NewUserError("service error"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("GET", "/api/v1/items/1/bids", nil)
@@ -784,7 +833,7 @@ func TestPurchaseItem(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("PurchaseItem", uint(1), uint(1)).Return(errors.New("cannot purchase own item"))
+		mockService.On("PurchaseItem", uint(1), uint(1)).Return(services.NewUserError("cannot purchase own item"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/purchase", nil)
@@ -823,7 +872,7 @@ func TestGetUserListings(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("GetUserListings", uint(1)).Return([]models.StoreItem{}, errors.New("service error"))
+		mockService.On("GetUserListings", uint(1)).Return([]models.StoreItem{}, services.NewUserError("service error"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("GET", "/api/v1/user/listings", nil)
@@ -875,7 +924,7 @@ func TestCreateBookingRequest(t *testing.T) {
 			Message: "I'd like to book this item",
 		}
 
-		mockService.On("CreateBookingRequest", uint(1), uint(1), req.Message).Return(nil, errors.New("cannot book your own item"))
+		mockService.On("CreateBookingRequest", uint(1), uint(1), req.Message).Return(nil, services.NewUserError("cannot book your own item"))
 
 		jsonData, _ := json.Marshal(req)
 		w := httptest.NewRecorder()
@@ -897,7 +946,7 @@ func TestCreateBookingRequest(t *testing.T) {
 			Message: "I'd like to book this item",
 		}
 
-		mockService.On("CreateBookingRequest", uint(1), uint(1), req.Message).Return(nil, errors.New("you already have a booking request for this item"))
+		mockService.On("CreateBookingRequest", uint(1), uint(1), req.Message).Return(nil, services.NewUserError("you already have a booking request for this item"))
 
 		jsonData, _ := json.Marshal(req)
 		w := httptest.NewRecorder()
@@ -982,7 +1031,7 @@ func TestCreateBookingRequest(t *testing.T) {
 			Message: "Test message",
 		}
 
-		mockService.On("CreateBookingRequest", uint(1), uint(1), req.Message).Return(nil, errors.New("item is not available for booking"))
+		mockService.On("CreateBookingRequest", uint(1), uint(1), req.Message).Return(nil, services.NewUserError("item is not available for booking"))
 
 		jsonData, _ := json.Marshal(req)
 		w := httptest.NewRecorder()
@@ -1004,7 +1053,7 @@ func TestCreateBookingRequest(t *testing.T) {
 			Message: "Test message",
 		}
 
-		mockService.On("CreateBookingRequest", uint(1), uint(1), req.Message).Return(nil, errors.New("database error"))
+		mockService.On("CreateBookingRequest", uint(1), uint(1), req.Message).Return(nil, services.NewUserError("database error"))
 
 		jsonData, _ := json.Marshal(req)
 		w := httptest.NewRecorder()
@@ -1041,7 +1090,7 @@ func TestApproveBookingRequest(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(nil, errors.New("unauthorized: you are not the owner of this item"))
+		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(nil, services.NewUserError("unauthorized: you are not the owner of this item"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/approve", nil)
@@ -1070,7 +1119,7 @@ func TestApproveBookingRequest(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(nil, errors.New("booking request is not pending"))
+		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(nil, services.NewUserError("booking request is not pending"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/approve", nil)
@@ -1086,7 +1135,7 @@ func TestApproveBookingRequest(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(nil, errors.New("database error"))
+		mockService.On("ApproveBookingRequest", uint(1), uint(1)).Return(nil, services.NewUserError("database error"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/approve", nil)
@@ -1121,7 +1170,7 @@ func TestRejectBookingRequest(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(nil, errors.New("unauthorized: you are not the owner of this item"))
+		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(nil, services.NewUserError("unauthorized: you are not the owner of this item"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/reject", nil)
@@ -1150,7 +1199,7 @@ func TestRejectBookingRequest(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(nil, errors.New("booking request is not pending"))
+		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(nil, services.NewUserError("booking request is not pending"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/reject", nil)
@@ -1166,7 +1215,7 @@ func TestRejectBookingRequest(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(nil, errors.New("database error"))
+		mockService.On("RejectBookingRequest", uint(1), uint(1)).Return(nil, services.NewUserError("database error"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/reject", nil)
@@ -1205,7 +1254,7 @@ func TestGetUserBookingRequests(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("GetUserBookingRequests", uint(1)).Return([]models.BookingRequest{}, errors.New("service error"))
+		mockService.On("GetUserBookingRequests", uint(1)).Return([]models.BookingRequest{}, services.NewUserError("service error"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("GET", "/api/v1/user/booking-requests", nil)
@@ -1287,7 +1336,7 @@ func TestAcceptBid(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("AcceptBid", uint(1), uint(1), uint(1)).Return(errors.New("unauthorized"))
+		mockService.On("AcceptBid", uint(1), uint(1), uint(1)).Return(services.NewUserError("unauthorized"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/bids/1/accept", nil)
@@ -1326,7 +1375,7 @@ func TestGetUserPurchases(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("GetUserPurchases", uint(1)).Return([]models.StoreItem{}, errors.New("service error"))
+		mockService.On("GetUserPurchases", uint(1)).Return([]models.StoreItem{}, services.NewUserError("service error"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("GET", "/api/v1/user/purchases", nil)
@@ -1365,7 +1414,7 @@ func TestGetUserBids(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("GetUserBids", uint(1)).Return([]models.Bid{}, errors.New("service error"))
+		mockService.On("GetUserBids", uint(1)).Return([]models.Bid{}, services.NewUserError("service error"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("GET", "/api/v1/user/bids", nil)
@@ -1448,7 +1497,7 @@ func TestGetBookingRequest(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("GetBookingRequestByItem", uint(999), uint(1)).Return(nil, errors.New("item not found"))
+		mockService.On("GetBookingRequestByItem", uint(999), uint(1)).Return(nil, services.NewUserError("item not found"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("GET", "/api/v1/items/999/booking-request", nil)
@@ -1464,7 +1513,7 @@ func TestGetBookingRequest(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("GetBookingRequestByItem", uint(1), uint(1)).Return(nil, errors.New("database connection error"))
+		mockService.On("GetBookingRequestByItem", uint(1), uint(1)).Return(nil, services.NewUserError("database connection error"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("GET", "/api/v1/items/1/booking-request", nil)
@@ -1526,7 +1575,7 @@ func TestGetAllBookingRequests(t *testing.T) {
 		// Use router that reads userID from X-User-ID header
 		router := setupTestRouterWithUserID(handler)
 
-		mockService.On("GetAllBookingRequestsByItem", uint(1), uint(2)).Return([]models.BookingRequest{}, errors.New("unauthorized: you are not the owner of this item"))
+		mockService.On("GetAllBookingRequestsByItem", uint(1), uint(2)).Return([]models.BookingRequest{}, services.NewUserError("unauthorized: you are not the owner of this item"))
 
 		req, _ := http.NewRequest("GET", "/api/v1/items/1/booking-requests", nil)
 		req.Header.Set("X-User-ID", "2")
@@ -1554,7 +1603,7 @@ func TestGetAllBookingRequests(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("GetAllBookingRequestsByItem", uint(999), uint(1)).Return([]models.BookingRequest{}, errors.New("item not found"))
+		mockService.On("GetAllBookingRequestsByItem", uint(999), uint(1)).Return([]models.BookingRequest{}, services.NewUserError("item not found"))
 
 		req, _ := http.NewRequest("GET", "/api/v1/items/999/booking-requests", nil)
 		w := httptest.NewRecorder()
@@ -1621,7 +1670,7 @@ func TestConfirmItemReceived(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("ConfirmItemReceived", uint(1), uint(1)).Return(nil, errors.New("booking request not found"))
+		mockService.On("ConfirmItemReceived", uint(1), uint(1)).Return(nil, services.NewUserError("booking request not found"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/confirm-received", nil)
@@ -1636,7 +1685,7 @@ func TestConfirmItemReceived(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("ConfirmItemReceived", uint(1), uint(1)).Return(nil, errors.New("only the buyer can confirm receipt"))
+		mockService.On("ConfirmItemReceived", uint(1), uint(1)).Return(nil, services.NewUserError("only the buyer can confirm receipt"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/confirm-received", nil)
@@ -1651,7 +1700,7 @@ func TestConfirmItemReceived(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("ConfirmItemReceived", uint(1), uint(1)).Return(nil, errors.New("booking must be approved before confirming receipt"))
+		mockService.On("ConfirmItemReceived", uint(1), uint(1)).Return(nil, services.NewUserError("booking must be approved before confirming receipt"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/confirm-received", nil)
@@ -1666,7 +1715,7 @@ func TestConfirmItemReceived(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("ConfirmItemReceived", uint(1), uint(1)).Return(nil, errors.New("database error"))
+		mockService.On("ConfirmItemReceived", uint(1), uint(1)).Return(nil, services.NewUserError("database error"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/confirm-received", nil)
@@ -1711,7 +1760,7 @@ func TestConfirmDelivery(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("ConfirmDelivery", uint(1), uint(1)).Return(nil, errors.New("booking request not found"))
+		mockService.On("ConfirmDelivery", uint(1), uint(1)).Return(nil, services.NewUserError("booking request not found"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/confirm-delivery", nil)
@@ -1726,7 +1775,7 @@ func TestConfirmDelivery(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("ConfirmDelivery", uint(1), uint(1)).Return(nil, errors.New("only the seller can confirm delivery"))
+		mockService.On("ConfirmDelivery", uint(1), uint(1)).Return(nil, services.NewUserError("only the seller can confirm delivery"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/confirm-delivery", nil)
@@ -1741,7 +1790,7 @@ func TestConfirmDelivery(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("ConfirmDelivery", uint(1), uint(1)).Return(nil, errors.New("buyer must confirm receipt before seller can confirm delivery"))
+		mockService.On("ConfirmDelivery", uint(1), uint(1)).Return(nil, services.NewUserError("buyer must confirm receipt before seller can confirm delivery"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/confirm-delivery", nil)
@@ -1756,7 +1805,7 @@ func TestConfirmDelivery(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("ConfirmDelivery", uint(1), uint(1)).Return(nil, errors.New("database error"))
+		mockService.On("ConfirmDelivery", uint(1), uint(1)).Return(nil, services.NewUserError("database error"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/confirm-delivery", nil)
@@ -1817,7 +1866,7 @@ func TestSubmitBuyerRating(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("SubmitBuyerRating", uint(1), uint(1), 4, "").Return(nil, errors.New("booking request not found"))
+		mockService.On("SubmitBuyerRating", uint(1), uint(1), 4, "").Return(nil, services.NewUserError("booking request not found"))
 
 		req := models.SubmitRatingRequest{Rating: 4}
 		jsonData, _ := json.Marshal(req)
@@ -1835,7 +1884,7 @@ func TestSubmitBuyerRating(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("SubmitBuyerRating", uint(1), uint(1), 4, "").Return(nil, errors.New("only the buyer can rate the seller"))
+		mockService.On("SubmitBuyerRating", uint(1), uint(1), 4, "").Return(nil, services.NewUserError("only the buyer can rate the seller"))
 
 		req := models.SubmitRatingRequest{Rating: 4}
 		jsonData, _ := json.Marshal(req)
@@ -1853,7 +1902,7 @@ func TestSubmitBuyerRating(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("SubmitBuyerRating", uint(1), uint(1), 4, "").Return(nil, errors.New("booking must be completed before rating"))
+		mockService.On("SubmitBuyerRating", uint(1), uint(1), 4, "").Return(nil, services.NewUserError("booking must be completed before rating"))
 
 		req := models.SubmitRatingRequest{Rating: 4}
 		jsonData, _ := json.Marshal(req)
@@ -1871,7 +1920,7 @@ func TestSubmitBuyerRating(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("SubmitBuyerRating", uint(1), uint(1), 4, "").Return(nil, errors.New("buyer has already rated this transaction"))
+		mockService.On("SubmitBuyerRating", uint(1), uint(1), 4, "").Return(nil, services.NewUserError("buyer has already rated this transaction"))
 
 		req := models.SubmitRatingRequest{Rating: 4}
 		jsonData, _ := json.Marshal(req)
@@ -1889,7 +1938,7 @@ func TestSubmitBuyerRating(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("SubmitBuyerRating", uint(1), uint(1), 4, "").Return(nil, errors.New("database error"))
+		mockService.On("SubmitBuyerRating", uint(1), uint(1), 4, "").Return(nil, services.NewUserError("database error"))
 
 		req := models.SubmitRatingRequest{Rating: 4}
 		jsonData, _ := json.Marshal(req)
@@ -1940,7 +1989,7 @@ func TestSubmitSellerRating(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("SubmitSellerRating", uint(1), uint(1), 4, "").Return(nil, errors.New("only the seller can rate the buyer"))
+		mockService.On("SubmitSellerRating", uint(1), uint(1), 4, "").Return(nil, services.NewUserError("only the seller can rate the buyer"))
 
 		req := models.SubmitRatingRequest{Rating: 4}
 		jsonData, _ := json.Marshal(req)
@@ -1958,7 +2007,7 @@ func TestSubmitSellerRating(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("SubmitSellerRating", uint(1), uint(1), 4, "").Return(nil, errors.New("seller has already rated this transaction"))
+		mockService.On("SubmitSellerRating", uint(1), uint(1), 4, "").Return(nil, services.NewUserError("seller has already rated this transaction"))
 
 		req := models.SubmitRatingRequest{Rating: 4}
 		jsonData, _ := json.Marshal(req)
@@ -1976,7 +2025,7 @@ func TestSubmitSellerRating(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("SubmitSellerRating", uint(1), uint(1), 4, "").Return(nil, errors.New("database error"))
+		mockService.On("SubmitSellerRating", uint(1), uint(1), 4, "").Return(nil, services.NewUserError("database error"))
 
 		req := models.SubmitRatingRequest{Rating: 4}
 		jsonData, _ := json.Marshal(req)
@@ -2051,4 +2100,31 @@ func TestNegativeIDsAreRejectedNotWrapped(t *testing.T) {
 	}
 	mockService.AssertNotCalled(t, "ApproveBookingRequest", mock.Anything, mock.Anything)
 	mockService.AssertNotCalled(t, "CreateBookingRequest", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestStoreErrorsDontLeak(t *testing.T) {
+	mockService := new(MockStoreService)
+	router := setupTestRouter(NewStoreHandler(mockService))
+	mockService.On("DeleteItem", uint(1), uint(1)).Return(errors.New("dial tcp 10.0.0.5:5432: connect: connection refused"))
+	mockService.On("PlaceBid", uint(1), uint(1), mock.Anything).Return(nil, gorm.ErrRecordNotFound)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("DELETE", "/api/v1/items/1", nil)
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.NotContains(t, w.Body.String(), "5432")
+
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", "/api/v1/items/1/bids", strings.NewReader(`{"amount":10}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.JSONEq(t, `{"error":"not found"}`, w.Body.String())
+
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", "/api/v1/items/1/bids", strings.NewReader(`{"amount":"lots"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.JSONEq(t, `{"error":"invalid request body"}`, w.Body.String(), "no struct or field names")
 }

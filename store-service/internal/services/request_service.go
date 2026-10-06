@@ -1,7 +1,6 @@
 package services
 
 import (
-	"errors"
 	"store-service/internal/models"
 	"store-service/internal/repositories"
 	"time"
@@ -79,10 +78,10 @@ func (s *RequestService) RepostRequest(id uint, userID uint) (*models.ItemReques
 		return nil, err
 	}
 	if request.RequesterID != userID {
-		return nil, errors.New("unauthorized: you can only repost your own requests")
+		return nil, NewUserError("unauthorized: you can only repost your own requests")
 	}
 	if request.Status != "expired" {
-		return nil, errors.New("only an expired request can be reposted")
+		return nil, NewUserError("only an expired request can be reposted")
 	}
 	request.Status = "active"
 	startRequest(request)
@@ -100,10 +99,10 @@ func (s *RequestService) DeleteRequest(id uint, userID uint) error {
 		return err
 	}
 	if request.RequesterID != userID {
-		return errors.New("unauthorized: you can only remove your own requests")
+		return NewUserError("unauthorized: you can only remove your own requests")
 	}
 	if request.Status != "active" && request.Status != "expired" {
-		return errors.New("only a live or expired request can be removed")
+		return NewUserError("only a live or expired request can be removed")
 	}
 	return s.requestRepo.Delete(id)
 }

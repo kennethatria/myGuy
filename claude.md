@@ -69,5 +69,6 @@ Each service has a `.env.example` to copy. Constraints not visible from any sing
 ## Important Notes
 
 - **Security**: CORS currently allows all origins (restrict before scaling). There is no password login; the `users.password` column is kept but unused.
-- **Image Storage**: Store service images live on local filesystem at `./uploads/store/`; migrate to cloud storage (S3/GCS) before scaling.
+- **Image Storage**: Store service images live on local filesystem at `./uploads/store/`; migrate to cloud storage (S3/GCS) before scaling. Every upload goes through `internal/media.Clean` (re-encoded, EXIF orientation applied, all metadata such as GPS dropped) and is saved under a random name; never store an upload as received.
+- **Errors to clients**: only messages written for users reach responses verbatim — store-service `services.NewUserError`, backend `services.IsUserFacing` (its named `Err…` values). Anything else goes through `respondError`, which logs it and answers a generic 500. Request-body parse errors answer "invalid request body". Store-service endpoints all require sign-in; uploads stay public (`<img>` can't send a token) behind random names.
 - **Message Auto-Deletion**: A daily cron flags messages on completed/inactive tasks for deletion; users are notified 30 days ahead.

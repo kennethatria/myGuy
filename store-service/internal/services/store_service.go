@@ -1,7 +1,6 @@
 package services
 
 import (
-	"errors"
 	"fmt"
 	"store-service/internal/contacts"
 	"store-service/internal/models"
@@ -25,14 +24,14 @@ const (
 
 // Listing text errors: the request is fine, the words need changing.
 var (
-	ErrHeadlineRequired = errors.New("headline is required")
-	ErrBodyRequired     = errors.New("note is required")
-	ErrHeadlineTooLong  = fmt.Errorf("headline can be at most %d words", headlineMaxWords)
-	ErrBodyTooLong      = fmt.Errorf("note can be at most %d words", bodyMaxWords)
-	ErrContactDetails   = errors.New("remove phone numbers, emails, links and handles; you can share them in chat once the seller approves your booking")
-	ErrListingExpired   = errors.New("this listing has expired")
-	ErrRequestClosed    = errors.New("this request is no longer open")
-	ErrOwnRequest       = errors.New("you can't list an item for your own request")
+	ErrHeadlineRequired = NewUserError("headline is required")
+	ErrBodyRequired     = NewUserError("note is required")
+	ErrHeadlineTooLong  = NewUserError(fmt.Sprintf("headline can be at most %d words", headlineMaxWords))
+	ErrBodyTooLong      = NewUserError(fmt.Sprintf("note can be at most %d words", bodyMaxWords))
+	ErrContactDetails   = NewUserError("remove phone numbers, emails, links and handles; you can share them in chat once the seller approves your booking")
+	ErrListingExpired   = NewUserError("this listing has expired")
+	ErrRequestClosed    = NewUserError("this request is no longer open")
+	ErrOwnRequest       = NewUserError("you can't list an item for your own request")
 )
 
 // validateListingText enforces the sticky-note limits and keeps contact
@@ -112,11 +111,11 @@ func (s *StoreService) CreateItem(userID uint, req models.CreateStoreItemRequest
 		req.PriceType = "fixed"
 	}
 	if req.PriceType == "fixed" && req.FixedPrice < 0 {
-		return nil, errors.New("price can't be negative")
+		return nil, NewUserError("price can't be negative")
 	}
 	if req.PriceType == "bidding" {
 		if req.StartingBid <= 0 {
-			return nil, errors.New("starting bid must be greater than 0")
+			return nil, NewUserError("starting bid must be greater than 0")
 		}
 		if req.MinBidIncrement <= 0 {
 			req.MinBidIncrement = 1.0 // Default increment
@@ -201,10 +200,10 @@ func (s *StoreService) RepostItem(id uint, userID uint) (*models.StoreItem, erro
 		return nil, err
 	}
 	if item.SellerID != userID {
-		return nil, errors.New("unauthorized: you can only repost your own items")
+		return nil, NewUserError("unauthorized: you can only repost your own items")
 	}
 	if item.Status != "expired" {
-		return nil, errors.New("only an expired listing can be reposted")
+		return nil, NewUserError("only an expired listing can be reposted")
 	}
 
 	item.Status = "active"
@@ -236,11 +235,11 @@ func (s *StoreService) UpdateItem(id uint, userID uint, req models.UpdateStoreIt
 	}
 
 	if item.SellerID != userID {
-		return nil, errors.New("unauthorized: you can only update your own items")
+		return nil, NewUserError("unauthorized: you can only update your own items")
 	}
 
 	if item.Status != "active" {
-		return nil, errors.New("cannot update item that is not active")
+		return nil, NewUserError("cannot update item that is not active")
 	}
 
 	// Update fields; the note must still fit the board
@@ -294,11 +293,11 @@ func (s *StoreService) DeleteItem(id uint, userID uint) error {
 	}
 
 	if item.SellerID != userID {
-		return errors.New("unauthorized: you can only delete your own items")
+		return NewUserError("unauthorized: you can only delete your own items")
 	}
 
 	if item.Status != "active" && item.Status != "expired" {
-		return errors.New("only a live or expired listing can be removed")
+		return NewUserError("only a live or expired listing can be removed")
 	}
 
 	return s.itemRepo.Delete(id)
@@ -319,20 +318,20 @@ func (s *StoreService) PlaceBid(itemID uint, userID uint, req models.CreateBidRe
 		}
 
 		if item.PriceType != "bidding" {
-			return nil, errors.New("this item is not available for bidding")
+			return nil, NewUserError("this item is not available for bidding")
 		}
 
 		if item.Status != "active" {
-			return nil, errors.New("item is not active")
+			return nil, NewUserError("item is not active")
 		}
 
 		if item.SellerID == userID {
-			return nil, errors.New("you cannot bid on your own item")
+			return nil, NewUserError("you cannot bid on your own item")
 		}
 
 		// Bidding closes with the note; the seller can still accept a bid
 		if item.BidDeadline != nil && time.Now().After(*item.BidDeadline) {
-			return nil, errors.New("bidding has ended for this item")
+			return nil, NewUserError("bidding has ended for this item")
 		}
 
 		if contacts.Contains(req.Message) {
@@ -346,7 +345,7 @@ func (s *StoreService) PlaceBid(itemID uint, userID uint, req models.CreateBidRe
 		}
 
 		if req.Amount < minBid {
-			return nil, errors.New("bid amount must be at least $" + formatPrice(minBid))
+			return nil, NewUserError("bid amount must be at least $" + formatPrice(minBid))
 		}
 
 		// Create bid
@@ -410,11 +409,11 @@ func (s *StoreService) AcceptBid(itemID uint, bidID uint, sellerID uint) error {
 	}
 
 	if item.SellerID != sellerID {
-		return errors.New("unauthorized: only the seller can accept bids")
+		return NewUserError("unauthorized: only the seller can accept bids")
 	}
 
 	if item.Status != "active" {
-		return errors.New("item is not active")
+		return NewUserError("item is not active")
 	}
 
 	bid, err := s.bidRepo.GetByID(bidID)
@@ -423,7 +422,7 @@ func (s *StoreService) AcceptBid(itemID uint, bidID uint, sellerID uint) error {
 	}
 
 	if bid.ItemID != itemID {
-		return errors.New("bid does not belong to this item")
+		return NewUserError("bid does not belong to this item")
 	}
 
 	// Mark item as sold
@@ -451,15 +450,15 @@ func (s *StoreService) PurchaseItem(itemID uint, buyerID uint) error {
 	}
 
 	if item.PriceType != "fixed" {
-		return errors.New("this item is only available through bidding")
+		return NewUserError("this item is only available through bidding")
 	}
 
 	if item.Status != "active" {
-		return errors.New("item is not available for purchase")
+		return NewUserError("item is not available for purchase")
 	}
 
 	if item.SellerID == buyerID {
-		return errors.New("you cannot purchase your own item")
+		return NewUserError("you cannot purchase your own item")
 	}
 
 	// Mark item as sold
@@ -486,10 +485,10 @@ func (s *StoreService) CreateBookingRequest(itemID uint, requesterID uint, messa
 		return nil, err
 	}
 	if item.Status != "active" {
-		return nil, errors.New("item is not available for booking")
+		return nil, NewUserError("item is not available for booking")
 	}
 	if item.SellerID == requesterID {
-		return nil, errors.New("cannot book your own item")
+		return nil, NewUserError("cannot book your own item")
 	}
 	if contacts.Contains(message) {
 		return nil, ErrContactDetails
@@ -507,7 +506,7 @@ func (s *StoreService) CreateBookingRequest(itemID uint, requesterID uint, messa
 	// Check if user already has a booking request for this item
 	existing, err := s.bookingRepo.GetByItemAndRequester(itemID, requesterID)
 	if err == nil && existing != nil {
-		return nil, errors.New("you already have a booking request for this item")
+		return nil, NewUserError("you already have a booking request for this item")
 	}
 
 	bookingRequest := &models.BookingRequest{
@@ -566,7 +565,7 @@ func (s *StoreService) GetAllBookingRequestsByItem(itemID uint, userID uint) ([]
 	}
 
 	if item.SellerID != userID {
-		return nil, errors.New("unauthorized: you are not the owner of this item")
+		return nil, NewUserError("unauthorized: you are not the owner of this item")
 	}
 
 	// Get all booking requests for this item
@@ -587,11 +586,11 @@ func (s *StoreService) ApproveBookingRequest(requestID uint, ownerID uint) (*mod
 
 	// Verify the owner is actually the item owner
 	if request.Item.SellerID != ownerID {
-		return nil, errors.New("unauthorized: you are not the owner of this item")
+		return nil, NewUserError("unauthorized: you are not the owner of this item")
 	}
 
 	if request.Status != "pending" {
-		return nil, errors.New("booking request is not pending")
+		return nil, NewUserError("booking request is not pending")
 	}
 
 	// Check if any other booking for this item is already approved
@@ -602,7 +601,7 @@ func (s *StoreService) ApproveBookingRequest(requestID uint, ownerID uint) (*mod
 
 	for _, req := range allRequests {
 		if req.Status == "approved" {
-			return nil, errors.New("another booking is already approved for this item")
+			return nil, NewUserError("another booking is already approved for this item")
 		}
 	}
 
@@ -642,11 +641,11 @@ func (s *StoreService) RejectBookingRequest(requestID uint, ownerID uint) (*mode
 
 	// Verify the owner is actually the item owner
 	if request.Item.SellerID != ownerID {
-		return nil, errors.New("unauthorized: you are not the owner of this item")
+		return nil, NewUserError("unauthorized: you are not the owner of this item")
 	}
 
 	if request.Status != "pending" {
-		return nil, errors.New("booking request is not pending")
+		return nil, NewUserError("booking request is not pending")
 	}
 
 	// Update status to rejected
@@ -704,17 +703,17 @@ func (s *StoreService) ConfirmItemReceived(requestID uint, buyerID uint) (*model
 		return nil, err
 	}
 	if request == nil {
-		return nil, errors.New("booking request not found")
+		return nil, NewUserError("booking request not found")
 	}
 
 	// Only the requester (buyer) can confirm receipt
 	if request.RequesterID != buyerID {
-		return nil, errors.New("only the buyer can confirm receipt")
+		return nil, NewUserError("only the buyer can confirm receipt")
 	}
 
 	// Must be in approved status
 	if request.Status != "approved" {
-		return nil, errors.New("booking must be approved before confirming receipt")
+		return nil, NewUserError("booking must be approved before confirming receipt")
 	}
 
 	err = s.bookingRepo.UpdateStatus(requestID, "item_received")
@@ -732,7 +731,7 @@ func (s *StoreService) ConfirmDelivery(requestID uint, sellerID uint) (*models.B
 		return nil, err
 	}
 	if request == nil {
-		return nil, errors.New("booking request not found")
+		return nil, NewUserError("booking request not found")
 	}
 
 	// Get item to verify seller
@@ -743,12 +742,12 @@ func (s *StoreService) ConfirmDelivery(requestID uint, sellerID uint) (*models.B
 
 	// Only the item owner (seller) can confirm delivery
 	if item.SellerID != sellerID {
-		return nil, errors.New("only the seller can confirm delivery")
+		return nil, NewUserError("only the seller can confirm delivery")
 	}
 
 	// Must be in item_received status
 	if request.Status != "item_received" {
-		return nil, errors.New("buyer must confirm receipt before seller can confirm delivery")
+		return nil, NewUserError("buyer must confirm receipt before seller can confirm delivery")
 	}
 
 	// Update booking status
@@ -774,22 +773,22 @@ func (s *StoreService) SubmitBuyerRating(requestID uint, buyerID uint, rating in
 		return nil, err
 	}
 	if request == nil {
-		return nil, errors.New("booking request not found")
+		return nil, NewUserError("booking request not found")
 	}
 
 	// Only the requester (buyer) can submit this rating
 	if request.RequesterID != buyerID {
-		return nil, errors.New("only the buyer can rate the seller")
+		return nil, NewUserError("only the buyer can rate the seller")
 	}
 
 	// Must be in completed status
 	if request.Status != "completed" {
-		return nil, errors.New("booking must be completed before rating")
+		return nil, NewUserError("booking must be completed before rating")
 	}
 
 	// Check if already rated
 	if request.BuyerRating != nil {
-		return nil, errors.New("buyer has already rated this transaction")
+		return nil, NewUserError("buyer has already rated this transaction")
 	}
 
 	// Update booking with rating
@@ -816,7 +815,7 @@ func (s *StoreService) SubmitSellerRating(requestID uint, sellerID uint, rating 
 		return nil, err
 	}
 	if request == nil {
-		return nil, errors.New("booking request not found")
+		return nil, NewUserError("booking request not found")
 	}
 
 	// Get item to verify seller
@@ -827,17 +826,17 @@ func (s *StoreService) SubmitSellerRating(requestID uint, sellerID uint, rating 
 
 	// Only the item owner (seller) can submit this rating
 	if item.SellerID != sellerID {
-		return nil, errors.New("only the seller can rate the buyer")
+		return nil, NewUserError("only the seller can rate the buyer")
 	}
 
 	// Must be in completed status
 	if request.Status != "completed" {
-		return nil, errors.New("booking must be completed before rating")
+		return nil, NewUserError("booking must be completed before rating")
 	}
 
 	// Check if already rated
 	if request.SellerRating != nil {
-		return nil, errors.New("seller has already rated this transaction")
+		return nil, NewUserError("seller has already rated this transaction")
 	}
 
 	// Update booking with rating

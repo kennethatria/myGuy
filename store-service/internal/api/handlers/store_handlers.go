@@ -1,15 +1,19 @@
 package handlers
 
 import (
+	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
-	"fmt"
-	"io"
+	"log"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
+
+	"store-service/internal/media"
 	"store-service/internal/models"
 	"store-service/internal/services"
 
@@ -37,7 +41,7 @@ func (h *StoreHandler) CreateItem(c *gin.Context) {
 	if strings.Contains(contentType, "application/json") {
 		// Handle JSON request
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON: " + err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 			return
 		}
 	} else {
@@ -85,92 +89,83 @@ func (h *StoreHandler) CreateItem(c *gin.Context) {
 		}
 	}
 	
-	// Handle image uploads - add debug logging
-	fmt.Printf("DEBUG: Processing image uploads for user %d\n", userID)
-	fmt.Printf("DEBUG: Content-Type: %s\n", contentType)
-	
-	form, err := c.MultipartForm()
-	if err != nil {
-		fmt.Printf("DEBUG: MultipartForm() error: %v\n", err)
-	} else if form == nil {
-		fmt.Printf("DEBUG: MultipartForm() returned nil form\n")
-	} else if form.File["images"] == nil {
-		fmt.Printf("DEBUG: No 'images' field in form, available fields: %v\n", form.File)
-	} else {
-		fmt.Printf("DEBUG: Found %d images in form\n", len(form.File["images"]))
-	}
-	
-	if err == nil && form != nil && form.File["images"] != nil {
+	// Photos: each is cleaned of metadata (EXIF can hold the GPS position
+	// where it was taken) and stored under a random name
+	if form, err := c.MultipartForm(); err == nil && form != nil {
 		var imageURLs []string
-		
-		// Create uploads directory structure
-		uploadsDir := "./uploads/store"
-		userDir := filepath.Join(uploadsDir, strconv.FormatUint(uint64(userID), 10))
-		if err := os.MkdirAll(userDir, 0755); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create upload directory"})
-			return
-		}
-		
-		for i, fileHeader := range form.File["images"] {
-			if i >= 3 { // Limit to 3 images
+		for _, fileHeader := range form.File["images"] {
+			if len(imageURLs) >= 3 { // Limit to 3 images
 				break
 			}
-			
-			// Validate file size (5MB limit)
-			if fileHeader.Size > 5*1024*1024 {
+			if fileHeader.Size > 5*1024*1024 { // 5MB limit
 				continue
 			}
-			
-			// Check file extension
-			ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
-			if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".gif" {
-				continue
-			}
-			
-			// Open uploaded file
-			file, err := fileHeader.Open()
+			imageURL, err := saveCleanPhoto(fileHeader)
 			if err != nil {
+				log.Printf("photo upload by user %d skipped: %v", userID, err)
 				continue
 			}
-			defer file.Close()
-			
-			// Generate unique filename
-			timestamp := time.Now().Unix()
-			filename := fmt.Sprintf("%d_%d%s", timestamp, i, ext)
-			filePath := filepath.Join(userDir, filename)
-			
-			// Create destination file
-			dst, err := os.Create(filePath)
-			if err != nil {
-				continue
-			}
-			defer dst.Close()
-			
-			// Copy file content
-			if _, err := io.Copy(dst, file); err != nil {
-				continue
-			}
-			
-			// Create URL for the uploaded file
-			imageURL := fmt.Sprintf("/uploads/store/%d/%s", userID, filename)
 			imageURLs = append(imageURLs, imageURL)
-			fmt.Printf("DEBUG: Successfully saved image: %s -> %s\n", fileHeader.Filename, imageURL)
 		}
-		
 		req.Images = imageURLs
-		fmt.Printf("DEBUG: Final request has %d images: %v\n", len(imageURLs), imageURLs)
-	} else {
-		fmt.Printf("DEBUG: No images to process, proceeding with text-only item\n")
 	}
 
-	fmt.Printf("DEBUG: Final CreateStoreItemRequest: %+v\n", req)
 	item, err := h.service.CreateItem(userID, req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
 	c.JSON(http.StatusCreated, item)
+}
+
+// respondError answers with err's own message when it was written for
+// users, 404 for a missing record, and otherwise logs it and answers with a
+// generic 500 so database details never reach clients.
+func respondError(c *gin.Context, status int, err error) {
+	switch {
+	case services.IsUserError(err):
+		c.JSON(status, gin.H{"error": err.Error()})
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+	default:
+		log.Printf("%s %s failed: %v", c.Request.Method, c.FullPath(), err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "something went wrong; please try again"})
+	}
+}
+
+// UploadsDir is where cleaned listing photos are stored and served from
+// (a variable so tests can use a temporary directory).
+var UploadsDir = "./uploads/store"
+
+// saveCleanPhoto stores a metadata-free copy of an uploaded photo under a
+// random name and returns its URL path. The format is judged from the
+// file's content, not its name.
+func saveCleanPhoto(fileHeader *multipart.FileHeader) (string, error) {
+	file, err := fileHeader.Open()
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	cleaned := &bytes.Buffer{}
+	ext, err := media.Clean(file, cleaned)
+	if err != nil {
+		return "", err
+	}
+
+	name := make([]byte, 16)
+	if _, err := rand.Read(name); err != nil {
+		return "", err
+	}
+	filename := hex.EncodeToString(name) + ext
+	if err := os.MkdirAll(UploadsDir, 0755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(UploadsDir, filename), cleaned.Bytes(), 0644); err != nil {
+		return "", err
+	}
+	return "/uploads/store/" + filename, nil
 }
 
 // GetItem retrieves a specific store item
@@ -266,13 +261,13 @@ func (h *StoreHandler) UpdateItem(c *gin.Context) {
 
 	var req models.UpdateStoreItemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
 	item, err := h.service.UpdateItem(id, userID, req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -291,7 +286,7 @@ func (h *StoreHandler) DeleteItem(c *gin.Context) {
 
 	err = h.service.DeleteItem(id, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -314,7 +309,7 @@ func (h *StoreHandler) RepostItem(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "item not found"})
 			return
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -333,13 +328,13 @@ func (h *StoreHandler) PlaceBid(c *gin.Context) {
 
 	var req models.CreateBidRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
 	bid, err := h.service.PlaceBid(itemID, userID, req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -381,7 +376,7 @@ func (h *StoreHandler) AcceptBid(c *gin.Context) {
 
 	err = h.service.AcceptBid(itemID, bidID, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -400,7 +395,7 @@ func (h *StoreHandler) PurchaseItem(c *gin.Context) {
 
 	err = h.service.PurchaseItem(itemID, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -461,22 +456,22 @@ func (h *StoreHandler) CreateBookingRequest(c *gin.Context) {
 
 	var req models.CreateBookingRequestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
 	bookingRequest, err := h.service.CreateBookingRequest(itemID, userID, req.Message)
 	if err != nil {
 		if err.Error() == "you already have a booking request for this item" {
-			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			respondError(c, http.StatusConflict, err)
 			return
 		}
 		if err.Error() == "cannot book your own item" {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			respondError(c, http.StatusForbidden, err)
 			return
 		}
 		if err.Error() == "item is not available for booking" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			respondError(c, http.StatusBadRequest, err)
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create booking request"})
@@ -506,7 +501,7 @@ func (h *StoreHandler) GetBookingRequest(c *gin.Context) {
 			return
 		}
 		// Return 404 for other errors (like item not found)
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		respondError(c, http.StatusNotFound, err)
 		return
 	}
 
@@ -527,10 +522,10 @@ func (h *StoreHandler) GetAllBookingRequests(c *gin.Context) {
 	bookingRequests, err := h.service.GetAllBookingRequestsByItem(itemID, userID)
 	if err != nil {
 		if err.Error() == "unauthorized: you are not the owner of this item" {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			respondError(c, http.StatusForbidden, err)
 			return
 		}
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		respondError(c, http.StatusNotFound, err)
 		return
 	}
 
@@ -551,11 +546,11 @@ func (h *StoreHandler) ApproveBookingRequest(c *gin.Context) {
 	booking, err := h.service.ApproveBookingRequest(requestID, userID)
 	if err != nil {
 		if err.Error() == "unauthorized: you are not the owner of this item" {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			respondError(c, http.StatusForbidden, err)
 			return
 		}
 		if err.Error() == "booking request is not pending" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			respondError(c, http.StatusBadRequest, err)
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to approve booking request"})
@@ -579,11 +574,11 @@ func (h *StoreHandler) RejectBookingRequest(c *gin.Context) {
 	booking, err := h.service.RejectBookingRequest(requestID, userID)
 	if err != nil {
 		if err.Error() == "unauthorized: you are not the owner of this item" {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			respondError(c, http.StatusForbidden, err)
 			return
 		}
 		if err.Error() == "booking request is not pending" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			respondError(c, http.StatusBadRequest, err)
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reject booking request"})
@@ -638,15 +633,15 @@ func (h *StoreHandler) ConfirmItemReceived(c *gin.Context) {
 	booking, err := h.service.ConfirmItemReceived(requestID, userID)
 	if err != nil {
 		if err.Error() == "booking request not found" {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			respondError(c, http.StatusNotFound, err)
 			return
 		}
 		if err.Error() == "only the buyer can confirm receipt" {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			respondError(c, http.StatusForbidden, err)
 			return
 		}
 		if err.Error() == "booking must be approved before confirming receipt" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			respondError(c, http.StatusBadRequest, err)
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to confirm item received"})
@@ -670,15 +665,15 @@ func (h *StoreHandler) ConfirmDelivery(c *gin.Context) {
 	booking, err := h.service.ConfirmDelivery(requestID, userID)
 	if err != nil {
 		if err.Error() == "booking request not found" {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			respondError(c, http.StatusNotFound, err)
 			return
 		}
 		if err.Error() == "only the seller can confirm delivery" {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			respondError(c, http.StatusForbidden, err)
 			return
 		}
 		if err.Error() == "buyer must confirm receipt before seller can confirm delivery" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			respondError(c, http.StatusBadRequest, err)
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to confirm delivery"})
@@ -701,22 +696,22 @@ func (h *StoreHandler) SubmitBuyerRating(c *gin.Context) {
 
 	var req models.SubmitRatingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
 	booking, err := h.service.SubmitBuyerRating(requestID, userID, req.Rating, req.Review)
 	if err != nil {
 		if err.Error() == "booking request not found" {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			respondError(c, http.StatusNotFound, err)
 			return
 		}
 		if err.Error() == "only the buyer can rate the seller" {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			respondError(c, http.StatusForbidden, err)
 			return
 		}
 		if err.Error() == "booking must be completed before rating" || err.Error() == "buyer has already rated this transaction" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			respondError(c, http.StatusBadRequest, err)
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to submit rating"})
@@ -739,22 +734,22 @@ func (h *StoreHandler) SubmitSellerRating(c *gin.Context) {
 
 	var req models.SubmitRatingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
 	booking, err := h.service.SubmitSellerRating(requestID, userID, req.Rating, req.Review)
 	if err != nil {
 		if err.Error() == "booking request not found" {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			respondError(c, http.StatusNotFound, err)
 			return
 		}
 		if err.Error() == "only the seller can rate the buyer" {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			respondError(c, http.StatusForbidden, err)
 			return
 		}
 		if err.Error() == "booking must be completed before rating" || err.Error() == "seller has already rated this transaction" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			respondError(c, http.StatusBadRequest, err)
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to submit rating"})

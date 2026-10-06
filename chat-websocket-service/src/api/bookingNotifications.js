@@ -193,9 +193,12 @@ router.post('/booking-action', authenticateHTTP, async (req, res) => {
     );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Store service error: ${response.status} - ${errorText}`);
-      throw new Error(`Failed to update booking status: ${response.status}`);
+      // store-service only puts messages meant for users in `error`
+      // (anything else it answers generically), so pass that on as is
+      const body = await response.json().catch(() => ({}));
+      console.error(`Store service refused booking action ${action}: ${response.status}`);
+      return res.status(response.status >= 500 ? 502 : response.status)
+        .json({ error: body.error || 'Could not update the booking. Please try again.' });
     }
 
     const booking = await response.json();
@@ -277,7 +280,7 @@ router.post('/booking-action', authenticateHTTP, async (req, res) => {
     res.json({ success: true, booking });
   } catch (error) {
     console.error('Error handling booking action:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Could not update the booking. Please try again.' });
   }
 });
 
