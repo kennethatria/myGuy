@@ -206,17 +206,41 @@ func TestGetTask(t *testing.T) {
 
 func TestDeleteTask(t *testing.T) {
 	t.Run("successful delete", func(t *testing.T) {
-		service, taskRepo, _ := setupTaskService()
+		service, taskRepo, appRepo := setupTaskService()
 		ctx := context.Background()
 
 		existingTask := &models.Task{ID: 1, CreatedBy: 1}
 		taskRepo.On("GetByID", ctx, uint(1)).Return(existingTask, nil)
+		appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{}, nil)
 		taskRepo.On("Delete", ctx, uint(1)).Return(nil)
 
 		err := service.DeleteTask(ctx, 1, 1)
 
 		assert.NoError(t, err)
 		taskRepo.AssertExpectations(t)
+	})
+
+	t.Run("removing a gig tells whoever was still waiting", func(t *testing.T) {
+		taskRepo := new(tests.MockTaskRepository)
+		appRepo := new(tests.MockApplicationRepository)
+		notifier := &recordingNotifier{}
+		service := NewTaskService(taskRepo, appRepo, notifier)
+		ctx := context.Background()
+
+		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, Title: "Walk dog", CreatedBy: 1, Status: "open"}, nil)
+		appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{
+			{ID: 5, ApplicantID: 7, Status: "pending"},
+			{ID: 6, ApplicantID: 8, Status: "declined"},
+		}, nil)
+		taskRepo.On("Delete", ctx, uint(1)).Return(nil)
+
+		assert.NoError(t, service.DeleteTask(ctx, 1, 1))
+
+		assert.Equal(t, []chatnotify.Message{{
+			TaskID: 1, SenderID: 1, RecipientID: 7,
+			Content: `"Walk dog" was removed by the poster, so your application is closed.`,
+			Event:   chatnotify.EventCancelled,
+		}}, notifier.sent)
 	})
 
 	t.Run("task not found", func(t *testing.T) {
