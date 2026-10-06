@@ -33,6 +33,10 @@ on:
           - app
 
 env:
+  # Run each Ansible task over one SSH round trip instead of several (each
+  # task spent 3-4s on SSH). Needs sudo without requiretty, which users.yml
+  # sets for the deploy users.
+  ANSIBLE_PIPELINING: "True"
   TF_VERSION: '1.14.6'
   TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
   REGISTRY: ${{ vars.REGISTRY }}
@@ -92,10 +96,16 @@ jobs:
           # Optional: set after creating the website in the Umami dashboard.
           VITE_UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
 
+      # GitHub's Ubuntu runners usually ship Ansible and rsync; install them
+      # only when missing (apt-get update alone took ~40s per deploy)
       - name: Install Ansible
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ansible rsync
+          if command -v ansible-playbook >/dev/null && command -v rsync >/dev/null; then
+            ansible-playbook --version | head -1
+          else
+            sudo apt-get update -y
+            sudo apt-get install -y ansible rsync
+          fi
 
       - name: Install Ansible collections
         run: ansible-galaxy collection install containers.podman

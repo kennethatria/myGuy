@@ -5,9 +5,12 @@ run-name: Continous integration & deployment pipeline - ${{ github.event_name }}
 env:
   RELEASE_BRANCH: refs/heads/main
     
+# A newer push to a pull request replaces its running checks. On main, runs
+# queue instead: cancelling one could stop a deploy half way through Ansible
+# (the next merge's run deploys everything anyway, so only one waits).
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     
 on:
   push:
