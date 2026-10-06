@@ -269,23 +269,6 @@
       </div>
     </div>
     
-    <!-- Store Chat Modal -->
-    <!-- Chat Modal with new ChatWindow component -->
-    <div v-if="showChatModal" class="chat-modal-overlay" @click="closeChatModal">
-      <div class="chat-modal-container" @click.stop>
-        <ChatWindow
-          v-if="item"
-          :conversation-id="Number(itemId)"
-          conversation-type="store"
-          :recipient-id="chatRecipientId || item.seller.id"
-          :recipient-name="chatRecipientName"
-          :conversation-title="`Message about: ${item.title}`"
-          :show-close-button="true"
-          @close="closeChatModal"
-        />
-      </div>
-    </div>
-
     <!-- Booking Confirmation Modal -->
     <BookingConfirmationModal
       v-if="item"
@@ -306,7 +289,6 @@ import { setPageTitle } from '@/utils/pageTitle';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useChatStore } from '@/stores/chat';
-import ChatWindow from '@/components/ChatWindow.vue';
 import BookingConfirmationModal from '@/components/BookingConfirmationModal.vue';
 import StickyNote from '@/components/StickyNote.vue';
 import { expiryLabel } from '@/utils/gigNote';
@@ -392,11 +374,6 @@ const loading = ref(true);
 const error = ref('');
 const bidAmount = ref('');
 const selectedImage = ref('');
-
-// Chat-related variables (simplified - ChatWindow handles messaging)
-const showChatModal = ref(false);
-const chatRecipientId = ref<number | null>(null);
-const chatRecipientName = ref('');
 
 // Booking-related variables
 const bookingRequest = ref<BookingRequest | null>(null);
@@ -758,33 +735,25 @@ function formatDate(dateString: string): string {
   return date.toLocaleDateString();
 }
 
-// Chat functions (simplified - ChatWindow component now handles messaging logic)
+// Every conversation opens in the floating chat. A buyer talks to the
+// seller; the seller picks a buyer, or sees all their conversations.
 function openStoreChat() {
-  // Set recipient info and show modal - ChatWindow handles socket connection and loading messages
   if (!item.value) return;
-  chatRecipientId.value = item.value.seller.id;
-  chatRecipientName.value = item.value.seller.name || item.value.seller.full_name || item.value.seller.username;
-  showChatModal.value = true;
-}
-
-function closeChatModal() {
-  showChatModal.value = false;
+  chatStore.openChat({
+    itemId: item.value.id,
+    otherUserId: item.value.seller.id,
+    otherUserName: item.value.seller.name || item.value.seller.full_name || item.value.seller.username
+  });
 }
 
 function openStoreChatWithUser(recipientId: number) {
-  // For sellers messaging a specific buyer
+  if (!item.value) return;
   const requester = bookingRequests.value.find(req => req.requester?.id === recipientId);
-  chatRecipientId.value = recipientId;
-  chatRecipientName.value = requester?.requester?.username || `User ${recipientId}`;
-  showChatModal.value = true;
+  chatStore.openChat({ itemId: item.value.id, otherUserId: recipientId, otherUserName: requester?.requester?.username });
 }
 
 function openGeneralStoreChat() {
-  // For owners to view all messages about their item - use seller as recipient
-  if (!item.value) return;
-  chatRecipientId.value = item.value.seller.id;
-  chatRecipientName.value = item.value.seller.name || item.value.seller.full_name || item.value.seller.username;
-  showChatModal.value = true;
+  chatStore.openChat();
 }
 
 async function checkForMessages() {
@@ -1196,194 +1165,11 @@ onMounted(() => {
   color: #6b7280;
 }
 
-/* Chat Modal Styles */
-.chat-modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.chat-modal {
-  background: white;
-  border-radius: 0.5rem;
-  width: 90%;
-  max-width: 600px;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-}
-
-.chat-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.chat-header h3 {
-  margin: 0;
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #111827;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  color: #6b7280;
-  width: 2rem;
-  height: 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.25rem;
-  transition: background-color 0.2s;
-}
-
-.close-btn:hover {
-  background-color: #f3f4f6;
-  color: #374151;
-}
-
-.chat-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.chat-messages {
-  flex: 1;
-  padding: 1rem;
-  overflow-y: auto;
-  max-height: 400px;
-}
-
-.no-messages {
-  text-align: center;
-  color: #6b7280;
-  padding: 2rem;
-}
-
-.no-messages p {
-  margin: 0.5rem 0;
-}
-
-.message-limit {
-  font-size: 0.875rem;
-  color: #059669;
-  font-weight: 500;
-}
-
-.message {
-  margin-bottom: 1rem;
-  padding: 0.75rem;
-  border-radius: 0.5rem;
-  background: #f9fafb;
-}
-
-.message.own-message {
-  background: #dbeafe;
-  margin-left: 2rem;
-}
-
-.message.own-message .message-content {
-  color: #1e40af;
-}
-
-.message-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-}
-
-.sender {
-  font-weight: 600;
-  color: #374151;
-  font-size: 0.875rem;
-}
-
-.timestamp {
-  font-size: 0.75rem;
-  color: #6b7280;
-}
-
-.message-content {
-  color: #111827;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.chat-input-section {
-  border-top: 1px solid #e5e7eb;
-  padding: 1rem;
-}
-
-.chat-input {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.chat-input textarea {
-  border: 1px solid #d1d5db;
-  border-radius: 0.375rem;
-  padding: 0.75rem;
-  font-size: 0.875rem;
-  resize: vertical;
-  min-height: 80px;
-  font-family: inherit;
-}
-
-.chat-input textarea:focus {
-  outline: none;
-  border-color: #4f46e5;
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-}
-
-.input-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.message-count {
-  font-size: 0.75rem;
-  color: #6b7280;
-}
-
 .btn-sm {
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
 }
 
-.message-limit-reached {
-  text-align: center;
-  padding: 1.5rem;
-  color: #059669;
-}
-
-.message-limit-reached i {
-  margin-right: 0.5rem;
-}
-
-.suggestion {
-  font-size: 0.875rem;
-  color: #6b7280;
-  margin-top: 0.5rem;
-}
 
 /* Phones: thumb-sized targets */
 @media (max-width: 768px) {
@@ -1433,15 +1219,6 @@ onMounted(() => {
   
   .bid-form {
     flex-direction: column;
-  }
-
-  .chat-modal {
-    width: 95%;
-    max-height: 90vh;
-  }
-  
-  .message.own-message {
-    margin-left: 1rem;
   }
 
   .seller-actions {
