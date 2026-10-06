@@ -56,10 +56,11 @@ func TestTaskLocations(t *testing.T) {
 	})
 
 	t.Run("deleting a gig deletes its location", func(t *testing.T) {
-		service, taskRepo, _ := setupTaskService()
+		service, taskRepo, appRepo := setupTaskService()
 		locator := &recordingLocator{}
 		service.WithLocator(locator)
 		taskRepo.On("GetByID", ctx, uint(1)).Return(&models.Task{ID: 1, CreatedBy: 1}, nil)
+		appRepo.On("ListByTask", ctx, uint(1)).Return([]models.Application{}, nil)
 		taskRepo.On("Delete", ctx, uint(1)).Return(nil)
 
 		assert.NoError(t, service.DeleteTask(ctx, 1, 1))

@@ -238,10 +238,24 @@ func (s *TaskService) DeleteTask(ctx context.Context, taskID uint, userID uint) 
 		return ErrTaskWasAssigned
 	}
 
+	// Who was still waiting, to tell them the gig is gone
+	waiting, err := s.pendingApplicants(ctx, taskID, 0)
+	if err != nil {
+		return err
+	}
+
 	if err := s.taskRepo.Delete(ctx, taskID); err != nil {
 		return err
 	}
 	s.locator.Delete("task", taskID)
+
+	for _, applicantID := range waiting {
+		s.notifier.Post(chatnotify.Message{
+			TaskID: taskID, SenderID: task.CreatedBy, RecipientID: applicantID,
+			Content: fmt.Sprintf("\"%s\" was removed by the poster, so your application is closed.", task.Title),
+			Event:   chatnotify.EventCancelled,
+		})
+	}
 	return nil
 }
 

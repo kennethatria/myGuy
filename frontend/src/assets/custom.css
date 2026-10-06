@@ -275,6 +275,19 @@ input[type="datetime-local"].form-input {
   border-color: var(--color-primary);
 }
 
+/* Removing or cancelling something: red outline, filled on hover */
+.btn-outline-danger {
+  color: #dc2626;
+  background-color: #fff;
+  border-color: #dc2626;
+}
+
+.btn-outline-danger:hover {
+  color: #fff;
+  background-color: #dc2626;
+  border-color: #dc2626;
+}
+
 /* Utilities */
 .flex {
   display: flex;

@@ -56,10 +56,11 @@ func TestListingLocations(t *testing.T) {
 	})
 
 	t.Run("deleted with the listing", func(t *testing.T) {
-		service, itemRepo, _, _ := setupService()
+		service, itemRepo, _, bookingRepo := setupService()
 		locator := &recordingLocator{}
 		service.WithLocator(locator).WithLocator(nil) // nil keeps the current one
 		itemRepo.On("GetByID", uint(1)).Return(&models.StoreItem{ID: 1, SellerID: 1, Status: "expired"}, nil)
+		bookingRepo.On("GetAllByItemID", uint(1)).Return([]models.BookingRequest{}, nil)
 		itemRepo.On("Delete", uint(1)).Return(nil)
 
 		assert.NoError(t, service.DeleteItem(1, 1))

@@ -195,7 +195,7 @@ func TestHandler_UpdateTask(t *testing.T) {
 
 func TestHandler_DeleteTask(t *testing.T) {
 	t.Run("successful delete", func(t *testing.T) {
-		router, handler, _, mockTaskRepo, _, _ := setupTestRouter()
+		router, handler, _, mockTaskRepo, _, mockAppRepo := setupTestRouter()
 		router.Use(func(c *gin.Context) {
 			c.Set("userID", uint(1))
 			c.Next()
@@ -204,6 +204,7 @@ func TestHandler_DeleteTask(t *testing.T) {
 
 		task := &models.Task{ID: 1, CreatedBy: 1}
 		mockTaskRepo.On("GetByID", mock.Anything, uint(1)).Return(task, nil)
+		mockAppRepo.On("ListByTask", mock.Anything, uint(1)).Return([]models.Application{}, nil)
 		mockTaskRepo.On("Delete", mock.Anything, uint(1)).Return(nil)
 
 		req, _ := http.NewRequest(http.MethodDelete, "/tasks/1", nil)

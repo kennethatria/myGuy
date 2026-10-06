@@ -32,6 +32,7 @@ type ItemRequestRepository interface {
 	Update(request *models.ItemRequest) error
 	Delete(id uint) error
 	MarkFulfilled(id uint, itemID uint) (bool, error)
+	Reopen(id uint, deadline time.Time) (bool, error)
 	ExpireUnanswered(now time.Time) (int64, error)
 }
 

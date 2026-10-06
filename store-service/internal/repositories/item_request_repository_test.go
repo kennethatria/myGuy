@@ -110,3 +110,29 @@ func TestItemRequestRepository(t *testing.T) {
 		}
 	})
 }
+
+func TestItemRequestReopen(t *testing.T) {
+	db, err := setupTestDB()
+	require.NoError(t, err)
+	repo := NewItemRequestRepository(db)
+	item := uint(9)
+	fulfilled := &models.ItemRequest{Title: "Bike", RequesterID: 2, Status: "fulfilled", FulfilledItemID: &item}
+	active := &models.ItemRequest{Title: "Desk", RequesterID: 2, Status: "active"}
+	require.NoError(t, repo.Create(fulfilled))
+	require.NoError(t, repo.Create(active))
+	deadline := time.Now().UTC().Add(24 * time.Hour)
+
+	ok, err := repo.Reopen(fulfilled.ID, deadline)
+	require.NoError(t, err)
+	assert.True(t, ok)
+	got, err := repo.GetByID(fulfilled.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "active", got.Status)
+	assert.Nil(t, got.FulfilledItemID)
+	assert.WithinDuration(t, deadline, *got.Deadline, time.Second)
+
+	// Only a fulfilled request reopens
+	ok, err = repo.Reopen(active.ID, deadline)
+	require.NoError(t, err)
+	assert.False(t, ok)
+}
