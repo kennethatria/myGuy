@@ -50,12 +50,14 @@ describe('bookingMessageService', () => {
       expect(JSON.parse(params[5]).note).toBe('');
     });
 
-    it('emits message:new to seller socket when io is provided', async () => {
+    it('delivers message:new to both seller and buyer when io is provided', async () => {
       const mockMsg = { id: 3 };
       db.query.mockResolvedValue({ rows: [mockMsg] });
 
       const emitFn = jest.fn();
-      const mockIo = { to: jest.fn().mockReturnValue({ emit: emitFn }) };
+      const chain = { emit: emitFn };
+      const mockIo = { to: jest.fn(() => chain) };
+      chain.to = mockIo.to;
 
       await createBookingRequestMessage({
         bookingId: 102,
@@ -67,6 +69,7 @@ describe('bookingMessageService', () => {
       });
 
       expect(mockIo.to).toHaveBeenCalledWith('user:5');
+      expect(mockIo.to).toHaveBeenCalledWith('user:2');
       expect(emitFn).toHaveBeenCalledWith('message:new', mockMsg);
     });
 

@@ -125,6 +125,19 @@ router.post('/internal/task-message', async (req, res) => {
   }
 });
 
+// Store events the app shows actions on (book an item listed for a request)
+const STORE_EVENTS = new Set(['request_answered']);
+
+// The event a store message is about, or undefined: known events only, with
+// a numeric request id.
+function storeEventMetadata(raw) {
+  if (!raw || typeof raw !== 'object' || !STORE_EVENTS.has(raw.event)) return undefined;
+  const metadata = { event: raw.event };
+  const requestId = parseInt(raw.request_id);
+  if (requestId > 0) metadata.request_id = requestId;
+  return metadata;
+}
+
 /**
  * Internal endpoint for store-service to post item events (a listing made
  * for someone's request) into the seller↔buyer conversation about the item.
@@ -153,7 +166,9 @@ router.post('/internal/store-message', async (req, res) => {
       return res.status(204).end();
     }
 
-    const message = await postSystemMessage(req, { storeItemId }, senderId, recipientId, content);
+    const message = await postSystemMessage(
+      req, { storeItemId }, senderId, recipientId, content, storeEventMetadata(req.body.metadata)
+    );
     res.status(201).json({ id: message.id });
   } catch (error) {
     console.error('Error posting store message:', error);

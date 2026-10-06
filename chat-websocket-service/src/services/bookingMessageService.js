@@ -47,10 +47,11 @@ async function createBookingRequestMessage({
 
     const createdMessage = result.rows[0];
 
-    // Emit to seller via WebSocket
+    // Deliver to both: the seller answers it, and the buyer sees it in the
+    // conversation they may already have open (e.g. booking from chat)
     if (io) {
-      io.to(`user:${sellerId}`).emit('message:new', createdMessage);
-      console.log(`📋 Booking request message sent to seller ${sellerId} for item ${itemId}`);
+      io.to(`user:${sellerId}`).to(`user:${buyerId}`).emit('message:new', createdMessage);
+      console.log(`📋 Booking request message sent for item ${itemId}`);
     }
 
     return createdMessage;

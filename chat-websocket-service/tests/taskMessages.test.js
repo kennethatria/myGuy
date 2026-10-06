@@ -138,6 +138,27 @@ describe('POST /internal/store-message', () => {
     expect(res.status).toBe(400);
   });
 
+  it('keeps what an item message is about, for the Book it button', async () => {
+    messageService.sendMessage.mockResolvedValue({ id: 51 });
+
+    await post({
+      store_item_id: 7, sender_id: 2, recipient_id: 3, content: 'Listed for you',
+      metadata: { event: 'request_answered', request_id: '5', extra: 'dropped' }
+    });
+
+    expect(messageService.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: { event: 'request_answered', request_id: 5 }
+    }));
+  });
+
+  it('drops item events it does not know', async () => {
+    messageService.sendMessage.mockResolvedValue({ id: 52 });
+
+    await post({ store_item_id: 7, sender_id: 2, recipient_id: 3, content: 'Hi', metadata: { event: 'accepted' } });
+
+    expect(messageService.sendMessage.mock.calls[0][0].metadata).toBeUndefined();
+  });
+
   it('records an old marketplace match without posting a message', async () => {
     const res = await post({ store_item_id: 7, sender_id: 2, recipient_id: 3, unlock_contacts: true });
 
