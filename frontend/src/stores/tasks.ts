@@ -8,8 +8,8 @@ interface Task {
   title: string
   description: string
   status: 'open' | 'in_progress' | 'completed' | 'cancelled' | 'expired'
-  createdBy: number
-  assignedTo?: number
+  created_by: number
+  assigned_to?: number | null
   // When the note comes off the board: 24 hours after posting
   deadline: string
   created_at: string
@@ -68,19 +68,8 @@ export const useTasksStore = defineStore('tasks', () => {
     const token = authStore.token;
     
     try {
-      console.log(`Fetching task with ID: ${taskId}`);
-      
-      // First check if we already have this task in our local state
-      const cachedTask = tasks.value.find(t => t.id === taskId) || 
-                         userTasks.value.find(t => t.id === taskId) ||
-                         assignedTasks.value.find(t => t.id === taskId);
-      
-      if (cachedTask) {
-        console.log(`Using cached task data for ID ${taskId}`);
-        return cachedTask;
-      }
-      
-      // If not in cache, fetch from API
+      // Always fetched fresh: copies in the gig lists can be out of date
+      // (status, applications) by the time a gig is opened.
       const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -189,7 +178,7 @@ export const useTasksStore = defineStore('tasks', () => {
         
         // Apply client-side filter to exclude user's own tasks
         tasks.value = allTasks.filter(task => 
-          String(task.createdBy || task.created_by) !== String(userId) && 
+          String(task.created_by) !== String(userId) && 
           task.status === 'open'
         );
         
