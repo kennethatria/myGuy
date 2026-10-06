@@ -38,18 +38,30 @@
         <p v-else class="text-muted">
           Sellers see this on the Wanted tab. When one lists something for it, you get a message.
         </p>
-        <div class="action-row">
-          <button
-            v-if="request.status === 'expired'"
-            class="btn btn-primary"
-            :disabled="busy"
-            @click="repost"
-          >
-            {{ busy ? 'Reposting...' : 'Repost for 24 hours' }}
-          </button>
-          <button v-if="request.status !== 'fulfilled'" class="btn btn-outline" :disabled="busy" @click="remove">
-            Remove
-          </button>
+        <p v-if="confirmingRemove" class="text-muted">
+          Remove "{{ request.title }}" for good?
+        </p>
+        <p v-if="actionError" class="action-error" role="alert">{{ actionError }}</p>
+        <div v-if="request.status !== 'fulfilled'" class="action-row">
+          <template v-if="confirmingRemove">
+            <button class="btn btn-danger" :disabled="busy" @click="remove">
+              {{ busy ? 'Removing...' : 'Yes, remove' }}
+            </button>
+            <button class="btn btn-outline" :disabled="busy" @click="confirmingRemove = false">Keep it</button>
+          </template>
+          <template v-else>
+            <button
+              v-if="request.status === 'expired'"
+              class="btn btn-primary"
+              :disabled="busy"
+              @click="repost"
+            >
+              {{ busy ? 'Reposting...' : 'Repost for 24 hours' }}
+            </button>
+            <button class="btn btn-outline-danger" :disabled="busy" @click="confirmingRemove = true">
+              Remove request
+            </button>
+          </template>
         </div>
       </div>
 
@@ -141,6 +153,8 @@ const listings = ref<StoreItem[]>([])
 const loading = ref(true)
 const error = ref('')
 const busy = ref(false)
+const confirmingRemove = ref(false)
+const actionError = ref('')
 
 // Countdowns move without refetching
 const now = ref(new Date())
@@ -182,6 +196,7 @@ const load = async () => {
 const repost = async () => {
   if (!request.value) return
   busy.value = true
+  actionError.value = ''
   try {
     const response = await fetch(`${config.STORE_API_URL}/requests/${request.value.id}/repost`, {
       method: 'POST',
@@ -191,15 +206,16 @@ const repost = async () => {
     if (!response.ok) throw new Error(data.error || 'Could not repost the request. Please try again.')
     await load()
   } catch (err) {
-    alert(err instanceof Error ? err.message : 'Could not repost the request. Please try again.')
+    actionError.value = err instanceof Error ? err.message : 'Could not repost the request. Please try again.'
   } finally {
     busy.value = false
   }
 }
 
 const remove = async () => {
-  if (!request.value || !confirm(`Remove "${request.value.title}" for good?`)) return
+  if (!request.value) return
   busy.value = true
+  actionError.value = ''
   try {
     const response = await fetch(`${config.STORE_API_URL}/requests/${request.value.id}`, {
       method: 'DELETE',
@@ -209,7 +225,8 @@ const remove = async () => {
     if (!response.ok) throw new Error(data.error || 'Could not remove the request. Please try again.')
     router.push({ name: 'store', query: { tab: 'mine' } })
   } catch (err) {
-    alert(err instanceof Error ? err.message : 'Could not remove the request. Please try again.')
+    actionError.value = err instanceof Error ? err.message : 'Could not remove the request. Please try again.'
+    confirmingRemove.value = false
   } finally {
     busy.value = false
   }
@@ -341,4 +358,9 @@ onUnmounted(() => {
     grid-template-columns: 1fr;
   }
 }
+
+.action-error {
+  color: #dc2626;
+}
+
 </style>

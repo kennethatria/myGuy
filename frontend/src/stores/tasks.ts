@@ -395,6 +395,20 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
+  // Removes a gig nobody was assigned to (the backend refuses otherwise, and
+  // tells anyone still waiting on an application)
+  const deleteTask = async (taskId: number) => {
+    const authStore = useAuthStore();
+    const response = await fetch(`${config.ENDPOINTS.TASKS}/${taskId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${authStore.token}` }
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || 'Could not remove the gig. Please try again.');
+    }
+  }
+
   const respondToApplication = async (taskId: number, applicationId: number, status: 'accepted' | 'declined') => {
     const authStore = useAuthStore();
     const token = authStore.token;
@@ -436,6 +450,7 @@ export const useTasksStore = defineStore('tasks', () => {
     createTask,
     updateTaskStatus,
     applyForTask,
+    deleteTask,
     respondToApplication
   }
 })

@@ -184,14 +184,11 @@ describe('Store Booking Flow', () => {
         json: async () => ({ error: 'Cannot book your own item' })
       })
 
-      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
-
       await wrapper.vm.sendBookingRequest()
 
-      expect(alertSpy).toHaveBeenCalledWith('Cannot book your own item')
+      // Shown on the page, not in a browser alert
+      expect(wrapper.vm.bookingError).toBe('Cannot book your own item')
       expect(wrapper.vm.hasBookingRequest).toBe(false)
-
-      alertSpy.mockRestore()
     })
   })
 
@@ -249,53 +246,23 @@ describe('Store Booking Flow', () => {
       expect(wrapper.vm.bookingRequest.status).toBe('pending')
     })
 
-    it('should approve booking request', async () => {
-      const pendingRequest = { id: 1, status: 'pending' }
-      wrapper.vm.bookingRequest = pendingRequest
+    it('sends the seller to Messages to answer waiting bookings', async () => {
+      const ownerItem = { ...mockItem, seller: { ...mockItem.seller, id: 1 } }
+      wrapper.vm.error = ''
+      wrapper.vm.item = ownerItem
+      wrapper.vm.bookingRequests = [
+        { id: 1, item_id: 1, requester_id: 2, requester: { id: 2, username: 'buyer1' }, status: 'pending', created_at: new Date().toISOString() },
+        { id: 2, item_id: 1, requester_id: 3, requester: { id: 3, username: 'buyer2' }, status: 'pending', created_at: new Date().toISOString() }
+      ]
+      await flushPromises()
 
-      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ message: 'Booking request approved successfully' }) })
-
-      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
-
-      await wrapper.vm.approveBookingRequest()
-
-      expect(fetch).toHaveBeenCalledWith(
-        'http://localhost:8081/api/v1/booking-requests/1/approve',
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            'Authorization': 'Bearer mock-token'
-          })
-        })
-      )
-
-      expect(wrapper.vm.bookingRequest.status).toBe('approved')
-      expect(alertSpy).toHaveBeenCalledWith('Booking request approved! The requester can now message you.')
-
-      alertSpy.mockRestore()
-    })
-
-    it('should reject booking request with confirmation', async () => {
-      const pendingRequest = { id: 1, status: 'pending' }
-      wrapper.vm.bookingRequest = pendingRequest
-
-      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ message: 'Booking request rejected successfully' }) })
-
-      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
-
-      await wrapper.vm.rejectBookingRequest()
-
-      expect(confirmSpy).toHaveBeenCalledWith('Are you sure you want to decline this booking request?')
-      expect(fetch).toHaveBeenCalledWith(
-        'http://localhost:8081/api/v1/booking-requests/1/reject',
-        expect.objectContaining({ method: 'POST' })
-      )
-      expect(wrapper.vm.bookingRequest.status).toBe('rejected')
-      expect(alertSpy).toHaveBeenCalledWith('Booking request declined.')
-
-      confirmSpy.mockRestore()
-      alertSpy.mockRestore()
+      expect(wrapper.text()).toContain('2 people have asked to book it')
+      const answer = wrapper.findAll('button').find(b => b.text() === 'Answer in Messages')
+      expect(answer).toBeTruthy()
+      await answer.trigger('click')
+      expect(openChat).toHaveBeenCalledWith()
+      // No approving or declining on this page: that happens in the conversation
+      expect(wrapper.find('[data-testid="approve-booking-btn"]').exists()).toBe(false)
     })
   })
 
@@ -348,10 +315,8 @@ describe('Store Booking Flow', () => {
       const messageButton = wrapper.find('.message-approved-btn')
       expect(messageButton.exists()).toBe(false)
 
-      const approveButton = wrapper.find('[data-testid="approve-booking-btn"]')
-      const rejectButton = wrapper.find('[data-testid="reject-booking-btn"]')
-      expect(approveButton.exists()).toBe(true)
-      expect(rejectButton.exists()).toBe(true)
+      const answer = wrapper.findAll('button').find(b => b.text() === 'Answer in Messages')
+      expect(answer).toBeTruthy()
     })
 
     it('opens the floating chat with an approved requester', async () => {
