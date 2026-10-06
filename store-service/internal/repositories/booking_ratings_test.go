@@ -69,3 +69,21 @@ func TestGetRatingsInvolving(t *testing.T) {
 	}
 	assert.ElementsMatch(t, []uint{bookings[0].ID, bookings[1].ID}, ids)
 }
+
+// A buyer's earlier booking is found whatever became of it, so a released
+// (or declined) buyer can't book the same item again.
+func TestGetByItemAndRequesterFindsReleasedBookings(t *testing.T) {
+	db, err := setupBookingTestDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := NewBookingRequestRepository(db)
+	if err := repo.Create(&models.BookingRequest{ItemID: 1, RequesterID: 2, Status: "released"}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := repo.GetByItemAndRequester(1, 2)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "released", got.Status)
+}

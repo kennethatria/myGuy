@@ -619,9 +619,13 @@ func (s *StoreService) CreateBookingRequest(itemID uint, requesterID uint, messa
 		return nil, ErrListingExpired
 	}
 
-	// Check if user already has a booking request for this item
+	// One booking request per buyer per item, whatever became of it: a
+	// buyer whose reservation the seller released can't book it again.
 	existing, err := s.bookingRepo.GetByItemAndRequester(itemID, requesterID)
 	if err == nil && existing != nil {
+		if existing.Status == "released" {
+			return nil, NewUserError("the seller released your reservation, so you can't book this item again")
+		}
 		return nil, NewUserError("you already have a booking request for this item")
 	}
 

@@ -171,6 +171,14 @@
                       <p>The owner has declined your booking request</p>
                     </div>
                   </div>
+                  <!-- One booking per buyer per item: no booking it again -->
+                  <div v-else-if="bookingStatus === 'released'" class="status-rejected">
+                    <i class="fas fa-undo"></i>
+                    <div>
+                      <p><strong>Reservation Released</strong></p>
+                      <p>The seller released your reservation, so you can't book this item again</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

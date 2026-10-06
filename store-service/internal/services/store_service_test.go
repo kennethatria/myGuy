@@ -1322,6 +1322,19 @@ func TestCreateBookingRequest_ListingRules(t *testing.T) {
 		assert.ErrorContains(t, err, "already have a booking request")
 	})
 
+	t.Run("a buyer whose reservation was released can't book again", func(t *testing.T) {
+		service, itemRepo, _, bookingRepo := setupService()
+		itemRepo.On("GetByID", uint(1)).Return(&models.StoreItem{ID: 1, SellerID: 2, Status: "active"}, nil)
+		bookingRepo.On("GetByItemAndRequester", uint(1), uint(1)).Return(&models.BookingRequest{ID: 6, Status: "released"}, nil)
+
+		request, err := service.CreateBookingRequest(1, 1, "")
+
+		assert.EqualError(t, err, "the seller released your reservation, so you can't book this item again")
+		assert.True(t, IsUserError(err))
+		assert.Nil(t, request)
+		bookingRepo.AssertNotCalled(t, "Create", mock.Anything)
+	})
+
 	t.Run("contact details refused before approval", func(t *testing.T) {
 		service, itemRepo, _, _ := setupService()
 		itemRepo.On("GetByID", uint(1)).Return(&models.StoreItem{ID: 1, SellerID: 2, Status: "active"}, nil)
