@@ -237,6 +237,7 @@ class SocketHandlers {
           message: error.message,
           code: 'chat_locked',
           taskId: data?.taskId,
+          itemId: data?.itemId,
           recipientId: data?.recipientId
         });
       }
@@ -458,7 +459,7 @@ class SocketHandlers {
       // A gig chat before the poster accepts: the app shows why it can't
       // be written to instead of a message box.
       const locked = await messageService.isChatLocked({
-        taskId, userId: socket.userId, otherUserId
+        taskId, itemId, userId: socket.userId, otherUserId
       });
 
       socket.emit('messages:list', {

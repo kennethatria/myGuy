@@ -138,6 +138,14 @@ describe('POST /internal/store-message', () => {
     expect(res.status).toBe(400);
   });
 
+  it('records an old marketplace match without posting a message', async () => {
+    const res = await post({ store_item_id: 7, sender_id: 2, recipient_id: 3, unlock_contacts: true });
+
+    expect(res.status).toBe(204);
+    expect(messageService.unlockContacts).toHaveBeenCalledWith({ storeItemId: 7, userA: 2, userB: 3 });
+    expect(messageService.sendMessage).not.toHaveBeenCalled();
+  });
+
   it('stores a system message about the item and delivers it to both people', async () => {
     messageService.sendMessage.mockResolvedValue({ id: 50, store_item_id: 7, message_type: 'system_alert' });
 

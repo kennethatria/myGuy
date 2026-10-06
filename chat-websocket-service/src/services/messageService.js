@@ -49,12 +49,13 @@ function assertMessageLength(content) {
   }
 }
 
-// Gig chats open once the poster accepts the application; until then the
-// conversation holds only gig events (the application itself).
-const CHAT_LOCKED_MESSAGE = 'You can chat once the poster accepts the application.';
-
-function chatLockedError() {
-  const error = new Error(CHAT_LOCKED_MESSAGE);
+// Gig chats open once the poster accepts the application, marketplace chats
+// once the seller approves a booking; until then a conversation holds only
+// events (the application, the booking request).
+function chatLockedError(storeItemId) {
+  const error = new Error(storeItemId
+    ? 'You can chat once the seller approves the booking.'
+    : 'You can chat once the poster accepts the application.');
   error.status = 403;
   error.code = 'chat_locked';
   return error;
@@ -94,12 +95,12 @@ class MessageService {
   }
 
   /**
-   * Whether userId may not yet write to otherUserId about the gig taskId:
-   * gig chats stay closed until the poster accepts one of them.
+   * Whether userId may not yet write to otherUserId about the gig taskId or
+   * the item itemId: closed until the poster accepts or the seller approves.
    */
-  async isChatLocked({ taskId, userId, otherUserId }) {
-    if (!taskId || !otherUserId) return false;
-    return !(await this.contactsUnlocked(db, { taskId, senderId: userId, recipientId: otherUserId }));
+  async isChatLocked({ taskId, itemId, userId, otherUserId }) {
+    if ((!taskId && !itemId) || !otherUserId) return false;
+    return !(await this.contactsUnlocked(db, { taskId, storeItemId: itemId, senderId: userId, recipientId: otherUserId }));
   }
 
   /**
@@ -122,11 +123,12 @@ class MessageService {
     try {
       await client.query('BEGIN');
 
-      // People write about a gig only once they're matched; events
-      // (messageType set by the services) are always posted.
-      if (taskId && !messageType &&
-          !(await this.contactsUnlocked(client, { taskId, senderId, recipientId }))) {
-        throw chatLockedError();
+      // People write about a gig or an item only once they're matched (the
+      // poster accepted, the seller approved a booking); events (messageType
+      // set by the services) are always posted.
+      if ((taskId || storeItemId) && !messageType &&
+          !(await this.contactsUnlocked(client, { taskId, storeItemId, senderId, recipientId }))) {
+        throw chatLockedError(storeItemId);
       }
 
       const { filtered, hasRemovedContent } = await this.filterFor(

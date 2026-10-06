@@ -196,7 +196,17 @@ describe('MessageService', () => {
       expect(await messageService.isChatLocked({ taskId: 1, userId: 2, otherUserId: 9 })).toBe(true);
       db.query.mockResolvedValueOnce({ rows: [{}] });
       expect(await messageService.isChatLocked({ taskId: 1, userId: 2, otherUserId: 9 })).toBe(false);
-      expect(await messageService.isChatLocked({ itemId: 4, userId: 2, otherUserId: 9 })).toBe(false);
+      // Marketplace chats too, until the seller approves a booking
+      db.query.mockResolvedValueOnce({ rows: [] });
+      expect(await messageService.isChatLocked({ itemId: 4, userId: 2, otherUserId: 9 })).toBe(true);
+      expect(await messageService.isChatLocked({ applicationId: 3, userId: 2, otherUserId: 9 })).toBe(false);
+    });
+
+    it('refuses a marketplace message until the seller approves', async () => {
+      answer(false);
+      await expect(send({ taskId: undefined, storeItemId: 4 })).rejects.toMatchObject({
+        code: 'chat_locked', message: 'You can chat once the seller approves the booking.'
+      });
     });
   });
 
@@ -525,7 +535,8 @@ describe('MessageService', () => {
       const mockMsg = { id: 2, content: 'Store msg', store_item_id: 5, message_type: 'store' };
       mockClient.query
         .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({ rows: [] })   // contact unlock check
+        .mockResolvedValueOnce({ rows: [{}] }) // approved: the chat is open
+        .mockResolvedValueOnce({ rows: [{}] }) // contact unlock check
         .mockResolvedValueOnce({ rows: [mockMsg] })
         .mockResolvedValueOnce({});
       db.query.mockResolvedValue({ rows: [] });
@@ -580,9 +591,9 @@ describe('MessageService', () => {
       return messageService.sendMessage({ taskId: 4, senderId: 9, recipientId: 2, content: 'call 0772 123 456', ...extra });
     };
 
-    it('masks contacts before the two people are matched', async () => {
-      // (a gig chat can't be written before a match; a marketplace one can)
-      const result = await send(false, { taskId: undefined, storeItemId: 4 });
+    it('masks contacts in chats that never unlock', async () => {
+      // (gig and marketplace chats can't be written before a match at all)
+      const result = await send(false, { taskId: undefined, applicationId: 3 });
       expect(insertedContent()).toBe('call [phone removed]');
       expect(result.hasRemovedContent).toBe(true);
     });
@@ -594,7 +605,7 @@ describe('MessageService', () => {
     });
 
     it('looks the pair up in either direction', async () => {
-      await send(false, { taskId: undefined, storeItemId: 4 });
+      await send(true, { taskId: undefined, storeItemId: 4 });
       const lookup = mockClient.query.mock.calls.find(([sql]) => /FROM contact_unlocks/.test(sql));
       expect(lookup[1]).toEqual(['store', 4, 2, 9]);
     });

@@ -44,6 +44,10 @@ describe('bookingMessageService', () => {
       });
 
       expect(result.id).toBe(2);
+      // The text previews the conversation; no note of the buyer's own
+      const [, params] = db.query.mock.calls[0];
+      expect(params[4]).toBe('Booking request for Another Item');
+      expect(JSON.parse(params[5]).note).toBe('');
     });
 
     it('emits message:new to seller socket when io is provided', async () => {

@@ -31,12 +31,15 @@ async function createBookingRequestMessage({
         sellerId,
         itemId,
         'booking_request',
+        // The text previews the conversation; the buyer's own note, if any,
+        // is kept apart so the booking card quotes only what they wrote
         message || `Booking request for ${itemTitle}`,
         JSON.stringify({
           booking_id: bookingId,
           item_id: itemId,
           item_title: itemTitle,
           item_image: itemImage,
+          note: message || '',
           status: 'pending'
         })
       ]
