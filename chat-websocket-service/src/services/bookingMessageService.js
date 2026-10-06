@@ -60,7 +60,9 @@ async function createBookingRequestMessage({
 /**
  * Update booking message status and create status update message
  */
-async function updateBookingMessageStatus(bookingId, status, approverId, io, bookingData = null) {
+// note, when given, replaces the usual status note: a system message saying
+// why (e.g. the seller removed the listing).
+async function updateBookingMessageStatus(bookingId, status, approverId, io, bookingData = null, note = null) {
   try {
     // Find the original booking request message
     const findResult = await db.query(
@@ -131,7 +133,10 @@ async function updateBookingMessageStatus(bookingId, status, approverId, io, boo
       let messageType;
       let content;
 
-      if (status === 'approved') {
+      if (note) {
+        messageType = 'system_alert';
+        content = note;
+      } else if (status === 'approved') {
         messageType = 'booking_approved';
         content = 'Booking approved ✅. You can now discuss pickup details.';
       } else if (status === 'rejected') {

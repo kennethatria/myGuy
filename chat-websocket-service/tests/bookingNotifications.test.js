@@ -122,6 +122,31 @@ describe('bookingNotifications router', () => {
     });
   });
 
+  describe('POST /internal/booking-status', () => {
+    const post = (body, key = INTERNAL_API_KEY) =>
+      request(app).post('/internal/booking-status').set('X-Internal-API-Key', key).send(body);
+
+    it('rejects calls without the internal key', async () => {
+      await post({ booking_id: 4, actor_id: 1, status: 'rejected', note: 'Removed' }, 'wrong').expect(401);
+      expect(bookingMessageService.updateBookingMessageStatus).not.toHaveBeenCalled();
+    });
+
+    it('only accepts known statuses, with a note', async () => {
+      await post({ booking_id: 4, actor_id: 1, status: 'completed', note: 'x' }).expect(400);
+      await post({ booking_id: 4, actor_id: 1, status: 'rejected', note: ' ' }).expect(400);
+      expect(bookingMessageService.updateBookingMessageStatus).not.toHaveBeenCalled();
+    });
+
+    it('declines the booking in chat with the note for the buyer', async () => {
+      bookingMessageService.updateBookingMessageStatus.mockResolvedValue({ id: 9 });
+
+      await post({ booking_id: '4', actor_id: 1, status: 'rejected', note: ' The seller removed "Bike". ' }).expect(200);
+
+      expect(bookingMessageService.updateBookingMessageStatus)
+        .toHaveBeenCalledWith(4, 'rejected', 1, expect.anything(), null, 'The seller removed "Bike".');
+    });
+  });
+
   describe('POST /booking-action', () => {
     it('returns 401 without authorization header', async () => {
       await request(app)

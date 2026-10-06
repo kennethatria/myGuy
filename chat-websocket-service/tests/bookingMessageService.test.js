@@ -172,6 +172,20 @@ describe('bookingMessageService', () => {
       expect(insert[1][4]).toContain('released the reservation');
     });
 
+    it('posts the given note as a system message instead of the usual note', async () => {
+      db.query
+        .mockResolvedValueOnce({ rows: [mockRequestMessage] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ id: 28 }] });
+
+      await updateBookingMessageStatus(100, 'rejected', 3, null, null, 'The seller removed "Bike".');
+
+      const insert = db.query.mock.calls[3];
+      expect(insert[1][3]).toBe('system_alert');
+      expect(insert[1][4]).toBe('The seller removed "Bike".');
+    });
+
     it('creates a generic "booking_status_update" for an unknown status', async () => {
       const mockStatusMsg = { id: 24, message_type: 'booking_status_update' };
       db.query
