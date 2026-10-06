@@ -493,7 +493,7 @@ The backend services run locally with Podman Compose using pre-built images from
 
 ### Prerequisites
 - Podman & Podman Compose
-- Node.js 20+
+- Node.js 22+
 - Git
 
 ### Running the Application
