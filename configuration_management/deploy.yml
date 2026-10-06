@@ -26,8 +26,17 @@
     # pipeline passes the ones a push changed)
     app_services: all
     all_app_services: [api, store-service, chat-websocket-service, proximity-service]
+    # podman-compose creates a container with --requires on its depends_on
+    # services, so replacing one removes the services that depend on it (as
+    # in docker-compose.yml), and they have to be started again with it
+    app_dependents:
+      api: [chat-websocket-service]
+      store-service: [chat-websocket-service]
     deploy_all: "{{ app_services == 'all' }}"
-    services_to_deploy: "{{ all_app_services if deploy_all else app_services.split() }}"
+    requested_services: "{{ app_services.split() | unique }}"
+    services_to_deploy: >-
+      {{ all_app_services if deploy_all else
+         (requested_services + requested_services | map('extract', app_dependents) | select('defined') | flatten) | unique }}
     # Each compose service runs the image myguy-<service>
     images_to_verify: "{{ services_to_deploy | map('regex_replace', '^', registry ~ '/myguy-') | map('regex_replace', '$', ':' ~ image_tag) | list }}"
 
@@ -151,11 +160,12 @@
     # Replacing only some services: podman-compose 1.0.6 ignores --no-deps,
     # so `up --force-recreate api` would also restart Postgres. Remove just
     # these containers instead; `up` then creates them from the new images
-    # and leaves their already-running dependencies alone.
+    # and leaves their already-running dependencies alone. --depend removes
+    # dependent containers first (they are in services_to_deploy too).
     - name: Remove the containers being replaced
       when: not deploy_all
       ansible.builtin.shell:
-        cmd: podman ps -aq --filter label=com.docker.compose.service={{ item }} | xargs -r podman rm -f
+        cmd: podman ps -aq --filter label=com.docker.compose.service={{ item }} | xargs -r podman rm -f --depend
       loop: "{{ services_to_deploy }}"
       environment:
         XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
