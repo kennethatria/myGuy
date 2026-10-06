@@ -75,6 +75,8 @@
 
       <!-- Action buttons based on task status and user role -->
       <div class="border-t border-gray-200 p-4">
+        <p v-if="applyNotice" class="apply-notice" role="status">{{ applyNotice }}</p>
+        <p v-if="applyError" class="apply-error" role="alert">{{ applyError }}</p>
         <p v-if="isOwner && task.status === 'expired'" class="expired-note">
           Nobody replied within 24 hours, so this note came off the board.
         </p>
@@ -90,8 +92,16 @@
             v-if="canApply"
             @click="handleApply"
             class="btn btn-primary"
+            :disabled="applying"
           >
-            Apply for Gig
+            {{ applying ? 'Applying...' : 'Apply' }}
+          </button>
+          <button
+            v-if="chatPartner"
+            @click="openChat"
+            class="btn btn-outline"
+          >
+            Message {{ chatPartner.name }}
           </button>
           <button
             v-if="canComplete"
@@ -110,13 +120,13 @@
         </div>
       </div>
 
-      <!-- Applications section -->
-      <div v-if="(isOwner || hasApplied) && applications.length > 0" class="border-t border-gray-200">
+      <!-- Applications: the poster's to answer -->
+      <div v-if="isOwner && applications.length > 0" class="border-t border-gray-200">
         <div class="p-4">
           <h3 class="mb-3">Applications</h3>
           <div class="space-y-3">
             <ApplicationDetail
-              v-for="application in visibleApplications"
+              v-for="application in applications"
               :key="application.id"
               :application="application"
               :task-owner-id="task.created_by"
@@ -127,61 +137,12 @@
           </div>
         </div>
       </div>
-
-      <!-- Messages: one private conversation between the poster and each
-           person (applicant, assignee, or anyone asking a question) -->
-      <div ref="chatSection" class="border-t border-gray-200">
-        <div class="p-4">
-          <div class="gig-chat-header">
-            <h3 class="chat-title">Messages</h3>
-            <div class="chat-header-badges">
-              <div class="chat-status">
-                <span v-if="task?.status === 'open'" class="status-badge status-open">Open for Applications</span>
-                <span v-else-if="task?.status === 'in_progress'" class="status-badge status-assigned">Gig Assigned</span>
-                <span v-else-if="task?.status === 'completed'" class="status-badge status-completed">Completed</span>
-              </div>
-              <span class="privacy-badge privacy-private">🔒 Only you two can see this</span>
-            </div>
-          </div>
-
-          <div class="chat-content">
-            <ChatWindow
-              v-if="task && chatRecipientId"
-              :key="chatRecipientId"
-              :conversation-id="task.id"
-              conversation-type="task"
-              :recipient-id="chatRecipientId"
-              :recipient-name="chatRecipientName"
-              :conversation-title="chatHeading"
-            />
-
-            <div v-else-if="isOwner" class="assignment-required">
-              <div class="assignment-content">
-                <i class="fas fa-comments"></i>
-                <div>
-                  <p><strong>Choose who to message</strong></p>
-                  <p>Press <em>Message</em> on an application to chat with that person. All your conversations are also in Messages.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
-    
-    <!-- Application Modal -->
-    <ApplicationModal 
-      v-if="task"
-      :is-open="showApplicationModal"
-      :task="task"
-      @close="showApplicationModal = false"
-      @submit="handleApplicationSubmit"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { setPageTitle } from '@/utils/pageTitle'
 import { useRoute, useRouter } from 'vue-router'
 import { format } from 'date-fns'
@@ -191,8 +152,6 @@ import { useChatStore } from '@/stores/chat'
 import { useUsersStore } from '@/stores/users'
 import { useReviewsStore } from '@/stores/reviews'
 import ApplicationDetail from '@/components/ApplicationDetail.vue'
-import ApplicationModal from '@/components/ApplicationModal.vue'
-import ChatWindow from '@/components/ChatWindow.vue'
 import StickyNote from '@/components/StickyNote.vue'
 import { expiryLabel } from '@/utils/gigNote'
 
@@ -302,22 +261,6 @@ const hasApplied = computed(() => {
   return applications.value.some(app => app.applicant.id === authStore.user?.id)
 })
 
-const visibleApplications = computed(() => {
-  if (!authStore.user || !applications.value) return []
-  
-  // Task owner sees all applications
-  if (isOwner.value) {
-    return applications.value
-  }
-  
-  // Applicants only see their own application
-  return applications.value.filter(app => app.applicant.id === authStore.user?.id)
-})
-
-
-
-
-
 const loadTaskData = async () => {
   const taskId = parseInt(route.params.id as string)
   if (isNaN(taskId)) {
@@ -394,8 +337,6 @@ const loadTaskData = async () => {
     applications.value = (applicationsData || []) as unknown as Application[];
     console.log(`Loaded ${applications.value.length} applications`);
 
-    // Messages are loaded by ChatWindow component via useChatStore
-
     // Check if the current user has already reviewed this task
     if (task.value?.status === 'completed' && authStore.user) {
       try {
@@ -423,32 +364,29 @@ onMounted(async () => {
   }
 })
 
-const showApplicationModal = ref(false)
-
 const errorMessage = (error: unknown, fallback: string) =>
   error instanceof Error && error.message ? error.message : fallback
 
-const handleApply = () => {
-  showApplicationModal.value = true
-}
+// Applying is one tap: price and details are agreed in chat afterwards
+const applying = ref(false)
+const applyNotice = ref('')
+const applyError = ref('')
 
-const handleApplicationSubmit = async (data: { message: string }) => {
-  if (!task.value) return
+const handleApply = async () => {
+  if (!task.value || applying.value) return
 
+  applying.value = true
+  applyNotice.value = ''
+  applyError.value = ''
   try {
-    const result = await tasksStore.applyForTask(task.value.id, data)
-    console.log('Application result:', result)
-    
-    showApplicationModal.value = false
-    
-    // Refresh applications list
+    await tasksStore.applyForTask(task.value.id, { message: '' })
     applications.value = await tasksStore.getTaskApplications(task.value.id) as unknown as Application[]
-
-    // Show success message
-    alert('Application submitted successfully!')
+    applyNotice.value = 'Applied. The poster can see it in Messages.'
   } catch (error) {
     console.error('Failed to apply for task:', error)
-    alert(errorMessage(error, 'Failed to apply for the gig. Please try again.'))
+    applyError.value = errorMessage(error, 'Could not apply for the gig. Please try again.')
+  } finally {
+    applying.value = false
   }
 }
 
@@ -517,35 +455,29 @@ const handleDeclineApplication = async (applicationId: number) => {
   }
 }
 
-// The poster chats with whoever they pick (defaulting to the assignee);
-// everyone else chats with the poster.
-const chatWithUserId = ref<number | null>(null)
-const chatSection = ref<HTMLElement | null>(null)
-
-const chatRecipientId = computed<number | null>(() => {
+// Who this person talks to about the gig, in the floating chat: the poster
+// and the assignee with each other, and an applicant with the poster. The
+// poster reaches other applicants from their application.
+const chatPartner = computed<{ id: number; name: string } | null>(() => {
   if (!task.value || !authStore.user) return null
-  if (isOwner.value) return chatWithUserId.value ?? task.value.assigned_to ?? null
-  return task.value.created_by || task.value.creator?.id || null
+  if (isOwner.value) {
+    const id = task.value.assigned_to
+    return id ? { id, name: task.value.assignee?.username || assignee.value?.username || 'the assignee' } : null
+  }
+  if (!hasApplied.value && task.value.assigned_to !== authStore.user.id) return null
+  return { id: task.value.created_by, name: task.value.creator?.username || creator.value?.username || 'the poster' }
 })
 
-const chatRecipientName = computed(() => {
-  if (!task.value) return ''
-  if (!isOwner.value) return task.value.creator?.username || 'the poster'
-  const applicant = applications.value.find(app => app.applicant_id === chatRecipientId.value)?.applicant
-  return applicant?.username
-    || (chatRecipientId.value === task.value.assigned_to ? task.value.assignee?.username : undefined)
-    || 'this person'
-})
-
-const chatHeading = computed(() => (isOwner.value && !chatRecipientId.value) ? 'Messages' : `Chat with ${chatRecipientName.value}`)
-
-const handleMessageApplicant = async (applicantId: number) => {
-  chatWithUserId.value = applicantId
-  await nextTick()
-  chatSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+const openChat = () => {
+  if (!task.value || !chatPartner.value) return
+  chatStore.openChat({ taskId: task.value.id, otherUserId: chatPartner.value.id, otherUserName: chatPartner.value.name })
 }
 
-// Message sending is now handled by ChatWindow component
+const handleMessageApplicant = (applicantId: number) => {
+  if (!task.value) return
+  const applicant = applications.value.find(app => app.applicant_id === applicantId)?.applicant
+  chatStore.openChat({ taskId: task.value.id, otherUserId: applicantId, otherUserName: applicant?.username })
+}
 </script>
 
 <style scoped>
@@ -578,280 +510,17 @@ const handleMessageApplicant = async (applicantId: number) => {
   color: var(--color-text-light, #6b7280);
 }
 
-/* Gig Chat Interface Styles */
-.gig-chat-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid #e5e7eb;
+.apply-notice,
+.apply-error {
+  margin: 0 0 0.75rem;
 }
 
-.chat-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #111827;
-  margin: 0;
+.apply-notice {
+  color: #166534;
 }
 
-.chat-status {
-  display: flex;
-  align-items: center;
-}
-
-.status-badge {
-  padding: 0.25rem 0.75rem;
-  border-radius: 0.375rem;
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.status-open {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.status-assigned {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.status-completed {
-  background: #d1fae5;
-  color: #065f46;
-}
-
-.chat-content {
-  margin-bottom: 1.5rem;
-}
-
-.no-messages {
-  text-align: center;
-  padding: 3rem 1rem;
-  color: #6b7280;
-}
-
-.no-messages-icon {
-  font-size: 3rem;
-  color: #d1d5db;
-  margin-bottom: 1rem;
-}
-
-.no-messages-subtitle {
-  font-size: 0.875rem;
-  color: #9ca3af;
-  margin-top: 0.5rem;
-}
-
-.chat-messages {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  max-height: 400px;
-  overflow-y: auto;
-  padding: 0.5rem;
-}
-
-.message {
-  padding: 0.75rem;
-  border-radius: 0.5rem;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-}
-
-.message.own-message {
-  background: #dbeafe;
-  border-color: #93c5fd;
-  margin-left: 2rem;
-}
-
-.message-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-}
-
-.sender {
-  font-weight: 600;
-  color: #374151;
-  font-size: 0.875rem;
-}
-
-.timestamp {
-  font-size: 0.75rem;
-  color: #6b7280;
-}
-
-.message-content {
-  color: #111827;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.chat-input-section {
-  border-top: 1px solid #e5e7eb;
-  padding-top: 1rem;
-}
-
-.chat-input form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.message-textarea {
-  border: 1px solid #d1d5db;
-  border-radius: 0.375rem;
-  padding: 0.75rem;
-  font-size: 0.875rem;
-  resize: vertical;
-  min-height: 80px;
-  font-family: inherit;
-  width: 100%;
-}
-
-.message-textarea:focus {
-  outline: none;
-  border-color: #4f46e5;
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-}
-
-.input-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.message-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.message-count {
-  font-size: 0.75rem;
-  color: #6b7280;
-  font-weight: 500;
-}
-
-.limit-info {
-  font-size: 0.75rem;
-  color: #059669;
-}
-
-.btn-sm {
-  padding: 0.5rem 1rem;
-  font-size: 0.875rem;
-}
-
-.message-limit-reached,
-.assignment-required,
-.application-required {
-  background: #f3f4f6;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.5rem;
-  padding: 1rem;
-}
-
-.limit-reached-content,
-.assignment-content,
-.application-content {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-}
-
-.limit-reached-content i,
-.assignment-content i,
-.application-content i {
-  color: #6b7280;
-  font-size: 1.25rem;
-  margin-top: 0.125rem;
-}
-
-.limit-reached-content div p:first-child,
-.assignment-content div p:first-child,
-.application-content div p:first-child {
-  margin: 0 0 0.5rem 0;
-  color: #374151;
-}
-
-.suggestion {
-  font-size: 0.875rem;
-  color: #6b7280;
-  margin: 0;
-}
-
-/* Privacy indicator styles */
-.chat-header-badges {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.privacy-indicator {
-  display: flex;
-  align-items: center;
-}
-
-.privacy-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.25rem 0.75rem;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.privacy-private {
-  background-color: #fef3c7;
-  color: #d97706;
-  border: 1px solid #fcd34d;
-}
-
-.privacy-public {
-  background-color: #dbeafe;
-  color: #2563eb;
-  border: 1px solid #93c5fd;
-}
-
-/* Private messages notice */
-.private-messages-notice {
-  text-align: center;
-  padding: 3rem 2rem;
-  background: #f8fafc;
-  border: 2px dashed #d1d5db;
-  border-radius: 8px;
-  margin: 1rem 0;
-}
-
-.privacy-lock-icon {
-  margin-bottom: 1rem;
-}
-
-.privacy-lock-icon i {
-  font-size: 2rem;
-  color: #9ca3af;
-}
-
-.private-messages-notice p:first-of-type {
-  font-weight: 600;
-  color: #374151;
-  margin-bottom: 0.5rem;
-}
-
-.privacy-notice-subtitle {
-  font-size: 0.875rem;
-  color: #6b7280;
-  margin: 0;
-  line-height: 1.5;
+.apply-error {
+  color: var(--color-danger, #dc2626);
 }
 
 /* Mobile responsiveness */
@@ -865,37 +534,6 @@ const handleMessageApplicant = async (applicantId: number) => {
   .task-actions > .btn {
     width: 100%;
     margin-left: 0;
-  }
-
-  .gig-chat-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.75rem;
-  }
-
-  .chat-header-badges {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-    width: 100%;
-  }
-  
-  .message.own-message {
-    margin-left: 1rem;
-  }
-
-  .input-footer {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.75rem;
-  }
-
-  .message-info {
-    align-self: stretch;
-  }
-
-  .btn-sm {
-    align-self: flex-end;
   }
 }
 </style>

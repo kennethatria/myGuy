@@ -137,7 +137,11 @@ const contextLink = computed(() => {
 });
 
 const conversationDescription = computed(() => {
-  // Only show description for tasks
+  // Who this conversation is with matters most: a gig or an item can have
+  // several conversations, one per person
+  if (props.conversation.other_user_name) {
+    return `with ${props.conversation.other_user_name}`;
+  }
   if (props.conversation.task_description) {
     return props.conversation.task_description;
   }

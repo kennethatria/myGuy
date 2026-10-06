@@ -14,11 +14,15 @@ vi.mock('@/stores/auth', () => ({
   }))
 }))
 
+// Shared so a test can check which conversation the floating chat opened
+const openChat = vi.fn()
+
 vi.mock('@/stores/chat', () => ({
   useChatStore: vi.fn(() => ({
     getStoreMessages: vi.fn().mockReturnValue([]),
     messages: [],
-    sendMessage: vi.fn()
+    sendMessage: vi.fn(),
+    openChat
   }))
 }))
 
@@ -350,7 +354,7 @@ describe('Store Booking Flow', () => {
       expect(rejectButton.exists()).toBe(true)
     })
 
-    it('should open chat modal when messaging approved requester', async () => {
+    it('opens the floating chat with an approved requester', async () => {
       const ownerItem = { ...mockItem, seller: { ...mockItem.seller, id: 1 } }
       wrapper.vm.item = ownerItem
       wrapper.vm.bookingRequests = [
@@ -368,10 +372,8 @@ describe('Store Booking Flow', () => {
       wrapper.vm.openStoreChatWithUser(2)
       await wrapper.vm.$nextTick()
 
-      expect(wrapper.vm.showChatModal).toBe(true)
-      expect(wrapper.vm.chatRecipientId).toBe(2)
-      // Component resolves username from the bookingRequests array
-      expect(wrapper.vm.chatRecipientName).toBe('buyer1')
+      // The username comes from the bookingRequests array
+      expect(openChat).toHaveBeenCalledWith({ itemId: ownerItem.id, otherUserId: 2, otherUserName: 'buyer1' })
     })
   })
 })

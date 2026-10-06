@@ -88,6 +88,7 @@
             :style="{ left: `${selectedSpot.x}%`, top: `${selectedSpot.y}%` }"
             role="dialog"
             :aria-label="`About ${nameOf(selected.userId)}`"
+            ref="popup"
             @click.stop
           >
             <div class="popup-header">
@@ -140,7 +141,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 import { useReviewsStore } from '@/stores/reviews'
 import { useUserStore } from '@/stores/user'
@@ -191,8 +192,13 @@ function linkTo(item: Interaction): RouteLocationRaw {
     : { name: 'store-item', params: { id: item.linkId } }
 }
 
-function toggle(connection: Connection) {
+const popup = ref<HTMLElement | null>(null)
+
+async function toggle(connection: Connection) {
   selected.value = selected.value?.userId === connection.userId ? null : connection
+  // On phones the summary sits under the graph: bring it into view
+  await nextTick()
+  popup.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
 
 async function load() {
@@ -454,5 +460,30 @@ onBeforeUnmount(() => {
   color: var(--color-primary, #4f46e5);
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* Phones: the graph takes the full width, and the summary goes under it
+   rather than beside a dot, where it could run off the screen */
+@media (max-width: 640px) {
+  .network-stage {
+    flex-basis: 100%;
+  }
+
+  .node-popup,
+  .node-popup.left,
+  .node-popup.above,
+  .node-popup.left.above {
+    position: static;
+    width: auto;
+    margin: 0.75rem 0 0;
+    transform: none;
+    /* Scrolled into view clear of the floating chat button */
+    scroll-margin-bottom: 6rem;
+  }
+
+  .popup-close {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 </style>

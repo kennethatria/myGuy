@@ -56,6 +56,8 @@ export const useChatStore = defineStore('chat', () => {
   const reconnectAttempts = ref(0);
   const conversations = ref<ConversationSummary[]>([]);
   const activeConversation = ref<ConversationSummary | null>(null);
+  // The floating chat: open or closed. Its open conversation is activeConversation.
+  const widgetOpen = ref(false);
   // All maps below are keyed by conversationKey().
   const messages = ref<Map<string, Message[]>>(new Map());
   const typingUsers = ref<Map<string, TypingUser[]>>(new Map());
@@ -678,6 +680,27 @@ export const useChatStore = defineStore('chat', () => {
     openConversation(conv);
   }
 
+  // Opens the floating chat: on the conversation with otherUserId about a
+  // gig or a marketplace item, or on the conversation list when no one is
+  // named. Every "Message ..." button goes through here, so there is one
+  // place to read and write messages.
+  async function openChat(target?: {
+    taskId?: number;
+    itemId?: number;
+    otherUserId: number;
+    otherUserName?: string;
+  }) {
+    widgetOpen.value = true;
+    if (!socket.value?.connected) await connectSocket();
+    if (!target) {
+      activeConversation.value = null;
+    } else if (target.itemId) {
+      await joinStoreConversation(target.itemId, target.otherUserId);
+    } else {
+      openConversationWith(target);
+    }
+  }
+
   // Accepts a conversation, or a bare task/application/item id (e.g. from a
   // URL), which resolves to the first matching conversation.
   function joinConversation(target: ConversationSummary | number) {
@@ -841,6 +864,7 @@ export const useChatStore = defineStore('chat', () => {
     reconnectAttempts,
     conversations,
     activeConversation,
+    widgetOpen,
     messages,
     typingUsers,
     isLoadingMessages,
@@ -864,6 +888,7 @@ export const useChatStore = defineStore('chat', () => {
     disconnectSocket,
     joinConversation,
     openConversationWith,
+    openChat,
     sendMessage,
     editMessage,
     deleteMessage,

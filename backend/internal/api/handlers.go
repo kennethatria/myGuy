@@ -382,7 +382,8 @@ func (h *Handler) GetAssignedTasks(c *gin.Context) {
 }
 
 type applyForTaskRequest struct {
-	Message string `json:"message" binding:"required"`
+	// Optional: applying is one tap, details are agreed in chat
+	Message string `json:"message"`
 }
 
 func (h *Handler) ApplyForTask(c *gin.Context) {

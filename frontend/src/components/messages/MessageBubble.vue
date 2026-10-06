@@ -71,6 +71,7 @@ const editText = ref('');
 
 // Compute sender name from enriched message data or user store
 const senderName = computed(() => {
+  if (props.isOwnMessage) return 'You';
   // First try the enriched sender object on the message
   if (props.message.sender?.username) {
     return props.message.sender.username;
