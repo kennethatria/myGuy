@@ -2,7 +2,7 @@
   <div class="dashboard-container">
     <!-- Page Header -->
     <div class="page-header">
-      <h1 class="page-title">My Dashboard</h1>
+      <h1 class="page-title">Home</h1>
       <router-link :to="{ name: 'create-task' }" class="btn btn-primary">
         + Post a Gig
       </router-link>
@@ -11,7 +11,7 @@
     <!-- Loading and error states -->
     <div v-if="isLoading" class="card p-4 mb-4 text-center">
       <div class="loading-spinner mb-2"></div>
-      <p>Loading dashboard data...</p>
+      <p>Loading...</p>
     </div>
 
     <div v-else-if="error" class="card p-4 mb-4 bg-red-100 text-danger">
@@ -62,6 +62,8 @@
           <div class="stat-label">Completed</div>
         </div>
       </div>
+
+      <NearbyRadar />
 
       <!-- Tab Navigation -->
       <div class="tabs-section">
@@ -231,6 +233,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import NearbyRadar from '@/components/NearbyRadar.vue'
 import { format } from 'date-fns'
 import { useRouter } from 'vue-router'
 import { useTasksStore } from '@/stores/tasks'
