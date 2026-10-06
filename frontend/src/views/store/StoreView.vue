@@ -73,7 +73,7 @@
             :to="{ name: 'store-item', params: { id: item.id } }"
           >
             <template #footer>
-              <span v-if="item.distance" class="note-distance"><span aria-hidden="true">📍</span> {{ item.distance }}</span>
+              <DistanceTag :distance="item.distance" :show-unknown="showUnknownItems" />
               <span>@{{ item.seller?.username || 'someone' }}</span>
               <span v-if="listingPriceLabel(item)">{{ listingPriceLabel(item) }}</span>
               <span v-if="item.deadline && expiryLabel(item.deadline, now)">{{ expiryLabel(item.deadline, now) }}</span>
@@ -101,7 +101,7 @@
             :to="{ name: 'store-request', params: { id: request.id } }"
           >
             <template #footer>
-              <span v-if="request.distance" class="note-distance"><span aria-hidden="true">📍</span> {{ request.distance }}</span>
+              <DistanceTag :distance="request.distance" :show-unknown="showUnknownRequests" />
               <span>@{{ request.requester?.username || 'someone' }}</span>
               <span v-if="request.offer_count">{{ offersLabel(request.offer_count) }}</span>
               <span v-if="request.deadline && expiryLabel(request.deadline, now)">{{ expiryLabel(request.deadline, now) }}</span>
@@ -211,6 +211,8 @@ import { useAuthStore } from '@/stores/auth'
 import config from '@/config'
 import StickyNote from '@/components/StickyNote.vue'
 import NearbyBanner from '@/components/NearbyBanner.vue'
+import DistanceTag from '@/components/DistanceTag.vue'
+import { hasDistances } from '@/utils/distance'
 import { useViewerLocation, nearParam } from '@/composables/useViewerLocation'
 import { expiryLabel } from '@/utils/gigNote'
 import { listingPriceLabel, offersLabel } from '@/utils/listingNote'
@@ -275,6 +277,8 @@ const viewer = useViewerLocation(() => {
 const sortBy = ref<'distance' | 'created_at' | 'deadline'>(viewer.location.value ? 'distance' : 'created_at')
 const busyId = ref<string | null>(null)
 const totalPages = computed(() => Math.ceil(total.value / perPage))
+const showUnknownItems = computed(() => hasDistances(items.value))
+const showUnknownRequests = computed(() => hasDistances(requests.value))
 
 // Countdowns move without refetching
 const now = ref(new Date())
@@ -556,10 +560,6 @@ onUnmounted(() => {
 }
 
 /* Above the note-wide link, and big enough for a thumb */
-.note-distance {
-  font-weight: 600;
-}
-
 .note-actions {
   position: relative;
   z-index: 1;

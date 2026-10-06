@@ -51,7 +51,7 @@
             :to="{ name: 'task-detail', params: { id: task.id } }"
           >
             <template #footer>
-              <span v-if="task.distance" class="note-distance"><span aria-hidden="true">📍</span> {{ task.distance }}</span>
+              <DistanceTag :distance="task.distance" :show-unknown="showUnknownDistance" />
               <span>@{{ task.creator?.username || 'someone' }}</span>
               <span v-if="expiryLabel(task.deadline, now)">{{ expiryLabel(task.deadline, now) }}</span>
             </template>
@@ -110,6 +110,8 @@ import { debounce } from 'lodash-es'
 import config from '@/config'
 import StickyNote from '@/components/StickyNote.vue'
 import NearbyBanner from '@/components/NearbyBanner.vue'
+import DistanceTag from '@/components/DistanceTag.vue'
+import { hasDistances } from '@/utils/distance'
 import { useViewerLocation, nearParam } from '@/composables/useViewerLocation'
 import { expiryLabel } from '@/utils/gigNote'
 
@@ -143,6 +145,7 @@ const paginatedResult = ref<PaginatedResult | null>(null)
 const searchQuery = ref('')
 const currentPage = ref(1)
 const perPage = 24
+const showUnknownDistance = computed(() => hasDistances(paginatedResult.value?.tasks ?? []))
 // Nearest first once the viewer's rough location is known
 const viewer = useViewerLocation(() => {
   sortBy.value = 'distance'
@@ -313,10 +316,6 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 1.75rem;
-}
-
-.note-distance {
-  font-weight: 600;
 }
 
 .empty-board {
