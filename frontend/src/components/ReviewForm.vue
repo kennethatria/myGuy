@@ -27,7 +27,7 @@
       </div>
 
       <div class="form-group">
-        <label for="comment" class="form-label">Comment</label>
+        <label for="comment" class="form-label">Comment (optional)</label>
         <textarea
           id="comment"
           v-model="comment"
@@ -35,7 +35,6 @@
           :class="{ 'is-invalid': formErrors.comment }"
           rows="4"
           placeholder="Share your experience working on this gig..."
-          required
         ></textarea>
         <div v-if="formErrors.comment" class="invalid-feedback">{{ formErrors.comment }}</div>
       </div>
@@ -96,11 +95,6 @@ const validateForm = (): boolean => {
   
   if (rating.value < 1 || rating.value > 5) {
     formErrors.rating = 'Please select a rating between 1 and 5 stars'
-    isValid = false
-  }
-  
-  if (!comment.value.trim()) {
-    formErrors.comment = 'Please provide a comment'
     isValid = false
   }
   

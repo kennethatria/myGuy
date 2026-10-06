@@ -232,6 +232,14 @@ class SocketHandlers {
       }
 
     } catch (error) {
+      if (error.code === 'chat_locked') {
+        return socket.emit('error', {
+          message: error.message,
+          code: 'chat_locked',
+          taskId: data?.taskId,
+          recipientId: data?.recipientId
+        });
+      }
       logger.error('Error sending message:', error);
       socket.emit('error', { message: 'Failed to send message' });
     }
@@ -447,6 +455,12 @@ class SocketHandlers {
         totalCount
       });
         
+      // A gig chat before the poster accepts: the app shows why it can't
+      // be written to instead of a message box.
+      const locked = await messageService.isChatLocked({
+        taskId, userId: socket.userId, otherUserId
+      });
+
       socket.emit('messages:list', {
         taskId,
         applicationId,
@@ -454,7 +468,8 @@ class SocketHandlers {
         otherUserId,
         messages: formattedMessages, 
         offset,
-        totalCount
+        totalCount,
+        locked
       });
       
     } catch (error) {

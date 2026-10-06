@@ -721,6 +721,12 @@ func (s *StoreService) ApproveBookingRequest(requestID uint, ownerID uint) (*mod
 		return nil, err
 	}
 
+	// The item is now reserved for this buyer: shown as reserved and no
+	// longer open to bookings, until the handover marks it sold.
+	if err := s.itemRepo.UpdateStatus(request.ItemID, "reserved"); err != nil {
+		return nil, err
+	}
+
 	s.fulfilRequest(request)
 
 	// Get and return the updated booking request

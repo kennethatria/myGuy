@@ -754,3 +754,25 @@ func TestStoreItemRepository_GetAll_BoardFilters(t *testing.T) {
 		assert.Equal(t, "Later", items[1].Title)
 	}
 }
+
+func TestGetAllShowsReservedItemsOnTheBoard(t *testing.T) {
+	db, err := setupTestDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := NewStoreItemRepository(db)
+	for _, status := range []string{"active", "reserved", "sold", "expired"} {
+		if err := db.Create(&models.StoreItem{Title: status, SellerID: 1, Status: status}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	items, _, err := repo.GetAll(models.StoreItemFilter{Page: 1, PerPage: 10})
+
+	assert.NoError(t, err)
+	titles := []string{}
+	for _, item := range items {
+		titles = append(titles, item.Title)
+	}
+	assert.ElementsMatch(t, []string{"active", "reserved"}, titles)
+}

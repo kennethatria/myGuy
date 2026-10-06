@@ -72,3 +72,27 @@ func TestApplicationRepository(t *testing.T) {
 		assert.Equal(t, "accepted", fetched.Status)
 	})
 }
+
+func TestListAccepted(t *testing.T) {
+	db, err := setupTestDB()
+	assert.NoError(t, err)
+	repo := NewGormApplicationRepository(db)
+	ctx := context.Background()
+
+	poster := &models.User{Username: "poster", Email: "poster@example.com"}
+	db.Create(poster)
+	task := &models.Task{Title: "Fix sink", CreatedBy: poster.ID}
+	db.Create(task)
+	for i, status := range []string{"accepted", "pending", "declined"} {
+		applicant := &models.User{Username: "applicant" + status, Email: status + "@example.com"}
+		db.Create(applicant)
+		assert.NoError(t, repo.Create(ctx, &models.Application{TaskID: task.ID, ApplicantID: applicant.ID, Status: status}), i)
+	}
+
+	accepted, err := repo.ListAccepted(ctx)
+
+	assert.NoError(t, err)
+	assert.Len(t, accepted, 1)
+	assert.Equal(t, "accepted", accepted[0].Status)
+	assert.Equal(t, poster.ID, accepted[0].Task.CreatedBy, "the task is loaded for its poster")
+}

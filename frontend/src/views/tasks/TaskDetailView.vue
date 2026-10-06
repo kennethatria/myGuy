@@ -77,6 +77,11 @@
       <div class="border-t border-gray-200 p-4">
         <p v-if="applyNotice" class="apply-notice" role="status">{{ applyNotice }}</p>
         <p v-if="applyError" class="apply-error" role="alert">{{ applyError }}</p>
+        <!-- Applications are answered in each applicant's conversation -->
+        <p v-if="pendingApplications" class="applications-note">
+          {{ pendingApplications }} {{ pendingApplications === 1 ? 'person has' : 'people have' }} applied.
+          Accept or decline in Messages.
+        </p>
         <p v-if="isOwner && task.status === 'expired'" class="expired-note">
           Nobody replied within 24 hours, so this note came off the board.
         </p>
@@ -104,39 +109,15 @@
             Message {{ chatPartner.name }}
           </button>
           <button
-            v-if="canComplete"
-            @click="handleComplete"
-            class="btn btn-secondary"
-          >
-            Mark as Complete
-          </button>
-          <button
-            v-if="canReview"
-            @click="() => router.push(`/reviews/create/${task!.id}`)"
+            v-if="pendingApplications"
+            @click="chatStore.openChat()"
             class="btn btn-primary"
           >
-            Leave Review
+            Answer in Messages
           </button>
         </div>
       </div>
 
-      <!-- Applications: the poster's to answer -->
-      <div v-if="isOwner && applications.length > 0" class="border-t border-gray-200">
-        <div class="p-4">
-          <h3 class="mb-3">Applications</h3>
-          <div class="space-y-3">
-            <ApplicationDetail
-              v-for="application in applications"
-              :key="application.id"
-              :application="application"
-              :task-owner-id="task.created_by"
-              @accept="handleAcceptApplication"
-              @decline="handleDeclineApplication"
-              @message="handleMessageApplicant"
-            />
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </template>
@@ -144,30 +125,26 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { setPageTitle } from '@/utils/pageTitle'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/stores/auth'
 import { useTasksStore } from '@/stores/tasks'
 import { useChatStore } from '@/stores/chat'
 import { useUsersStore } from '@/stores/users'
-import { useReviewsStore } from '@/stores/reviews'
-import ApplicationDetail from '@/components/ApplicationDetail.vue'
 import StickyNote from '@/components/StickyNote.vue'
 import { expiryLabel } from '@/utils/gigNote'
 
 const route = useRoute()
-const router = useRouter()
 const authStore = useAuthStore()
 const tasksStore = useTasksStore()
 const chatStore = useChatStore()
 const usersStore = useUsersStore()
-const reviewsStore = useReviewsStore()
 
 interface Task {
   id: number
   title: string
   description: string
-  status: 'open' | 'in_progress' | 'completed' | 'cancelled' | 'expired'
+  status: 'open' | 'in_progress' | 'pending_approval' | 'completed' | 'cancelled' | 'expired'
   created_by: number  // Changed from createdBy to match API
   assigned_to?: number  // Changed from assignedTo to match API
   deadline: string
@@ -203,7 +180,6 @@ interface Application {
 
 const task = ref<Task | null>(null)
 const applications = ref<Application[]>([])
-const hasReviewed = ref(false)
 const isLoading = ref(true)
 const error = ref('')
 const creator = ref<{ id: number; username: string; fullName?: string } | null>(null)
@@ -214,7 +190,8 @@ const statusClasses = {
   in_progress: 'badge-in_progress',
   completed: 'badge-completed',
   cancelled: 'badge-cancelled',
-  expired: 'badge-cancelled'
+  expired: 'badge-cancelled',
+  pending_approval: 'badge-pending_approval'
 }
 
 const statusLabel = computed(() => (task.value?.status ?? '').replace('_', ' '))
@@ -237,24 +214,9 @@ const canApply = computed(() => {
   )
 })
 
-
-const canComplete = computed(() => {
-  if (!task.value || !authStore.user) return false
-  const userId = authStore.user.id
-  return (
-    task.value.status === 'in_progress' &&
-    (task.value.created_by === userId || task.value.assigned_to === userId)
-  )
-})
-
-const canReview = computed(() => {
-  if (!task.value || !authStore.user || hasReviewed.value) return false
-  const userId = authStore.user.id
-  return (
-    task.value.status === 'completed' &&
-    (task.value.created_by === userId || task.value.assigned_to === userId)
-  )
-})
+// Applications still waiting for the poster (owner only)
+const pendingApplications = computed(() =>
+  isOwner.value ? applications.value.filter(app => app.status === 'pending').length : 0)
 
 const hasApplied = computed(() => {
   if (!authStore.user || !applications.value) return false
@@ -337,16 +299,6 @@ const loadTaskData = async () => {
     applications.value = (applicationsData || []) as unknown as Application[];
     console.log(`Loaded ${applications.value.length} applications`);
 
-    // Check if the current user has already reviewed this task
-    if (task.value?.status === 'completed' && authStore.user) {
-      try {
-        hasReviewed.value = await reviewsStore.hasReviewedTask(taskId);
-      } catch (err) {
-        console.error('Failed to check review status:', err);
-        hasReviewed.value = false;
-      }
-    }
-    
   } catch (err) {
     console.error('Failed to fetch task details:', err);
     error.value = 'Failed to load gig details. Please try again.';
@@ -404,60 +356,9 @@ const handleRepost = async () => {
   }
 }
 
-const handleComplete = async () => {
-  if (!task.value) return
-  
-  if (!confirm('Mark this gig as completed?')) {
-    return
-  }
-
-  try {
-    await tasksStore.updateTaskStatus(task.value.id, 'completed')
-    task.value.status = 'completed'
-    
-    // If current user is task creator, prompt for review
-    if (isOwner.value) {
-      router.push(`/reviews/create/${task.value.id}`)
-    }
-  } catch (error) {
-    console.error('Failed to complete task:', error)
-    alert('Failed to complete the gig. Please try again.')
-  }
-}
-
-const handleAcceptApplication = async (applicationId: number) => {
-  if (!task.value) return
-
-  try {
-    await tasksStore.respondToApplication(task.value.id, applicationId, 'accepted')
-  } catch (error) {
-    console.error('Failed to accept application:', error)
-    alert(errorMessage(error, 'Failed to accept application. Please try again.'))
-  }
-
-  // Reload either way: on success the task now has an assignee and the other
-  // applications are declined; on failure (e.g. already assigned) the page
-  // catches up with the server.
-  await loadTaskData()
-}
-
-const handleDeclineApplication = async (applicationId: number) => {
-  if (!task.value) return
-
-  try {
-    await tasksStore.respondToApplication(task.value.id, applicationId, 'declined')
-    
-    // Refresh applications list
-    applications.value = await tasksStore.getTaskApplications(task.value.id) as unknown as Application[]
-  } catch (error) {
-    console.error('Failed to decline application:', error)
-    alert(errorMessage(error, 'Failed to decline application. Please try again.'))
-  }
-}
-
 // Who this person talks to about the gig, in the floating chat: the poster
 // and the assignee with each other, and an applicant with the poster. The
-// poster reaches other applicants from their application.
+// poster reaches other applicants in Messages.
 const chatPartner = computed<{ id: number; name: string } | null>(() => {
   if (!task.value || !authStore.user) return null
   if (isOwner.value) {
@@ -471,12 +372,6 @@ const chatPartner = computed<{ id: number; name: string } | null>(() => {
 const openChat = () => {
   if (!task.value || !chatPartner.value) return
   chatStore.openChat({ taskId: task.value.id, otherUserId: chatPartner.value.id, otherUserName: chatPartner.value.name })
-}
-
-const handleMessageApplicant = (applicantId: number) => {
-  if (!task.value) return
-  const applicant = applications.value.find(app => app.applicant_id === applicantId)?.applicant
-  chatStore.openChat({ taskId: task.value.id, otherUserId: applicantId, otherUserName: applicant?.username })
 }
 </script>
 
@@ -510,6 +405,7 @@ const handleMessageApplicant = (applicantId: number) => {
   color: var(--color-text-light, #6b7280);
 }
 
+.applications-note,
 .apply-notice,
 .apply-error {
   margin: 0 0 0.75rem;

@@ -67,10 +67,19 @@ func main() {
 
 	// Initialize services
 	userService := services.NewUserService(userRepo)
-	taskService := services.NewTaskService(taskRepo, applicationRepo, newTaskNotifier()).WithLocator(newLocator()).WithDistancer(newDistancer())
+	notifier := newTaskNotifier()
+	// A nil *Notifier must reach the service as a nil interface (no chat)
+	var taskNotifier services.TaskNotifier
+	if notifier != nil {
+		taskNotifier = notifier
+	}
+	taskService := services.NewTaskService(taskRepo, applicationRepo, taskNotifier).WithLocator(newLocator()).WithDistancer(newDistancer())
 	reviewService := services.NewReviewService(reviewRepo, taskRepo, userRepo)
 
 	go expireStaleTasks(taskService)
+	if notifier != nil {
+		go unlockMatchedChats(taskService, notifier)
+	}
 
 	authService := services.NewAuthService(userRepo, loginCodeRepo, newCodeSender(), os.Getenv("JWT_SECRET"))
 
@@ -218,9 +227,24 @@ func newLocator() services.Locator {
 	return proximity.New(url, apiKey)
 }
 
+// unlockMatchedChats lets people matched before chat recorded matches keep
+// talking: gig chats are locked until the poster accepts. Retries while the
+// chat service starts up.
+func unlockMatchedChats(taskService *services.TaskService, unlocker services.ChatUnlocker) {
+	for attempt := 1; attempt <= 5; attempt++ {
+		n, err := taskService.UnlockMatchedChats(context.Background(), unlocker)
+		if err == nil {
+			log.Printf("chat: %d matched pairs recorded", n)
+			return
+		}
+		log.Printf("chat: recording matched pairs failed (attempt %d): %v", attempt, err)
+		time.Sleep(time.Duration(attempt) * 10 * time.Second)
+	}
+}
+
 // newTaskNotifier posts task events (applications, decisions) into Messages
 // via the chat service, or does nothing if INTERNAL_API_KEY is unset.
-func newTaskNotifier() services.TaskNotifier {
+func newTaskNotifier() *chatnotify.Notifier {
 	apiKey := os.Getenv("INTERNAL_API_KEY")
 	if apiKey == "" {
 		log.Println("WARNING: INTERNAL_API_KEY not set; task events won't be posted to Messages")

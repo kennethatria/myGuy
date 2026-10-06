@@ -21,7 +21,7 @@ type StoreItem struct {
 	// Deadline is when the note comes off the board unless someone reacted
 	// (a bid or a booking request). Repost starts a fresh one.
 	Deadline        *time.Time     `json:"deadline,omitempty" gorm:"index:idx_store_items_deadline"`
-	Status          string         `json:"status" gorm:"default:'active';index:idx_store_items_status"` // active, sold, expired, cancelled
+	Status          string         `json:"status" gorm:"default:'active';index:idx_store_items_status"` // active, reserved, sold, expired, cancelled
 	Category        string         `json:"category" gorm:"index:idx_store_items_category"`
 	Images          []ItemImage    `json:"images" gorm:"foreignKey:ItemID"`
 	Condition       string         `json:"condition" gorm:"index:idx_store_items_condition"` // new, like-new, good, fair, poor

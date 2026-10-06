@@ -31,7 +31,7 @@
               </div>
             </div>
           </div>
-          <img v-else :src="'/placeholder.png'" :alt="item.title" />
+          <NoPhoto v-else />
         </div>
         
         <div class="item-info-section">
@@ -113,7 +113,12 @@
               </template>
               
               <!-- Booking Request Section -->
-              <div v-if="item.seller.id !== userId && item.status === 'active'" class="booking-section">
+              <!-- Open to bookings while active; once reserved, only the buyer
+                   with a booking still follows it here -->
+              <div
+                v-if="item.seller.id !== userId && (item.status === 'active' || (item.status === 'reserved' && hasBookingRequest))"
+                class="booking-section"
+              >
                 <div v-if="!hasBookingRequest" class="booking-request">
                   <button
                     @click="sendBookingRequest"
@@ -248,7 +253,8 @@
             </div>
           </div>
           
-          <div v-else-if="item.status !== 'active'" class="item-status">
+          <!-- (the buyer holding the reservation follows it in their booking above) -->
+          <div v-else-if="item.status !== 'active' && !(item.status === 'reserved' && hasBookingRequest)" class="item-status">
             <p class="status-message">
               {{ item.status === 'expired' ? 'This listing has come off the board.' : `This item is ${item.status}` }}
             </p>
@@ -290,6 +296,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useChatStore } from '@/stores/chat';
 import BookingConfirmationModal from '@/components/BookingConfirmationModal.vue';
+import NoPhoto from '@/components/NoPhoto.vue';
 import StickyNote from '@/components/StickyNote.vue';
 import { expiryLabel } from '@/utils/gigNote';
 import { listingPriceLabel } from '@/utils/listingNote';

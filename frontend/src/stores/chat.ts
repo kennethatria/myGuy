@@ -58,6 +58,9 @@ export const useChatStore = defineStore('chat', () => {
   const activeConversation = ref<ConversationSummary | null>(null);
   // The floating chat: open or closed. Its open conversation is activeConversation.
   const widgetOpen = ref(false);
+  // Gig conversations nobody can write in yet: the poster hasn't accepted.
+  // Holds conversation keys; the chat service decides and enforces it.
+  const lockedConversations = ref<Set<string>>(new Set());
   // All maps below are keyed by conversationKey().
   const messages = ref<Map<string, Message[]>>(new Map());
   const typingUsers = ref<Map<string, TypingUser[]>>(new Map());
@@ -84,6 +87,7 @@ export const useChatStore = defineStore('chat', () => {
 
   // Computed
   const activeKey = computed(() => activeConversation.value ? conversationKey(activeConversation.value) : null);
+  const activeLocked = computed(() => !!activeKey.value && lockedConversations.value.has(activeKey.value));
 
   const totalUnreadCount = computed(() =>
     conversations.value.reduce((total, conv) => total + (Number(conv.unread_count) || 0), 0)
@@ -262,7 +266,13 @@ export const useChatStore = defineStore('chat', () => {
       }
     });
 
-    socket.value.on('error', (error: Error) => {
+    socket.value.on('error', (error: Error & { code?: string; taskId?: number; recipientId?: number }) => {
+      // A message to a gig chat that isn't open yet: show it as locked
+      if (error?.code === 'chat_locked') {
+        const key = conversationKey({ task_id: Number(error.taskId), other_user_id: Number(error.recipientId) });
+        if (key) lockedConversations.value = new Set(lockedConversations.value).add(key);
+        return;
+      }
       console.error('WebSocket error:', error);
       connectionError.value = error?.message || 'Unknown error';
 
@@ -311,6 +321,9 @@ export const useChatStore = defineStore('chat', () => {
     const ref = messageConversation(message);
     const key = conversationKey(ref);
     if (!key) return;
+
+    // Accepted: the two can talk from now on
+    if (message.metadata?.event === 'accepted') setLocked(key, false);
 
     // Append only to an already-loaded thread; an unloaded one fetches its
     // full history when opened. The same message can arrive twice (e.g.
@@ -508,7 +521,14 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
   
-  function handleMessagesList({ taskId, applicationId, itemId, otherUserId, messages: msgs, offset, totalCount }: { taskId?: number; applicationId?: number; itemId?: number; otherUserId?: number; messages: Message[]; offset: number; totalCount?: number }) {
+  function setLocked(key: string, locked: boolean) {
+    if (lockedConversations.value.has(key) === locked) return;
+    const next = new Set(lockedConversations.value);
+    if (locked) next.add(key); else next.delete(key);
+    lockedConversations.value = next;
+  }
+
+  function handleMessagesList({ taskId, applicationId, itemId, otherUserId, messages: msgs, offset, totalCount, locked }: { taskId?: number; applicationId?: number; itemId?: number; otherUserId?: number; messages: Message[]; offset: number; totalCount?: number; locked?: boolean }) {
     const key = conversationKey({
       task_id: taskId ? Number(taskId) : undefined,
       application_id: applicationId ? Number(applicationId) : undefined,
@@ -516,6 +536,7 @@ export const useChatStore = defineStore('chat', () => {
       other_user_id: otherUserId ? Number(otherUserId) : activeConversation.value?.other_user_id
     });
     if (!key) return;
+    setLocked(key, !!locked);
 
     // Enrich messages with sender/recipient data
     enrichMessages(msgs);
@@ -876,6 +897,7 @@ export const useChatStore = defineStore('chat', () => {
     activeMessages,
     activeTypingUsers,
     activeHasMoreMessages,
+    activeLocked,
     
     // Store message methods
     getStoreMessages,

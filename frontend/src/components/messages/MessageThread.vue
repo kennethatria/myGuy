@@ -27,7 +27,13 @@
       
       <!-- Messages -->
       <template v-for="message in messages" :key="message.id">
-        <div v-if="message.message_type === 'system_alert'" class="system-message">
+        <TaskEventMessage
+          v-if="message.message_type === 'system_alert' && message.metadata?.event"
+          :message="message"
+          :current-user-id="authStore.user?.id"
+          :latest="message.id === latestEventId"
+        />
+        <div v-else-if="message.message_type === 'system_alert'" class="system-message">
           {{ message.content }}
           <span class="system-message-time">{{ formatTime(message.created_at) }}</span>
         </div>
@@ -59,8 +65,11 @@
       </div>
     </div>
     
-    <!-- Message Input -->
-    <div class="message-input-container">
+    <!-- Message Input: a gig chat opens once the poster accepts -->
+    <div v-if="locked" class="message-locked" role="status">
+      {{ lockedNote }}
+    </div>
+    <div v-else class="message-input-container">
       <form @submit.prevent="sendMessage" class="message-form">
         <input
           v-model="messageText"
@@ -83,6 +92,7 @@ import { ref, computed, nextTick, watch } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import MessageBubble from './MessageBubble.vue';
 import BookingMessageBubble from './BookingMessageBubble.vue';
+import TaskEventMessage from './TaskEventMessage.vue';
 import type { Message, ConversationSummary } from '@/stores/messages';
 
 const props = defineProps<{
@@ -91,6 +101,8 @@ const props = defineProps<{
   typingUsers: Array<{ userId: number; userName: string }>;
   loading: boolean;
   hasMore: boolean;
+  // Nobody can write here yet (a gig chat before the poster accepts)
+  locked?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -108,6 +120,23 @@ const messagesContainer = ref<HTMLElement>();
 const messageText = ref('');
 const isTyping = ref(false);
 const typingTimeout = ref<ReturnType<typeof setTimeout>>();
+
+// The newest gig event: the only one that offers the next step
+const latestEventId = computed(() => {
+  for (let i = props.messages.length - 1; i >= 0; i--) {
+    if (props.messages[i].metadata?.event) return props.messages[i].id;
+  }
+  return null;
+});
+
+// Before a match the poster is the one who can open the chat
+const lockedNote = computed(() => {
+  const latest = props.messages.find(m => m.id === latestEventId.value);
+  const isPoster = latest?.metadata?.event === 'application' && latest.recipient_id === authStore.user?.id;
+  return isPoster
+    ? 'Accept the application to start chatting.'
+    : 'You can chat once the poster accepts the application.';
+});
 
 // Computed properties for conversation display
 const conversationTitle = computed(() => {
@@ -306,6 +335,12 @@ watch(() => props.messages.length, () => {
   color: #92400e;
 }
 
+/* Marked done, waiting for the poster's approval */
+.status-pending_approval {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
 .status-completed {
   background: #d1fae5;
   color: #065f46;
@@ -479,5 +514,14 @@ watch(() => props.messages.length, () => {
   margin-top: 0.25rem;
   font-size: 0.75rem;
   color: #6366f1;
+}
+
+.message-locked {
+  padding: 1rem;
+  border-top: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #4b5563;
+  font-size: 0.875rem;
+  text-align: center;
 }
 </style>

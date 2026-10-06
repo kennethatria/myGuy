@@ -7,7 +7,7 @@ interface Task {
   id: number
   title: string
   description: string
-  status: 'open' | 'in_progress' | 'completed' | 'cancelled' | 'expired'
+  status: 'open' | 'in_progress' | 'pending_approval' | 'completed' | 'cancelled' | 'expired'
   created_by: number
   assigned_to?: number | null
   // When the note comes off the board: 24 hours after posting

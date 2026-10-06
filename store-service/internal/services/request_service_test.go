@@ -240,9 +240,10 @@ func TestApproveBookingRequest_FulfilsRequest(t *testing.T) {
 	}
 
 	t.Run("the requester's approved booking closes their request", func(t *testing.T) {
-		service, _, _, bookingRepo := setupService()
+		service, itemRepo, _, bookingRepo := setupService()
 		requests := new(MockItemRequestRepository)
 		service.WithRequests(requests, nil)
+		itemRepo.On("UpdateStatus", uint(9), "reserved").Return(nil)
 		bookingRepo.On("GetByID", uint(1)).Return(booking("pending", 2), nil).Once()
 		bookingRepo.On("GetAllByItemID", uint(9)).Return([]models.BookingRequest{}, nil)
 		bookingRepo.On("UpdateStatus", uint(1), "approved").Return(nil)
@@ -257,9 +258,10 @@ func TestApproveBookingRequest_FulfilsRequest(t *testing.T) {
 	})
 
 	t.Run("someone else's booking leaves the request open", func(t *testing.T) {
-		service, _, _, bookingRepo := setupService()
+		service, itemRepo, _, bookingRepo := setupService()
 		requests := new(MockItemRequestRepository)
 		service.WithRequests(requests, nil)
+		itemRepo.On("UpdateStatus", uint(9), "reserved").Return(nil)
 		bookingRepo.On("GetByID", uint(1)).Return(booking("pending", 3), nil).Once()
 		bookingRepo.On("GetAllByItemID", uint(9)).Return([]models.BookingRequest{}, nil)
 		bookingRepo.On("UpdateStatus", uint(1), "approved").Return(nil)

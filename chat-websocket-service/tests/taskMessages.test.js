@@ -74,6 +74,36 @@ describe('POST /internal/task-message', () => {
 
     expect(messageService.unlockContacts).not.toHaveBeenCalled();
   });
+
+  it('keeps the event a message is about, for the actions shown on it', async () => {
+    messageService.sendMessage.mockResolvedValue({ id: 45 });
+
+    await post({
+      task_id: 1, sender_id: 2, recipient_id: 9, content: 'New application',
+      metadata: { event: 'application', application_id: '12', extra: 'dropped' }
+    });
+
+    expect(messageService.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: { event: 'application', application_id: 12 }
+    }));
+  });
+
+  it('drops events it does not know', async () => {
+    messageService.sendMessage.mockResolvedValue({ id: 46 });
+
+    await post({ task_id: 1, sender_id: 2, recipient_id: 9, content: 'Hi', metadata: { event: 'pay_now' } });
+
+    expect(messageService.sendMessage.mock.calls[0][0].metadata).toBeUndefined();
+  });
+
+  it('records an old match without posting a message', async () => {
+    const res = await post({ task_id: 1, sender_id: 9, recipient_id: 2, unlock_contacts: true });
+
+    expect(res.status).toBe(204);
+    expect(messageService.unlockContacts).toHaveBeenCalledWith({ taskId: 1, userA: 9, userB: 2 });
+    expect(messageService.sendMessage).not.toHaveBeenCalled();
+    expect(emit).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /internal/store-message', () => {

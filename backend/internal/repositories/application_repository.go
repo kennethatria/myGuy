@@ -43,6 +43,20 @@ func (r *GormApplicationRepository) ListByTask(ctx context.Context, taskID uint)
 	return applications, nil
 }
 
+// ListAccepted returns every accepted application with its task: each pair
+// of poster and applicant who agreed to work together.
+func (r *GormApplicationRepository) ListAccepted(ctx context.Context) ([]models.Application, error) {
+	var applications []models.Application
+	err := r.db.WithContext(ctx).
+		Preload("Task").
+		Where("status = ?", "accepted").
+		Find(&applications).Error
+	if err != nil {
+		return nil, err
+	}
+	return applications, nil
+}
+
 // ListByUser returns userID's applications, newest first, with each task and
 // its poster loaded for the "My applications" list.
 func (r *GormApplicationRepository) ListByUser(ctx context.Context, userID uint) ([]models.Application, error) {
