@@ -23,14 +23,27 @@ type RequestServiceInterface interface {
 type RequestService struct {
 	requestRepo repositories.ItemRequestRepository
 	itemRepo    repositories.StoreItemRepository
+	locator     Locator
 }
 
 func NewRequestService(requestRepo repositories.ItemRequestRepository, itemRepo repositories.StoreItemRepository) *RequestService {
-	return &RequestService{requestRepo: requestRepo, itemRepo: itemRepo}
+	return &RequestService{requestRepo: requestRepo, itemRepo: itemRepo, locator: noopLocator{}}
+}
+
+// WithLocator saves requests' rough locations through locator (nil = don't).
+func (s *RequestService) WithLocator(locator Locator) *RequestService {
+	if locator != nil {
+		s.locator = locator
+	}
+	return s
 }
 
 func (s *RequestService) CreateRequest(userID uint, req models.CreateItemRequestRequest) (*models.ItemRequest, error) {
 	title, description, err := validateListingText(req.Title, req.Description)
+	if err != nil {
+		return nil, err
+	}
+	at, err := parseLocation(req.Lat, req.Lng)
 	if err != nil {
 		return nil, err
 	}
@@ -43,6 +56,9 @@ func (s *RequestService) CreateRequest(userID uint, req models.CreateItemRequest
 	startRequest(request)
 	if err := s.requestRepo.Create(request); err != nil {
 		return nil, err
+	}
+	if at != nil {
+		s.locator.Save("request", request.ID, *at)
 	}
 	return request, nil
 }
@@ -104,7 +120,11 @@ func (s *RequestService) DeleteRequest(id uint, userID uint) error {
 	if request.Status != "active" && request.Status != "expired" {
 		return NewUserError("only a live or expired request can be removed")
 	}
-	return s.requestRepo.Delete(id)
+	if err := s.requestRepo.Delete(id); err != nil {
+		return err
+	}
+	s.locator.Delete("request", id)
+	return nil
 }
 
 // ExpireStaleRequests takes requests that got no listing within their 24

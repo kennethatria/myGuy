@@ -14,6 +14,7 @@ import (
 
 	"myguy/internal/api"
 	"myguy/internal/chatnotify"
+	"myguy/internal/proximity"
 	"myguy/internal/mailer"
 	"myguy/internal/middleware"
 	"myguy/internal/models"
@@ -66,7 +67,7 @@ func main() {
 
 	// Initialize services
 	userService := services.NewUserService(userRepo)
-	taskService := services.NewTaskService(taskRepo, applicationRepo, newTaskNotifier())
+	taskService := services.NewTaskService(taskRepo, applicationRepo, newTaskNotifier()).WithLocator(newLocator())
 	reviewService := services.NewReviewService(reviewRepo, taskRepo, userRepo)
 
 	go expireStaleTasks(taskService)
@@ -190,6 +191,18 @@ func newCodeSender() services.CodeSender {
 		Password: os.Getenv("SMTP_PASSWORD"),
 		From:     os.Getenv("SMTP_FROM"),
 	})
+}
+
+// newLocator saves gigs' rough locations in the proximity service, or
+// returns nil (locations aren't saved) when PROXIMITY_URL or
+// INTERNAL_API_KEY is unset.
+func newLocator() services.Locator {
+	url, apiKey := os.Getenv("PROXIMITY_URL"), os.Getenv("INTERNAL_API_KEY")
+	if url == "" || apiKey == "" {
+		log.Println("WARNING: PROXIMITY_URL or INTERNAL_API_KEY not set; gig locations won't be saved")
+		return nil
+	}
+	return proximity.New(url, apiKey)
 }
 
 // newTaskNotifier posts task events (applications, decisions) into Messages

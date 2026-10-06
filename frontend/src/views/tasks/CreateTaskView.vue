@@ -40,6 +40,8 @@
         </template>
       </StickyNote>
 
+      <LocationField :state="location.state.value" @request="location.request" @clear="location.clear" />
+
       <p class="composer-hint">
         Leave out phone numbers, emails and links. You can share them in chat once you've agreed on the gig.
       </p>
@@ -61,6 +63,8 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTasksStore } from '@/stores/tasks'
 import StickyNote from '@/components/StickyNote.vue'
+import LocationField from '@/components/LocationField.vue'
+import { useRoughLocation } from '@/composables/useRoughLocation'
 import {
   HEADLINE_MAX_WORDS,
   BODY_MAX_WORDS,
@@ -74,6 +78,7 @@ const tasksStore = useTasksStore()
 
 const title = ref('')
 const description = ref('')
+const location = useRoughLocation()
 const isSubmitting = ref(false)
 const formError = ref('')
 // Any colour will do for a new note; pick one per visit.
@@ -99,7 +104,8 @@ const handleSubmit = async () => {
   try {
     const created = await tasksStore.createTask({
       title: title.value.trim(),
-      description: description.value.trim()
+      description: description.value.trim(),
+      ...(location.location.value ?? {})
     })
     router.push({ name: 'task-detail', params: { id: created.id } })
   } catch (error) {

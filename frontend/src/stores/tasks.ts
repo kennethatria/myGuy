@@ -307,7 +307,7 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
-  const createTask = async (task: Pick<Task, 'title' | 'description'>) => {
+  const createTask = async (task: Pick<Task, 'title' | 'description'> & { lat?: number; lng?: number }) => {
     const authStore = useAuthStore();
     const token = authStore.token;
     

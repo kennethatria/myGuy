@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 	"myguy/internal/middleware"
 	"myguy/internal/models"
+	"myguy/internal/proximity"
 	"myguy/internal/services"
 )
 
@@ -157,6 +158,9 @@ func (h *Handler) respondWithSession(c *gin.Context, status int, user *models.Us
 type createTaskRequest struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
+	// Optional rough location, already snapped to a cell by the browser
+	Lat *float64 `json:"lat"`
+	Lng *float64 `json:"lng"`
 }
 
 func (h *Handler) CreateTask(c *gin.Context) {
@@ -166,11 +170,18 @@ func (h *Handler) CreateTask(c *gin.Context) {
 		return
 	}
 
+	location, err := proximity.Parse(req.Lat, req.Lng)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+
 	userID := c.GetUint("userID")
 	task, err := h.taskService.CreateTask(c.Request.Context(), services.CreateTaskInput{
 		Title:       req.Title,
 		Description: req.Description,
 		CreatedBy:   userID,
+		Location:    location,
 	})
 
 	if err != nil {
@@ -616,6 +627,9 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 // UpdateTaskStatusRequest contains the data for updating a task's status
 type UpdateTaskStatusRequest struct {
 	Status string `json:"status" binding:"required,oneof=open in_progress completed cancelled"`
+	// Optional fresh rough location when reposting (status open)
+	Lat *float64 `json:"lat"`
+	Lng *float64 `json:"lng"`
 }
 
 // UpdateTaskStatus updates the status of a task
@@ -629,6 +643,12 @@ func (h *Handler) UpdateTaskStatus(c *gin.Context) {
 	var req UpdateTaskStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	location, err := proximity.Parse(req.Lat, req.Lng)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -646,6 +666,10 @@ func (h *Handler) UpdateTaskStatus(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update task status"})
 		}
 		return
+	}
+
+	if req.Status == "open" {
+		h.taskService.SaveLocation(task.ID, location)
 	}
 
 	c.JSON(http.StatusOK, taskForViewer(*task, userID))

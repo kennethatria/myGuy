@@ -1,6 +1,10 @@
 package services
 
-import "errors"
+import (
+	"errors"
+
+	"myguy/internal/proximity"
+)
 
 // userFacing are the errors written for the person using the app. Only
 // these reach clients verbatim; anything else (a database error, say) is
@@ -12,6 +16,7 @@ var userFacing = []error{
 	ErrTaskNotFound, ErrUnauthorized, ErrTaskNotOpen, ErrInvalidStatus,
 	ErrApplicationNotFound, ErrApplicationNotPending, ErrOwnTask, ErrAlreadyApplied, ErrTaskWasAssigned,
 	ErrHeadlineRequired, ErrBodyRequired, ErrHeadlineTooLong, ErrBodyTooLong, ErrMessageTooLong, ErrContactDetails,
+	proximity.ErrInvalidLocation,
 }
 
 // IsUserFacing reports whether err is one of the messages written for users.

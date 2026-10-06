@@ -124,8 +124,10 @@ func (r *ItemRequest) AfterFind(tx *gorm.DB) error {
 }
 
 type CreateItemRequestRequest struct {
-	Title       string `json:"title" binding:"required"`
-	Description string `json:"description"`
+	Title       string   `json:"title" binding:"required"`
+	Description string   `json:"description"`
+	Lat         *float64 `json:"lat,omitempty"`
+	Lng         *float64 `json:"lng,omitempty"`
 }
 
 type ItemRequestFilter struct {
@@ -154,6 +156,9 @@ type CreateStoreItemRequest struct {
 	ShippingInfo    string    `json:"shipping_info"`
 	// RequestID: the request this listing answers, if any
 	RequestID       *uint     `json:"request_id,omitempty"`
+	// Optional rough location, already snapped to a cell by the browser
+	Lat             *float64  `json:"lat,omitempty"`
+	Lng             *float64  `json:"lng,omitempty"`
 }
 
 type UpdateStoreItemRequest struct {

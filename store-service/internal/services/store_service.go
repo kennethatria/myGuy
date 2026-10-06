@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"store-service/internal/contacts"
 	"store-service/internal/models"
+	"store-service/internal/proximity"
 	"store-service/internal/repositories"
 	"strings"
 	"time"
@@ -32,7 +33,29 @@ var (
 	ErrListingExpired   = NewUserError("this listing has expired")
 	ErrRequestClosed    = NewUserError("this request is no longer open")
 	ErrOwnRequest       = NewUserError("you can't list an item for your own request")
+	ErrInvalidLocation  = NewUserError(proximity.ErrInvalidLocation.Error())
 )
+
+// Locator keeps the rough location of posts in the proximity service.
+// Implementations must not block or fail the caller (it is best effort).
+type Locator interface {
+	Save(kind string, id uint, at proximity.Location)
+	Delete(kind string, id uint)
+}
+
+type noopLocator struct{}
+
+func (noopLocator) Save(string, uint, proximity.Location) {}
+func (noopLocator) Delete(string, uint)                   {}
+
+// parseLocation reads an optional rough location from a create request.
+func parseLocation(lat, lng *float64) (*proximity.Location, error) {
+	at, err := proximity.Parse(lat, lng)
+	if err != nil {
+		return nil, ErrInvalidLocation
+	}
+	return at, nil
+}
 
 // validateListingText enforces the sticky-note limits and keeps contact
 // details off public listings. It returns the trimmed headline and note.
@@ -61,6 +84,7 @@ type StoreService struct {
 	userRepo        repositories.UserRepository
 	requestRepo     repositories.ItemRequestRepository
 	chat            ChatNotifier
+	locator         Locator
 }
 
 func NewStoreService(db *gorm.DB, itemRepo repositories.StoreItemRepository, bidRepo repositories.BidRepository, bookingRepo repositories.BookingRequestRepository, userRepo repositories.UserRepository) *StoreService {
@@ -71,7 +95,16 @@ func NewStoreService(db *gorm.DB, itemRepo repositories.StoreItemRepository, bid
 		bookingRepo: bookingRepo,
 		userRepo:    userRepo,
 		chat:        noopChatNotifier{},
+		locator:     noopLocator{},
 	}
+}
+
+// WithLocator saves listings' rough locations through locator (nil = don't).
+func (s *StoreService) WithLocator(locator Locator) *StoreService {
+	if locator != nil {
+		s.locator = locator
+	}
+	return s
 }
 
 // WithRequests lets listings answer requests: requests is where they live,
@@ -87,6 +120,10 @@ func (s *StoreService) WithRequests(requests repositories.ItemRequestRepository,
 
 func (s *StoreService) CreateItem(userID uint, req models.CreateStoreItemRequest) (*models.StoreItem, error) {
 	title, description, err := validateListingText(req.Title, req.Description)
+	if err != nil {
+		return nil, err
+	}
+	at, err := parseLocation(req.Lat, req.Lng)
 	if err != nil {
 		return nil, err
 	}
@@ -149,6 +186,9 @@ func (s *StoreService) CreateItem(userID uint, req models.CreateStoreItemRequest
 
 	if err := s.itemRepo.Create(item); err != nil {
 		return nil, err
+	}
+	if at != nil {
+		s.locator.Save("item", item.ID, *at)
 	}
 
 	if answers != nil {
@@ -300,7 +340,11 @@ func (s *StoreService) DeleteItem(id uint, userID uint) error {
 		return NewUserError("only a live or expired listing can be removed")
 	}
 
-	return s.itemRepo.Delete(id)
+	if err := s.itemRepo.Delete(id); err != nil {
+		return err
+	}
+	s.locator.Delete("item", id)
+	return nil
 }
 
 func (s *StoreService) PlaceBid(itemID uint, userID uint, req models.CreateBidRequest) (*models.Bid, error) {

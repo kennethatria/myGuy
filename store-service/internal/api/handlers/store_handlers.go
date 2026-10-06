@@ -66,6 +66,7 @@ func (h *StoreHandler) CreateItem(c *gin.Context) {
 		if requestID, err := parseID(c.PostForm("request_id")); err == nil {
 			req.RequestID = &requestID
 		}
+		req.Lat, req.Lng = formFloat(c, "lat"), formFloat(c, "lng")
 		
 		if isAuction {
 			req.PriceType = "bidding"
@@ -132,6 +133,15 @@ func respondError(c *gin.Context, status int, err error) {
 		log.Printf("%s %s failed: %v", c.Request.Method, c.FullPath(), err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "something went wrong; please try again"})
 	}
+}
+
+// formFloat reads an optional number from a multipart form.
+func formFloat(c *gin.Context, field string) *float64 {
+	v, err := strconv.ParseFloat(c.PostForm(field), 64)
+	if err != nil {
+		return nil
+	}
+	return &v
 }
 
 // UploadsDir is where cleaned listing photos are stored and served from
