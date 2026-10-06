@@ -61,8 +61,7 @@ const task = ref<{
   title?: string;
   status?: string;
   created_by?: number;
-  createdBy?: number;
-  assignedTo?: number;
+  assigned_to?: number | null;
   creator?: { id: number; username: string };
   assignee?: { id: number; username: string };
 } | null>(null)
@@ -77,13 +76,13 @@ const reviewedUserId = computed((): number | undefined => {
   if (!task.value || !currentUserId.value) return undefined
   
   // If current user is the task creator, they review the assignee
-  if (task.value.createdBy === currentUserId.value) {
-    return task.value.assignedTo
+  if (task.value.created_by === currentUserId.value) {
+    return task.value.assigned_to ?? undefined
   }
   
   // If current user is the assignee, they review the creator
-  if (task.value.assignedTo === currentUserId.value) {
-    return task.value.createdBy
+  if (task.value.assigned_to === currentUserId.value) {
+    return task.value.created_by
   }
   
   return undefined
@@ -93,12 +92,12 @@ const reviewedUserName = computed(() => {
   if (!task.value || !reviewedUserId.value) return 'Unknown'
   
   // Check if we're reviewing the creator
-  if (reviewedUserId.value === task.value.createdBy) {
+  if (reviewedUserId.value === task.value.created_by) {
     return task.value.creator?.username || 'Task Creator'
   }
   
   // Check if we're reviewing the assignee
-  if (reviewedUserId.value === task.value.assignedTo) {
+  if (reviewedUserId.value === task.value.assigned_to) {
     return task.value.assignee?.username || 'Task Assignee'
   }
   
@@ -125,8 +124,8 @@ const checkCanReview = async () => {
   }
   
   // Check if user is a participant (either creator or assignee)
-  const isCreator = task.value.createdBy === currentUserId.value
-  const isAssignee = task.value.assignedTo === currentUserId.value
+  const isCreator = task.value.created_by === currentUserId.value
+  const isAssignee = task.value.assigned_to === currentUserId.value
   
   if (!isCreator && !isAssignee) {
     reviewError.value = 'You can only review gigs you posted or were assigned to.'
