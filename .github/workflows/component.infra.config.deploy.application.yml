@@ -13,6 +13,16 @@ on:
         required: false
         default: full
         type: string
+      services:
+        description: '"all" (whole stack), space-separated compose services to replace, or "" (none)'
+        required: false
+        default: all
+        type: string
+      frontend:
+        description: Build and upload the frontend
+        required: false
+        default: true
+        type: boolean
 
   workflow_dispatch:
     inputs:
@@ -31,6 +41,16 @@ on:
         options:
           - full
           - app
+      services:
+        description: '"all" (whole stack) or space-separated compose services to replace'
+        required: true
+        default: all
+        type: string
+      frontend:
+        description: Build and upload the frontend
+        required: true
+        default: true
+        type: boolean
 
 env:
   # Run each Ansible task over one SSH round trip instead of several (each
@@ -76,6 +96,7 @@ jobs:
           sed -i "s/APP_INSTANCE_PUBLIC_IP/$SERVER_IP/g" configuration_management/inventory.ini
 
       - name: Setup Node.js
+        if: inputs.frontend
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -83,6 +104,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Build frontend
+        if: inputs.frontend
         working-directory: frontend
         run: |
           npm ci
@@ -124,13 +146,15 @@ jobs:
             echo "image_tag=latest" >> $GITHUB_OUTPUT
           fi
 
+      # The images being deployed (each compose service runs myguy-<service>)
       - name: Verify images are signed
+        if: inputs.services != ''
+        env:
+          SERVICES: ${{ inputs.services }}
         run: |
-          for IMAGE in \
-            ${{ env.REGISTRY }}/myguy-api:${{ steps.get_tag.outputs.image_tag }} \
-            ${{ env.REGISTRY }}/myguy-store-service:${{ steps.get_tag.outputs.image_tag }} \
-            ${{ env.REGISTRY }}/myguy-chat-websocket-service:${{ steps.get_tag.outputs.image_tag }} \
-            ${{ env.REGISTRY }}/myguy-proximity-service:${{ steps.get_tag.outputs.image_tag }}; do
+          [[ $SERVICES == all ]] && SERVICES="api store-service chat-websocket-service proximity-service"
+          for SERVICE in $SERVICES; do
+            IMAGE=${{ env.REGISTRY }}/myguy-$SERVICE:${{ steps.get_tag.outputs.image_tag }}
             echo "Verifying $IMAGE..."
             cosign verify \
               --certificate-identity-regexp "https://github.com/${{ github.repository }}/.github/workflows/.*" \
@@ -199,10 +223,13 @@ jobs:
             configuration_management/observability.yml \
             -e "target=app"
 
+      # Skipped when only the frontend changed: no container to replace
       - name: Deploy application
+        if: inputs.services != ''
         # Values are passed as JSON via env so spaces or shell metacharacters
         # in secrets can't truncate or break them (see bootstrap step).
         env:
+          APP_SERVICES: ${{ inputs.services }}
           REPO_URL: ${{ secrets.REPO_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           DB_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
@@ -236,9 +263,11 @@ jobs:
                   --arg smtp_username "$SMTP_USERNAME" \
                   --arg smtp_password "$SMTP_PASSWORD" \
                   --arg smtp_from "$SMTP_FROM" \
+                  --arg app_services "$APP_SERVICES" \
                   '{target: "app"} + $ARGS.named')"
 
       - name: Upload frontend dist
+        if: inputs.frontend
         run: |
           rsync -az --delete \
             -e "ssh -i ~/.ssh/linode -o StrictHostKeyChecking=no" \

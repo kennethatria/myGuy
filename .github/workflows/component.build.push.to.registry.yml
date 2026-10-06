@@ -9,7 +9,19 @@ on:
   #     - 'store-service/**'
   #     - 'chat-websocket-service/**'
   workflow_dispatch:
+    inputs:
+      services:
+        description: JSON list of compose services to build
+        required: false
+        default: '["api", "store-service", "chat-websocket-service", "proximity-service"]'
+        type: string
   workflow_call:
+    inputs:
+      services:
+        description: JSON list of compose services to build (the pipeline passes what changed)
+        required: false
+        default: '["api", "store-service", "chat-websocket-service", "proximity-service"]'
+        type: string
 
 permissions:
   id-token: write
@@ -38,12 +50,13 @@ jobs:
             echo "image_tag=latest" >> $GITHUB_OUTPUT
           fi
 
-  # One job per service, all in parallel (they used to run one after
-  # another). Layers are cached in the GitHub Actions cache per service, so
-  # a build only redoes what changed.
+  # One job per requested service, all in parallel. Each service builds from
+  # the directory of the same name (api from backend/) into myguy-<service>.
+  # Layers are cached in the GitHub Actions cache per service, so a build
+  # only redoes what changed.
   build-push:
     needs: get-tag
-    name: ${{ matrix.name }}
+    name: ${{ matrix.service }}
     runs-on: ubuntu-latest
     environment: dev
     permissions:
@@ -52,19 +65,10 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        include:
-          - name: API Service
-            context: ./backend
-            image: myguy-api
-          - name: Store Service
-            context: ./store-service
-            image: myguy-store-service
-          - name: Chat Websocket Service
-            context: ./chat-websocket-service
-            image: myguy-chat-websocket-service
-          - name: Proximity Service
-            context: ./proximity-service
-            image: myguy-proximity-service
+        service: ${{ fromJSON(inputs.services) }}
+    env:
+      CONTEXT: ./${{ matrix.service == 'api' && 'backend' || matrix.service }}
+      IMAGE: myguy-${{ matrix.service }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -86,19 +90,19 @@ jobs:
         id: build
         uses: docker/build-push-action@v7
         with:
-          context: ${{ matrix.context }}
+          context: ${{ env.CONTEXT }}
           platforms: linux/amd64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ matrix.image }}:${{ needs.get-tag.outputs.image_tag }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ needs.get-tag.outputs.image_tag }}
+          cache-from: type=gha,scope=${{ env.IMAGE }}
+          cache-to: type=gha,mode=max,scope=${{ env.IMAGE }}
 
       - name: Sign image with Cosign
-        run: cosign sign --yes ${{ env.REGISTRY }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
+        run: cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
 
       - name: Verify image signature
         run: |
           cosign verify \
             --certificate-identity-regexp "https://github.com/${{ github.repository }}/.github/workflows/.*" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-            ${{ env.REGISTRY }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
