@@ -73,8 +73,8 @@
         </div>
       </div>
 
-      <!-- Action buttons based on task status and user role -->
-      <div class="border-t border-gray-200 p-4">
+      <!-- Action buttons based on task status and user role (none: no band) -->
+      <div v-if="hasActions" class="border-t border-gray-200 p-4">
         <p v-if="applyNotice" class="apply-notice" role="status">{{ applyNotice }}</p>
         <p v-if="applyError" class="apply-error" role="alert">{{ applyError }}</p>
         <!-- Applications are answered in each applicant's conversation -->
@@ -85,9 +85,19 @@
         <p v-if="isOwner && task.status === 'expired'" class="expired-note">
           Nobody replied within 24 hours, so this note came off the board.
         </p>
+        <p v-if="cancelError" class="apply-error" role="alert">{{ cancelError }}</p>
+        <p v-if="confirmingCancel" class="cancel-question">
+          Cancel this gig? Anyone who applied or is doing it will be told in Messages.
+        </p>
         <div class="task-actions flex justify-end space-x-3">
+          <template v-if="confirmingCancel">
+            <button @click="handleCancel" class="btn btn-danger" :disabled="cancelling">
+              {{ cancelling ? 'Cancelling...' : 'Yes, cancel gig' }}
+            </button>
+            <button @click="confirmingCancel = false" class="btn btn-outline" :disabled="cancelling">Keep it</button>
+          </template>
           <button
-            v-if="isOwner && task.status === 'expired'"
+            v-if="isOwner && (task.status === 'expired' || task.status === 'cancelled')"
             @click="handleRepost"
             class="btn btn-primary"
           >
@@ -114,6 +124,13 @@
             class="btn btn-primary"
           >
             Answer in Messages
+          </button>
+          <button
+            v-if="canCancel && !confirmingCancel"
+            @click="confirmingCancel = true"
+            class="btn btn-outline cancel-gig"
+          >
+            Cancel gig
           </button>
         </div>
       </div>
@@ -342,6 +359,29 @@ const handleApply = async () => {
   }
 }
 
+// The poster can cancel a gig until it's done; the backend tells
+// applicants and the assignee in their conversations.
+const canCancel = computed(() =>
+  isOwner.value && ['open', 'in_progress', 'pending_approval', 'expired'].includes(task.value?.status ?? ''))
+const confirmingCancel = ref(false)
+const cancelling = ref(false)
+const cancelError = ref('')
+
+const handleCancel = async () => {
+  if (!task.value) return
+  cancelling.value = true
+  cancelError.value = ''
+  try {
+    await tasksStore.updateTaskStatus(task.value.id, 'cancelled')
+    confirmingCancel.value = false
+    await loadTaskData()
+  } catch (error) {
+    cancelError.value = errorMessage(error, 'Could not cancel the gig. Please try again.')
+  } finally {
+    cancelling.value = false
+  }
+}
+
 // Expired notes go back on the board for a fresh 24 hours
 const handleRepost = async () => {
   if (!task.value) return
@@ -368,6 +408,13 @@ const chatPartner = computed<{ id: number; name: string } | null>(() => {
   if (!hasApplied.value && task.value.assigned_to !== authStore.user.id) return null
   return { id: task.value.created_by, name: task.value.creator?.username || creator.value?.username || 'the poster' }
 })
+
+// Whether the action area has anything to show (no empty band otherwise)
+const hasActions = computed(() => !!(
+  applyNotice.value || applyError.value || cancelError.value || pendingApplications.value ||
+  canApply.value || chatPartner.value || canCancel.value ||
+  (isOwner.value && (task.value?.status === 'expired' || task.value?.status === 'cancelled'))
+))
 
 const openChat = () => {
   if (!task.value || !chatPartner.value) return
@@ -406,6 +453,7 @@ const openChat = () => {
 }
 
 .applications-note,
+.cancel-question,
 .apply-notice,
 .apply-error {
   margin: 0 0 0.75rem;
@@ -417,6 +465,11 @@ const openChat = () => {
 
 .apply-error {
   color: var(--color-danger, #dc2626);
+}
+
+.cancel-gig {
+  color: var(--color-danger, #dc2626);
+  border-color: currentColor;
 }
 
 /* Mobile responsiveness */
