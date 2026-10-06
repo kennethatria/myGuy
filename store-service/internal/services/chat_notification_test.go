@@ -43,6 +43,33 @@ func TestHTTPChatNotifier(t *testing.T) {
 		}
 	})
 
+	t.Run("closes a booking in chat with a note", func(t *testing.T) {
+		got := make(chan map[string]interface{}, 1)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "/internal/booking-status", r.URL.Path)
+			assert.Equal(t, "secret", r.Header.Get("X-Internal-API-Key"))
+			var body map[string]interface{}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			w.WriteHeader(http.StatusOK)
+			got <- body
+		}))
+		defer server.Close()
+		t.Setenv("INTERNAL_API_KEY", "secret")
+		t.Setenv("CHAT_API_URL", server.URL)
+
+		NewHTTPChatNotifier().BookingClosed(4, 1, "The seller removed it")
+
+		select {
+		case body := <-got:
+			assert.Equal(t, float64(4), body["booking_id"])
+			assert.Equal(t, float64(1), body["actor_id"])
+			assert.Equal(t, "rejected", body["status"])
+			assert.Equal(t, "The seller removed it", body["note"])
+		case <-time.After(2 * time.Second):
+			t.Fatal("nothing posted")
+		}
+	})
+
 	t.Run("reports a refusal", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)

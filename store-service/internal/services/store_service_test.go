@@ -695,7 +695,7 @@ func TestUpdateItem(t *testing.T) {
 
 func TestDeleteItem(t *testing.T) {
 	t.Run("successful delete", func(t *testing.T) {
-		service, itemRepo, _, _ := setupService()
+		service, itemRepo, _, bookingRepo := setupService()
 		existingItem := &models.StoreItem{
 			ID:       1,
 			Title:    "Test Item",
@@ -704,6 +704,7 @@ func TestDeleteItem(t *testing.T) {
 		}
 
 		itemRepo.On("GetByID", uint(1)).Return(existingItem, nil)
+		bookingRepo.On("GetAllByItemID", uint(1)).Return([]models.BookingRequest{}, nil)
 		itemRepo.On("Delete", uint(1)).Return(nil)
 
 		err := service.DeleteItem(1, 1)
@@ -760,12 +761,33 @@ func TestDeleteItem(t *testing.T) {
 	})
 
 	t.Run("expired listing can be removed", func(t *testing.T) {
-		service, itemRepo, _, _ := setupService()
+		service, itemRepo, _, bookingRepo := setupService()
 		itemRepo.On("GetByID", uint(1)).Return(&models.StoreItem{ID: 1, SellerID: 1, Status: "expired"}, nil)
+		bookingRepo.On("GetAllByItemID", uint(1)).Return([]models.BookingRequest{}, nil)
 		itemRepo.On("Delete", uint(1)).Return(nil)
 
 		assert.NoError(t, service.DeleteItem(1, 1))
 		itemRepo.AssertExpectations(t)
+	})
+
+	t.Run("waiting bookings are declined and each buyer told", func(t *testing.T) {
+		service, itemRepo, _, bookingRepo := setupService()
+		chat := &fakeChat{}
+		service.WithRequests(nil, chat)
+		itemRepo.On("GetByID", uint(1)).Return(&models.StoreItem{ID: 1, Title: "Bike", SellerID: 1, Status: "active"}, nil)
+		bookingRepo.On("GetAllByItemID", uint(1)).Return([]models.BookingRequest{
+			{ID: 4, Status: "pending"}, {ID: 5, Status: "rejected"}, {ID: 6, Status: "pending"},
+		}, nil)
+		bookingRepo.On("UpdateStatus", uint(4), "rejected").Return(nil)
+		bookingRepo.On("UpdateStatus", uint(6), "rejected").Return(nil)
+		itemRepo.On("Delete", uint(1)).Return(nil)
+
+		assert.NoError(t, service.DeleteItem(1, 1))
+
+		bookingRepo.AssertExpectations(t)
+		bookingRepo.AssertNotCalled(t, "UpdateStatus", uint(5), mock.Anything)
+		assert.Equal(t, []uint{4, 6}, chat.closed)
+		assert.Contains(t, chat.sent[0], `The seller removed "Bike"`)
 	})
 }
 
@@ -1885,6 +1907,41 @@ func TestGetMyRatings(t *testing.T) {
 	bookingRepo.On("GetRatingsInvolving", uint(9)).Return([]models.BookingRequest{}, assert.AnError)
 	_, err = service.GetMyRatings(9)
 	assert.Error(t, err)
+}
+
+func TestApproveBookingForRemovedListing(t *testing.T) {
+	service, _, _, bookingRepo := setupService()
+	bookingRepo.On("GetByID", uint(1)).Return(&models.BookingRequest{ID: 1, ItemID: 9, Status: "pending"}, nil)
+
+	_, err := service.ApproveBookingRequest(1, 1)
+
+	assert.EqualError(t, err, "this listing was removed")
+}
+
+func TestReleaseBookingReopensTheRequest(t *testing.T) {
+	requestID := uint(3)
+	release := func(requester uint, wantedStatus string) *MockItemRequestRepository {
+		service, itemRepo, _, bookingRepo := setupService()
+		requests := new(MockItemRequestRepository)
+		service.WithRequests(requests, nil)
+		item := &models.StoreItem{ID: 9, SellerID: 1, Status: "reserved", RequestID: &requestID}
+		bookingRepo.On("GetByID", uint(1)).Return(&models.BookingRequest{ID: 1, ItemID: 9, RequesterID: requester, Status: "approved", Item: item}, nil)
+		bookingRepo.On("UpdateStatus", uint(1), "released").Return(nil)
+		itemRepo.On("GetByID", uint(9)).Return(item, nil)
+		itemRepo.On("Update", item).Return(nil)
+		requests.On("GetByID", requestID).Return(&models.ItemRequest{ID: requestID, RequesterID: 2, Status: wantedStatus}, nil)
+		requests.On("Reopen", requestID, mock.Anything).Return(true, nil)
+
+		_, err := service.ReleaseBooking(1, 1)
+		assert.NoError(t, err)
+		return requests
+	}
+
+	// The requester's own reservation: they still want it
+	release(2, "fulfilled").AssertCalled(t, "Reopen", requestID, mock.Anything)
+	// Someone else's reservation, or a request that wasn't fulfilled
+	release(5, "fulfilled").AssertNotCalled(t, "Reopen", mock.Anything, mock.Anything)
+	release(2, "active").AssertNotCalled(t, "Reopen", mock.Anything, mock.Anything)
 }
 
 func TestReleaseBooking(t *testing.T) {
