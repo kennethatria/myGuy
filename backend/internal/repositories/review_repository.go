@@ -63,6 +63,22 @@ func (r *GormReviewRepository) ListByUser(ctx context.Context, userID uint) ([]m
 	return reviews, nil
 }
 
+// ListInvolving lists the reviews userID wrote or received, newest first.
+func (r *GormReviewRepository) ListInvolving(ctx context.Context, userID uint) ([]models.Review, error) {
+	var reviews []models.Review
+	err := r.db.WithContext(ctx).
+		Preload("Task").
+		Preload("Reviewer").
+		Preload("ReviewedUser").
+		Where("reviewer_id = ? OR reviewed_user_id = ?", userID, userID).
+		Order("created_at DESC").
+		Find(&reviews).Error
+	if err != nil {
+		return nil, err
+	}
+	return reviews, nil
+}
+
 func (r *GormReviewRepository) GetTaskReview(ctx context.Context, taskID uint, reviewerID uint) (*models.Review, error) {
 	var review models.Review
 	err := r.db.WithContext(ctx).

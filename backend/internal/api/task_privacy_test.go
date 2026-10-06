@@ -113,6 +113,41 @@ func TestHandler_GetUserReviews_HidesContactDetails(t *testing.T) {
 	assert.Contains(t, resp.Body.String(), `"username":"ann"`)
 }
 
+func TestHandler_GetMyReviews(t *testing.T) {
+	router, handler, _, _, mockReviewRepo, _ := setupTestRouter()
+	router.Use(func(c *gin.Context) { c.Set("userID", uint(5)); c.Next() })
+	router.GET("/user/reviews", handler.GetMyReviews)
+	// Always the signed-in user's own reviews, and the other side's contact
+	// details stay hidden.
+	mockReviewRepo.On("ListInvolving", mock.Anything, uint(5)).Return([]models.Review{{
+		ID: 1, ReviewerID: 6, ReviewedUserID: 5, Rating: 4,
+		Reviewer:     models.User{ID: 6, Username: "ann", Email: "ann@example.com", PhoneNumber: "+256700000006"},
+		ReviewedUser: models.User{ID: 5, Username: "sam"},
+	}}, nil)
+
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/user/reviews", nil))
+
+	assert.Equal(t, http.StatusOK, resp.Code)
+	assert.NotContains(t, resp.Body.String(), "ann@example.com")
+	assert.NotContains(t, resp.Body.String(), "+2567")
+	assert.Contains(t, resp.Body.String(), `"username":"ann"`)
+	mockReviewRepo.AssertExpectations(t)
+}
+
+func TestHandler_GetMyReviews_Error(t *testing.T) {
+	router, handler, _, _, mockReviewRepo, _ := setupTestRouter()
+	router.Use(func(c *gin.Context) { c.Set("userID", uint(5)); c.Next() })
+	router.GET("/user/reviews", handler.GetMyReviews)
+	mockReviewRepo.On("ListInvolving", mock.Anything, uint(5)).Return([]models.Review{}, errors.New("db down"))
+
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/user/reviews", nil))
+
+	assert.Equal(t, http.StatusInternalServerError, resp.Code)
+	assert.NotContains(t, resp.Body.String(), "db down")
+}
+
 func TestHandler_GetApplicationParticipants(t *testing.T) {
 	app := &models.Application{ID: 10, TaskID: 1, ApplicantID: 2, Task: models.Task{ID: 1, CreatedBy: 1}}
 

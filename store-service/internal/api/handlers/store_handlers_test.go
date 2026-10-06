@@ -160,9 +160,14 @@ func (m *MockStoreService) RejectBookingRequest(requestID uint, ownerID uint) (*
 	return args.Get(0).(*models.BookingRequest), args.Error(1)
 }
 
-func (m *MockStoreService) GetUserRatings(userID uint) ([]models.ReceivedRating, error) {
+func (m *MockStoreService) GetUserRatings(userID uint) ([]models.BookingRating, error) {
 	args := m.Called(userID)
-	return args.Get(0).([]models.ReceivedRating), args.Error(1)
+	return args.Get(0).([]models.BookingRating), args.Error(1)
+}
+
+func (m *MockStoreService) GetMyRatings(userID uint) ([]models.BookingRating, error) {
+	args := m.Called(userID)
+	return args.Get(0).([]models.BookingRating), args.Error(1)
 }
 
 func (m *MockStoreService) GetUserBookingRequests(userID uint) ([]models.BookingRequest, error) {
@@ -2117,7 +2122,7 @@ func TestGetUserRatings(t *testing.T) {
 	router := setupTestRouter(handler)
 	router.GET("/api/v1/users/:id/ratings", handler.GetUserRatings)
 
-	mockService.On("GetUserRatings", uint(7)).Return([]models.ReceivedRating{
+	mockService.On("GetUserRatings", uint(7)).Return([]models.BookingRating{
 		{BookingID: 1, ItemID: 2, ItemTitle: "Bike", RaterID: 3, RatedAs: "seller", Rating: 5},
 	}, nil)
 
@@ -2131,6 +2136,28 @@ func TestGetUserRatings(t *testing.T) {
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/users/abc/ratings", nil))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestGetMyRatings(t *testing.T) {
+	mockService := new(MockStoreService)
+	handler := NewStoreHandler(mockService)
+	router := setupTestRouter(handler)
+	router.GET("/api/v1/user/ratings", handler.GetMyRatings)
+
+	// setupTestRouter signs requests in as user 1
+	mockService.On("GetMyRatings", uint(1)).Return([]models.BookingRating{
+		{BookingID: 1, ItemID: 2, ItemTitle: "Bike", RaterID: 1, RatedID: 3, RatedAs: "seller", Rating: 5},
+	}, nil).Once()
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/user/ratings", nil))
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"rated_id":3`)
+
+	mockService.On("GetMyRatings", uint(1)).Return([]models.BookingRating{}, assert.AnError).Once()
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/user/ratings", nil))
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
 

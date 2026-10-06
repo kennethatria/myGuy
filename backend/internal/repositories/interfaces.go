@@ -54,5 +54,6 @@ type ApplicationRepository interface {
 type ReviewRepository interface {
 	Create(ctx context.Context, review *models.Review) error
 	ListByUser(ctx context.Context, userID uint) ([]models.Review, error)
+	ListInvolving(ctx context.Context, userID uint) ([]models.Review, error)
 	GetTaskReview(ctx context.Context, taskID uint, reviewerID uint) (*models.Review, error)
 }

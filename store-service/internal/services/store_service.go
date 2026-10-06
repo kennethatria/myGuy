@@ -774,13 +774,35 @@ func (s *StoreService) GetUserBookingRequests(userID uint) ([]models.BookingRequ
 
 // GetUserRatings lists every store rating userID has received, as a seller
 // or as a buyer.
-func (s *StoreService) GetUserRatings(userID uint) ([]models.ReceivedRating, error) {
+func (s *StoreService) GetUserRatings(userID uint) ([]models.BookingRating, error) {
 	requests, err := s.bookingRepo.GetRatingsReceived(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	ratings := make([]models.ReceivedRating, 0, len(requests))
+	ratings := []models.BookingRating{}
+	for _, rating := range bookingRatings(requests) {
+		if rating.RatedID == userID {
+			ratings = append(ratings, rating)
+		}
+	}
+	return ratings, nil
+}
+
+// GetMyRatings lists every store rating userID gave or received, for their
+// network of people they have traded with.
+func (s *StoreService) GetMyRatings(userID uint) ([]models.BookingRating, error) {
+	requests, err := s.bookingRepo.GetRatingsInvolving(userID)
+	if err != nil {
+		return nil, err
+	}
+	return bookingRatings(requests), nil
+}
+
+// bookingRatings lists the ratings on bookings: the buyer's rating of the
+// seller and the seller's rating of the buyer, where given.
+func bookingRatings(requests []models.BookingRequest) []models.BookingRating {
+	ratings := make([]models.BookingRating, 0, len(requests))
 	for _, req := range requests {
 		var sellerID uint
 		var itemTitle string
@@ -789,22 +811,22 @@ func (s *StoreService) GetUserRatings(userID uint) ([]models.ReceivedRating, err
 			itemTitle = req.Item.Title
 		}
 
-		if req.BuyerRating != nil && sellerID == userID {
-			ratings = append(ratings, models.ReceivedRating{
+		if req.BuyerRating != nil {
+			ratings = append(ratings, models.BookingRating{
 				BookingID: req.ID, ItemID: req.ItemID, ItemTitle: itemTitle,
-				RaterID: req.RequesterID, RatedAs: "seller",
+				RaterID: req.RequesterID, RatedID: sellerID, RatedAs: "seller",
 				Rating: *req.BuyerRating, Review: req.BuyerReview, RatedAt: req.UpdatedAt,
 			})
 		}
-		if req.SellerRating != nil && req.RequesterID == userID {
-			ratings = append(ratings, models.ReceivedRating{
+		if req.SellerRating != nil {
+			ratings = append(ratings, models.BookingRating{
 				BookingID: req.ID, ItemID: req.ItemID, ItemTitle: itemTitle,
-				RaterID: sellerID, RatedAs: "buyer",
+				RaterID: sellerID, RatedID: req.RequesterID, RatedAs: "buyer",
 				Rating: *req.SellerRating, Review: req.SellerReview, RatedAt: req.UpdatedAt,
 			})
 		}
 	}
-	return ratings, nil
+	return ratings
 }
 
 func (s *StoreService) ConfirmItemReceived(requestID uint, buyerID uint) (*models.BookingRequest, error) {
