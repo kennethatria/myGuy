@@ -64,11 +64,13 @@ jobs:
     if: ${{ needs.context.outputs.isPullRequest == 'true' }}
     uses: ./.github/workflows/component.build.commit.lint.yml
 
-  # Runs on PRs and on pushes to main, where it gates the image build and
-  # deploy. standards (commit lint) only runs on PRs, so tolerate it skipped.
+  # Pull requests only. A merge to main isn't tested again: the merge is
+  # gated on these checks passing on a branch that is up to date with main
+  # (required status checks + "require branches to be up to date"), so main
+  # gets exactly what was tested.
   test-code-coverage:
     needs: [context, standards]
-    if: ${{ !failure() && !cancelled() && (needs.context.outputs.isPullRequest == 'true' || needs.context.outputs.isRelease == 'true') }}
+    if: ${{ !failure() && !cancelled() && needs.context.outputs.isPullRequest == 'true' }}
     uses: ./.github/workflows/component.build.test.code.coverage.yml
     secrets: inherit
 
@@ -121,9 +123,9 @@ jobs:
     # Explicit result checks: a plain `if` also requires every upstream job to
     # have succeeded, and `standards` (PR-only) is always skipped on pushes,
     # which would silently skip this job and everything after it.
-    # Only build and push images that passed the tests.
-    if: ${{ !failure() && !cancelled() && needs.context.outputs.isRelease == 'true' && needs.release.result == 'success' && needs.test-code-coverage.result == 'success' }}
-    needs: [context, release, test-code-coverage]
+    # Tests ran on the pull request (test-code-coverage is PR-only).
+    if: ${{ !failure() && !cancelled() && needs.context.outputs.isRelease == 'true' && needs.release.result == 'success' }}
+    needs: [context, release]
     uses: ./.github/workflows/component.build.push.to.registry.yml
     secrets: inherit
 
