@@ -116,7 +116,7 @@ const user = computed(() => authStore.user)
 const totalUnreadCount = computed(() => chatStore.totalUnreadCount)
 
 const navigation = [
-  { name: 'dashboard', to: { name: 'dashboard' }, text: 'Dashboard' },
+  { name: 'dashboard', to: { name: 'dashboard' }, text: 'Home' },
   { name: 'tasks', to: { name: 'tasks' }, text: 'Browse Gigs' },
   { name: 'create-task', to: { name: 'create-task' }, text: 'Post a Gig' },
   { name: 'store', to: { name: 'store' }, text: 'Marketplace' },

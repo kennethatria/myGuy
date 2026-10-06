@@ -40,8 +40,8 @@
           </g>
 
           <g class="you" aria-hidden="true">
-            <circle :cx="CENTRE" :cy="CENTRE" r="2.2" class="you-dot" />
-            <text :x="CENTRE" :y="CENTRE + 6" text-anchor="middle" class="you-label">You</text>
+            <circle :cx="CENTRE" :cy="CENTRE" r="1.8" class="you-dot" />
+            <text :x="CENTRE" :y="CENTRE + 4.6" text-anchor="middle" class="you-label">You</text>
           </g>
 
           <g
@@ -61,10 +61,10 @@
             <circle
               :cx="spot(post).x"
               :cy="spot(post).y"
-              r="2.4"
+              r="1.6"
               :fill="KIND_STYLE[post.kind].fill"
               :stroke="KIND_STYLE[post.kind].stroke"
-              stroke-width="0.6"
+              stroke-width="0.45"
             />
           </g>
         </svg>
@@ -108,7 +108,7 @@ import { useRouter } from 'vue-router'
 import NearbyBanner from '@/components/NearbyBanner.vue'
 import { useViewerLocation } from '@/composables/useViewerLocation'
 import { useNearbyPosts, type NearbyPost } from '@/composables/useNearbyPosts'
-import { BUCKETS, CENTRE, KIND_STYLE, RING_HALF, countsSentence, radarPoint, type PostKind } from '@/utils/radar'
+import { BUCKETS, CENTRE, KIND_STYLE, RING_HALF, countsSentence, layoutDots, type PostKind } from '@/utils/radar'
 
 const KINDS: PostKind[] = ['task', 'item', 'request']
 const LABELS: Record<PostKind, string> = { task: 'Gigs', item: 'Listings', request: 'Requests' }
@@ -126,7 +126,9 @@ const allCounts = computed(() => countWhere(() => true))
 // "Within 2 km" = the two innermost rings (<1 km and ~2 km)
 const closeCounts = computed(() => countWhere((post) => post.bucket <= 1))
 
-const spot = (post: NearbyPost) => radarPoint(post.kind, post.id, post.bucket)
+// Dots sharing a ring are spaced evenly round it, so close posts never pile up
+const spots = computed(() => layoutDots(posts.value))
+const spot = (post: NearbyPost) => spots.value.get(`${post.kind}-${post.id}`) ?? { x: CENTRE, y: CENTRE }
 const label = (kind: PostKind) => LABELS[kind]
 
 const routeFor = (post: NearbyPost) => {
@@ -220,7 +222,7 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
 .dot:hover circle:not(.dot-hit),
 .dot:focus-visible circle:not(.dot-hit) {
   stroke: #111827;
-  stroke-width: 1;
+  stroke-width: 0.8;
 }
 
 .dot:focus-visible .dot-hit {

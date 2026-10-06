@@ -44,20 +44,23 @@ export function labelGap(side: number): number {
   return Math.min(LABEL_CLEAR, 0.8 * side)
 }
 
+/** A post's own spot along its ring, 0 to 1: stable between visits. */
+export function postT(kind: PostKind, id: number): number {
+  return (hash(`${kind}:${id}`) % 10_000) / 10_000
+}
+
 /**
- * Where a post's dot goes: on the square midway through its bucket's band,
- * at a hashed point along that square's edge, never in the top-right stretch
- * where the ring's distance label sits.
+ * A point a fraction t (0 to 1) of the way round a bucket's ring: on the
+ * square midway through the bucket's band, going clockwise from the top-left
+ * corner, never in the top-right stretch where the ring's label sits.
  */
-export function radarPoint(kind: PostKind, id: number, bucket: number): { x: number; y: number } {
+export function ringPoint(bucket: number, t: number): { x: number; y: number } {
   const b = Math.min(Math.max(bucket, 0), RING_HALF.length - 1)
   const inner = b === 0 ? 4 : RING_HALF[b - 1]
   const half = (inner + RING_HALF[b]) / 2
-  const t = (hash(`${kind}:${id}`) % 10_000) / 10_000
   const side = 2 * half
   const gap = labelGap(side)
-  // distance travelled clockwise from the top-left corner, skipping the gap
-  let along = t * (8 * half - gap)
+  let along = (((t % 1) + 1) % 1) * (8 * half - gap)
   if (along >= side - gap) along += gap
   const left = CENTRE - half
   const top = CENTRE - half
@@ -65,6 +68,39 @@ export function radarPoint(kind: PostKind, id: number, bucket: number): { x: num
   if (along < 2 * side) return { x: left + side, y: top + (along - side) }
   if (along < 3 * side) return { x: left + side - (along - 2 * side), y: top + side }
   return { x: left, y: top + side - (along - 3 * side) }
+}
+
+/** Where one post's dot goes on its own (no other posts to make room for). */
+export function radarPoint(kind: PostKind, id: number, bucket: number): { x: number; y: number } {
+  return ringPoint(bucket, postT(kind, id))
+}
+
+export interface RadarPost {
+  kind: PostKind
+  id: number
+  bucket: number
+}
+
+/**
+ * Spots for every dot, keyed "kind-id". Posts that share a ring are spaced
+ * evenly round it (in the order of their own spots, starting from the
+ * first one's), so dots never pile up however many are close by.
+ */
+export function layoutDots(posts: RadarPost[]): Map<string, { x: number; y: number }> {
+  const byRing = new Map<number, RadarPost[]>()
+  for (const post of posts) {
+    const ring = Math.min(Math.max(post.bucket, 0), RING_HALF.length - 1)
+    byRing.set(ring, [...(byRing.get(ring) ?? []), post])
+  }
+  const spots = new Map<string, { x: number; y: number }>()
+  for (const [ring, onRing] of byRing) {
+    const ordered = [...onRing].sort((a, b) => postT(a.kind, a.id) - postT(b.kind, b.id))
+    const start = postT(ordered[0].kind, ordered[0].id)
+    ordered.forEach((post, i) => {
+      spots.set(`${post.kind}-${post.id}`, ringPoint(ring, start + i / ordered.length))
+    })
+  }
+  return spots
 }
 
 /** "3 gigs, 1 listing and 2 requests" (kinds with none left out). */

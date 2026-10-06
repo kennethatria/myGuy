@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bucketIndex, radarPoint, countsSentence, RING_HALF, CENTRE, labelGap } from '../radar'
+import { bucketIndex, radarPoint, layoutDots, countsSentence, RING_HALF, CENTRE, labelGap } from '../radar'
 
 describe('radar', () => {
   it('maps distance tags to rings', () => {
@@ -43,6 +43,26 @@ describe('radar', () => {
         expect(onTopEdge && x > right - labelGap(2 * half) + 1e-9).toBe(false)
       }
     }
+  })
+
+  it('spaces dots that share a ring so they never overlap', () => {
+    // up to 8 posts on the smallest ring, dots 3.2 units wide
+    const posts = Array.from({ length: 8 }, (_, i) => ({ kind: (['task', 'item', 'request'] as const)[i % 3], id: i + 1, bucket: 0 }))
+    const spots = [...layoutDots(posts).values()]
+    expect(spots).toHaveLength(8)
+    for (let a = 0; a < spots.length; a++) {
+      for (let b = a + 1; b < spots.length; b++) {
+        const d = Math.hypot(spots[a].x - spots[b].x, spots[a].y - spots[b].y)
+        expect(d).toBeGreaterThan(3.2)
+      }
+    }
+  })
+
+  it('lays out a lone dot at its own spot, and keeps rings apart', () => {
+    const one = layoutDots([{ kind: 'task', id: 7, bucket: 2 }])
+    expect(one.get('task-7')).toEqual(radarPoint('task', 7, 2))
+    const two = layoutDots([{ kind: 'task', id: 1, bucket: 0 }, { kind: 'item', id: 1, bucket: 4 }])
+    expect(two.size).toBe(2)
   })
 
   it('clamps an out-of-range bucket to the nearest ring', () => {
