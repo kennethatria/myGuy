@@ -200,8 +200,8 @@ func (s *StoreService) CreateItem(userID uint, req models.CreateStoreItemRequest
 	}
 
 	if answers != nil {
-		s.chat.StoreMessage(item.ID, userID, answers.RequesterID,
-			fmt.Sprintf("I listed \"%s\" for your request \"%s\". Open it to book it.", item.Title, answers.Title))
+		s.chat.RequestAnswered(item.ID, userID, answers.RequesterID, answers.ID,
+			fmt.Sprintf("🎁 I listed \"%s\" for your request \"%s\".", item.Title, answers.Title))
 	}
 
 	return item, nil

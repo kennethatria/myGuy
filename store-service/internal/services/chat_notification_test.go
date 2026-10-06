@@ -17,7 +17,7 @@ func TestHTTPChatNotifier(t *testing.T) {
 		assert.True(t, isNoop)
 	})
 
-	t.Run("posts the store message with the internal key", func(t *testing.T) {
+	t.Run("tells the requester with the internal key, tagged for the app", func(t *testing.T) {
 		got := make(chan map[string]interface{}, 1)
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal(t, "/internal/store-message", r.URL.Path)
@@ -31,13 +31,14 @@ func TestHTTPChatNotifier(t *testing.T) {
 		t.Setenv("INTERNAL_API_KEY", "secret")
 		t.Setenv("CHAT_API_URL", server.URL)
 
-		NewHTTPChatNotifier().StoreMessage(9, 1, 2, "Listed for you")
+		NewHTTPChatNotifier().RequestAnswered(9, 1, 2, 5, "Listed for you")
 
 		select {
 		case body := <-got:
 			assert.Equal(t, float64(9), body["store_item_id"])
 			assert.Equal(t, float64(2), body["recipient_id"])
 			assert.Equal(t, "Listed for you", body["content"])
+			assert.Equal(t, map[string]interface{}{"event": "request_answered", "request_id": float64(5)}, body["metadata"])
 		case <-time.After(2 * time.Second):
 			t.Fatal("no message posted")
 		}
@@ -92,6 +93,6 @@ func TestHTTPChatNotifier(t *testing.T) {
 		}))
 		defer server.Close()
 		n := &HTTPChatNotifier{baseURL: server.URL, apiKey: "x", client: server.Client()}
-		assert.ErrorContains(t, n.post(9, 1, 2, "hi"), "401")
+		assert.ErrorContains(t, n.postJSON("/internal/store-message", map[string]interface{}{"content": "hi"}), "401")
 	})
 }

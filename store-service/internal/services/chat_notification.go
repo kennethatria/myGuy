@@ -106,7 +106,10 @@ func markNotificationFailed(bookingID uint, bookingRepo repositories.BookingRequ
 // about an item. Implementations must not block or fail the caller (chat is
 // best effort).
 type ChatNotifier interface {
-	StoreMessage(itemID, senderID, recipientID uint, content string)
+	// RequestAnswered tells a requester, in their conversation with the
+	// seller about the item, that it was listed for their request; the app
+	// offers to book it right there.
+	RequestAnswered(itemID, sellerID, requesterID, requestID uint, content string)
 	// BookingClosed marks a booking's message in chat as declined by the
 	// seller, with note telling the buyer why.
 	BookingClosed(bookingID, sellerID uint, note string)
@@ -117,7 +120,7 @@ type ChatNotifier interface {
 
 type noopChatNotifier struct{}
 
-func (noopChatNotifier) StoreMessage(uint, uint, uint, string) {}
+func (noopChatNotifier) RequestAnswered(uint, uint, uint, uint, string) {}
 func (noopChatNotifier) BookingClosed(uint, uint, string)     {}
 func (noopChatNotifier) Unlock(uint, uint, uint) error        { return nil }
 
@@ -143,9 +146,13 @@ func NewHTTPChatNotifier() ChatNotifier {
 	return &HTTPChatNotifier{baseURL: baseURL, apiKey: apiKey, client: &http.Client{Timeout: 5 * time.Second}}
 }
 
-func (n *HTTPChatNotifier) StoreMessage(itemID, senderID, recipientID uint, content string) {
+func (n *HTTPChatNotifier) RequestAnswered(itemID, sellerID, requesterID, requestID uint, content string) {
 	go func() {
-		if err := n.post(itemID, senderID, recipientID, content); err != nil {
+		err := n.postJSON("/internal/store-message", map[string]interface{}{
+			"store_item_id": itemID, "sender_id": sellerID, "recipient_id": requesterID, "content": content,
+			"metadata": map[string]interface{}{"event": "request_answered", "request_id": requestID},
+		})
+		if err != nil {
 			log.Printf("⚠️ store message for item %d not delivered: %v", itemID, err)
 		}
 	}()
@@ -165,12 +172,6 @@ func (n *HTTPChatNotifier) BookingClosed(bookingID, sellerID uint, note string) 
 func (n *HTTPChatNotifier) Unlock(itemID, sellerID, buyerID uint) error {
 	return n.postJSON("/internal/store-message", map[string]interface{}{
 		"store_item_id": itemID, "sender_id": sellerID, "recipient_id": buyerID, "unlock_contacts": true,
-	})
-}
-
-func (n *HTTPChatNotifier) post(itemID, senderID, recipientID uint, content string) error {
-	return n.postJSON("/internal/store-message", map[string]interface{}{
-		"store_item_id": itemID, "sender_id": senderID, "recipient_id": recipientID, "content": content,
 	})
 }
 
