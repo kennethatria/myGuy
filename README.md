@@ -217,6 +217,10 @@ Selling works the same way. A listing is a sticky note with a headline (≤ 5 wo
 
 **Requests.** Buyers can ask too. A request ("Printer wanted") is a note on the **Wanted** tab, with the same limits and 24-hour life. A seller who has the item presses **I have this** and posts a listing linked to the request; it goes on the board as usual, and the requester gets a message in Messages with a link to it. The requester books it like any listing, and once the seller approves that booking the request closes. A request no seller answers within 24 hours expires and can be reposted.
 
+### Nearby first
+
+When posting a gig, listing or request, people can add their rough area (about 500 m; never their exact spot; optional). Boards then show the nearest notes first, each tagged with a rough distance (`📍 ~2 km`), with notes that have no location after them. The board asks for the viewer's location only when they tap "Show what's near me"; if location is blocked, boards stay newest first. On a request's page, the listings made for it are ordered by distance from the requester.
+
 ### Notifications
 
 Everything arrives in **Messages**, live, with an unread badge on the floating chat button and the Messages menu item: chat messages, task events (above), and store booking requests and updates. Event messages are system notices and can't be edited or deleted. There is no email or push notification yet; people who are offline see the unread counts next time they open the app.

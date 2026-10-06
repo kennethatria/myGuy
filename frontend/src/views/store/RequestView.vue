@@ -82,6 +82,9 @@
               :to="{ name: 'store-item', params: { id: item.id } }"
             >
               <template #footer>
+                <span v-if="item.distance" class="note-distance" :title="`About ${item.distance} from the requester`">
+                  <span aria-hidden="true">📍</span> {{ item.distance }}
+                </span>
                 <span>@{{ item.seller?.username || 'someone' }}</span>
                 <span v-if="listingPriceLabel(item)">{{ listingPriceLabel(item) }}</span>
                 <span v-if="item.deadline && expiryLabel(item.deadline, now)">{{ expiryLabel(item.deadline, now) }}</span>
@@ -120,6 +123,7 @@ interface StoreItem {
   title: string
   description: string
   deadline?: string
+  distance?: string
   price_type?: string
   fixed_price?: number
   starting_bid?: number
@@ -298,6 +302,10 @@ onUnmounted(() => {
 .section-title {
   margin: 0 0 1rem;
   font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.note-distance {
   font-weight: 600;
 }
 

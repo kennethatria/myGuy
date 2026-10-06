@@ -37,6 +37,16 @@ func (m *MockTaskRepository) ListWithPagination(ctx context.Context, filters map
 	return args.Get(0).([]models.Task), args.Error(1)
 }
 
+func (m *MockTaskRepository) ListIDs(ctx context.Context, filters map[string]interface{}) ([]uint, error) {
+	args := m.Called(ctx, filters)
+	return args.Get(0).([]uint), args.Error(1)
+}
+
+func (m *MockTaskRepository) ListByIDs(ctx context.Context, ids []uint) ([]models.Task, error) {
+	args := m.Called(ctx, ids)
+	return args.Get(0).([]models.Task), args.Error(1)
+}
+
 func (m *MockTaskRepository) Count(ctx context.Context, filters map[string]interface{}) (int64, error) {
 	args := m.Called(ctx, filters)
 	return args.Get(0).(int64), args.Error(1)

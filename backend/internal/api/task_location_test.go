@@ -48,3 +48,41 @@ func TestHandler_TaskLocation(t *testing.T) {
 	assert.Equal(t, http.StatusOK, post("PATCH", "/tasks/5/status", `{"status":"open","lat":0.35,"lng":32.585}`).Code)
 	assert.Equal(t, http.StatusBadRequest, post("PATCH", "/tasks/5/status", `{"status":"open","lng":32.585}`).Code)
 }
+
+func TestParseNear(t *testing.T) {
+	none, err := parseNear("")
+	assert.NoError(t, err)
+	assert.Nil(t, none)
+
+	got, err := parseNear("0.3476, 32.5842")
+	assert.NoError(t, err)
+	assert.InDelta(t, 0.35, got.Lat, 1e-9)
+
+	for _, bad := range []string{"0.35", "a,b", "0.35,32,1", "95,0"} {
+		_, err := parseNear(bad)
+		assert.Error(t, err, bad)
+	}
+}
+
+func TestHandler_ListTasksNear(t *testing.T) {
+	router, handler, _, mockTaskRepo, _, _ := setupTestRouter()
+	router.Use(func(c *gin.Context) { c.Set("userID", uint(1)); c.Next() })
+	router.GET("/tasks", handler.ListTasks)
+
+	get := func(q string) *httptest.ResponseRecorder {
+		req, _ := http.NewRequest(http.MethodGet, "/tasks?"+q, nil)
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, req)
+		return resp
+	}
+
+	assert.Equal(t, http.StatusBadRequest, get("near=nope").Code)
+
+	// No distancer configured in tests: distance sort falls back to newest first
+	mockTaskRepo.On("Count", mock.Anything, mock.Anything).Return(int64(1), nil)
+	mockTaskRepo.On("ListWithPagination", mock.Anything, mock.Anything).Return([]models.Task{{ID: 3, Title: "Gig"}}, nil)
+	resp := get("near=0.35,32.585&sort_by=distance&status=open")
+	assert.Equal(t, http.StatusOK, resp.Code)
+	assert.Contains(t, resp.Body.String(), `"id":3`)
+	assert.Equal(t, http.StatusOK, get("near=0.35,32.585").Code, "other sorts are tagged when possible")
+}

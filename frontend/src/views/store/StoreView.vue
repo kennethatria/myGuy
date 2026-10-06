@@ -30,6 +30,8 @@
       </button>
     </div>
 
+    <NearbyBanner v-if="view !== 'mine'" :state="viewer.state.value" @request="viewer.request" />
+
     <div v-if="view !== 'mine'" class="board-controls">
       <label class="visually-hidden" for="board-search">Search notes</label>
       <input
@@ -42,6 +44,7 @@
       />
       <label class="visually-hidden" for="board-sort">Sort notes</label>
       <select id="board-sort" v-model="sortBy" class="board-input board-sort" @change="applySort">
+        <option v-if="viewer.location.value" value="distance">Nearest first</option>
         <option value="created_at">Newest first</option>
         <option value="deadline">Expiring soon</option>
       </select>
@@ -70,6 +73,7 @@
             :to="{ name: 'store-item', params: { id: item.id } }"
           >
             <template #footer>
+              <span v-if="item.distance" class="note-distance"><span aria-hidden="true">📍</span> {{ item.distance }}</span>
               <span>@{{ item.seller?.username || 'someone' }}</span>
               <span v-if="listingPriceLabel(item)">{{ listingPriceLabel(item) }}</span>
               <span v-if="item.deadline && expiryLabel(item.deadline, now)">{{ expiryLabel(item.deadline, now) }}</span>
@@ -97,6 +101,7 @@
             :to="{ name: 'store-request', params: { id: request.id } }"
           >
             <template #footer>
+              <span v-if="request.distance" class="note-distance"><span aria-hidden="true">📍</span> {{ request.distance }}</span>
               <span>@{{ request.requester?.username || 'someone' }}</span>
               <span v-if="request.offer_count">{{ offersLabel(request.offer_count) }}</span>
               <span v-if="request.deadline && expiryLabel(request.deadline, now)">{{ expiryLabel(request.deadline, now) }}</span>
@@ -205,6 +210,8 @@ import { debounce } from 'lodash-es'
 import { useAuthStore } from '@/stores/auth'
 import config from '@/config'
 import StickyNote from '@/components/StickyNote.vue'
+import NearbyBanner from '@/components/NearbyBanner.vue'
+import { useViewerLocation, nearParam } from '@/composables/useViewerLocation'
 import { expiryLabel } from '@/utils/gigNote'
 import { listingPriceLabel, offersLabel } from '@/utils/listingNote'
 
@@ -214,6 +221,7 @@ interface StoreItem {
   description: string
   status: string
   deadline?: string
+  distance?: string
   price_type?: string
   fixed_price?: number
   starting_bid?: number
@@ -229,6 +237,7 @@ interface ItemRequest {
   status: string
   deadline?: string
   offer_count: number
+  distance?: string
   requester?: { id: number; username: string }
 }
 
@@ -257,7 +266,13 @@ const total = ref(0)
 const searchQuery = ref('')
 const currentPage = ref(1)
 const perPage = 24
-const sortBy = ref<'created_at' | 'deadline'>('created_at')
+// Nearest first once the viewer's rough location is known
+const viewer = useViewerLocation(() => {
+  sortBy.value = 'distance'
+  currentPage.value = 1
+  if (view.value !== 'mine') load()
+})
+const sortBy = ref<'distance' | 'created_at' | 'deadline'>(viewer.location.value ? 'distance' : 'created_at')
 const busyId = ref<string | null>(null)
 const totalPages = computed(() => Math.ceil(total.value / perPage))
 
@@ -301,6 +316,8 @@ const boardParams = (excludeKey: string) => {
   })
   if (searchQuery.value) params.append('search', searchQuery.value)
   if (authStore.user?.id) params.append(excludeKey, String(authStore.user.id))
+  // The viewer's rough location sorts (or just tags) the notes by distance
+  if (viewer.location.value) params.append('near', nearParam(viewer.location.value))
   return params
 }
 
@@ -539,6 +556,10 @@ onUnmounted(() => {
 }
 
 /* Above the note-wide link, and big enough for a thumb */
+.note-distance {
+  font-weight: 600;
+}
+
 .note-actions {
   position: relative;
   z-index: 1;

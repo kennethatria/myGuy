@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"store-service/internal/models"
+	"store-service/internal/proximity"
 	"store-service/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -39,6 +40,15 @@ func (m *MockRequestService) GetRequest(id uint) (*models.ItemRequest, error) {
 func (m *MockRequestService) GetRequests(filter models.ItemRequestFilter) ([]models.ItemRequest, int64, error) {
 	args := m.Called(filter)
 	return args.Get(0).([]models.ItemRequest), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *MockRequestService) GetRequestsNear(filter models.ItemRequestFilter, at proximity.Location) ([]models.ItemRequest, int64, error) {
+	args := m.Called(filter, at)
+	return args.Get(0).([]models.ItemRequest), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *MockRequestService) TagRequestDistances(requests []models.ItemRequest, at proximity.Location) {
+	m.Called(requests, at)
 }
 
 func (m *MockRequestService) GetRequestListings(id uint) ([]models.StoreItem, error) {
@@ -164,4 +174,26 @@ func TestUnexpectedErrorsDontLeak(t *testing.T) {
 		assert.NotContains(t, w.Body.String(), "idx_item_requests")
 		assert.Contains(t, w.Body.String(), "something went wrong")
 	}
+}
+
+func TestNearOnBoards(t *testing.T) {
+	s := new(MockRequestService)
+	r := setupRequestRouter(s)
+	// near arrives snapped to its cell (0.35000000000000003, not 0.35)
+	isNear := mock.MatchedBy(func(at proximity.Location) bool { return at.Lat > 0.3499 && at.Lat < 0.3501 })
+	s.On("GetRequestsNear", mock.Anything, isNear).Return([]models.ItemRequest{{ID: 2, Distance: "<1 km"}}, int64(1), nil)
+	s.On("GetRequests", mock.Anything).Return([]models.ItemRequest{{ID: 3}}, int64(1), nil)
+	s.On("TagRequestDistances", mock.Anything, isNear).Return()
+
+	sorted := call(r, "GET", "/requests?near=0.3476,32.5842&sort_by=distance", "")
+	assert.Equal(t, http.StatusOK, sorted.Code)
+	assert.Contains(t, sorted.Body.String(), `"distance":"\u003c1 km"`)
+
+	tagged := call(r, "GET", "/requests?near=0.35,32.585", "")
+	assert.Equal(t, http.StatusOK, tagged.Code)
+	s.AssertCalled(t, "TagRequestDistances", mock.Anything, isNear)
+
+	bad := call(r, "GET", "/requests?near=1000,1", "")
+	assert.Equal(t, http.StatusBadRequest, bad.Code)
+	assert.Contains(t, bad.Body.String(), "location must have a valid lat and lng")
 }

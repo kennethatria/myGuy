@@ -43,6 +43,16 @@ func (m *MockStoreItemRepository) GetAll(filter models.StoreItemFilter) ([]model
 	return args.Get(0).([]models.StoreItem), args.Get(1).(int64), args.Error(2)
 }
 
+func (m *MockStoreItemRepository) ListIDs(filter models.StoreItemFilter) ([]uint, error) {
+	args := m.Called(filter)
+	return args.Get(0).([]uint), args.Error(1)
+}
+
+func (m *MockStoreItemRepository) GetByIDs(ids []uint) ([]models.StoreItem, error) {
+	args := m.Called(ids)
+	return args.Get(0).([]models.StoreItem), args.Error(1)
+}
+
 func (m *MockStoreItemRepository) Update(item *models.StoreItem) error {
 	args := m.Called(item)
 	return args.Error(0)

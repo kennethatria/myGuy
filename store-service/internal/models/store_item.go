@@ -35,6 +35,7 @@ type StoreItem struct {
 	Bids            []Bid          `json:"bids,omitempty" gorm:"foreignKey:ItemID"`
 	BidCount        int            `json:"bid_count" gorm:"-"`
 	IsAuction       bool           `json:"is_auction" gorm:"-"`
+	Distance        string         `json:"distance,omitempty" gorm:"-"` // rough distance tag for the viewer
 	Price           float64        `json:"price" gorm:"-"`
 	CreatedAt       time.Time      `json:"created_at" gorm:"index:idx_store_items_created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
@@ -110,6 +111,7 @@ type ItemRequest struct {
 	Deadline        *time.Time     `json:"deadline,omitempty" gorm:"index:idx_item_requests_deadline"`
 	FulfilledItemID *uint          `json:"fulfilled_item_id,omitempty"`
 	OfferCount      int            `json:"offer_count" gorm:"-"`
+	Distance        string         `json:"distance,omitempty" gorm:"-"` // rough distance tag for the viewer
 	CreatedAt       time.Time      `json:"created_at" gorm:"index:idx_item_requests_created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
 	DeletedAt       gorm.DeletedAt `json:"-" gorm:"index"`

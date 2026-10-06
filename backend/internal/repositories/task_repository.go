@@ -94,6 +94,28 @@ func (r *GormTaskRepository) ListWithPagination(ctx context.Context, filters map
 	return tasks, nil
 }
 
+func (r *GormTaskRepository) ListIDs(ctx context.Context, filters map[string]interface{}) ([]uint, error) {
+	var ids []uint
+	err := r.buildTaskQuery(ctx, filters).Model(&models.Task{}).
+		Order("created_at DESC").Order("id DESC").
+		Pluck("id", &ids).Error
+	return ids, err
+}
+
+func (r *GormTaskRepository) ListByIDs(ctx context.Context, ids []uint) ([]models.Task, error) {
+	var tasks []models.Task
+	if len(ids) == 0 {
+		return tasks, nil
+	}
+	err := r.db.WithContext(ctx).
+		Preload("Applications.Applicant").
+		Preload("Creator").
+		Preload("Assignee").
+		Where("id IN ?", ids).
+		Find(&tasks).Error
+	return tasks, err
+}
+
 func (r *GormTaskRepository) Count(ctx context.Context, filters map[string]interface{}) (int64, error) {
 	var count int64
 	query := r.buildTaskQuery(ctx, filters)

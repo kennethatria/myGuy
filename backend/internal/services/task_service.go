@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"myguy/internal/contacts"
 	"myguy/internal/models"
 	"myguy/internal/proximity"
 	"myguy/internal/repositories"
+	"sort"
 	"strings"
 	"time"
 )
@@ -98,11 +100,18 @@ type noopLocator struct{}
 func (noopLocator) Save(string, uint, proximity.Location) {}
 func (noopLocator) Delete(string, uint)                   {}
 
+// Distancer measures rough distances to posts, as buckets (an index into
+// proximity.Buckets). Posts without a stored location are left out.
+type Distancer interface {
+	Distances(kind string, at proximity.Location, ids []uint) (map[uint]int, error)
+}
+
 type TaskService struct {
 	taskRepo        repositories.TaskRepository
 	applicationRepo repositories.ApplicationRepository
 	notifier        TaskNotifier
 	locator         Locator
+	distancer       Distancer // nil: no distance sorting or tags
 }
 
 // NewTaskService builds the service; notifier may be nil (no notifications).
@@ -123,6 +132,12 @@ func (s *TaskService) WithLocator(locator Locator) *TaskService {
 	if locator != nil {
 		s.locator = locator
 	}
+	return s
+}
+
+// WithDistancer turns on distance sorting and tags (nil leaves them off).
+func (s *TaskService) WithDistancer(distancer Distancer) *TaskService {
+	s.distancer = distancer
 	return s
 }
 
@@ -277,6 +292,102 @@ func (s *TaskService) ListTasksWithPagination(ctx context.Context, filters map[s
 		PerPage:    perPage,
 		TotalPages: totalPages,
 	}, nil
+}
+
+// ListTasksNear is ListTasksWithPagination ordered by distance from at:
+// nearest bucket first, newest first within a bucket, gigs without a location
+// last. Every match is ranked before the page is cut, so paging and totals
+// work as usual. If distances can't be had, it falls back to the usual order.
+func (s *TaskService) ListTasksNear(ctx context.Context, filters map[string]interface{}, at proximity.Location) (*PaginatedTasksResult, error) {
+	if s.distancer == nil {
+		return s.ListTasksWithPagination(ctx, filters)
+	}
+	ids, err := s.taskRepo.ListIDs(ctx, filters)
+	if err != nil {
+		return nil, err
+	}
+	buckets, err := s.distancer.Distances("task", at, ids)
+	if err != nil {
+		log.Printf("WARNING: distance sort unavailable, showing newest first: %v", err)
+		return s.ListTasksWithPagination(ctx, filters)
+	}
+
+	unknown := len(proximity.Buckets)
+	rank := func(id uint) int {
+		if b, ok := buckets[id]; ok {
+			return b
+		}
+		return unknown
+	}
+	// ids arrive newest first; a stable sort keeps that order within a bucket
+	sort.SliceStable(ids, func(a, b int) bool { return rank(ids[a]) < rank(ids[b]) })
+
+	page, _ := filters["page"].(int)
+	perPage, _ := filters["per_page"].(int)
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 {
+		perPage = 20
+	}
+	start := (page - 1) * perPage
+	if start > len(ids) {
+		start = len(ids)
+	}
+	end := start + perPage
+	if end > len(ids) {
+		end = len(ids)
+	}
+	pageIDs := ids[start:end]
+
+	loaded, err := s.taskRepo.ListByIDs(ctx, pageIDs)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[uint]models.Task, len(loaded))
+	for _, task := range loaded {
+		byID[task.ID] = task
+	}
+	tasks := make([]models.Task, 0, len(pageIDs))
+	for _, id := range pageIDs {
+		if task, ok := byID[id]; ok {
+			if b, has := buckets[id]; has {
+				task.Distance = proximity.BucketLabel(b)
+			}
+			tasks = append(tasks, task)
+		}
+	}
+
+	total := int64(len(ids))
+	return &PaginatedTasksResult{
+		Tasks:      tasks,
+		Total:      total,
+		Page:       page,
+		PerPage:    perPage,
+		TotalPages: int((total + int64(perPage) - 1) / int64(perPage)),
+	}, nil
+}
+
+// TagDistances adds a rough distance tag from at to each task that has a
+// location, keeping their order. Best effort: without distances, no tags.
+func (s *TaskService) TagDistances(tasks []models.Task, at proximity.Location) {
+	if s.distancer == nil || len(tasks) == 0 {
+		return
+	}
+	ids := make([]uint, len(tasks))
+	for i, task := range tasks {
+		ids[i] = task.ID
+	}
+	buckets, err := s.distancer.Distances("task", at, ids)
+	if err != nil {
+		log.Printf("WARNING: distance tags unavailable: %v", err)
+		return
+	}
+	for i := range tasks {
+		if b, ok := buckets[tasks[i].ID]; ok {
+			tasks[i].Distance = proximity.BucketLabel(b)
+		}
+	}
 }
 
 func (s *TaskService) ListUserTasks(ctx context.Context, userID uint, role string) ([]models.Task, error) {

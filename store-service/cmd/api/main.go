@@ -65,8 +65,11 @@ func main() {
 	// Initialize services
 	storeService := services.NewStoreService(db, itemRepo, bidRepo, bookingRepo, userRepo).
 		WithRequests(requestRepo, services.NewHTTPChatNotifier()).
-		WithLocator(newLocator())
-	requestService := services.NewRequestService(requestRepo, itemRepo).WithLocator(newLocator())
+		WithLocator(newLocator()).
+		WithDistancer(newDistancer())
+	requestService := services.NewRequestService(requestRepo, itemRepo).
+		WithLocator(newLocator()).
+		WithDistancer(newDistancer())
 
 	// Listings from before notes had deadlines get a fresh 24 hours
 	if n, err := itemRepo.StartMissingDeadlines(time.Now().UTC().Add(services.ListingLifetime)); err != nil {
@@ -184,6 +187,18 @@ func main() {
 		log.Fatal("Failed to start server:", err)
 	}
 }
+// newDistancer sorts and tags listings and requests by distance through
+// the proximity service, unless PROXIMITY_SORT_ENABLED is "false" (the
+// rollback switch) or the proximity service isn't configured.
+func newDistancer() services.Distancer {
+	url, apiKey := os.Getenv("PROXIMITY_URL"), os.Getenv("INTERNAL_API_KEY")
+	if os.Getenv("PROXIMITY_SORT_ENABLED") == "false" || url == "" || apiKey == "" {
+		log.Println("distance sorting is off")
+		return nil
+	}
+	return proximity.New(url, apiKey)
+}
+
 // newLocator saves rough locations in the proximity service, or returns
 // nil (locations aren't saved) when PROXIMITY_URL or INTERNAL_API_KEY is
 // unset.

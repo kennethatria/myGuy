@@ -67,7 +67,7 @@ func main() {
 
 	// Initialize services
 	userService := services.NewUserService(userRepo)
-	taskService := services.NewTaskService(taskRepo, applicationRepo, newTaskNotifier()).WithLocator(newLocator())
+	taskService := services.NewTaskService(taskRepo, applicationRepo, newTaskNotifier()).WithLocator(newLocator()).WithDistancer(newDistancer())
 	reviewService := services.NewReviewService(reviewRepo, taskRepo, userRepo)
 
 	go expireStaleTasks(taskService)
@@ -191,6 +191,18 @@ func newCodeSender() services.CodeSender {
 		Password: os.Getenv("SMTP_PASSWORD"),
 		From:     os.Getenv("SMTP_FROM"),
 	})
+}
+
+// newDistancer sorts and tags gigs by distance through the proximity
+// service, unless PROXIMITY_SORT_ENABLED is "false" (the rollback switch) or
+// the proximity service isn't configured.
+func newDistancer() services.Distancer {
+	url, apiKey := os.Getenv("PROXIMITY_URL"), os.Getenv("INTERNAL_API_KEY")
+	if os.Getenv("PROXIMITY_SORT_ENABLED") == "false" || url == "" || apiKey == "" {
+		log.Println("distance sorting is off")
+		return nil
+	}
+	return proximity.New(url, apiKey)
 }
 
 // newLocator saves gigs' rough locations in the proximity service, or

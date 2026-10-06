@@ -30,6 +30,10 @@ type TaskRepository interface {
 	GetByID(ctx context.Context, id uint) (*models.Task, error)
 	List(ctx context.Context, filters map[string]interface{}) ([]models.Task, error)
 	ListWithPagination(ctx context.Context, filters map[string]interface{}) ([]models.Task, error)
+	// ListIDs returns the ids of every task matching filters, newest first
+	ListIDs(ctx context.Context, filters map[string]interface{}) ([]uint, error)
+	// ListByIDs loads tasks with their related data, in no particular order
+	ListByIDs(ctx context.Context, ids []uint) ([]models.Task, error)
 	Count(ctx context.Context, filters map[string]interface{}) (int64, error)
 	Update(ctx context.Context, task *models.Task) error
 	Delete(ctx context.Context, id uint) error

@@ -105,3 +105,63 @@ func (c *Client) do(method, path string, body []byte) error {
 	}
 	return nil
 }
+
+// Buckets are the only distances anyone sees, nearest first; the proximity
+// service returns an index into this list.
+var Buckets = []string{"<1 km", "~2 km", "~5 km", "~10 km", "10+ km"}
+
+// BucketLabel is the tag shown for a bucket index ("" if out of range).
+func BucketLabel(bucket int) string {
+	if bucket < 0 || bucket >= len(Buckets) {
+		return ""
+	}
+	return Buckets[bucket]
+}
+
+// maxIDsPerCall is the proximity service's limit for one distances call.
+const maxIDsPerCall = 1000
+
+// Distances returns the distance bucket of each id that has a stored
+// location, measured from at. It waits for the answer (300 ms at most per
+// call); on any error callers fall back to their usual order.
+func (c *Client) Distances(kind string, at Location, ids []uint) (map[uint]int, error) {
+	buckets := make(map[uint]int, len(ids))
+	for start := 0; start < len(ids); start += maxIDsPerCall {
+		end := start + maxIDsPerCall
+		if end > len(ids) {
+			end = len(ids)
+		}
+		body, err := json.Marshal(map[string]interface{}{"lat": at.Lat, "lng": at.Lng, "ids": ids[start:end]})
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/internal/distances/%s", c.baseURL, kind), bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Internal-API-Key", c.apiKey)
+		resp, err := c.client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		var out struct {
+			Results []struct {
+				ID     uint `json:"id"`
+				Bucket int  `json:"bucket"`
+			} `json:"results"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&out)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("proximity service returned %d", resp.StatusCode)
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range out.Results {
+			buckets[r.ID] = r.Bucket
+		}
+	}
+	return buckets, nil
+}
