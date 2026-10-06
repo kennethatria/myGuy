@@ -151,6 +151,45 @@ describe('MessageService', () => {
     });
   });
 
+  describe('gig chats before a match', () => {
+    // The client answers like the database: matched pairs per `unlocked`
+    const answer = (unlocked) => mockClient.query.mockImplementation(async (sql) => {
+      if (sql.includes('FROM contact_unlocks')) return { rows: unlocked ? [{}] : [] };
+      if (sql.includes('INSERT INTO messages')) return { rows: [{ id: 7, task_id: 1 }] };
+      return { rows: [] };
+    });
+    const send = (extra = {}) => messageService.sendMessage({
+      taskId: 1, senderId: 2, recipientId: 9, content: 'When can you come?', ...extra
+    });
+
+    it('refuses a message until the poster accepts', async () => {
+      answer(false);
+      await expect(send()).rejects.toMatchObject({ code: 'chat_locked', status: 403 });
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+      expect(mockClient.query).not.toHaveBeenCalledWith(expect.stringContaining('INSERT INTO messages'), expect.anything());
+    });
+
+    it('lets matched people write', async () => {
+      answer(true);
+      await expect(send()).resolves.toMatchObject({ id: 7 });
+    });
+
+    it('always posts gig events, with what they are about', async () => {
+      answer(false);
+      await send({ messageType: 'system_alert', metadata: { event: 'application', application_id: 3 } });
+      const insert = mockClient.query.mock.calls.find(([sql]) => sql.includes('INSERT INTO messages'));
+      expect(insert[1]).toContain(JSON.stringify({ event: 'application', application_id: 3 }));
+    });
+
+    it('reports a gig chat as locked to the app', async () => {
+      db.query.mockResolvedValueOnce({ rows: [] });
+      expect(await messageService.isChatLocked({ taskId: 1, userId: 2, otherUserId: 9 })).toBe(true);
+      db.query.mockResolvedValueOnce({ rows: [{}] });
+      expect(await messageService.isChatLocked({ taskId: 1, userId: 2, otherUserId: 9 })).toBe(false);
+      expect(await messageService.isChatLocked({ itemId: 4, userId: 2, otherUserId: 9 })).toBe(false);
+    });
+  });
+
   describe('getMessages', () => {
     it('scopes store messages to both participants and paginates after them', async () => {
       db.query.mockResolvedValue({ rows: [{ id: 2 }, { id: 1 }] });
@@ -455,7 +494,8 @@ describe('MessageService', () => {
       const mockMsg = { id: 1, content: 'Hello', task_id: 1, message_type: 'task' };
       mockClient.query
         .mockResolvedValueOnce({})             // BEGIN
-        .mockResolvedValueOnce({ rows: [] })   // contact unlock check
+        .mockResolvedValueOnce({ rows: [{}] }) // matched: the gig chat is open
+        .mockResolvedValueOnce({ rows: [{}] }) // contact unlock check
         .mockResolvedValueOnce({ rows: [mockMsg] }) // INSERT message
         .mockResolvedValueOnce({});            // COMMIT
       db.query.mockResolvedValue({ rows: [] }); // updateUserActivity
@@ -531,7 +571,8 @@ describe('MessageService', () => {
     };
 
     it('masks contacts before the two people are matched', async () => {
-      const result = await send(false);
+      // (a gig chat can't be written before a match; a marketplace one can)
+      const result = await send(false, { taskId: undefined, storeItemId: 4 });
       expect(insertedContent()).toBe('call [phone removed]');
       expect(result.hasRemovedContent).toBe(true);
     });
@@ -543,9 +584,9 @@ describe('MessageService', () => {
     });
 
     it('looks the pair up in either direction', async () => {
-      await send(false);
+      await send(false, { taskId: undefined, storeItemId: 4 });
       const lookup = mockClient.query.mock.calls.find(([sql]) => /FROM contact_unlocks/.test(sql));
-      expect(lookup[1]).toEqual(['task', 4, 2, 9]);
+      expect(lookup[1]).toEqual(['store', 4, 2, 9]);
     });
 
     it('never unlocks application chats', async () => {

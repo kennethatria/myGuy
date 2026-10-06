@@ -54,9 +54,9 @@ const hasInternalKey = (req) => {
 
 // Stores a system_alert in a conversation and delivers it live to both
 // participants (all their tabs). context is { taskId } or { storeItemId }.
-async function postSystemMessage(req, context, senderId, recipientId, content) {
+async function postSystemMessage(req, context, senderId, recipientId, content, metadata) {
   const message = await messageService.sendMessage({
-    ...context, senderId, recipientId, content, messageType: 'system_alert'
+    ...context, senderId, recipientId, content, messageType: 'system_alert', metadata
   });
   const formatted = {
     ...message,
@@ -69,6 +69,19 @@ async function postSystemMessage(req, context, senderId, recipientId, content) {
     io.to(`user:${senderId}`).to(`user:${recipientId}`).emit('message:new', formatted);
   }
   return message;
+}
+
+// Gig events the app shows actions on (accept, mark as done, approve, review)
+const TASK_EVENTS = new Set(['application', 'accepted', 'declined', 'cancelled', 'done', 'not_done', 'completed']);
+
+// The event a task message is about, or undefined. Only known events and a
+// numeric application id are kept.
+function taskEventMetadata(raw) {
+  if (!raw || typeof raw !== 'object' || !TASK_EVENTS.has(raw.event)) return undefined;
+  const metadata = { event: raw.event };
+  const applicationId = parseInt(raw.application_id);
+  if (applicationId > 0) metadata.application_id = applicationId;
+  return metadata;
 }
 
 /**
@@ -87,17 +100,24 @@ router.post('/internal/task-message', async (req, res) => {
     const senderId = parseInt(req.body.sender_id);
     const recipientId = parseInt(req.body.recipient_id);
     const content = typeof req.body.content === 'string' ? req.body.content.trim() : '';
-    if (!taskId || !senderId || !recipientId || !content) {
+    const unlock = req.body.unlock_contacts === true;
+    // Content may be left out only to record a match (catching up old ones)
+    if (!taskId || !senderId || !recipientId || (!content && !unlock)) {
       return res.status(400).json({ error: 'task_id, sender_id, recipient_id and content are required' });
     }
 
     // An accepted application: the pair agreed to work together, so they
-    // may now share contact details in this conversation.
-    if (req.body.unlock_contacts === true) {
+    // may now chat and share contact details in this conversation.
+    if (unlock) {
       await messageService.unlockContacts({ taskId, userA: senderId, userB: recipientId });
     }
+    if (!content) {
+      return res.status(204).end();
+    }
 
-    const message = await postSystemMessage(req, { taskId }, senderId, recipientId, content);
+    const message = await postSystemMessage(
+      req, { taskId }, senderId, recipientId, content, taskEventMetadata(req.body.metadata)
+    );
     res.status(201).json({ id: message.id });
   } catch (error) {
     console.error('Error posting task message:', error);

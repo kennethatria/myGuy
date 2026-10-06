@@ -45,6 +45,17 @@ function assertMessageLength(content) {
   }
 }
 
+// Gig chats open once the poster accepts the application; until then the
+// conversation holds only gig events (the application itself).
+const CHAT_LOCKED_MESSAGE = 'You can chat once the poster accepts the application.';
+
+function chatLockedError() {
+  const error = new Error(CHAT_LOCKED_MESSAGE);
+  error.status = 403;
+  error.code = 'chat_locked';
+  return error;
+}
+
 class MessageService {
   constructor() {
     // Initialization if needed
@@ -79,6 +90,15 @@ class MessageService {
   }
 
   /**
+   * Whether userId may not yet write to otherUserId about the gig taskId:
+   * gig chats stay closed until the poster accepts one of them.
+   */
+  async isChatLocked({ taskId, userId, otherUserId }) {
+    if (!taskId || !otherUserId) return false;
+    return !(await this.contactsUnlocked(db, { taskId, senderId: userId, recipientId: otherUserId }));
+  }
+
+  /**
    * Contact details are masked until the two people are matched.
    */
   async filterFor(client, conversation, content) {
@@ -91,12 +111,19 @@ class MessageService {
   /**
    * Send a new message
    */
-  async sendMessage({ taskId, applicationId, storeItemId, senderId, recipientId, content, messageType }) {
+  async sendMessage({ taskId, applicationId, storeItemId, senderId, recipientId, content, messageType, metadata }) {
     assertMessageLength(content);
     const client = await db.getClient();
 
     try {
       await client.query('BEGIN');
+
+      // People write about a gig only once they're matched; events
+      // (messageType set by the services) are always posted.
+      if (taskId && !messageType &&
+          !(await this.contactsUnlocked(client, { taskId, senderId, recipientId }))) {
+        throw chatLockedError();
+      }
 
       const { filtered, hasRemovedContent } = await this.filterFor(
         client, { taskId, storeItemId, senderId, recipientId }, content
@@ -107,8 +134,8 @@ class MessageService {
 
       // Store message
       const messageQuery = `
-        INSERT INTO messages (task_id, application_id, store_item_id, sender_id, recipient_id, content, message_type, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        INSERT INTO messages (task_id, application_id, store_item_id, sender_id, recipient_id, content, message_type, metadata, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
         RETURNING *
       `;
 
@@ -119,7 +146,8 @@ class MessageService {
         senderId,
         recipientId,
         filtered,
-        type
+        type,
+        metadata ? JSON.stringify(metadata) : null
       ]);
 
       // Update user activity
