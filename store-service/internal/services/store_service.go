@@ -780,6 +780,27 @@ func (s *StoreService) fulfilRequest(booking *models.BookingRequest) {
 	}
 }
 
+// UnlockMatchedChats records in chat every buyer and seller who agreed to
+// deal, so marketplace chats (closed until the seller approves) stay open for
+// matches made before chat recorded them. Safe to repeat; returns how many.
+func (s *StoreService) UnlockMatchedChats() (int, error) {
+	bookings, err := s.bookingRepo.ListMatched()
+	if err != nil {
+		return 0, err
+	}
+	unlocked := 0
+	for _, booking := range bookings {
+		if booking.Item == nil {
+			continue
+		}
+		if err := s.chat.Unlock(booking.ItemID, booking.Item.SellerID, booking.RequesterID); err != nil {
+			return unlocked, err
+		}
+		unlocked++
+	}
+	return unlocked, nil
+}
+
 // reopenRequest puts a request back on the Wanted board when the
 // reservation that fulfilled it was released: the requester still wants it.
 func (s *StoreService) reopenRequest(booking *models.BookingRequest, item *models.StoreItem) {

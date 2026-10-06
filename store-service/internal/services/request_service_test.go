@@ -77,6 +77,16 @@ type fakeChat struct {
 	mu     sync.Mutex
 	sent   []string
 	closed []uint // bookings closed in chat
+	// pairs recorded as matched, and an error to answer with
+	unlocked  [][3]uint
+	unlockErr error
+}
+
+func (f *fakeChat) Unlock(itemID, sellerID, buyerID uint) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.unlocked = append(f.unlocked, [3]uint{itemID, sellerID, buyerID})
+	return f.unlockErr
 }
 
 func (f *fakeChat) BookingClosed(bookingID, sellerID uint, note string) {

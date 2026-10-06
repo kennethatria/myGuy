@@ -87,3 +87,27 @@ func TestGetByItemAndRequesterFindsReleasedBookings(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "released", got.Status)
 }
+
+func TestListMatched(t *testing.T) {
+	db, err := setupBookingTestDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := NewBookingRequestRepository(db)
+	for _, status := range []string{"pending", "approved", "rejected", "item_received", "completed", "released"} {
+		if err := repo.Create(&models.BookingRequest{ItemID: 1, RequesterID: 2, Status: status}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := repo.ListMatched()
+
+	assert.NoError(t, err)
+	statuses := []string{}
+	for _, b := range got {
+		statuses = append(statuses, b.Status)
+		assert.NotNil(t, b.Item, "item is preloaded for its seller")
+	}
+	assert.ElementsMatch(t, []string{"approved", "item_received", "completed", "released"}, statuses)
+}
+

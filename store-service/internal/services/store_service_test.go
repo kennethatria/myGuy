@@ -181,6 +181,11 @@ func (m *MockBookingRequestRepository) GetRatingsReceived(userID uint) ([]models
 	return args.Get(0).([]models.BookingRequest), args.Error(1)
 }
 
+func (m *MockBookingRequestRepository) ListMatched() ([]models.BookingRequest, error) {
+	args := m.Called()
+	return args.Get(0).([]models.BookingRequest), args.Error(1)
+}
+
 func (m *MockBookingRequestRepository) GetRatingsInvolving(userID uint) ([]models.BookingRequest, error) {
 	args := m.Called(userID)
 	return args.Get(0).([]models.BookingRequest), args.Error(1)
@@ -1989,5 +1994,25 @@ func TestReleaseBooking(t *testing.T) {
 
 		assert.EqualError(t, err, "only an approved booking can be released")
 	})
+}
+
+func TestUnlockMatchedChats(t *testing.T) {
+	service, _, _, bookingRepo := setupService()
+	chat := &fakeChat{}
+	service.WithRequests(nil, chat)
+	bookingRepo.On("ListMatched").Return([]models.BookingRequest{
+		{ItemID: 9, RequesterID: 2, Item: &models.StoreItem{ID: 9, SellerID: 1}},
+		{ItemID: 8, RequesterID: 3}, // its item is gone: skipped
+	}, nil)
+
+	n, err := service.UnlockMatchedChats()
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, n)
+	assert.Equal(t, [][3]uint{{9, 1, 2}}, chat.unlocked)
+
+	chat.unlockErr = assert.AnError
+	_, err = service.UnlockMatchedChats()
+	assert.Error(t, err)
 }
 

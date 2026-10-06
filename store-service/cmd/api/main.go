@@ -78,6 +78,7 @@ func main() {
 		log.Printf("gave %d listing(s) a 24 hour deadline", n)
 	}
 	go expireStaleNotes(storeService, requestService)
+	go unlockMatchedChats(storeService)
 
 	// Photos uploaded before uploads were cleaned may still carry EXIF
 	// metadata such as GPS positions; clean them once, in place
@@ -211,6 +212,21 @@ func newLocator() services.Locator {
 		return nil
 	}
 	return proximity.New(url, apiKey)
+}
+
+// unlockMatchedChats lets buyers and sellers matched before chat recorded
+// matches keep talking: marketplace chats are closed until the seller
+// approves. Retries while the chat service starts up.
+func unlockMatchedChats(storeService *services.StoreService) {
+	for attempt := 1; attempt <= 5; attempt++ {
+		n, err := storeService.UnlockMatchedChats()
+		if err == nil {
+			log.Printf("chat: %d matched buyer and seller pairs recorded", n)
+			return
+		}
+		log.Printf("chat: recording matched pairs failed (attempt %d): %v", attempt, err)
+		time.Sleep(time.Duration(attempt) * 10 * time.Second)
+	}
 }
 
 // expireStaleNotes takes listings and requests that got no reaction within

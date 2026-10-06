@@ -115,6 +115,17 @@ func (r *bookingRequestRepository) GetRatingsReceived(userID uint) ([]models.Boo
 	return requests, err
 }
 
+// ListMatched returns every booking a seller approved at some point
+// (approved, picked up, completed or later released), with its item: each
+// buyer and seller who agreed to deal.
+func (r *bookingRequestRepository) ListMatched() ([]models.BookingRequest, error) {
+	var requests []models.BookingRequest
+	err := r.db.Preload("Item").
+		Where("status IN ?", []string{"approved", "item_received", "completed", "released"}).
+		Find(&requests).Error
+	return requests, err
+}
+
 // GetRatingsInvolving returns bookings with a rating in which userID was the
 // seller or the buyer: ratings they gave or received. Newest first.
 func (r *bookingRequestRepository) GetRatingsInvolving(userID uint) ([]models.BookingRequest, error) {
