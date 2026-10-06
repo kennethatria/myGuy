@@ -61,6 +61,12 @@ const router = createRouter({
       meta: { title: 'Profile', requiresAuth: true }
     },
     {
+      path: '/reviews',
+      name: 'reviews',
+      component: () => import('@/views/reviews/ReviewsView.vue'),
+      meta: { title: 'Reviews', requiresAuth: true }
+    },
+    {
       path: '/reviews/create/:taskId',
       name: 'create-review',
       component: () => import('@/views/reviews/CreateReviewView.vue'),

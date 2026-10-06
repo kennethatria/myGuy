@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import config from '@/config'
 import { useAuthStore } from './auth'
 import { useUserStore } from './user'
+import type { Interaction } from '@/utils/network'
 
 export interface Review {
   // Task reviews use their numeric id; store ratings use "store-<booking id>".
@@ -46,6 +47,23 @@ interface StoreRating {
   rating: number
   review: string
   rated_at: string
+}
+
+// A gig review as the backend sends it
+interface GigReview {
+  id: number
+  task_id: number
+  reviewer_id: number
+  reviewed_user_id: number
+  rating: number
+  comment: string
+  created_at: string
+  task?: { id: number; title: string }
+}
+
+// A store rating either way round (GET /user/ratings)
+interface BookingRating extends StoreRating {
+  rated_id: number
 }
 
 interface CreateReviewInput {
@@ -169,6 +187,62 @@ export const useReviewsStore = defineStore('reviews', () => {
     )
   }
 
+  // Every review the signed-in user gave or received, from gigs and the
+  // marketplace, as interactions with the other person (for their network).
+  // If one service is unavailable, the other's reviews are still shown.
+  const fetchMyInteractions = async (): Promise<Interaction[]> => {
+    const authStore = useAuthStore()
+    const me = authStore.user?.id
+    if (!me) return []
+    const headers = { 'Authorization': `Bearer ${authStore.token}` }
+    const get = async <T>(url: string): Promise<T[]> => {
+      const response = await fetch(url, { headers })
+      if (!response.ok) throw new Error(`Failed to load ${url}`)
+      return response.json()
+    }
+
+    const [gigReviews, storeRatings] = await Promise.all([
+      get<GigReview>(`${config.API_URL}/user/reviews`),
+      get<BookingRating>(`${config.STORE_API_URL}/user/ratings`).catch(err => {
+        console.warn('Store ratings unavailable:', err)
+        return [] as BookingRating[]
+      })
+    ])
+
+    const fromGigs = gigReviews.map((r): Interaction => {
+      const given = r.reviewer_id === me
+      return {
+        otherId: given ? r.reviewed_user_id : r.reviewer_id,
+        direction: given ? 'given' : 'received',
+        rating: r.rating,
+        comment: r.comment,
+        via: 'gig',
+        title: r.task?.title || 'A gig',
+        linkId: r.task_id,
+        deal: `gig-${r.task_id}`,
+        at: r.created_at
+      }
+    })
+    const fromStore = storeRatings.map((r): Interaction => {
+      const given = r.rater_id === me
+      return {
+        otherId: given ? r.rated_id : r.rater_id,
+        direction: given ? 'given' : 'received',
+        rating: r.rating,
+        comment: r.review,
+        via: 'item',
+        title: r.item_title || 'A marketplace item',
+        linkId: r.item_id,
+        deal: `item-${r.booking_id}`,
+        at: r.rated_at
+      }
+    })
+
+    const interactions = [...fromGigs, ...fromStore].filter(i => i.otherId && i.otherId !== me)
+    await useUserStore().fetchUsers(interactions.map(i => i.otherId))
+    return interactions
+  }
+
   const hasReviewedTask = async (taskId: number): Promise<boolean> => {
     const authStore = useAuthStore()
     const userId = authStore.user?.id
@@ -200,6 +274,7 @@ export const useReviewsStore = defineStore('reviews', () => {
     fetchUserReviews,
     fetchStoreRatings,
     fetchAllRatings,
+    fetchMyInteractions,
     hasReviewedTask,
     calculateAverageRating
   }
