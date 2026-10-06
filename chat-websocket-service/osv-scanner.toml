@@ -5,3 +5,8 @@
 id = "GHSA-vfj7-8cjw-p6xm"
 ignoreUntil = 2027-04-05
 reason = "braces has no fixed release (3.0.3 is latest and affected). It is a dev-only transitive dependency of test/lint/watch tooling that expands only our own glob patterns; npm ls braces --omit=dev is empty."
+
+[[IgnoredVulns]]
+id = "GHSA-hp3w-g68c-fv3c"
+ignoreUntil = 2027-04-06
+reason = "sprintf-js has no fixed release. It is a dev-only transitive dependency of Jest's coverage tooling (jest > babel-plugin-istanbul > js-yaml 3 > argparse 1) and formats only our own test configuration; npm ls sprintf-js --omit=dev is empty."

@@ -141,7 +141,7 @@ async function getRedisHealth() {
     const testClient = createClient({ url: getRedisUrl() });
     await testClient.connect();
     await testClient.ping();
-    await testClient.disconnect();
+    testClient.destroy();
 
     return {
       configured: true,
