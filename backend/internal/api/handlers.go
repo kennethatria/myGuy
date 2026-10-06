@@ -48,7 +48,7 @@ type requestCodeRequest struct {
 func (h *Handler) RequestLoginCode(c *gin.Context) {
 	var req requestCodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "enter a valid email address"})
 		return
 	}
 
@@ -76,7 +76,7 @@ type verifyCodeRequest struct {
 func (h *Handler) VerifyLoginCode(c *gin.Context) {
 	var req verifyCodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
@@ -113,7 +113,7 @@ type completeSignupRequest struct {
 func (h *Handler) CompleteSignup(c *gin.Context) {
 	var req completeSignupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
@@ -162,7 +162,7 @@ type createTaskRequest struct {
 func (h *Handler) CreateTask(c *gin.Context) {
 	var req createTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
@@ -174,7 +174,7 @@ func (h *Handler) CreateTask(c *gin.Context) {
 	})
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -207,7 +207,7 @@ func (h *Handler) UpdateTask(c *gin.Context) {
 
 	var req createTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
@@ -368,7 +368,7 @@ func (h *Handler) ApplyForTask(c *gin.Context) {
 
 	var req applyForTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
@@ -382,7 +382,7 @@ func (h *Handler) ApplyForTask(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	case err != nil:
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -408,7 +408,7 @@ func (h *Handler) RespondToApplication(c *gin.Context) {
 
 	var req respondToApplicationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
@@ -470,7 +470,7 @@ func (h *Handler) CreateReview(c *gin.Context) {
 
 	var req createReviewRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
@@ -509,7 +509,7 @@ func (h *Handler) CreateReview(c *gin.Context) {
 	})
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -525,7 +525,7 @@ func (h *Handler) GetUserReviews(c *gin.Context) {
 
 	reviews, err := h.reviewService.GetUserReviews(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -588,7 +588,7 @@ func (h *Handler) GetProfile(c *gin.Context) {
 func (h *Handler) UpdateProfile(c *gin.Context) {
 	var req updateProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
@@ -628,7 +628,7 @@ func (h *Handler) UpdateTaskStatus(c *gin.Context) {
 
 	var req UpdateTaskStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
@@ -740,7 +740,7 @@ func respondApplicationError(c *gin.Context, err error) {
 	case errors.Is(err, services.ErrApplicationNotPending):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 	}
 }
 
@@ -771,6 +771,18 @@ func tasksForViewer(tasks []models.Task, viewerID uint) []models.Task {
 		visible[i] = taskForViewer(task, viewerID)
 	}
 	return visible
+}
+
+// respondError answers with err's message when it was written for users,
+// and otherwise logs it and answers with a generic 500 so database details
+// never reach clients.
+func respondError(c *gin.Context, status int, err error) {
+	if services.IsUserFacing(err) {
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	log.Printf("%s %s failed: %v", c.Request.Method, c.FullPath(), err)
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "something went wrong; please try again"})
 }
 
 func publicUser(user models.User, viewerID uint) models.User {

@@ -124,7 +124,9 @@ export const useChatStore = defineStore('chat', () => {
     // No conversation yet: start one with the seller (buyer side), or with the
     // named user.
     try {
-      const response = await fetch(`${config.STORE_API_URL}/items/${itemId}`);
+      const response = await fetch(`${config.STORE_API_URL}/items/${itemId}`, {
+        headers: { Authorization: `Bearer ${authStore.token}` }
+      });
       if (!response.ok) return;
       const item = await response.json();
 

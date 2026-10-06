@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"store-service/internal/api/handlers"
+	"store-service/internal/media"
 	"store-service/internal/middleware"
 	"store-service/internal/models"
 	"store-service/internal/repositories"
@@ -73,6 +74,14 @@ func main() {
 	}
 	go expireStaleNotes(storeService, requestService)
 
+	// Photos uploaded before uploads were cleaned may still carry EXIF
+	// metadata such as GPS positions; clean them once, in place
+	if n, err := media.CleanExisting(handlers.UploadsDir); err != nil {
+		log.Println("WARNING: cleaning stored photos failed:", err)
+	} else if n > 0 {
+		log.Printf("removed metadata from %d stored photo(s)", n)
+	}
+
 	// Initialize handlers
 	storeHandler := handlers.NewStoreHandler(storeService)
 	requestHandler := handlers.NewRequestHandler(requestService)
@@ -108,18 +117,19 @@ func main() {
 
 	api := router.Group("/api/v1")
 	{
-		// Public routes
-		api.GET("/items", storeHandler.GetItems)
-		api.GET("/items/:id", storeHandler.GetItem)
-		api.GET("/items/:id/bids", storeHandler.GetItemBids)
-		api.GET("/requests", requestHandler.GetRequests)
-		api.GET("/requests/:id", requestHandler.GetRequest)
-		api.GET("/requests/:id/listings", requestHandler.GetRequestListings)
-
-		// Protected routes
+		// Every route needs a signed-in user: listings and requests name
+		// their sellers and requesters, which shouldn't be scrapeable
 		auth := api.Group("/")
 		auth.Use(jwtMiddleware.AuthRequired())
 		{
+			// Browsing
+			auth.GET("/items", storeHandler.GetItems)
+			auth.GET("/items/:id", storeHandler.GetItem)
+			auth.GET("/items/:id/bids", storeHandler.GetItemBids)
+			auth.GET("/requests", requestHandler.GetRequests)
+			auth.GET("/requests/:id", requestHandler.GetRequest)
+			auth.GET("/requests/:id/listings", requestHandler.GetRequestListings)
+
 			// Item management
 			auth.POST("/items", storeHandler.CreateItem)
 			auth.PUT("/items/:id", storeHandler.UpdateItem)

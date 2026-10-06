@@ -21,14 +21,14 @@ func NewRequestHandler(service services.RequestServiceInterface) *RequestHandler
 	return &RequestHandler{service: service}
 }
 
-// requestError answers with 404 for a missing request, else 400 with the
-// service's reason (limits, contact details, ownership).
+// requestError answers with 404 for a missing request, else as
+// respondError does (the service's reason for users, a generic 500 otherwise).
 func requestError(c *gin.Context, err error) {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "request not found"})
 		return
 	}
-	c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	respondError(c, http.StatusBadRequest, err)
 }
 
 func (h *RequestHandler) CreateRequest(c *gin.Context) {

@@ -11,6 +11,7 @@ const { authenticateSocket, authenticateHTTP } = require('./middleware/auth');
 const { apiRateLimit } = require('./middleware/rateLimit');
 const SocketHandlers = require('./handlers/socketHandlers');
 const validationService = require('./services/validationService');
+const { healthHandler } = require('./api/health');
 const messageService = require('./services/messageService');
 const schedulerService = require('./services/schedulerService');
 const { configureRedisAdapter, getRedisHealth } = require('./config/redis');
@@ -48,81 +49,9 @@ io.on('connection', (socket) => {
 
 // HTTP API Routes
 
-// Health check (enhanced with migration status, Redis status, and service info)
-app.get('/health', async (req, res) => {
-  const health = {
-    status: 'ok',
-    service: 'chat-websocket-service',
-    version: '1.0.0',
-    uptime: Math.floor(process.uptime()),
-    timestamp: new Date().toISOString(),
-    database: 'unknown',
-    redis: 'unknown',
-    migrations: {
-      status: 'unknown',
-      count: 0,
-      lastRun: null
-    },
-    environment: {
-      node_env: process.env.NODE_ENV || 'production',
-      port: process.env.PORT || 8082
-    }
-  };
+// Health check: status only, details to the log
+app.get('/health', healthHandler({ db: require('./config/database'), getRedisHealth, logger }));
 
-  try {
-    // Check database connection
-    const db = require('./config/database');
-    await db.query('SELECT NOW()');
-    health.database = 'connected';
-
-    // Check migration status
-    const migrationResult = await db.query(`
-      SELECT COUNT(*) as count, MAX(applied_at) as last_run
-      FROM schema_migrations
-    `);
-
-    if (migrationResult.rows && migrationResult.rows.length > 0) {
-      health.migrations = {
-        status: 'applied',
-        count: parseInt(migrationResult.rows[0].count),
-        lastRun: migrationResult.rows[0].last_run
-      };
-    }
-
-    // Get table counts for additional health info
-    const tablesResult = await db.query(`
-      SELECT
-        (SELECT COUNT(*) FROM messages) as message_count,
-        (SELECT COUNT(*) FROM user_activity) as active_users
-    `);
-
-    if (tablesResult.rows && tablesResult.rows.length > 0) {
-      health.stats = {
-        messages: parseInt(tablesResult.rows[0].message_count),
-        activeUsers: parseInt(tablesResult.rows[0].active_users)
-      };
-    }
-
-    // Check Redis status
-    const redisHealth = await getRedisHealth();
-    health.redis = redisHealth;
-
-  } catch (error) {
-    logger.error('Health check failed:', error);
-    health.status = 'degraded';
-    health.database = 'error';
-    health.error = error.message;
-  }
-
-  // Set HTTP status based on health
-  const httpStatus = health.status === 'ok' ? 200 : 503;
-  res.status(httpStatus).json(health);
-});
-
-// Test endpoint without auth
-app.get('/api/v1/test', (req, res) => {
-  res.json({ message: 'Test endpoint works', timestamp: new Date() });
-});
 
 
 // Get deletion warnings for user

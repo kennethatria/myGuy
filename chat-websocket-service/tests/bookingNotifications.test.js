@@ -309,20 +309,49 @@ describe('bookingNotifications router', () => {
         .expect(200);
     });
 
-    it('returns 500 when store service returns an error response', async () => {
+    it('answers a store-service outage generically', async () => {
       const token = createUserToken(1);
 
       global.fetch = jest.fn().mockResolvedValue({
         ok: false,
         status: 503,
-        text: jest.fn().mockResolvedValue('Service Unavailable')
+        json: jest.fn().mockRejectedValue(new Error('not json'))
       });
 
-      await request(app)
+      const res = await request(app)
+        .post('/booking-action')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ bookingId: 1, action: 'approve' })
+        .expect(502);
+      expect(res.body).toEqual({ error: 'Could not update the booking. Please try again.' });
+    });
+
+    it("passes on store-service's message for the user, with its status", async () => {
+      const token = createUserToken(1);
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        json: jest.fn().mockResolvedValue({ error: 'only the seller can confirm delivery' })
+      });
+
+      const res = await request(app)
+        .post('/booking-action')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ bookingId: 1, action: 'confirm-delivery' })
+        .expect(403);
+      expect(res.body).toEqual({ error: 'only the seller can confirm delivery' });
+    });
+
+    it('never sends internal error text', async () => {
+      const token = createUserToken(1);
+      global.fetch = jest.fn().mockRejectedValue(new Error('connect ECONNREFUSED 10.0.0.7:8081'));
+
+      const res = await request(app)
         .post('/booking-action')
         .set('Authorization', `Bearer ${token}`)
         .send({ bookingId: 1, action: 'approve' })
         .expect(500);
+      expect(JSON.stringify(res.body)).not.toMatch(/ECONNREFUSED|8081/);
     });
 
     it.each(['1/../../admin', '-3', '2.5', 'abc'])('rejects bookingId %p without calling store-service', async (bookingId) => {
