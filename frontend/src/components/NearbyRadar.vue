@@ -38,10 +38,6 @@
             >{{ RING_LABELS[ring] }}</text>
           </g>
 
-          <g class="you" aria-hidden="true">
-            <circle :cx="CENTRE" :cy="CENTRE" r="1.8" class="you-dot" />
-            <text :x="CENTRE" :y="CENTRE + 4.6" text-anchor="middle" class="you-label">You</text>
-          </g>
 
           <g
             v-for="post in drawn"
@@ -66,6 +62,12 @@
               :stroke-width="post.bucket < 0 ? 0.8 : 0.45"
             />
           </g>
+
+          <!-- Drawn last so dots on a busy inner ring never hide it -->
+          <g class="you" aria-hidden="true">
+            <circle :cx="CENTRE" :cy="CENTRE" r="1.8" class="you-dot" />
+            <text :x="CENTRE" :y="CENTRE + 3.6" text-anchor="middle" class="you-label">You</text>
+          </g>
         </svg>
 
         <div class="radar-side">
@@ -79,9 +81,11 @@
           <p v-if="unplacedCount" class="radar-note">
             Hollow dots on the dotted edge ring had no location shared, so their distance is unknown.
           </p>
+          <p v-if="moreThanShown" class="radar-note">
+            The radar shows the 5 nearest of each kind. See the boards for everything.
+          </p>
           <p v-if="hiddenSentence" class="radar-note">
             Busy around you: {{ hiddenSentence }} {{ hiddenTotal === 1 ? "isn't" : "aren't" }} drawn.
-            See the boards for everything.
           </p>
 
           <p v-if="loading && !posts.length" class="radar-note">Finding what's near you...</p>
@@ -131,14 +135,23 @@ const countWhere = (keep: (post: NearbyPost) => boolean) => {
   for (const post of posts.value) if (keep(post)) counts[post.kind]++
   return counts
 }
-const unplacedCount = computed(() => posts.value.filter((post) => post.bucket < 0).length)
+const unplacedCount = computed(() => drawn.value.filter((post) => post.bucket < 0).length)
 // "Within 2 km" = the two innermost rings (<1 km and ~2 km)
 const closeCounts = computed(() => countWhere((post) => post.bucket >= 0 && post.bucket <= 1))
 
+// The radar shows the nearest PER_KIND_ON_RADAR of each kind (15 dots at
+// most); the key and summary still count everything
+const PER_KIND_ON_RADAR = 5
+const onRadar = computed(() => {
+  const taken: Record<PostKind, number> = { task: 0, item: 0, request: 0 }
+  return posts.value.filter((post) => taken[post.kind]++ < PER_KIND_ON_RADAR)
+})
+const moreThanShown = computed(() => posts.value.length > onRadar.value.length)
+
 // Dots sharing a ring are spaced evenly round it; a busy ring draws as many
 // as fit (nearest first) and counts the rest
-const layout = computed(() => layoutDots(posts.value))
-const drawn = computed(() => posts.value.filter((post) => layout.value.spots.has(`${post.kind}-${post.id}`)))
+const layout = computed(() => layoutDots(onRadar.value))
+const drawn = computed(() => onRadar.value.filter((post) => layout.value.spots.has(`${post.kind}-${post.id}`)))
 const spot = (post: NearbyPost) => layout.value.spots.get(`${post.kind}-${post.id}`) ?? { x: CENTRE, y: CENTRE }
 const hiddenTotal = computed(() => [...layout.value.hidden.values()].reduce((a, b) => a + b, 0))
 const hiddenSentence = computed(() =>
@@ -228,6 +241,9 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   font-size: 3px;
   font-weight: 600;
   fill: #111827;
+  stroke: #fff;
+  stroke-width: 0.8px;
+  paint-order: stroke;
 }
 
 .dot {

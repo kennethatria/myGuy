@@ -106,4 +106,24 @@ describe('radar', () => {
     expect(ringCapacity(4)).toBeGreaterThan(ringCapacity(0) * 4)
     expect(ringCapacity(UNKNOWN_RING)).toBeGreaterThan(ringCapacity(4))
   })
+
+  it('always fits the 15 dots the radar can show on any one ring', () => {
+    for (let ring = 0; ring <= UNKNOWN_RING; ring++) {
+      expect(ringCapacity(ring)).toBeGreaterThanOrEqual(15)
+    }
+    const posts = Array.from({ length: 15 }, (_, i) => ({ kind: (['task', 'item', 'request'] as const)[i % 3], id: i + 1, bucket: 0 }))
+    const layout = layoutDots(posts)
+    expect(layout.spots.size).toBe(15)
+    expect(layout.hidden.size).toBe(0)
+    const spots = [...layout.spots.values()]
+    for (let a = 0; a < spots.length; a++) {
+      for (let b = a + 1; b < spots.length; b++) {
+        expect(Math.hypot(spots[a].x - spots[b].x, spots[a].y - spots[b].y)).toBeGreaterThan(3.2)
+      }
+      // inside the <1 km band
+      const r = Math.hypot(spots[a].x - CENTRE, spots[a].y - CENTRE)
+      expect(r).toBeGreaterThan(4)
+      expect(r).toBeLessThan(RING_RADIUS[0])
+    }
+  })
 })
