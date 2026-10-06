@@ -318,6 +318,16 @@ func TestHandler_ApplyForTask(t *testing.T) {
 		assert.Equal(t, http.StatusCreated, resp.Code)
 		mockAppRepo.AssertExpectations(t)
 	})
+
+	t.Run("applying without a message", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, "/tasks/1/apply", bytes.NewBufferString(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusCreated, resp.Code)
+	})
 }
 
 func TestHandler_CreateReview(t *testing.T) {
