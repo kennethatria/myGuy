@@ -21,11 +21,15 @@
     app_dir: /opt/myguy
     git_branch: main
     zipkin_url: "{{ hostvars[groups['monitoring'][0]]['zipkin_url'] | default('http://10.0.0.3:9411/api/v2/spans') }}"
-    images_to_verify:
-      - "{{ registry }}/myguy-api:{{ image_tag }}"
-      - "{{ registry }}/myguy-store-service:{{ image_tag }}"
-      - "{{ registry }}/myguy-chat-websocket-service:{{ image_tag }}"
-      - "{{ registry }}/myguy-proximity-service:{{ image_tag }}"
+    # "all" redeploys the whole stack, databases included; otherwise a
+    # space-separated list of the compose services to replace (the CI
+    # pipeline passes the ones a push changed)
+    app_services: all
+    all_app_services: [api, store-service, chat-websocket-service, proximity-service]
+    deploy_all: "{{ app_services == 'all' }}"
+    services_to_deploy: "{{ all_app_services if deploy_all else app_services.split() }}"
+    # Each compose service runs the image myguy-<service>
+    images_to_verify: "{{ services_to_deploy | map('regex_replace', '^', registry ~ '/myguy-') | map('regex_replace', '$', ':' ~ image_tag) | list }}"
 
   pre_tasks:
     # The proximity service's Redis refuses to start without a password
@@ -93,7 +97,7 @@
     # services such as Zipkin, which runs on the monitoring server instead).
     - name: Pull images from Docker Hub
       ansible.builtin.command:
-        cmd: podman compose -f docker-compose.yml pull
+        cmd: "podman compose -f docker-compose.yml pull{{ '' if deploy_all else ' ' ~ services_to_deploy | join(' ') }}"
         chdir: "{{ app_dir }}"
       environment:
         XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
@@ -132,6 +136,7 @@
         XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
 
     - name: Start application stack
+      when: deploy_all
       ansible.builtin.command:
         cmd: podman compose -f docker-compose.yml up -d --force-recreate
         chdir: "{{ app_dir }}"
@@ -142,6 +147,30 @@
         INTERNAL_API_KEY: "{{ internal_api_key }}"
         PROXIMITY_REDIS_PASSWORD: "{{ proximity_redis_password }}"
       # rootless podman — no become
+
+    # Replacing only some services: podman-compose 1.0.6 ignores --no-deps,
+    # so `up --force-recreate api` would also restart Postgres. Remove just
+    # these containers instead; `up` then creates them from the new images
+    # and leaves their already-running dependencies alone.
+    - name: Remove the containers being replaced
+      when: not deploy_all
+      ansible.builtin.shell:
+        cmd: podman ps -aq --filter label=com.docker.compose.service={{ item }} | xargs -r podman rm -f
+      loop: "{{ services_to_deploy }}"
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+
+    - name: Start the replaced services
+      when: not deploy_all
+      ansible.builtin.command:
+        cmd: podman compose -f docker-compose.yml up -d {{ services_to_deploy | join(' ') }}
+        chdir: "{{ app_dir }}"
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+        JWT_SECRET: "{{ jwt_secret }}"
+        DB_PASSWORD: "{{ db_password }}"
+        INTERNAL_API_KEY: "{{ internal_api_key }}"
+        PROXIMITY_REDIS_PASSWORD: "{{ proximity_redis_password }}"
 
     # --- Nginx + TLS ---
 

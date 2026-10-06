@@ -6,8 +6,9 @@ env:
   RELEASE_BRANCH: refs/heads/main
     
 # A newer push to a pull request replaces its running checks. On main, runs
-# queue instead: cancelling one could stop a deploy half way through Ansible
-# (the next merge's run deploys everything anyway, so only one waits).
+# queue instead: cancelling one could stop a deploy half way through Ansible.
+# Only one waits; a newer one replaces it, which is safe because `changes`
+# diffs against the last successful run, so it picks up a dropped run's work.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -62,6 +63,95 @@ jobs:
                 echo "$table_row4"
               } >> "$GITHUB_STEP_SUMMARY"
     
+  # Main only: what changed since the last successful run on main (not just
+  # this push: a queued run can be dropped, or a run can fail), so only those
+  # images are built and containers replaced. Pull requests run every test.
+  #   build    JSON list of compose services whose images to build
+  #   deploy   "all" (whole stack, databases included), a space-separated
+  #            list of services to replace, or "" (no containers touched)
+  #   frontend whether to build and upload the frontend
+  changes:
+    needs: [context]
+    if: ${{ needs.context.outputs.isRelease == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read   # find the last successful run
+    outputs:
+      build: ${{ steps.detect.outputs.build }}
+      deploy: ${{ steps.detect.outputs.deploy }}
+      frontend: ${{ steps.detect.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: detect
+        name: Detect changed services
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY: ${{ vars.REGISTRY }}
+        run: |
+          # Compose services; each builds from the directory of the same name
+          # (api from backend/) into the image myguy-<service>
+          SERVICES="api store-service chat-websocket-service proximity-service"
+          source_dir() { [[ $1 == api ]] && echo backend || echo "$1"; }
+
+          # The commit the last successful run on main deployed
+          BEFORE=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.cd.yml \
+            --branch main --event push --status success --limit 1 --json headSha --jq '.[0].headSha // empty' 2>/dev/null || true)
+          echo "Changes since ${BEFORE:-(no successful run found)}"
+
+          build="" deploy="" frontend=false
+          if [[ -z $BEFORE ]] || ! files=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" 2>/dev/null); then
+            # No successful run, or its commit is gone (force-push): everything
+            echo "Couldn't tell what changed; deploying everything"
+            build=$SERVICES deploy=all frontend=true
+          else
+            for service in $SERVICES; do
+              grep -q "^$(source_dir "$service")/" <<<"$files" && build="$build $service"
+            done
+            deploy=$build
+            grep -q '^frontend/' <<<"$files" && frontend=true
+            # Server config (nginx, Ansible): rerun it and replace the app
+            # services, but leave the databases running
+            if grep -q '^configuration_management/' <<<"$files"; then
+              deploy=$SERVICES frontend=true
+            fi
+            # The stack itself: replace everything, as a full deploy does
+            if grep -qx 'docker-compose.yml' <<<"$files"; then
+              deploy=all frontend=true
+            fi
+          fi
+
+          # Every service must have an image under the current tag (a new
+          # release changes it from "latest"): build any that don't yet
+          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName' 2>/dev/null || echo latest)
+          for service in $SERVICES; do
+            [[ " $build " == *" $service "* ]] && continue
+            if ! docker manifest inspect "$REGISTRY/myguy-$service:$tag" >/dev/null 2>&1; then
+              echo "No $REGISTRY/myguy-$service:$tag yet; building it"
+              build="$build $service"
+              [[ $deploy == all ]] || deploy="$deploy $service"
+            fi
+          done
+
+          build=$(jq -cn --arg s "$build" '$s | split(" ") | map(select(. != ""))')
+          deploy=$(echo $deploy)
+          {
+            echo "build=$build"
+            echo "deploy=$deploy"
+            echo "frontend=$frontend"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "## What this push deploys"
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Images to build | \`$build\` |"
+            echo "| Containers to replace | \`${deploy:-none}\` |"
+            echo "| Frontend | $frontend |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   standards:
     needs: [context]
     if: ${{ needs.context.outputs.isPullRequest == 'true' }}
@@ -127,9 +217,12 @@ jobs:
     # have succeeded, and `standards` (PR-only) is always skipped on pushes,
     # which would silently skip this job and everything after it.
     # Tests ran on the pull request (test-code-coverage is PR-only).
-    if: ${{ !failure() && !cancelled() && needs.context.outputs.isRelease == 'true' && needs.release.result == 'success' }}
-    needs: [context, release]
+    # Only the images this push changed (see `changes`).
+    if: ${{ !failure() && !cancelled() && needs.context.outputs.isRelease == 'true' && needs.release.result == 'success' && needs.changes.outputs.build != '[]' }}
+    needs: [context, release, changes]
     uses: ./.github/workflows/component.build.push.to.registry.yml
+    with:
+      services: ${{ needs.changes.outputs.build }}
     secrets: inherit
 
   # deploy-infra:
@@ -144,17 +237,25 @@ jobs:
   #     action: apply
   #   secrets: inherit
 
-  # Deploys every main build: only the app images and frontend (scope: app).
-  # Server provisioning changes still need a manual "Run ansible" with scope
-  # full; Terraform stays manual (deploy-infra above) so plans get reviewed.
+  # Deploys what each main push changed (see `changes`): those containers
+  # and/or the frontend (scope: app). Server provisioning changes still need
+  # a manual "Run ansible" with scope full; Terraform stays manual
+  # (deploy-infra above) so plans get reviewed.
   deploy-application:
     permissions:
       contents: read
-    # Same reasoning as deploy-images-to-repository: check the result directly.
-    if: ${{ !failure() && !cancelled() && needs.context.outputs.isRelease == 'true' && needs.deploy-images-to-repository.result == 'success' }}
-    needs: [context, deploy-images-to-repository]
+    # Same reasoning as deploy-images-to-repository: check results directly.
+    # The image build is skipped when no image changed (frontend or config).
+    if: >-
+      ${{ !failure() && !cancelled() && needs.context.outputs.isRelease == 'true'
+      && needs.changes.result == 'success'
+      && contains(fromJSON('["success", "skipped"]'), needs.deploy-images-to-repository.result)
+      && (needs.changes.outputs.deploy != '' || needs.changes.outputs.frontend == 'true') }}
+    needs: [context, changes, deploy-images-to-repository]
     uses: ./.github/workflows/component.infra.config.deploy.application.yml
     with:
       environment: dev
       scope: app
+      services: ${{ needs.changes.outputs.deploy }}
+      frontend: ${{ needs.changes.outputs.frontend == 'true' }}
     secrets: inherit
