@@ -27,8 +27,13 @@
       
       <!-- Messages -->
       <template v-for="message in messages" :key="message.id">
+        <RequestOfferMessage
+          v-if="message.message_type === 'system_alert' && message.metadata?.event === 'request_answered'"
+          :message="message"
+          :current-user-id="authStore.user?.id"
+        />
         <TaskEventMessage
-          v-if="message.message_type === 'system_alert' && message.metadata?.event"
+          v-else-if="message.message_type === 'system_alert' && message.task_id && message.metadata?.event"
           :message="message"
           :current-user-id="authStore.user?.id"
           :latest="message.id === latestEventId"
@@ -93,6 +98,7 @@ import { useAuthStore } from '@/stores/auth';
 import MessageBubble from './MessageBubble.vue';
 import BookingMessageBubble from './BookingMessageBubble.vue';
 import TaskEventMessage from './TaskEventMessage.vue';
+import RequestOfferMessage from './RequestOfferMessage.vue';
 import type { Message, ConversationSummary, BookingAction } from '@/stores/messages';
 
 const props = defineProps<{
@@ -124,7 +130,7 @@ const typingTimeout = ref<ReturnType<typeof setTimeout>>();
 // The newest gig event: the only one that offers the next step
 const latestEventId = computed(() => {
   for (let i = props.messages.length - 1; i >= 0; i--) {
-    if (props.messages[i].metadata?.event) return props.messages[i].id;
+    if (props.messages[i].task_id && props.messages[i].metadata?.event) return props.messages[i].id;
   }
   return null;
 });

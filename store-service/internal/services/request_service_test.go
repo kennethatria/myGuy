@@ -76,7 +76,8 @@ func (m *MockItemRequestRepository) ExpireUnanswered(now time.Time) (int64, erro
 type fakeChat struct {
 	mu     sync.Mutex
 	sent   []string
-	closed []uint // bookings closed in chat
+	closed   []uint // bookings closed in chat
+	answered []uint // requests told a listing answers them
 	// pairs recorded as matched, and an error to answer with
 	unlocked  [][3]uint
 	unlockErr error
@@ -96,10 +97,11 @@ func (f *fakeChat) BookingClosed(bookingID, sellerID uint, note string) {
 	f.sent = append(f.sent, note)
 }
 
-func (f *fakeChat) StoreMessage(itemID, senderID, recipientID uint, content string) {
+func (f *fakeChat) RequestAnswered(itemID, sellerID, requesterID, requestID uint, content string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.sent = append(f.sent, content)
+	f.answered = append(f.answered, requestID)
 }
 
 func setupRequestService() (*RequestService, *MockItemRequestRepository, *MockStoreItemRepository) {
@@ -229,7 +231,8 @@ func TestCreateItem_ForRequest(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t, uint(5), *item.RequestID)
-		assert.Equal(t, []string{`I listed "HP laser printer" for your request "Printer wanted". Open it to book it.`}, chat.sent)
+		assert.Equal(t, []string{`🎁 I listed "HP laser printer" for your request "Printer wanted".`}, chat.sent)
+		assert.Equal(t, []uint{5}, chat.answered)
 	})
 
 	t.Run("refused for a closed, missing or own request", func(t *testing.T) {

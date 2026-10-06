@@ -6,6 +6,9 @@ import { useAuthStore } from './auth'
 // What someone can do to a store booking from its message in chat
 export type BookingAction = 'approve' | 'decline' | 'release' | 'confirm-received' | 'confirm-delivery' | 'rate-seller' | 'rate-buyer'
 
+// Store events: an item listed for someone's request
+export type StoreEvent = 'request_answered'
+
 export type TaskEvent = 'application' | 'accepted' | 'declined' | 'cancelled' | 'done' | 'not_done' | 'completed'
 
 export interface Message {
@@ -19,9 +22,10 @@ export interface Message {
   content: string
   message_type: 'text' | 'booking_request' | 'booking_approved' | 'booking_declined' | 'booking_item_received' | 'booking_completed' | 'booking_status_update' | 'system_alert'
   metadata?: {
-    // Gig events: what happened, for the action shown on the message
-    event?: TaskEvent
+    // Events: what happened, for the action shown on the message
+    event?: TaskEvent | StoreEvent
     application_id?: number
+    request_id?: number
     booking_id?: number
     item_id?: number
     item_title?: string
