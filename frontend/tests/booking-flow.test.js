@@ -144,7 +144,7 @@ describe('Store Booking Flow', () => {
         item_id: 1,
         requester_id: 1,
         status: 'pending',
-        message: `I'm interested in booking this item: ${mockItem.title}`,
+        message: '',
         created_at: new Date().toISOString()
       }
 
@@ -160,14 +160,15 @@ describe('Store Booking Flow', () => {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer mock-token'
           }),
-          body: JSON.stringify({
-            message: `I'm interested in booking this item: ${mockItem.title}`
-          })
+          // One tap, like applying for a gig: no message
+          body: JSON.stringify({})
         })
       )
 
       expect(wrapper.vm.bookingRequest).toEqual(mockBookingRequest)
       expect(wrapper.vm.hasBookingRequest).toBe(true)
+      // Into the conversation with the seller, in the floating chat
+      expect(openChat).toHaveBeenCalledWith(expect.objectContaining({ itemId: mockItem.id, otherUserId: mockItem.seller.id }))
     })
 
     it('should handle booking request errors', async () => {

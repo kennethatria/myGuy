@@ -266,10 +266,12 @@ export const useChatStore = defineStore('chat', () => {
       }
     });
 
-    socket.value.on('error', (error: Error & { code?: string; taskId?: number; recipientId?: number }) => {
-      // A message to a gig chat that isn't open yet: show it as locked
+    socket.value.on('error', (error: Error & { code?: string; taskId?: number; itemId?: number; recipientId?: number }) => {
+      // A message to a gig or marketplace chat that isn't open yet: show it as locked
       if (error?.code === 'chat_locked') {
-        const key = conversationKey({ task_id: Number(error.taskId), other_user_id: Number(error.recipientId) });
+        const key = conversationKey(error.itemId
+          ? { item_id: Number(error.itemId), other_user_id: Number(error.recipientId) }
+          : { task_id: Number(error.taskId), other_user_id: Number(error.recipientId) });
         if (key) lockedConversations.value = new Set(lockedConversations.value).add(key);
         return;
       }
@@ -322,8 +324,8 @@ export const useChatStore = defineStore('chat', () => {
     const key = conversationKey(ref);
     if (!key) return;
 
-    // Accepted: the two can talk from now on
-    if (message.metadata?.event === 'accepted') setLocked(key, false);
+    // Accepted or approved: the two can talk from now on
+    if (message.metadata?.event === 'accepted' || message.message_type === 'booking_approved') setLocked(key, false);
 
     // Append only to an already-loaded thread; an unloaded one fetches its
     // full history when opened. The same message can arrive twice (e.g.

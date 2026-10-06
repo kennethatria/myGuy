@@ -1,6 +1,6 @@
-// Geometry and grouping for "your network" on the Reviews page: you in the
-// middle, one dot per person you reviewed or who reviewed you. People you have
-// done more deals with (gigs or marketplace sales) sit on an inner ring.
+// Grouping and layout for "your network" on the Reviews page: you at the top,
+// one node per person you reviewed or who reviewed you, below you in columns,
+// most deals first. Each line is labelled with the average rating between you.
 
 /** Where a review came from: a gig, or a marketplace sale. */
 export type Via = 'gig' | 'item'
@@ -30,6 +30,8 @@ export interface Connection {
   ratingOfYou: number | null
   /** Average rating you gave them, or null if you never rated them */
   yourRating: number | null
+  /** Average of every rating between you, both ways */
+  averageRating: number
   via: Via | 'both'
   latest: string
 }
@@ -57,6 +59,7 @@ export function connectionsFrom(interactions: Interaction[]): Connection[] {
       deals: new Set(list.map(i => i.deal)).size,
       ratingOfYou: average(list.filter(i => i.direction === 'received').map(i => i.rating)),
       yourRating: average(list.filter(i => i.direction === 'given').map(i => i.rating)),
+      averageRating: average(list.map(i => i.rating)) ?? 0,
       via: vias.size > 1 ? 'both' : list[0].via,
       latest: list[0].at
     }
@@ -65,58 +68,50 @@ export function connectionsFrom(interactions: Interaction[]): Connection[] {
   return connections.sort((a, b) => b.deals - a.deals || b.latest.localeCompare(a.latest))
 }
 
-/** The SVG is drawn in a 100 x 100 box centred on (50, 50). */
-export const CENTRE = 50
-
-/** Ring radii, innermost first: 3+ deals together, 2 deals, 1 deal. */
-export const TIER_RADIUS = [17, 29, 41] as const
-
-/** Space each dot needs along its ring so neighbours never touch. */
-export const NODE_SPACING = 8
-
-/** The ring a connection belongs on, by how many deals you did together. */
-export function tierOf(deals: number): number {
-  return deals >= 3 ? 0 : deals === 2 ? 1 : 2
+/** A rating as shown on a line: one decimal, whole numbers plain ("4.2", "3") */
+export function formatRating(rating: number): string {
+  return Number.isInteger(rating) ? String(rating) : rating.toFixed(1)
 }
 
-/** How many dots fit round a ring. */
-export function tierCapacity(tier: number): number {
-  return Math.floor((2 * Math.PI * TIER_RADIUS[tier]) / NODE_SPACING)
-}
+/** The SVG is 100 units wide; its height grows with the rows. */
+export const WIDTH = 100
+export const COLUMNS = 3
+/** Where you sit, at the top in the middle */
+export const YOU = { x: 50, y: 11 } as const
+export const NODE_RADIUS = 7.5
+const FIRST_ROW_Y = 50
+const ROW_GAP = 36
+/** Room under the last row for its names */
+const BOTTOM = 18
 
 export interface PlacedConnection {
   connection: Connection
-  tier: number
   x: number
   y: number
+  /** Where its line starts: you, or the person above it in its column */
+  from: { x: number; y: number }
+  /** Where the line's rating label sits: halfway along it */
+  label: { x: number; y: number }
 }
 
 /**
- * Places connections on their rings, spread evenly from 12 o'clock (each ring
- * turned a little so dots don't line up). A full ring passes the rest outward;
- * whoever doesn't fit on the outer ring is counted in `hidden`.
+ * Places connections in rows of COLUMNS under you, in the order given (most
+ * deals first). The first row hangs from you; each person after that hangs
+ * from the one above them, so lines never cross.
  */
-export function layoutNetwork(connections: Connection[]): { placed: PlacedConnection[]; hidden: number } {
-  const rings: Connection[][] = TIER_RADIUS.map(() => [])
-  let hidden = 0
-  for (const connection of connections) {
-    let tier = tierOf(connection.deals)
-    while (tier < TIER_RADIUS.length && rings[tier].length >= tierCapacity(tier)) tier++
-    if (tier < TIER_RADIUS.length) rings[tier].push(connection)
-    else hidden++
-  }
-
-  const placed = rings.flatMap((ring, tier) =>
-    ring.map((connection, i) => {
-      const degrees = -90 + tier * 25 + (360 / ring.length) * i
-      const radians = (degrees * Math.PI) / 180
-      return {
-        connection,
-        tier,
-        x: CENTRE + TIER_RADIUS[tier] * Math.cos(radians),
-        y: CENTRE + TIER_RADIUS[tier] * Math.sin(radians)
-      }
-    })
-  )
-  return { placed, hidden }
+export function layoutNetwork(connections: Connection[]): { placed: PlacedConnection[]; height: number } {
+  // Fewer people than columns: spread them across the whole width
+  const columns = Math.max(1, Math.min(COLUMNS, connections.length))
+  const columnX = (col: number) => WIDTH / (columns * 2) * (col * 2 + 1)
+  const placed = connections.map((connection, i) => {
+    const row = Math.floor(i / columns)
+    const col = i % columns
+    const x = columnX(col)
+    const y = FIRST_ROW_Y + row * ROW_GAP
+    const from = row === 0 ? { x: YOU.x, y: YOU.y } : { x, y: y - ROW_GAP }
+    return { connection, x, y, from, label: { x: (from.x + x) / 2, y: (from.y + y) / 2 } }
+  })
+  const rows = Math.ceil(connections.length / columns)
+  const height = rows ? FIRST_ROW_Y + (rows - 1) * ROW_GAP + BOTTOM : FIRST_ROW_Y
+  return { placed, height }
 }

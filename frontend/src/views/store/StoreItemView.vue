@@ -73,13 +73,14 @@
                   <i class="fas fa-check-circle"></i>
                   Transaction Complete
                 </div>
-                <!-- Only show message button if not own item and transaction not complete -->
+                <!-- Once you've booked, your conversation with the seller (it opens
+                     for typing when they approve), as with applying for a gig -->
                 <button
-                  v-else-if="item.seller.id !== userId"
+                  v-else-if="item.seller.id !== userId && hasBookingRequest"
                   @click="openStoreChat"
                   class="btn btn-outline btn-sm message-btn"
                 >
-                  <i class="fas fa-comment"></i> Message Seller
+                  <i class="fas fa-comment"></i> Message {{ item.seller.username }}
                 </button>
               </div>
             </div>
@@ -258,18 +259,7 @@
         </div>
       </div>
     </div>
-    
-    <!-- Booking Confirmation Modal -->
-    <BookingConfirmationModal
-      v-if="item"
-      :is-open="showBookingConfirmationModal"
-      :item-id="item.id"
-      :item-title="item.title"
-      :item-image="item.images?.[0]"
-      :seller-id="item.seller_id"
-      :seller-name="item.seller?.name || item.seller?.username"
-      @close="showBookingConfirmationModal = false"
-    />
+
   </div>
 </template>
 
@@ -279,7 +269,6 @@ import { setPageTitle } from '@/utils/pageTitle';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useChatStore } from '@/stores/chat';
-import BookingConfirmationModal from '@/components/BookingConfirmationModal.vue';
 import NoPhoto from '@/components/NoPhoto.vue';
 import StickyNote from '@/components/StickyNote.vue';
 import { expiryLabel } from '@/utils/gigNote';
@@ -371,7 +360,6 @@ const bookingRequest = ref<BookingRequest | null>(null);
 const bookingRequests = ref<BookingRequest[]>([]);
 const hasBookingRequest = ref(false);
 const loadingBookingRequest = ref(false);
-const showBookingConfirmationModal = ref(false);
 
 // Message indicators for owners
 const messageCount = ref(0);
@@ -626,9 +614,8 @@ async function sendBookingRequest() {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${localStorage.getItem('token')}`
       },
-      body: JSON.stringify({
-        message: `I'm interested in booking this item: ${item.value.title}`
-      })
+      // Booking is one tap, like applying for a gig: no message
+      body: JSON.stringify({})
     });
 
     if (response.ok) {
@@ -636,8 +623,9 @@ async function sendBookingRequest() {
       bookingRequest.value = request;
       hasBookingRequest.value = true;
 
-      // Show confirmation modal instead of redirect
-      showBookingConfirmationModal.value = true;
+      // Into the conversation, as applying for a gig does: the booking is
+      // there, and the chat opens once the seller approves
+      openStoreChat();
     } else {
       const error = await response.json().catch(() => ({}));
       bookingError.value = error.error || 'Failed to send booking request';
@@ -932,22 +920,17 @@ onMounted(() => {
   background-color: #f8fafc;
 }
 
+/* An outline button, as "Message …" on the gig page */
 .message-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
-  background: #10b981;
-  color: white;
-  border: none;
   padding: 0.5rem 1rem;
   border-radius: 0.375rem;
   font-size: 0.875rem;
   cursor: pointer;
   transition: background-color 0.2s;
-}
-
-.message-btn:hover {
-  background: #059669;
 }
 
 .message-btn i {
