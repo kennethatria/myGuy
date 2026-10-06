@@ -40,6 +40,8 @@
         </template>
       </StickyNote>
 
+      <LocationField :state="location.state.value" @request="location.request" @clear="location.clear" />
+
       <p class="composer-hint">
         Leave out phone numbers, emails and links. You can share them in chat once you've booked an item.
       </p>
@@ -62,6 +64,8 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import config from '@/config'
 import StickyNote from '@/components/StickyNote.vue'
+import LocationField from '@/components/LocationField.vue'
+import { useRoughLocation } from '@/composables/useRoughLocation'
 import {
   HEADLINE_MAX_WORDS,
   BODY_MAX_WORDS,
@@ -75,6 +79,7 @@ const authStore = useAuthStore()
 
 const title = ref('')
 const description = ref('')
+const location = useRoughLocation()
 const isSubmitting = ref(false)
 const formError = ref('')
 // Any colour will do for a new note; pick one per visit.
@@ -101,7 +106,11 @@ const handleSubmit = async () => {
     const response = await fetch(`${config.STORE_API_URL}/requests`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${authStore.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: title.value.trim(), description: description.value.trim() })
+      body: JSON.stringify({
+        title: title.value.trim(),
+        description: description.value.trim(),
+        ...(location.location.value ?? {})
+      })
     })
     const data = await response.json().catch(() => ({}))
     if (!response.ok) {

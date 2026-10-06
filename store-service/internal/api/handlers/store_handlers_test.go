@@ -465,6 +465,30 @@ func TestCreateItem_PhotosAreCleaned(t *testing.T) {
 	assert.NotContains(t, string(stored), secret)
 }
 
+func TestCreateItem_FormLocation(t *testing.T) {
+	mockService := new(MockStoreService)
+	router := setupTestRouter(NewStoreHandler(mockService))
+	mockService.On("CreateItem", uint(1), mock.MatchedBy(func(req models.CreateStoreItemRequest) bool {
+		return req.Lat != nil && *req.Lat == 0.35 && req.Lng != nil && *req.Lng == 32.585
+	})).Return(&models.StoreItem{ID: 6}, nil)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("title", "Lamp")
+	writer.WriteField("description", "Brass desk lamp")
+	writer.WriteField("lat", "0.35")
+	writer.WriteField("lng", "32.585")
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	httpReq, _ := http.NewRequest("POST", "/api/v1/items", body)
+	httpReq.Header.Set("Content-Type", writer.FormDataContentType())
+	router.ServeHTTP(w, httpReq)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	mockService.AssertExpectations(t)
+}
+
 func TestGetItem(t *testing.T) {
 	mockService := new(MockStoreService)
 	handler := NewStoreHandler(mockService)

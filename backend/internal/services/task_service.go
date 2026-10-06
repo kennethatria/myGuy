@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"myguy/internal/contacts"
 	"myguy/internal/models"
+	"myguy/internal/proximity"
 	"myguy/internal/repositories"
 	"strings"
 	"time"
@@ -85,10 +86,23 @@ type noopNotifier struct{}
 func (noopNotifier) TaskMessage(uint, uint, uint, string) {}
 func (noopNotifier) TaskMatch(uint, uint, uint, string)   {}
 
+// Locator keeps the rough location of posts in the proximity service.
+// Implementations must not block or fail the caller (it is best effort).
+type Locator interface {
+	Save(kind string, id uint, at proximity.Location)
+	Delete(kind string, id uint)
+}
+
+type noopLocator struct{}
+
+func (noopLocator) Save(string, uint, proximity.Location) {}
+func (noopLocator) Delete(string, uint)                   {}
+
 type TaskService struct {
 	taskRepo        repositories.TaskRepository
 	applicationRepo repositories.ApplicationRepository
 	notifier        TaskNotifier
+	locator         Locator
 }
 
 // NewTaskService builds the service; notifier may be nil (no notifications).
@@ -100,6 +114,23 @@ func NewTaskService(taskRepo repositories.TaskRepository, applicationRepo reposi
 		taskRepo:        taskRepo,
 		applicationRepo: applicationRepo,
 		notifier:        notifier,
+		locator:         noopLocator{},
+	}
+}
+
+// WithLocator saves gigs' rough locations through locator (nil = don't).
+func (s *TaskService) WithLocator(locator Locator) *TaskService {
+	if locator != nil {
+		s.locator = locator
+	}
+	return s
+}
+
+// SaveLocation stores a gig's rough location; at is optional (nil = keep
+// whatever was saved before).
+func (s *TaskService) SaveLocation(taskID uint, at *proximity.Location) {
+	if at != nil {
+		s.locator.Save("task", taskID, *at)
 	}
 }
 
@@ -107,6 +138,8 @@ type CreateTaskInput struct {
 	Title       string
 	Description string
 	CreatedBy   uint
+	// Location is the poster's rough location, if they shared it
+	Location *proximity.Location
 }
 
 type UpdateTaskInput struct {
@@ -133,6 +166,8 @@ func (s *TaskService) CreateTask(ctx context.Context, input CreateTaskInput) (*m
 	if err := s.taskRepo.Create(ctx, task); err != nil {
 		return nil, err
 	}
+
+	s.SaveLocation(task.ID, input.Location)
 
 	return task, nil
 }
@@ -191,7 +226,11 @@ func (s *TaskService) DeleteTask(ctx context.Context, taskID uint, userID uint) 
 		return ErrTaskWasAssigned
 	}
 
-	return s.taskRepo.Delete(ctx, taskID)
+	if err := s.taskRepo.Delete(ctx, taskID); err != nil {
+		return err
+	}
+	s.locator.Delete("task", taskID)
+	return nil
 }
 
 func (s *TaskService) ListTasks(ctx context.Context, filters map[string]interface{}) ([]models.Task, error) {

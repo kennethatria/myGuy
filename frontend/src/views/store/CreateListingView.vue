@@ -63,6 +63,8 @@
         </ul>
       </fieldset>
 
+      <LocationField :state="location.state.value" @request="location.request" @clear="location.clear" />
+
       <p class="composer-hint">
         Leave out phone numbers, emails and links. You can share them in chat once you approve a booking.
       </p>
@@ -85,6 +87,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import config from '@/config'
 import StickyNote from '@/components/StickyNote.vue'
+import LocationField from '@/components/LocationField.vue'
+import { useRoughLocation } from '@/composables/useRoughLocation'
 import {
   HEADLINE_MAX_WORDS,
   BODY_MAX_WORDS,
@@ -125,6 +129,7 @@ onMounted(async () => {
 const title = ref('')
 const description = ref('')
 const photos = ref<Photo[]>([])
+const location = useRoughLocation()
 const isSubmitting = ref(false)
 const formError = ref('')
 // Any colour will do for a new note; pick one per visit.
@@ -168,13 +173,21 @@ const handleSubmit = async () => {
   isSubmitting.value = true
   formError.value = ''
 
-  const fields = { title: title.value.trim(), description: description.value.trim() }
+  const fields = {
+    title: title.value.trim(),
+    description: description.value.trim(),
+    ...(location.location.value ?? {})
+  }
   const headers: Record<string, string> = { Authorization: `Bearer ${authStore.token}` }
   let body: BodyInit
   if (photos.value.length > 0) {
     const form = new FormData()
     form.append('title', fields.title)
     form.append('description', fields.description)
+    if (location.location.value) {
+      form.append('lat', String(location.location.value.lat))
+      form.append('lng', String(location.location.value.lng))
+    }
     if (answering.value) form.append('request_id', String(answering.value.id))
     photos.value.forEach((photo) => form.append('images', photo.file))
     body = form

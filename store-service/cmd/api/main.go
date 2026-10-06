@@ -10,6 +10,7 @@ import (
 	"store-service/internal/media"
 	"store-service/internal/middleware"
 	"store-service/internal/models"
+	"store-service/internal/proximity"
 	"store-service/internal/repositories"
 	"store-service/internal/services"
 	"store-service/internal/tracing"
@@ -63,8 +64,9 @@ func main() {
 
 	// Initialize services
 	storeService := services.NewStoreService(db, itemRepo, bidRepo, bookingRepo, userRepo).
-		WithRequests(requestRepo, services.NewHTTPChatNotifier())
-	requestService := services.NewRequestService(requestRepo, itemRepo)
+		WithRequests(requestRepo, services.NewHTTPChatNotifier()).
+		WithLocator(newLocator())
+	requestService := services.NewRequestService(requestRepo, itemRepo).WithLocator(newLocator())
 
 	// Listings from before notes had deadlines get a fresh 24 hours
 	if n, err := itemRepo.StartMissingDeadlines(time.Now().UTC().Add(services.ListingLifetime)); err != nil {
@@ -182,6 +184,18 @@ func main() {
 		log.Fatal("Failed to start server:", err)
 	}
 }
+// newLocator saves rough locations in the proximity service, or returns
+// nil (locations aren't saved) when PROXIMITY_URL or INTERNAL_API_KEY is
+// unset.
+func newLocator() services.Locator {
+	url, apiKey := os.Getenv("PROXIMITY_URL"), os.Getenv("INTERNAL_API_KEY")
+	if url == "" || apiKey == "" {
+		log.Println("WARNING: PROXIMITY_URL or INTERNAL_API_KEY not set; locations won't be saved")
+		return nil
+	}
+	return proximity.New(url, apiKey)
+}
+
 // expireStaleNotes takes listings and requests that got no reaction within
 // their 24 hours off the board, checking every minute. Booking also checks a
 // listing's deadline, so the gap between runs can't let a late request in.
