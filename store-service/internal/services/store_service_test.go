@@ -1469,7 +1469,7 @@ func TestCreateBookingRequest(t *testing.T) {
 
 func TestApproveBookingRequest(t *testing.T) {
 	t.Run("successful approval", func(t *testing.T) {
-		service, _, _, bookingRepo := setupService()
+		service, itemRepo, _, bookingRepo := setupService()
 		request := &models.BookingRequest{
 			ID:          1,
 			ItemID:      1,
@@ -1495,6 +1495,7 @@ func TestApproveBookingRequest(t *testing.T) {
 		bookingRepo.On("GetAllByItemID", uint(1)).Return([]models.BookingRequest{*request}, nil)
 		bookingRepo.On("UpdateStatus", uint(1), "approved").Return(nil)
 		bookingRepo.On("GetByID", uint(1)).Return(approvedRequest, nil).Once()
+		itemRepo.On("UpdateStatus", uint(1), "reserved").Return(nil)
 
 		result, err := service.ApproveBookingRequest(1, 1)
 
@@ -1502,6 +1503,8 @@ func TestApproveBookingRequest(t *testing.T) {
 		assert.NotNil(t, result)
 		assert.Equal(t, "approved", result.Status)
 		bookingRepo.AssertExpectations(t)
+		// Reserved for this buyer: no further bookings
+		itemRepo.AssertCalled(t, "UpdateStatus", uint(1), "reserved")
 	})
 
 	t.Run("request not found", func(t *testing.T) {

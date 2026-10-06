@@ -69,8 +69,9 @@ func (r *storeItemRepository) filtered(filter models.StoreItemFilter) *gorm.DB {
 	if filter.Status != "" {
 		query = query.Where("status = ?", filter.Status)
 	} else {
-		// Default to showing only active items unless a specific status is requested
-		query = query.Where("status = ?", "active")
+		// By default the board: items still for sale, and reserved ones (shown
+		// as reserved, no longer bookable)
+		query = query.Where("status IN ?", []string{"active", "reserved"})
 	}
 
 	if filter.SellerID > 0 {
