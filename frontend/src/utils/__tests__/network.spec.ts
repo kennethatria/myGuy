@@ -106,22 +106,15 @@ describe('network', () => {
     expect(height).toBeGreaterThan(placed[3].y)
   })
 
-  it('sketches each branch from its parent to just before the person', () => {
+  it('curves each branch from its parent round to just before the person', () => {
     const [node] = layoutNetwork([{ connection: person(2), children: [] }], 1).placed
     const path = branchPath(node)
     expect(path.startsWith(`M ${YOU.x} ${YOU.y + NODE_RADIUS}`)).toBe(true)
+    expect(path).toContain(' Q ')
     expect(path.trim().endsWith(`${node.x - node.r} ${node.y}`)).toBe(true)
-    // A second stroke, slightly shifted
-    expect(branchPath(node, 0.4)).not.toBe(path)
-  })
-
-  it('draws three whole background circles, centred in the graph and inside it', () => {
-    const { height, ringCentre, rings } = layoutNetwork([{ connection: person(2), children: [person(4)] }], 1)
-    expect(ringCentre).toEqual({ x: 50, y: height / 2 })
-    expect(rings).toHaveLength(3)
-    expect(rings[0]).toBeLessThan(rings[1])
-    expect(ringCentre.y - rings[2]).toBeGreaterThanOrEqual(0)
-    expect(ringCentre.y + rings[2]).toBeLessThanOrEqual(height)
+    // The rating sits on the straight run across, clear of both nodes
+    expect(node.label.x - 6).toBeGreaterThan(YOU.x)
+    expect(node.label.x + 6).toBeLessThan(node.x - node.r)
   })
 
   it('is as short as one row with nobody in it', () => {

@@ -142,6 +142,9 @@ export const CHILD_RADIUS = 4.5
 /** How far right each level of the tree starts */
 const LEVEL_X = [YOU.x, 38, 66] as const
 const ROW_GAP = 17
+/** How far the curve takes to turn from going down to going across */
+const BEND = 7
+
 /** Room under the last row */
 const BOTTOM = 8
 
@@ -168,9 +171,6 @@ export interface PlacedConnection {
 export interface NetworkLayout {
   placed: PlacedConnection[]
   height: number
-  /** Background circles (the pencil sketch): their centre and radii */
-  ringCentre: { x: number; y: number }
-  rings: number[]
 }
 
 /**
@@ -188,7 +188,7 @@ export function layoutNetwork(branches: Branch[], centreId = 0): NetworkLayout {
     const y = YOU.y + row * ROW_GAP
     const node: PlacedConnection = {
       connection, level, x, y, r: level === 1 ? NODE_RADIUS : CHILD_RADIUS, parentId, from,
-      label: { x: (from.x + x) / 2, y }
+      label: { x: (from.x + BEND + x - (level === 1 ? NODE_RADIUS : CHILD_RADIUS)) / 2, y }
     }
     placed.push(node)
     return node
@@ -198,29 +198,21 @@ export function layoutNetwork(branches: Branch[], centreId = 0): NetworkLayout {
     for (const child of branch.children) place(child, 2, branch.connection.userId, { x: parent.x, y: parent.y })
   }
   const height = YOU.y + row * ROW_GAP + BOTTOM + (row ? 0 : NODE_RADIUS)
-  // Three whole circles behind the graph, centred in it and inside it
-  const ringCentre = { x: WIDTH / 2, y: height / 2 }
-  const outer = Math.min(WIDTH, height) / 2 - 1.5
-  const rings = [outer / 3, (outer * 2) / 3, outer]
-  return { placed, height, ringCentre, rings }
+  return { placed, height }
 }
 
 /**
- * A branch's line as a sketch: down from the parent, then across to the
- * person, with a slight hand-drawn bow in each part. `wobble` shifts the
- * second pencil stroke so the two don't overlap exactly.
+ * A branch's line: one smooth curve from just under the parent, bending
+ * round to run across to the person.
  */
-export function branchPath(node: PlacedConnection, wobble = 0): string {
+export function branchPath(node: PlacedConnection): string {
   const { from, x, y, r } = node
-  // From just under the parent's node, whose radius is NODE_RADIUS
   const top = from.y + NODE_RADIUS
-  const end = x - r
-  const bow = 1.1 + wobble
+  const turn = Math.min(BEND, y - top)
   return [
-    `M ${from.x + wobble} ${top}`,
-    // down, bowing slightly
-    `Q ${from.x + bow} ${(top + y) / 2} ${from.x + wobble * 0.5} ${y}`,
-    // across, bowing slightly
-    `Q ${(from.x + end) / 2} ${y - bow} ${end} ${y + wobble * 0.5}`
+    `M ${from.x} ${top}`,
+    `L ${from.x} ${y - turn}`,
+    `Q ${from.x} ${y} ${from.x + turn} ${y}`,
+    `L ${x - r} ${y}`
   ].join(' ')
 }
