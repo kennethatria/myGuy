@@ -134,30 +134,37 @@ export function formatRating(rating: number): string {
 
 /** The SVG is 100 units wide; its height grows with the rows. */
 export const WIDTH = 100
-export const COLUMNS = 3
-/** Where you sit, at the top in the middle */
-export const YOU = { x: 50, y: 11 } as const
-export const NODE_RADIUS = 7.5
-const FIRST_ROW_Y = 50
-const ROW_GAP = 36
-/** Room under the last row for its names */
-const BOTTOM = 18
+/** Where the centre person sits: top left, the root of the tree */
+export const YOU = { x: 9, y: 10 } as const
+export const NODE_RADIUS = 5.5
+/** Their connections' connections are drawn a little smaller */
+export const CHILD_RADIUS = 4.5
+/** How far right each level of the tree starts */
+const LEVEL_X = [YOU.x, 38, 66] as const
+const ROW_GAP = 17
+/** Room under the last row */
+const BOTTOM = 8
+
+/** One of your connections, and the people they are connected to in turn */
+export interface Branch {
+  connection: Connection
+  children: Connection[]
+}
 
 export interface PlacedConnection {
   connection: Connection
+  /** 1: connected to the centre person; 2: to one of those */
+  level: 1 | 2
   x: number
   y: number
-  /** Where its line starts: you, or the person above it in its column */
+  r: number
+  /** The branch it hangs from: who it belongs to and where their node is */
+  parentId: number
   from: { x: number; y: number }
-  /** Where the line's rating label sits: halfway along it */
+  /** Where the line's rating label sits: on its horizontal part */
   label: { x: number; y: number }
 }
 
-/**
- * Places connections in rows of COLUMNS under you, in the order given (most
- * deals first). The first row hangs from you; each person after that hangs
- * from the one above them, so lines never cross.
- */
 export interface NetworkLayout {
   placed: PlacedConnection[]
   height: number
@@ -166,23 +173,54 @@ export interface NetworkLayout {
   rings: number[]
 }
 
-export function layoutNetwork(connections: Connection[]): NetworkLayout {
-  // Fewer people than columns: spread them across the whole width
-  const columns = Math.max(1, Math.min(COLUMNS, connections.length))
-  const columnX = (col: number) => WIDTH / (columns * 2) * (col * 2 + 1)
-  const placed = connections.map((connection, i) => {
-    const row = Math.floor(i / columns)
-    const col = i % columns
-    const x = columnX(col)
-    const y = FIRST_ROW_Y + row * ROW_GAP
-    const from = row === 0 ? { x: YOU.x, y: YOU.y } : { x, y: y - ROW_GAP }
-    return { connection, x, y, from, label: { x: (from.x + x) / 2, y: (from.y + y) / 2 } }
-  })
-  const rows = Math.ceil(connections.length / columns)
-  const height = rows ? FIRST_ROW_Y + (rows - 1) * ROW_GAP + BOTTOM : FIRST_ROW_Y
+/**
+ * Lays out a branching tree, one person per row: the centre person at the top
+ * left, each of their connections below on its own row, and each of those
+ * people's connections indented beneath them. Lines run down from the parent
+ * and across to the person, so they never cross.
+ */
+export function layoutNetwork(branches: Branch[], centreId = 0): NetworkLayout {
+  const placed: PlacedConnection[] = []
+  let row = 0
+  const place = (connection: Connection, level: 1 | 2, parentId: number, from: { x: number; y: number }) => {
+    row++
+    const x = LEVEL_X[level]
+    const y = YOU.y + row * ROW_GAP
+    const node: PlacedConnection = {
+      connection, level, x, y, r: level === 1 ? NODE_RADIUS : CHILD_RADIUS, parentId, from,
+      label: { x: (from.x + x) / 2, y }
+    }
+    placed.push(node)
+    return node
+  }
+  for (const branch of branches) {
+    const parent = place(branch.connection, 1, centreId, { x: YOU.x, y: YOU.y })
+    for (const child of branch.children) place(child, 2, branch.connection.userId, { x: parent.x, y: parent.y })
+  }
+  const height = YOU.y + row * ROW_GAP + BOTTOM + (row ? 0 : NODE_RADIUS)
   // Three whole circles behind the graph, centred in it and inside it
   const ringCentre = { x: WIDTH / 2, y: height / 2 }
   const outer = Math.min(WIDTH, height) / 2 - 1.5
   const rings = [outer / 3, (outer * 2) / 3, outer]
   return { placed, height, ringCentre, rings }
+}
+
+/**
+ * A branch's line as a sketch: down from the parent, then across to the
+ * person, with a slight hand-drawn bow in each part. `wobble` shifts the
+ * second pencil stroke so the two don't overlap exactly.
+ */
+export function branchPath(node: PlacedConnection, wobble = 0): string {
+  const { from, x, y, r } = node
+  // From just under the parent's node, whose radius is NODE_RADIUS
+  const top = from.y + NODE_RADIUS
+  const end = x - r
+  const bow = 1.1 + wobble
+  return [
+    `M ${from.x + wobble} ${top}`,
+    // down, bowing slightly
+    `Q ${from.x + bow} ${(top + y) / 2} ${from.x + wobble * 0.5} ${y}`,
+    // across, bowing slightly
+    `Q ${(from.x + end) / 2} ${y - bow} ${end} ${y + wobble * 0.5}`
+  ].join(' ')
 }

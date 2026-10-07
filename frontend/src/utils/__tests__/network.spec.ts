@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { connectionsFrom, interactionsFor, layoutNetwork, formatRating, COLUMNS, YOU, type Interaction, type Connection } from '../network'
+import { connectionsFrom, interactionsFor, layoutNetwork, branchPath, formatRating, YOU, NODE_RADIUS, CHILD_RADIUS, type Interaction, type Connection } from '../network'
 
 const review = (over: Partial<Interaction>): Interaction => ({
   otherId: 2,
@@ -78,31 +78,50 @@ describe('network', () => {
     expect(formatRating(4.25)).toBe('4.3')
   })
 
-  it('hangs the first row from you, and each later person from the one above', () => {
-    const { placed, height } = layoutNetwork([1, 2, 3, 4, 5].map(person))
+  it('lays out a branching tree, one person per row, children indented under their parent', () => {
+    const { placed, height } = layoutNetwork([
+      { connection: person(2), children: [person(5), person(6)] },
+      { connection: person(3), children: [] }
+    ], 1)
 
-    // First row: three columns, every line starting at you
-    expect(placed.slice(0, COLUMNS).map(n => n.from)).toEqual([YOU, YOU, YOU].map(p => ({ x: p.x, y: p.y })))
-    expect(new Set(placed.slice(0, COLUMNS).map(n => n.y)).size).toBe(1)
-    // Second row: below the first, each line from the person above
-    expect(placed[3].x).toBe(placed[0].x)
-    expect(placed[3].from).toEqual({ x: placed[0].x, y: placed[0].y })
-    expect(placed[4].from).toEqual({ x: placed[1].x, y: placed[1].y })
-    expect(placed[3].y).toBeGreaterThan(placed[0].y)
-    // Labels halfway along their lines; the drawing is tall enough for every row
-    expect(placed[3].label).toEqual({ x: placed[0].x, y: (placed[0].y + placed[3].y) / 2 })
-    expect(height).toBeGreaterThan(placed[4].y)
+    expect(placed.map(n => [n.connection.userId, n.level, n.parentId])).toEqual([
+      [2, 1, 1], [5, 2, 2], [6, 2, 2], [3, 1, 1]
+    ])
+    // One row each, top to bottom
+    const ys = placed.map(n => n.y)
+    expect([...ys].sort((a, b) => a - b)).toEqual(ys)
+    expect(new Set(ys).size).toBe(4)
+    // Children are indented further than their parent, and smaller
+    expect(placed[1].x).toBeGreaterThan(placed[0].x)
+    expect(placed[1].r).toBe(CHILD_RADIUS)
+    expect(placed[0].r).toBe(NODE_RADIUS)
+    // Each line starts at its parent: the centre, or the person above
+    expect(placed[0].from).toEqual({ x: YOU.x, y: YOU.y })
+    expect(placed[1].from).toEqual({ x: placed[0].x, y: placed[0].y })
+    expect(placed[3].from).toEqual({ x: YOU.x, y: YOU.y })
+    // The rating sits on the line's horizontal part, in its own row
+    expect(placed[1].label.y).toBe(placed[1].y)
+    expect(placed[1].label.x).toBeGreaterThan(placed[0].x)
+    expect(placed[1].label.x).toBeLessThan(placed[1].x)
+    expect(height).toBeGreaterThan(placed[3].y)
+  })
+
+  it('sketches each branch from its parent to just before the person', () => {
+    const [node] = layoutNetwork([{ connection: person(2), children: [] }], 1).placed
+    const path = branchPath(node)
+    expect(path.startsWith(`M ${YOU.x} ${YOU.y + NODE_RADIUS}`)).toBe(true)
+    expect(path.trim().endsWith(`${node.x - node.r} ${node.y}`)).toBe(true)
+    // A second stroke, slightly shifted
+    expect(branchPath(node, 0.4)).not.toBe(path)
   })
 
   it('draws three whole background circles, centred in the graph and inside it', () => {
-    const { height, ringCentre, rings } = layoutNetwork([1, 2, 3, 4].map(person))
+    const { height, ringCentre, rings } = layoutNetwork([{ connection: person(2), children: [person(4)] }], 1)
     expect(ringCentre).toEqual({ x: 50, y: height / 2 })
     expect(rings).toHaveLength(3)
     expect(rings[0]).toBeLessThan(rings[1])
-    const outer = rings[2]
-    expect(ringCentre.y - outer).toBeGreaterThanOrEqual(0)
-    expect(ringCentre.y + outer).toBeLessThanOrEqual(height)
-    expect(ringCentre.x + outer).toBeLessThanOrEqual(100)
+    expect(ringCentre.y - rings[2]).toBeGreaterThanOrEqual(0)
+    expect(ringCentre.y + rings[2]).toBeLessThanOrEqual(height)
   })
 
   it('is as short as one row with nobody in it', () => {
