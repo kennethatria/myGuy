@@ -3,9 +3,10 @@
     <section class="network-card" aria-labelledby="network-title">
       <div class="network-header">
         <h1 id="network-title" class="network-title">{{ isMine ? 'Your network' : `${nameOf(centreId)}'s network` }}</h1>
-        <p v-if="connections.length" class="network-summary">
-          {{ connections.length }} {{ connections.length === 1 ? 'person' : 'people' }}
-          {{ isMine ? "you've reviewed or who reviewed you" : 'they reviewed or who reviewed them' }}
+        <p v-if="branches.length" class="network-summary">
+          {{ branches.length }} {{ branches.length === 1 ? 'person' : 'people' }}
+          {{ isMine ? "you've reviewed or who reviewed you" : 'they reviewed or who reviewed them' }},
+          and who they're connected to
         </p>
         <router-link v-if="!isMine" :to="{ name: 'reviews' }" class="back-to-mine">Back to your network</router-link>
       </div>
@@ -15,167 +16,121 @@
         Couldn't load the reviews.
         <button type="button" class="link-button" @click="load">Try again</button>
       </p>
-      <p v-else-if="!connections.length" class="network-note">
+      <p v-else-if="!branches.length" class="network-note">
         {{ isMine
           ? "No reviews yet. When a gig or a sale is done, you and the other person can review each other, and they'll show up here."
           : 'No reviews yet.' }}
       </p>
 
-      <div v-else class="network-layout">
-        <div class="network-stage">
-          <svg
-            class="network"
-            :viewBox="`0 0 ${WIDTH} ${height}`"
-            role="group"
-            :aria-label="`Your network: ${connections.length} people`"
-          >
-            <!-- Pencil-sketch circles behind the graph: thin, grey, drawn twice
-                 and a little wobbly, like by hand -->
-            <defs>
-              <filter id="pencil" x="-10%" y="-10%" width="120%" height="120%">
-                <feTurbulence type="fractalNoise" baseFrequency="0.08" numOctaves="2" seed="7" result="wobble" />
-                <feDisplacementMap in="SourceGraphic" in2="wobble" scale="1.6" />
-              </filter>
-            </defs>
-            <g class="sketch" filter="url(#pencil)" aria-hidden="true">
-              <template v-for="r in layout.rings" :key="`ring-${r}`">
-                <circle :cx="layout.ringCentre.x" :cy="layout.ringCentre.y" :r="r" class="sketch-ring" />
-                <circle :cx="layout.ringCentre.x + 0.3" :cy="layout.ringCentre.y - 0.2" :r="r + 0.5" class="sketch-ring second" />
-              </template>
-            </g>
+      <div v-else class="network-stage">
+        <svg
+          class="network"
+          :viewBox="`0 0 ${WIDTH} ${layout.height}`"
+          role="group"
+          :aria-label="`${isMine ? 'Your' : `${nameOf(centreId)}'s`} network: ${branches.length} people`"
+        >
+          <!-- Pencil: thin grey strokes, drawn twice and a little wobbly -->
+          <defs>
+            <filter id="pencil" x="-10%" y="-10%" width="120%" height="120%">
+              <feTurbulence type="fractalNoise" baseFrequency="0.12" numOctaves="2" seed="7" result="wobble" />
+              <feDisplacementMap in="SourceGraphic" in2="wobble" scale="1.8" />
+            </filter>
+          </defs>
 
-            <!-- Lines first, so nodes sit on top of their ends -->
-            <g class="edges" aria-hidden="true">
-              <line
-                v-for="node in placed"
-                :key="`edge-${node.connection.userId}`"
-                :x1="node.from.x"
-                :y1="node.from.y"
-                :x2="node.x"
-                :y2="node.y"
-                :class="['edge', { active: selected?.userId === node.connection.userId }]"
-              />
-            </g>
+          <g class="sketch" filter="url(#pencil)" aria-hidden="true">
+            <template v-for="r in layout.rings" :key="`ring-${r}`">
+              <circle :cx="layout.ringCentre.x" :cy="layout.ringCentre.y" :r="r" class="sketch-ring" />
+              <circle :cx="layout.ringCentre.x + 0.3" :cy="layout.ringCentre.y - 0.2" :r="r + 0.5" class="sketch-ring second" />
+            </template>
+          </g>
 
-            <g class="you" aria-hidden="true">
-              <circle :cx="YOU.x" :cy="YOU.y" :r="NODE_RADIUS" class="you-dot" />
-              <text :x="YOU.x" :y="YOU.y + 1.6" text-anchor="middle" class="you-label">{{ isMine ? 'You' : initialOf(centreId) }}</text>
-            </g>
+          <!-- The branches, sketched: down from each person, across to whom
+               they're connected to -->
+          <g class="branches" filter="url(#pencil)" aria-hidden="true">
+            <template v-for="node in placed" :key="`branch-${keyOf(node)}`">
+              <path :d="branchPath(node)" :class="['branch', { active: selectedKey === keyOf(node) }]" />
+              <path :d="branchPath(node, 0.4)" class="branch second" />
+            </template>
+          </g>
 
-            <!-- The average rating between you, on each line -->
-            <g class="ratings" aria-hidden="true">
-              <g v-for="node in placed" :key="`rating-${node.connection.userId}`">
-                <rect :x="node.label.x - 7" :y="node.label.y - 3.4" width="14" height="6.8" rx="3.4" class="rating-pill" />
-                <text :x="node.label.x" :y="node.label.y + 1.6" text-anchor="middle" class="rating-text">
-                  ★{{ formatRating(node.connection.averageRating) }}
-                </text>
-              </g>
-            </g>
-
-            <g
-              v-for="node in placed"
-              :key="node.connection.userId"
-              :class="['node', { active: selected?.userId === node.connection.userId }]"
-              role="button"
-              tabindex="0"
-              :aria-label="nodeLabel(node.connection)"
-              :aria-expanded="selected?.userId === node.connection.userId"
-              @click.stop="toggle(node.connection)"
-              @keydown.enter.prevent="toggle(node.connection)"
-              @keydown.space.prevent="toggle(node.connection)"
-            >
-              <title>{{ nameOf(node.connection.userId) }}</title>
-              <!-- A larger, invisible circle makes the node easier to tap -->
-              <circle :cx="node.x" :cy="node.y" :r="NODE_RADIUS + 3" class="node-hit" />
-              <circle
-                :cx="node.x"
-                :cy="node.y"
-                :r="NODE_RADIUS"
-                :fill="VIA_STYLE[node.connection.via].fill"
-                :stroke="VIA_STYLE[node.connection.via].stroke"
-                stroke-width="0.6"
-              />
-              <text
-                :x="node.x"
-                :y="node.y + 1.9"
-                text-anchor="middle"
-                class="node-initial"
-                :fill="VIA_STYLE[node.connection.via].text"
-              >{{ initialOf(node.connection.userId) }}</text>
-              <text :x="node.x" :y="node.y + NODE_RADIUS + 5.5" text-anchor="middle" class="node-name">
-                {{ shortName(node.connection.userId) }}
+          <!-- The average rating between the two, both ways, on each branch -->
+          <g class="ratings" aria-hidden="true">
+            <g v-for="node in placed" :key="`rating-${keyOf(node)}`">
+              <rect :x="node.label.x - 6" :y="node.label.y - 3.1" width="12" height="6.2" rx="3.1" class="rating-pill" />
+              <text :x="node.label.x" :y="node.label.y + 1.3" text-anchor="middle" class="rating-text">
+                ★{{ formatRating(node.connection.averageRating) }}
               </text>
             </g>
-          </svg>
+          </g>
 
-          <!-- Summary of the chosen person, next to their dot -->
-          <div
-            v-if="selected && selectedSpot"
-            class="node-popup"
-            :class="{ left: selectedSpot.x > YOU.x, above: selectedSpot.y > height / 2 }"
-            :style="{ left: `${selectedSpot.x}%`, top: `${(selectedSpot.y / height) * 100}%` }"
-            role="dialog"
-            :aria-label="`About ${nameOf(selected.userId)}`"
-            ref="popup"
-            @click.stop
+          <g class="you" aria-hidden="true">
+            <circle :cx="YOU.x" :cy="YOU.y" :r="NODE_RADIUS" class="you-dot" />
+            <text :x="YOU.x" :y="YOU.y + 1.4" text-anchor="middle" class="you-label">{{ isMine ? 'You' : initialOf(centreId) }}</text>
+            <text v-if="!isMine" :x="YOU.x + NODE_RADIUS + 2" :y="YOU.y + 1.4" class="node-name">{{ shortName(centreId) }}</text>
+          </g>
+
+          <g
+            v-for="node in placed"
+            :key="keyOf(node)"
+            :class="['node', `level-${node.level}`, { active: selectedKey === keyOf(node) }]"
+            role="button"
+            tabindex="0"
+            :aria-label="nodeLabel(node)"
+            :aria-expanded="selectedKey === keyOf(node)"
+            @click.stop="toggle(node)"
+            @keydown.enter.prevent="toggle(node)"
+            @keydown.space.prevent="toggle(node)"
           >
-            <div class="popup-header">
-              <router-link :to="{ name: 'user-profile', params: { id: selected.userId } }" class="popup-name">
-                {{ nameOf(selected.userId) }}
-              </router-link>
-              <button type="button" class="popup-close" aria-label="Close" @click="selected = null">×</button>
-            </div>
-            <p class="popup-meta">
-              {{ selected.deals }} {{ selected.deals === 1 ? 'deal' : 'deals' }} together
-              · {{ viaLabel(selected.via) }}
-            </p>
-            <!-- Someone else's network: ratings only -->
-            <dl v-if="!isMine" class="popup-ratings">
-              <div>
-                <dt>Average rating</dt>
-                <dd>★ {{ formatRating(selected.averageRating) }}</dd>
-              </div>
-            </dl>
-            <dl v-else class="popup-ratings">
-              <div>
-                <dt>Rated you</dt>
-                <dd>{{ selected.ratingOfYou !== null ? `★ ${selected.ratingOfYou}` : 'Not yet' }}</dd>
-              </div>
-              <div>
-                <dt>You rated</dt>
-                <dd>{{ selected.yourRating !== null ? `★ ${selected.yourRating}` : 'Not yet' }}</dd>
-              </div>
-            </dl>
-            <ul v-if="isMine" class="popup-list">
-              <li v-for="item in selected.interactions.slice(0, 3)" :key="`${item.deal}-${item.direction}`">
-                <router-link :to="linkTo(item)" class="popup-deal">{{ item.via === 'gig' ? 'Gig' : 'Item' }}: {{ item.title }}</router-link>
-                <span class="popup-review">
-                  {{ item.direction === 'given' ? 'You' : 'They' }} gave ★ {{ item.rating }}<template v-if="item.comment">: “{{ item.comment }}”</template>
-                </span>
-              </li>
-            </ul>
-            <p v-if="isMine && selected.interactions.length > 3" class="popup-more">
-              and {{ selected.interactions.length - 3 }} more
-            </p>
-            <router-link :to="networkOf(selected.userId)" class="popup-network">
-              See {{ selected.userId === me ? 'your' : `${nameOf(selected.userId)}'s` }} network →
-            </router-link>
-          </div>
-        </div>
+            <title>{{ nameOf(node.connection.userId) }}</title>
+            <!-- A larger, invisible circle makes the node easier to tap -->
+            <circle :cx="node.x" :cy="node.y" :r="node.r + 3" class="node-hit" />
+            <circle
+              :cx="node.x"
+              :cy="node.y"
+              :r="node.r"
+              :fill="VIA_STYLE[node.connection.via].fill"
+              :stroke="VIA_STYLE[node.connection.via].stroke"
+              stroke-width="0.5"
+            />
+            <text :x="node.x" :y="node.y + 1.4" text-anchor="middle" class="node-initial" :fill="VIA_STYLE[node.connection.via].text">
+              {{ initialOf(node.connection.userId) }}
+            </text>
+            <text :x="node.x + node.r + 2" :y="node.y + 1.4" class="node-name">{{ shortName(node.connection.userId) }}</text>
+          </g>
+        </svg>
 
-        <div class="network-side">
-          <ul class="legend" aria-label="Key">
-            <li v-for="via in VIAS" :key="via">
-              <span class="legend-dot" :style="{ background: VIA_STYLE[via].fill, borderColor: VIA_STYLE[via].stroke }" aria-hidden="true"></span>
-              {{ viaLabel(via) }}
-            </li>
-          </ul>
-          <p class="network-note">
-            {{ isMine
-              ? 'Each line shows the average rating between you, both ways. Most deals first. Tap someone to see what passed between you.'
-              : 'Each line shows the average rating between them, both ways. Most deals first. Tap someone to see their network.' }}
-          </p>
+        <!-- A small card about the tapped person, under their node; it goes
+             away by itself after a few seconds -->
+        <div
+          v-if="selected"
+          ref="popup"
+          class="node-popup"
+          :style="{ left: `min(${selected.x}%, calc(100% - 13rem))`, top: `${((selected.y + selected.r + 2) / layout.height) * 100}%` }"
+          role="dialog"
+          :aria-label="`About ${nameOf(selected.connection.userId)}`"
+          @click.stop
+        >
+          <router-link :to="{ name: 'user-profile', params: { id: selected.connection.userId } }" class="popup-name">
+            {{ nameOf(selected.connection.userId) }}
+          </router-link>
+          <span class="popup-meta">
+            ★ {{ formatRating(selected.connection.averageRating) }} ·
+            {{ selected.connection.deals }} {{ selected.connection.deals === 1 ? 'deal' : 'deals' }}
+          </span>
+          <button type="button" class="popup-close" aria-label="Close" @click="close">×</button>
         </div>
+      </div>
+
+      <div v-if="branches.length && !loading" class="network-side">
+        <ul class="legend" aria-label="Key">
+          <li v-for="via in VIAS" :key="via">
+            <span class="legend-dot" :style="{ background: VIA_STYLE[via].fill, borderColor: VIA_STYLE[via].stroke }" aria-hidden="true"></span>
+            {{ VIA_STYLE[via].label }}
+          </li>
+        </ul>
+        <p class="network-note">
+          Each branch shows the average rating between the two people, both ways. Under each person, the people they're connected to.
+        </p>
       </div>
     </section>
   </div>
@@ -183,12 +138,15 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useRoute, type RouteLocationRaw } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useReviewsStore } from '@/stores/reviews'
 import { useUserStore } from '@/stores/user'
 import { KIND_STYLE } from '@/utils/radar'
-import { connectionsFrom, layoutNetwork, formatRating, WIDTH, YOU, NODE_RADIUS, type Connection, type Interaction, type Via } from '@/utils/network'
+import {
+  connectionsFrom, layoutNetwork, branchPath, formatRating, WIDTH, YOU, NODE_RADIUS,
+  type Branch, type PlacedConnection, type Via
+} from '@/utils/network'
 
 const reviewsStore = useReviewsStore()
 const authStore = useAuthStore()
@@ -203,22 +161,34 @@ const VIA_STYLE: Record<Via | 'both', { fill: string; stroke: string; text: stri
 }
 const VIAS = ['gig', 'item', 'both'] as const
 
-const connections = ref<Connection[]>([])
+// The card closes by itself after this long
+const POPUP_MS = 10_000
+
+const branches = ref<Branch[]>([])
 const loading = ref(true)
 const failed = ref(false)
-const selected = ref<Connection | null>(null)
+const selected = ref<PlacedConnection | null>(null)
 
-const layout = computed(() => layoutNetwork(connections.value))
+// Whose network this is: yours, or someone's you followed from a profile
+// (/reviews/:userId)
+const me = computed(() => authStore.user?.id)
+const centreId = computed(() => Number(route.params.userId) || me.value || 0)
+const isMine = computed(() => centreId.value === me.value)
+
+const layout = computed(() => layoutNetwork(branches.value, centreId.value))
 const placed = computed(() => layout.value.placed)
-const height = computed(() => layout.value.height)
-const selectedSpot = computed(() => placed.value.find(n => n.connection.userId === selected.value?.userId))
+
+// A person can appear under more than one branch: a node is the person in
+// one place
+const keyOf = (node: PlacedConnection) => `${node.parentId}-${node.connection.userId}`
+const selectedKey = computed(() => (selected.value ? keyOf(selected.value) : null))
 
 function nameOf(userId: number): string {
   const user = userStore.getUserById(userId)
   return user?.name || user?.username || `User ${userId}`
 }
 
-// Names under nodes stay short enough not to run into the next column
+// Names next to nodes stay short enough to fit the width
 function shortName(userId: number): string {
   const name = nameOf(userId)
   return name.length > 12 ? `${name.slice(0, 11)}…` : name
@@ -228,45 +198,44 @@ function initialOf(userId: number): string {
   return nameOf(userId).charAt(0).toUpperCase()
 }
 
-function viaLabel(via: Via | 'both'): string {
-  return VIA_STYLE[via].label
-}
-
-function nodeLabel(connection: Connection): string {
-  return `${nameOf(connection.userId)}, ${connection.deals} ${connection.deals === 1 ? 'deal' : 'deals'} together`
-}
-
-function linkTo(item: Interaction): RouteLocationRaw {
-  return item.via === 'gig'
-    ? { name: 'task-detail', params: { id: item.linkId } }
-    : { name: 'store-item', params: { id: item.linkId } }
+function nodeLabel(node: PlacedConnection): string {
+  const { userId, deals, averageRating } = node.connection
+  const parent = node.parentId === me.value ? 'you' : nameOf(node.parentId)
+  return `${nameOf(userId)}: ${deals} ${deals === 1 ? 'deal' : 'deals'} with ${parent}, average rating ${formatRating(averageRating)}`
 }
 
 const popup = ref<HTMLElement | null>(null)
+let closeTimer: ReturnType<typeof setTimeout> | undefined
 
-async function toggle(connection: Connection) {
-  selected.value = selected.value?.userId === connection.userId ? null : connection
-  // On phones the summary sits under the graph: bring it into view
+function close() {
+  selected.value = null
+  if (closeTimer) clearTimeout(closeTimer)
+}
+
+async function toggle(node: PlacedConnection) {
+  if (selectedKey.value === keyOf(node)) return close()
+  selected.value = node
+  if (closeTimer) clearTimeout(closeTimer)
+  closeTimer = setTimeout(close, POPUP_MS)
   await nextTick()
   popup.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
 
-// Whose network this is: yours, or someone's you followed from a graph or
-// their profile (/reviews/:userId)
-const me = computed(() => authStore.user?.id)
-const centreId = computed(() => Number(route.params.userId) || me.value || 0)
-const isMine = computed(() => centreId.value === me.value)
-
-function networkOf(userId: number): RouteLocationRaw {
-  return userId === me.value ? { name: 'reviews' } : { name: 'user-network', params: { userId } }
-}
-
+// The centre person's connections, and each of theirs (ratings only; the
+// centre person is left out of their lists, being the root)
 async function load() {
   loading.value = true
   failed.value = false
-  selected.value = null
+  close()
   try {
-    connections.value = connectionsFrom(await reviewsStore.fetchInteractions(centreId.value))
+    const centre = centreId.value
+    const firsts = connectionsFrom(await reviewsStore.fetchInteractions(centre))
+    const children = await Promise.all(firsts.map(first =>
+      reviewsStore.fetchInteractions(first.userId)
+        .then(list => connectionsFrom(list).filter(child => child.userId !== centre))
+        .catch(() => [])
+    ))
+    branches.value = firsts.map((connection, i) => ({ connection, children: children[i] }))
   } catch (err) {
     console.error('Failed to load network:', err)
     failed.value = true
@@ -275,10 +244,6 @@ async function load() {
   }
 }
 
-// Clicking elsewhere or pressing Escape closes the summary
-function close() {
-  selected.value = null
-}
 function onKey(event: KeyboardEvent) {
   if (event.key === 'Escape') close()
 }
@@ -292,6 +257,7 @@ onMounted(() => {
   document.addEventListener('keydown', onKey)
 })
 onBeforeUnmount(() => {
+  close()
   document.removeEventListener('click', close)
   document.removeEventListener('keydown', onKey)
 })
@@ -306,11 +272,6 @@ onBeforeUnmount(() => {
 }
 
 .network-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.25rem 1rem;
   margin-bottom: 0.75rem;
 }
 
@@ -322,21 +283,21 @@ onBeforeUnmount(() => {
 
 .network-summary,
 .network-note {
-  margin: 0;
+  margin: 0.25rem 0 0;
   font-size: 0.9rem;
   color: var(--color-text-light, #6b7280);
 }
 
-.network-layout {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem 1.5rem;
-  align-items: flex-start;
+.back-to-mine {
+  display: inline-block;
+  margin-top: 0.25rem;
+  color: var(--color-primary, #4f46e5);
+  font-weight: 600;
+  font-size: 0.875rem;
 }
 
 .network-stage {
   position: relative;
-  flex: 1 1 320px;
   max-width: 560px;
 }
 
@@ -350,18 +311,32 @@ onBeforeUnmount(() => {
   fill: none;
   stroke: #9ca3af;
   stroke-width: 0.35;
-  stroke-linecap: round;
-  opacity: 0.55;
+  opacity: 0.45;
 }
 
 .sketch-ring.second {
   stroke-width: 0.2;
-  opacity: 0.35;
+  opacity: 0.3;
 }
 
-.edge {
-  stroke: #cbd5e1;
-  stroke-width: 0.6;
+/* Pencil branches: grey, doubled, slightly uneven */
+.branch {
+  fill: none;
+  stroke: #6b7280;
+  stroke-width: 0.55;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.8;
+}
+
+.branch.second {
+  stroke-width: 0.3;
+  opacity: 0.45;
+}
+
+.branch.active {
+  stroke: var(--color-primary, #4f46e5);
+  opacity: 1;
 }
 
 .rating-pill {
@@ -371,19 +346,9 @@ onBeforeUnmount(() => {
 }
 
 .rating-text {
-  font-size: 4.2px;
+  font-size: 3.6px;
   font-weight: 700;
   fill: #b45309;
-}
-
-.node-name {
-  font-size: 4.4px;
-  fill: #374151;
-  pointer-events: none;
-}
-
-.edge.active {
-  stroke: var(--color-primary, #4f46e5);
 }
 
 .you-dot {
@@ -391,7 +356,7 @@ onBeforeUnmount(() => {
 }
 
 .you-label {
-  font-size: 4.4px;
+  font-size: 3.4px;
   font-weight: 700;
   fill: #fff;
 }
@@ -406,8 +371,18 @@ onBeforeUnmount(() => {
 }
 
 .node-initial {
-  font-size: 5.4px;
+  font-size: 4.2px;
   font-weight: 700;
+  pointer-events: none;
+}
+
+.level-2 .node-initial {
+  font-size: 3.6px;
+}
+
+.node-name {
+  font-size: 3.8px;
+  fill: #374151;
   pointer-events: none;
 }
 
@@ -418,125 +393,67 @@ onBeforeUnmount(() => {
   stroke-width: 0.9;
 }
 
+/* Small: one line with the name, rating and deals */
 .node-popup {
   position: absolute;
   z-index: 10;
-  width: min(260px, 80vw);
-  margin: 0.75rem 0 0 0.75rem;
-  padding: 0.75rem;
-  border: 1px solid var(--color-border, #e5e7eb);
-  border-radius: 0.5rem;
-  background: #fff;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15);
-  font-size: 0.85rem;
-}
-
-.node-popup.left {
-  margin-left: 0;
-  transform: translateX(calc(-100% - 0.75rem));
-}
-
-.node-popup.above {
-  margin-top: 0;
-  transform: translateY(calc(-100% - 0.75rem));
-}
-
-.node-popup.left.above {
-  transform: translate(calc(-100% - 0.75rem), calc(-100% - 0.75rem));
-}
-
-.popup-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.5rem;
+  max-width: 13rem;
+  padding: 0.375rem 0.25rem 0.375rem 0.625rem;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+  font-size: 0.8rem;
+  white-space: nowrap;
 }
 
 .popup-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 600;
   color: var(--color-primary, #4f46e5);
 }
 
+.popup-meta {
+  color: var(--color-text-light, #6b7280);
+}
+
 .popup-close {
+  min-width: 32px;
+  min-height: 32px;
   border: none;
   background: none;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   line-height: 1;
   cursor: pointer;
   color: var(--color-text-light, #6b7280);
 }
 
-.popup-meta {
-  margin: 0.15rem 0 0.5rem;
-  color: var(--color-text-light, #6b7280);
-}
-
-.popup-ratings {
-  display: flex;
-  gap: 1rem;
-  margin: 0 0 0.5rem;
-}
-
-.popup-ratings dt {
-  font-size: 0.75rem;
-  color: var(--color-text-light, #6b7280);
-}
-
-.popup-ratings dd {
-  margin: 0;
-  font-weight: 600;
-}
-
-.popup-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.popup-deal {
-  display: block;
-  font-weight: 500;
-  color: inherit;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.popup-review {
-  color: var(--color-text-light, #6b7280);
-  overflow-wrap: anywhere;
-}
-
-.popup-more {
-  margin: 0.4rem 0 0;
-  color: var(--color-text-light, #6b7280);
-}
-
 .network-side {
-  flex: 1 1 200px;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
 }
 
 .legend {
   display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 .legend-dot {
   display: inline-block;
-  width: 0.8rem;
-  height: 0.8rem;
-  margin-right: 0.4rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-right: 0.35rem;
   border: 1px solid;
   border-radius: 50%;
   vertical-align: -0.1rem;
@@ -549,42 +466,5 @@ onBeforeUnmount(() => {
   color: var(--color-primary, #4f46e5);
   text-decoration: underline;
   cursor: pointer;
-}
-
-/* Phones: the graph takes the full width, and the summary goes under it
-   rather than beside a dot, where it could run off the screen */
-@media (max-width: 640px) {
-  .network-stage {
-    flex-basis: 100%;
-  }
-
-  .node-popup,
-  .node-popup.left,
-  .node-popup.above,
-  .node-popup.left.above {
-    position: static;
-    width: auto;
-    margin: 0.75rem 0 0;
-    transform: none;
-    /* Scrolled into view clear of the floating chat button */
-    scroll-margin-bottom: 6rem;
-  }
-
-  .popup-close {
-    min-width: 44px;
-    min-height: 44px;
-  }
-}
-
-.back-to-mine,
-.popup-network {
-  display: inline-block;
-  color: var(--color-primary, #4f46e5);
-  font-weight: 600;
-  font-size: 0.875rem;
-}
-
-.popup-network {
-  margin-top: 0.5rem;
 }
 </style>
