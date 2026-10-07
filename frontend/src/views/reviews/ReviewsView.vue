@@ -2,19 +2,23 @@
   <div class="container py-4">
     <section class="network-card" aria-labelledby="network-title">
       <div class="network-header">
-        <h1 id="network-title" class="network-title">Your network</h1>
+        <h1 id="network-title" class="network-title">{{ isMine ? 'Your network' : `${nameOf(centreId)}'s network` }}</h1>
         <p v-if="connections.length" class="network-summary">
-          {{ connections.length }} {{ connections.length === 1 ? 'person' : 'people' }} you've reviewed or who reviewed you
+          {{ connections.length }} {{ connections.length === 1 ? 'person' : 'people' }}
+          {{ isMine ? "you've reviewed or who reviewed you" : 'they reviewed or who reviewed them' }}
         </p>
+        <router-link v-if="!isMine" :to="{ name: 'reviews' }" class="back-to-mine">Back to your network</router-link>
       </div>
 
-      <p v-if="loading" class="network-note">Loading your network...</p>
+      <p v-if="loading" class="network-note">Loading...</p>
       <p v-else-if="failed" class="network-note">
-        Couldn't load your reviews.
+        Couldn't load the reviews.
         <button type="button" class="link-button" @click="load">Try again</button>
       </p>
       <p v-else-if="!connections.length" class="network-note">
-        No reviews yet. When a gig or a sale is done, you and the other person can review each other, and they'll show up here.
+        {{ isMine
+          ? "No reviews yet. When a gig or a sale is done, you and the other person can review each other, and they'll show up here."
+          : 'No reviews yet.' }}
       </p>
 
       <div v-else class="network-layout">
@@ -25,6 +29,21 @@
             role="group"
             :aria-label="`Your network: ${connections.length} people`"
           >
+            <!-- Pencil-sketch circles behind the graph: thin, grey, drawn twice
+                 and a little wobbly, like by hand -->
+            <defs>
+              <filter id="pencil" x="-10%" y="-10%" width="120%" height="120%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.08" numOctaves="2" seed="7" result="wobble" />
+                <feDisplacementMap in="SourceGraphic" in2="wobble" scale="1.6" />
+              </filter>
+            </defs>
+            <g class="sketch" filter="url(#pencil)" aria-hidden="true">
+              <template v-for="r in layout.rings" :key="`ring-${r}`">
+                <circle :cx="layout.ringCentre.x" :cy="layout.ringCentre.y" :r="r" class="sketch-ring" />
+                <circle :cx="layout.ringCentre.x + 0.3" :cy="layout.ringCentre.y - 0.2" :r="r + 0.5" class="sketch-ring second" />
+              </template>
+            </g>
+
             <!-- Lines first, so nodes sit on top of their ends -->
             <g class="edges" aria-hidden="true">
               <line
@@ -40,7 +59,7 @@
 
             <g class="you" aria-hidden="true">
               <circle :cx="YOU.x" :cy="YOU.y" :r="NODE_RADIUS" class="you-dot" />
-              <text :x="YOU.x" :y="YOU.y + 1.6" text-anchor="middle" class="you-label">You</text>
+              <text :x="YOU.x" :y="YOU.y + 1.6" text-anchor="middle" class="you-label">{{ isMine ? 'You' : initialOf(centreId) }}</text>
             </g>
 
             <!-- The average rating between you, on each line -->
@@ -110,7 +129,14 @@
               {{ selected.deals }} {{ selected.deals === 1 ? 'deal' : 'deals' }} together
               · {{ viaLabel(selected.via) }}
             </p>
-            <dl class="popup-ratings">
+            <!-- Someone else's network: ratings only -->
+            <dl v-if="!isMine" class="popup-ratings">
+              <div>
+                <dt>Average rating</dt>
+                <dd>★ {{ formatRating(selected.averageRating) }}</dd>
+              </div>
+            </dl>
+            <dl v-else class="popup-ratings">
               <div>
                 <dt>Rated you</dt>
                 <dd>{{ selected.ratingOfYou !== null ? `★ ${selected.ratingOfYou}` : 'Not yet' }}</dd>
@@ -120,7 +146,7 @@
                 <dd>{{ selected.yourRating !== null ? `★ ${selected.yourRating}` : 'Not yet' }}</dd>
               </div>
             </dl>
-            <ul class="popup-list">
+            <ul v-if="isMine" class="popup-list">
               <li v-for="item in selected.interactions.slice(0, 3)" :key="`${item.deal}-${item.direction}`">
                 <router-link :to="linkTo(item)" class="popup-deal">{{ item.via === 'gig' ? 'Gig' : 'Item' }}: {{ item.title }}</router-link>
                 <span class="popup-review">
@@ -128,9 +154,12 @@
                 </span>
               </li>
             </ul>
-            <p v-if="selected.interactions.length > 3" class="popup-more">
+            <p v-if="isMine && selected.interactions.length > 3" class="popup-more">
               and {{ selected.interactions.length - 3 }} more
             </p>
+            <router-link :to="networkOf(selected.userId)" class="popup-network">
+              See {{ selected.userId === me ? 'your' : `${nameOf(selected.userId)}'s` }} network →
+            </router-link>
           </div>
         </div>
 
@@ -141,7 +170,11 @@
               {{ viaLabel(via) }}
             </li>
           </ul>
-          <p class="network-note">Each line shows the average rating between you, both ways. Most deals first. Tap someone to see what passed between you.</p>
+          <p class="network-note">
+            {{ isMine
+              ? 'Each line shows the average rating between you, both ways. Most deals first. Tap someone to see what passed between you.'
+              : 'Each line shows the average rating between them, both ways. Most deals first. Tap someone to see their network.' }}
+          </p>
         </div>
       </div>
     </section>
@@ -149,14 +182,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import type { RouteLocationRaw } from 'vue-router'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { useRoute, type RouteLocationRaw } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import { useReviewsStore } from '@/stores/reviews'
 import { useUserStore } from '@/stores/user'
 import { KIND_STYLE } from '@/utils/radar'
 import { connectionsFrom, layoutNetwork, formatRating, WIDTH, YOU, NODE_RADIUS, type Connection, type Interaction, type Via } from '@/utils/network'
 
 const reviewsStore = useReviewsStore()
+const authStore = useAuthStore()
+const route = useRoute()
 const userStore = useUserStore()
 
 // Gigs and marketplace items keep the colours they have on the home radar
@@ -215,11 +251,22 @@ async function toggle(connection: Connection) {
   popup.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
 
+// Whose network this is: yours, or someone's you followed from a graph or
+// their profile (/reviews/:userId)
+const me = computed(() => authStore.user?.id)
+const centreId = computed(() => Number(route.params.userId) || me.value || 0)
+const isMine = computed(() => centreId.value === me.value)
+
+function networkOf(userId: number): RouteLocationRaw {
+  return userId === me.value ? { name: 'reviews' } : { name: 'user-network', params: { userId } }
+}
+
 async function load() {
   loading.value = true
   failed.value = false
+  selected.value = null
   try {
-    connections.value = connectionsFrom(await reviewsStore.fetchMyInteractions())
+    connections.value = connectionsFrom(await reviewsStore.fetchInteractions(centreId.value))
   } catch (err) {
     console.error('Failed to load network:', err)
     failed.value = true
@@ -235,6 +282,9 @@ function close() {
 function onKey(event: KeyboardEvent) {
   if (event.key === 'Escape') close()
 }
+
+// Following a link to another network reuses this page
+watch(centreId, load)
 
 onMounted(() => {
   load()
@@ -294,6 +344,19 @@ onBeforeUnmount(() => {
   display: block;
   width: 100%;
   height: auto;
+}
+
+.sketch-ring {
+  fill: none;
+  stroke: #9ca3af;
+  stroke-width: 0.35;
+  stroke-linecap: round;
+  opacity: 0.55;
+}
+
+.sketch-ring.second {
+  stroke-width: 0.2;
+  opacity: 0.35;
 }
 
 .edge {
@@ -511,5 +574,17 @@ onBeforeUnmount(() => {
     min-width: 44px;
     min-height: 44px;
   }
+}
+
+.back-to-mine,
+.popup-network {
+  display: inline-block;
+  color: var(--color-primary, #4f46e5);
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.popup-network {
+  margin-top: 0.5rem;
 }
 </style>

@@ -41,6 +41,65 @@ function average(ratings: number[]): number | null {
   return Math.round((ratings.reduce((sum, r) => sum + r, 0) / ratings.length) * 10) / 10
 }
 
+/** A gig rating as the APIs send it; your own come with comment and gig. */
+export interface GigRating {
+  task_id: number
+  reviewer_id: number
+  reviewed_user_id: number
+  rating: number
+  created_at: string
+  comment?: string
+  task?: { title: string }
+}
+
+/** A marketplace rating either way round; your own come with review and item. */
+export interface StoreRating {
+  booking_id: number
+  rater_id: number
+  rated_id: number
+  rating: number
+  rated_at: string
+  review?: string
+  item_id?: number
+  item_title?: string
+}
+
+/**
+ * Every rating between userId and someone else, as interactions with that
+ * person: given when userId rated them, received when they rated userId.
+ */
+export function interactionsFor(userId: number, gigs: GigRating[], store: StoreRating[]): Interaction[] {
+  const fromGigs = gigs.map((r): Interaction => {
+    const given = r.reviewer_id === userId
+    return {
+      otherId: given ? r.reviewed_user_id : r.reviewer_id,
+      direction: given ? 'given' : 'received',
+      rating: r.rating,
+      comment: r.comment ?? '',
+      via: 'gig',
+      title: r.task?.title || 'A gig',
+      linkId: r.task_id,
+      deal: `gig-${r.task_id}`,
+      at: r.created_at
+    }
+  })
+  const fromStore = store.map((r): Interaction => {
+    const given = r.rater_id === userId
+    return {
+      otherId: given ? r.rated_id : r.rater_id,
+      direction: given ? 'given' : 'received',
+      rating: r.rating,
+      comment: r.review ?? '',
+      via: 'item',
+      title: r.item_title || 'A marketplace item',
+      linkId: r.item_id ?? 0,
+      deal: `item-${r.booking_id}`,
+      at: r.rated_at
+    }
+  })
+  return [...fromGigs, ...fromStore].filter(i => i.otherId && i.otherId !== userId)
+}
+
 /** Groups interactions by person: most deals first, then most recent. */
 export function connectionsFrom(interactions: Interaction[]): Connection[] {
   const byUser = new Map<number, Interaction[]>()
@@ -99,7 +158,15 @@ export interface PlacedConnection {
  * deals first). The first row hangs from you; each person after that hangs
  * from the one above them, so lines never cross.
  */
-export function layoutNetwork(connections: Connection[]): { placed: PlacedConnection[]; height: number } {
+export interface NetworkLayout {
+  placed: PlacedConnection[]
+  height: number
+  /** Background circles (the pencil sketch): their centre and radii */
+  ringCentre: { x: number; y: number }
+  rings: number[]
+}
+
+export function layoutNetwork(connections: Connection[]): NetworkLayout {
   // Fewer people than columns: spread them across the whole width
   const columns = Math.max(1, Math.min(COLUMNS, connections.length))
   const columnX = (col: number) => WIDTH / (columns * 2) * (col * 2 + 1)
@@ -113,5 +180,9 @@ export function layoutNetwork(connections: Connection[]): { placed: PlacedConnec
   })
   const rows = Math.ceil(connections.length / columns)
   const height = rows ? FIRST_ROW_Y + (rows - 1) * ROW_GAP + BOTTOM : FIRST_ROW_Y
-  return { placed, height }
+  // Three whole circles behind the graph, centred in it and inside it
+  const ringCentre = { x: WIDTH / 2, y: height / 2 }
+  const outer = Math.min(WIDTH, height) / 2 - 1.5
+  const rings = [outer / 3, (outer * 2) / 3, outer]
+  return { placed, height, ringCentre, rings }
 }

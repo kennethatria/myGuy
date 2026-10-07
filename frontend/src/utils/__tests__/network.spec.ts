@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { connectionsFrom, layoutNetwork, formatRating, COLUMNS, YOU, type Interaction, type Connection } from '../network'
+import { connectionsFrom, interactionsFor, layoutNetwork, formatRating, COLUMNS, YOU, type Interaction, type Connection } from '../network'
 
 const review = (over: Partial<Interaction>): Interaction => ({
   otherId: 2,
@@ -53,6 +53,25 @@ describe('network', () => {
     expect(order).toEqual([3, 4, 2])
   })
 
+  it("turns someone's ratings into interactions with each other person", () => {
+    const interactions = interactionsFor(5, [
+      { task_id: 1, reviewer_id: 5, reviewed_user_id: 6, rating: 4, created_at: '2026-10-01T00:00:00Z' },
+      { task_id: 1, reviewer_id: 6, reviewed_user_id: 5, rating: 5, created_at: '2026-10-01T00:00:00Z', comment: 'Great', task: { title: 'Fix sink' } }
+    ], [
+      { booking_id: 9, rater_id: 7, rated_id: 5, rating: 3, rated_at: '2026-10-02T00:00:00Z' }
+    ])
+
+    expect(interactions.map(i => [i.otherId, i.direction, i.rating, i.via, i.deal])).toEqual([
+      [6, 'given', 4, 'gig', 'gig-1'],
+      [6, 'received', 5, 'gig', 'gig-1'],
+      [7, 'received', 3, 'item', 'item-9']
+    ])
+    // Someone else's network comes without comments or titles
+    expect(interactions[0].comment).toBe('')
+    expect(interactions[2].title).toBe('A marketplace item')
+    expect(interactions[1].comment).toBe('Great')
+  })
+
   it('shows ratings with one decimal, whole numbers plain', () => {
     expect(formatRating(4.2)).toBe('4.2')
     expect(formatRating(3)).toBe('3')
@@ -73,6 +92,17 @@ describe('network', () => {
     // Labels halfway along their lines; the drawing is tall enough for every row
     expect(placed[3].label).toEqual({ x: placed[0].x, y: (placed[0].y + placed[3].y) / 2 })
     expect(height).toBeGreaterThan(placed[4].y)
+  })
+
+  it('draws three whole background circles, centred in the graph and inside it', () => {
+    const { height, ringCentre, rings } = layoutNetwork([1, 2, 3, 4].map(person))
+    expect(ringCentre).toEqual({ x: 50, y: height / 2 })
+    expect(rings).toHaveLength(3)
+    expect(rings[0]).toBeLessThan(rings[1])
+    const outer = rings[2]
+    expect(ringCentre.y - outer).toBeGreaterThanOrEqual(0)
+    expect(ringCentre.y + outer).toBeLessThanOrEqual(height)
+    expect(ringCentre.x + outer).toBeLessThanOrEqual(100)
   })
 
   it('is as short as one row with nobody in it', () => {

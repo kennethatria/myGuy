@@ -27,6 +27,10 @@
                 </div>
                 <span class="text-sm text-gray ml-2">from {{ reviews.length }} reviews</span>
               </div>
+              <!-- Who they've worked or traded with, ratings only -->
+              <router-link :to="{ name: 'user-network', params: { userId } }" class="see-network">
+                See {{ user.username }}'s network →
+              </router-link>
             </div>
 
             <div v-if="user.bio" class="mt-4">
@@ -278,5 +282,13 @@ onMounted(() => {
 
 .text-center {
   text-align: center;
+}
+
+.see-network {
+  display: inline-block;
+  margin-top: 0.75rem;
+  color: var(--color-primary, #4f46e5);
+  font-weight: 600;
+  font-size: 0.875rem;
 }
 </style>
