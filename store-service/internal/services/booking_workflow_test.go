@@ -124,8 +124,8 @@ func TestBookingWorkflow_Scenarios(t *testing.T) {
 }
 
 func TestConfirmItemReceived(t *testing.T) {
-	t.Run("successful confirm item received", func(t *testing.T) {
-		service, _, _, bookingRepo := setupService()
+	t.Run("the buyer confirms what the seller marked picked up: sold", func(t *testing.T) {
+		service, itemRepo, _, bookingRepo := setupService()
 
 		buyerID := uint(2)
 		requestID := uint(1)
@@ -134,23 +134,25 @@ func TestConfirmItemReceived(t *testing.T) {
 			ID:          requestID,
 			ItemID:      uint(100),
 			RequesterID: buyerID,
-			Status:      "approved",
+			Status:      "picked_up",
 		}
 		updatedRequest := &models.BookingRequest{
 			ID:          requestID,
 			RequesterID: buyerID,
-			Status:      "item_received",
+			Status:      "completed",
 		}
 
 		bookingRepo.On("GetByID", requestID).Return(request, nil).Once()
-		bookingRepo.On("UpdateStatus", requestID, "item_received").Return(nil)
+		bookingRepo.On("UpdateStatus", requestID, "completed").Return(nil)
+		itemRepo.On("MarkAsSold", uint(100), buyerID).Return(nil)
 		bookingRepo.On("GetByID", requestID).Return(updatedRequest, nil).Once()
 
 		result, err := service.ConfirmItemReceived(requestID, buyerID)
 
 		assert.NoError(t, err)
-		assert.Equal(t, "item_received", result.Status)
+		assert.Equal(t, "completed", result.Status)
 		bookingRepo.AssertExpectations(t)
+		itemRepo.AssertExpectations(t)
 	})
 
 	t.Run("booking not found", func(t *testing.T) {
@@ -181,22 +183,39 @@ func TestConfirmItemReceived(t *testing.T) {
 		bookingRepo.AssertExpectations(t)
 	})
 
-	t.Run("booking not in approved status", func(t *testing.T) {
-		service, _, _, bookingRepo := setupService()
+	t.Run("not before the seller marks it picked up", func(t *testing.T) {
+		for _, status := range []string{"pending", "approved"} {
+			service, _, _, bookingRepo := setupService()
+			bookingRepo.On("GetByID", uint(1)).Return(&models.BookingRequest{ID: 1, RequesterID: 2, Status: status}, nil)
 
-		request := &models.BookingRequest{
-			ID:          uint(1),
-			RequesterID: uint(2),
-			Status:      "pending", // Not approved
+			_, err := service.ConfirmItemReceived(1, 2)
+
+			assert.EqualError(t, err, "the seller marks it picked up first", status)
+			bookingRepo.AssertNotCalled(t, "UpdateStatus", mock.Anything, mock.Anything)
 		}
-		bookingRepo.On("GetByID", uint(1)).Return(request, nil)
-
-		_, err := service.ConfirmItemReceived(1, 2)
-
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "booking must be approved before confirming receipt")
-		bookingRepo.AssertExpectations(t)
 	})
+}
+
+func TestConfirmDeliveryMarksPickedUp(t *testing.T) {
+	service, itemRepo, _, bookingRepo := setupService()
+	itemRepo.On("GetByID", uint(100)).Return(&models.StoreItem{ID: 100, SellerID: 1, Status: "reserved"}, nil)
+	bookingRepo.On("GetByID", uint(1)).Return(&models.BookingRequest{ID: 1, ItemID: 100, RequesterID: 2, Status: "approved"}, nil).Once()
+	bookingRepo.On("UpdateStatus", uint(1), "picked_up").Return(nil)
+	bookingRepo.On("GetByID", uint(1)).Return(&models.BookingRequest{ID: 1, Status: "picked_up"}, nil).Once()
+
+	result, err := service.ConfirmDelivery(1, 1)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "picked_up", result.Status)
+	// Not sold until the buyer confirms
+	itemRepo.AssertNotCalled(t, "MarkAsSold", mock.Anything, mock.Anything)
+
+	// Twice is refused
+	service, itemRepo, _, bookingRepo = setupService()
+	itemRepo.On("GetByID", uint(100)).Return(&models.StoreItem{ID: 100, SellerID: 1}, nil)
+	bookingRepo.On("GetByID", uint(1)).Return(&models.BookingRequest{ID: 1, ItemID: 100, Status: "picked_up"}, nil)
+	_, err = service.ConfirmDelivery(1, 1)
+	assert.EqualError(t, err, "only an approved booking can be marked picked up")
 }
 
 func TestSubmitBuyerRating(t *testing.T) {
