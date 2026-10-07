@@ -38,6 +38,14 @@
           :current-user-id="authStore.user?.id"
           :latest="message.id === latestEventId"
         />
+        <BookingStepMessage
+          v-else-if="isBookingStep(message)"
+          :message="message"
+          :request="bookingRequests.get(Number(message.metadata?.booking_id))"
+          :current-user-id="authStore.user?.id"
+          :latest="message.id === latestStepIds.get(Number(message.metadata?.booking_id))"
+          @booking-action="handleBookingAction"
+        />
         <div v-else-if="isNote(message)" class="system-message">
           {{ message.content }}
           <span class="system-message-time">{{ formatTime(message.created_at) }}</span>
@@ -99,6 +107,7 @@ import MessageBubble from './MessageBubble.vue';
 import BookingMessageBubble from './BookingMessageBubble.vue';
 import TaskEventMessage from './TaskEventMessage.vue';
 import RequestOfferMessage from './RequestOfferMessage.vue';
+import BookingStepMessage from './BookingStepMessage.vue';
 import type { Message, ConversationSummary, BookingAction } from '@/stores/messages';
 
 const props = defineProps<{
@@ -211,7 +220,30 @@ function formatTime(date: string): string {
 }
 
 // Notes recording what happened: shown centred, never editable
-const NOTE_TYPES = ['system_alert', 'booking_approved', 'booking_declined', 'booking_item_received', 'booking_completed', 'booking_status_update'];
+const NOTE_TYPES = ['system_alert', 'booking_declined', 'booking_status_update'];
+
+// Booking steps after the request: each offers the next step, like gig events
+const STEP_TYPES = ['booking_approved', 'booking_picked_up', 'booking_item_received', 'booking_completed'];
+function isBookingStep(message: Message): boolean {
+  return STEP_TYPES.includes(message.message_type) && !!message.metadata?.booking_id;
+}
+
+// Each booking's request (buyer, seller, current status, ratings) and its
+// newest step: only that one offers a step
+const bookingRequests = computed(() => {
+  const requests = new Map<number, Message>();
+  for (const m of props.messages) {
+    if (m.message_type === 'booking_request' && m.metadata?.booking_id) requests.set(Number(m.metadata.booking_id), m);
+  }
+  return requests;
+});
+const latestStepIds = computed(() => {
+  const latest = new Map<number, number>();
+  for (const m of props.messages) {
+    if (isBookingStep(m)) latest.set(Number(m.metadata!.booking_id), m.id);
+  }
+  return latest;
+});
 function isNote(message: Message): boolean {
   return NOTE_TYPES.includes(message.message_type);
 }

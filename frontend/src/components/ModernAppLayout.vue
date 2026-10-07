@@ -67,7 +67,7 @@
       </header>
       
       <!-- Page Content -->
-      <main class="main-content" :class="{ 'has-chat-widget': route.name !== 'messages' }">
+      <main class="main-content has-chat-widget">
         <router-view />
       </main>
     </div>

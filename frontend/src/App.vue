@@ -17,10 +17,8 @@ const showLayout = computed(() => {
   return !['home', 'login', 'register', 'not-found'].includes(route.name as string)
 })
 
-// Show chat widget on all authenticated pages except message center
-const showChatWidget = computed(() => {
-  return authStore.isAuthenticated && route.name !== 'messages'
-})
+// The floating chat is the one place for conversations
+const showChatWidget = computed(() => authStore.isAuthenticated)
 </script>
 
 <template>
