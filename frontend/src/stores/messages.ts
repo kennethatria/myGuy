@@ -70,6 +70,10 @@ export interface ConversationSummary {
   other_user_name: string
   unread_count: number
   conversation_type: 'task' | 'application' | 'store'
+  // Where it stands: the latest gig event or booking status, and whether
+  // the deal is done or closed (then it's read-only)
+  state?: string | null
+  ended?: boolean
 }
 
 export const useMessagesStore = defineStore('messages', () => {

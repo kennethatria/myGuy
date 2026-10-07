@@ -131,14 +131,14 @@
 
           <!-- Applications Tab -->
           <div v-if="activeTab === 'applications'" class="tab-pane">
-            <div v-if="tasksStore.myApplications.length === 0" class="empty-state">
+            <div v-if="activeApplications.length === 0" class="empty-state">
               <h3>No applications yet</h3>
               <p>Gigs you apply for show up here, with whether you got them.</p>
               <router-link :to="{ name: 'tasks' }" class="btn btn-primary">Browse Available Gigs</router-link>
             </div>
             <div v-else class="task-list">
               <div
-                v-for="application in tasksStore.myApplications"
+                v-for="application in activeApplications"
                 :key="application.id"
                 class="task-item"
                 @click="navigateToTask(application.task_id)"
@@ -209,15 +209,17 @@ const redirectToLogin = () => {
   router.push({ name: 'login' })
 }
 
-const createdTasks = computed(() => {
-  return tasksStore.userTasks || []
-})
+// Completed gigs leave these lists; their history stays in the conversation
+// (marked expired) and their pages still open from links
+const notCompleted = <T extends { status?: string }>(tasks: T[]) => tasks.filter(task => task.status !== 'completed')
 
-const assignedTasks = computed(() => {
-  // Server-side filtering now handles excluding self-assigned tasks
-  // We just return the filtered data from the API
-  return tasksStore.assignedTasks || []
-})
+const createdTasks = computed(() => notCompleted(tasksStore.userTasks || []))
+
+// Server-side filtering already excludes self-assigned tasks
+const assignedTasks = computed(() => notCompleted(tasksStore.assignedTasks || []))
+
+const activeApplications = computed(() =>
+  (tasksStore.myApplications || []).filter(application => application.task?.status !== 'completed'))
 
 const formatDate = (date: string) => {
   return format(new Date(date), 'MMM dd, yyyy')
