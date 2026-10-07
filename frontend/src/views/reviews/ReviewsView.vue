@@ -29,28 +29,15 @@
           role="group"
           :aria-label="`${isMine ? 'Your' : `${nameOf(centreId)}'s`} network: ${branches.length} people`"
         >
-          <!-- Pencil: thin grey strokes, drawn twice and a little wobbly -->
-          <defs>
-            <filter id="pencil" x="-10%" y="-10%" width="120%" height="120%">
-              <feTurbulence type="fractalNoise" baseFrequency="0.12" numOctaves="2" seed="7" result="wobble" />
-              <feDisplacementMap in="SourceGraphic" in2="wobble" scale="1.8" />
-            </filter>
-          </defs>
-
-          <g class="sketch" filter="url(#pencil)" aria-hidden="true">
-            <template v-for="r in layout.rings" :key="`ring-${r}`">
-              <circle :cx="layout.ringCentre.x" :cy="layout.ringCentre.y" :r="r" class="sketch-ring" />
-              <circle :cx="layout.ringCentre.x + 0.3" :cy="layout.ringCentre.y - 0.2" :r="r + 0.5" class="sketch-ring second" />
-            </template>
-          </g>
-
-          <!-- The branches, sketched: down from each person, across to whom
-               they're connected to -->
-          <g class="branches" filter="url(#pencil)" aria-hidden="true">
-            <template v-for="node in placed" :key="`branch-${keyOf(node)}`">
-              <path :d="branchPath(node)" :class="['branch', { active: selectedKey === keyOf(node) }]" />
-              <path :d="branchPath(node, 0.4)" class="branch second" />
-            </template>
+          <!-- The branches: a smooth curve down from each person and round to
+               whom they're connected to -->
+          <g class="branches" aria-hidden="true">
+            <path
+              v-for="node in placed"
+              :key="`branch-${keyOf(node)}`"
+              :d="branchPath(node)"
+              :class="['branch', { active: selectedKey === keyOf(node) }]"
+            />
           </g>
 
           <!-- The average rating between the two, both ways, on each branch -->
@@ -113,11 +100,21 @@
           <router-link :to="{ name: 'user-profile', params: { id: selected.connection.userId } }" class="popup-name">
             {{ nameOf(selected.connection.userId) }}
           </router-link>
-          <span class="popup-meta">
+          <button type="button" class="popup-close" aria-label="Close" @click="close">×</button>
+          <p class="popup-meta">
             ★ {{ formatRating(selected.connection.averageRating) }} ·
             {{ selected.connection.deals }} {{ selected.connection.deals === 1 ? 'deal' : 'deals' }}
-          </span>
-          <button type="button" class="popup-close" aria-label="Close" @click="close">×</button>
+          </p>
+          <!-- What others said about them lately (public on their profile) -->
+          <ul v-if="comments.length" class="popup-comments">
+            <li v-for="comment in comments" :key="comment.id">
+              <span class="comment-rating">★ {{ comment.rating }}</span>
+              “{{ comment.text }}”
+              <span class="comment-by">— {{ comment.by }}</span>
+            </li>
+          </ul>
+          <p v-else-if="commentsLoading" class="popup-note">Loading comments…</p>
+          <p v-else class="popup-note">No comments yet.</p>
         </div>
       </div>
 
@@ -207,6 +204,35 @@ function nodeLabel(node: PlacedConnection): string {
 const popup = ref<HTMLElement | null>(null)
 let closeTimer: ReturnType<typeof setTimeout> | undefined
 
+// The two latest comments others left about the tapped person
+interface Comment { id: number | string; rating: number; text: string; by: string }
+const comments = ref<Comment[]>([])
+const commentsLoading = ref(false)
+const commentsCache = new Map<number, Comment[]>()
+
+async function loadComments(userId: number) {
+  const cached = commentsCache.get(userId)
+  if (cached) {
+    comments.value = cached
+    return
+  }
+  comments.value = []
+  commentsLoading.value = true
+  try {
+    const reviews = await reviewsStore.fetchAllRatings(userId)
+    const latest = reviews
+      .filter(r => r.comment?.trim())
+      .slice(0, 2)
+      .map(r => ({ id: r.id, rating: r.rating, text: r.comment.trim(), by: r.reviewer?.username || 'someone' }))
+    commentsCache.set(userId, latest)
+    if (selected.value?.connection.userId === userId) comments.value = latest
+  } catch {
+    // The card works without them
+  } finally {
+    commentsLoading.value = false
+  }
+}
+
 function close() {
   selected.value = null
   if (closeTimer) clearTimeout(closeTimer)
@@ -217,6 +243,7 @@ async function toggle(node: PlacedConnection) {
   selected.value = node
   if (closeTimer) clearTimeout(closeTimer)
   closeTimer = setTimeout(close, POPUP_MS)
+  loadComments(node.connection.userId)
   await nextTick()
   popup.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
@@ -307,31 +334,13 @@ onBeforeUnmount(() => {
   height: auto;
 }
 
-.sketch-ring {
-  fill: none;
-  stroke: #9ca3af;
-  stroke-width: 0.35;
-  opacity: 0.45;
-}
-
-.sketch-ring.second {
-  stroke-width: 0.2;
-  opacity: 0.3;
-}
-
-/* Pencil branches: grey, doubled, slightly uneven */
+/* Branches: one smooth, solid curve each */
 .branch {
   fill: none;
-  stroke: #6b7280;
-  stroke-width: 0.55;
+  stroke: #94a3b8;
+  stroke-width: 0.7;
   stroke-linecap: round;
   stroke-linejoin: round;
-  opacity: 0.8;
-}
-
-.branch.second {
-  stroke-width: 0.3;
-  opacity: 0.45;
 }
 
 .branch.active {
@@ -393,35 +402,33 @@ onBeforeUnmount(() => {
   stroke-width: 0.9;
 }
 
-/* Small: one line with the name, rating and deals */
+/* A small square card: name, rating and deals, then what others said */
 .node-popup {
   position: absolute;
   z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  max-width: 13rem;
-  padding: 0.375rem 0.25rem 0.375rem 0.625rem;
+  width: 13rem;
+  padding: 0.5rem 0.625rem;
   border: 1px solid var(--color-border, #e5e7eb);
-  border-radius: 999px;
+  border-radius: 0.5rem;
   background: #fff;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
   font-size: 0.8rem;
-  white-space: nowrap;
 }
 
 .popup-name {
+  display: block;
+  padding-right: 1.75rem;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
   color: var(--color-primary, #4f46e5);
 }
 
-.popup-meta {
-  color: var(--color-text-light, #6b7280);
-}
-
 .popup-close {
+  position: absolute;
+  top: 0.125rem;
+  right: 0.125rem;
   min-width: 32px;
   min-height: 32px;
   border: none;
@@ -429,6 +436,32 @@ onBeforeUnmount(() => {
   font-size: 1.1rem;
   line-height: 1;
   cursor: pointer;
+  color: var(--color-text-light, #6b7280);
+}
+
+.popup-meta,
+.popup-note {
+  margin: 0.125rem 0 0;
+  color: var(--color-text-light, #6b7280);
+}
+
+.popup-comments {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0 0;
+  border-top: 1px solid #f3f4f6;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.comment-rating {
+  font-weight: 700;
+  color: #b45309;
+}
+
+.comment-by {
   color: var(--color-text-light, #6b7280);
 }
 
