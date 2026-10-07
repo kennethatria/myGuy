@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { connectionsFrom, interactionsFor, layoutNetwork, branchPath, formatRating, YOU, NODE_RADIUS, CHILD_RADIUS, type Interaction, type Connection } from '../network'
+import { connectionsFrom, interactionsFor, recentNetwork, layoutNetwork, branchPath, formatRating, YOU, NODE_RADIUS, CHILD_RADIUS, type Interaction, type Connection } from '../network'
 
 const review = (over: Partial<Interaction>): Interaction => ({
   otherId: 2,
@@ -20,6 +20,29 @@ const person = (userId: number): Connection => ({
 })
 
 describe('network', () => {
+  it('keeps the tree to 15 people: the most recent connections, then their most recent', () => {
+    const at = (userId: number, day: number) => ({ ...person(userId), latest: `2026-10-${String(day).padStart(2, '0')}T10:00:00Z` })
+    const branches = [
+      { connection: at(2, 1), children: [at(20, 28), at(21, 2)] },
+      ...Array.from({ length: 12 }, (_, i) => ({ connection: at(3 + i, 10 + i), children: [] })),
+      { connection: at(30, 5), children: [at(31, 27), at(32, 3)] }
+    ]
+
+    const kept = recentNetwork(branches)
+
+    expect(kept.length).toBe(14)
+    expect(kept[0].connection.userId).toBe(14)
+    expect(kept.reduce((n, b) => n + 1 + b.children.length, 0)).toBe(15)
+    expect(kept.find(b => b.connection.userId === 2)!.children.map(c => c.userId)).toEqual([20])
+    expect(kept.find(b => b.connection.userId === 30)!.children).toEqual([])
+
+    const many = Array.from({ length: 20 }, (_, i) => ({ connection: at(40 + i, i + 1), children: [at(90, 28)] }))
+    const top = recentNetwork(many)
+    expect(top.length).toBe(15)
+    expect(top.every(b => b.children.length === 0)).toBe(true)
+    expect(top[top.length - 1].connection.userId).toBe(45)
+  })
+
   it('groups reviews by person, counting both reviews of one deal once', () => {
     const [ann] = connectionsFrom([
       review({ direction: 'received', rating: 4 }),
