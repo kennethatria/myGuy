@@ -21,7 +21,7 @@
       </template>
 
       <form v-else-if="action === 'review'" class="event-review" @submit.prevent="submitReview">
-        <p v-if="reviewed" class="event-note">Thanks, your review is in. You'll find it on the Reviews page.</p>
+        <p v-if="reviewed" class="event-note">Thanks, your review is in. You'll find it on the Network page.</p>
         <template v-else>
           <div class="stars" role="radiogroup" aria-label="Your rating">
             <button

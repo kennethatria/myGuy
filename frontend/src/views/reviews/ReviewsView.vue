@@ -2,11 +2,15 @@
   <div class="container py-4">
     <section class="network-card" aria-labelledby="network-title">
       <div class="network-header">
-        <h1 id="network-title" class="network-title">{{ isMine ? 'Network' : `${nameOf(centreId)}'s network` }}</h1>
+        <h1 id="network-title" class="network-title">{{ isMine ? 'Explore network' : `${nameOf(centreId)}'s network` }}</h1>
+        <p v-if="isMine" class="network-intro">
+          Everyone you've done a gig or a sale with, the rating you gave each other, and who they've worked with in turn.
+          Tap someone to see what others say about them.
+        </p>
         <p v-if="branches.length" class="network-summary">
-          {{ branches.length }} {{ branches.length === 1 ? 'person' : 'people' }}
+          {{ connectionCount }} {{ connectionCount === 1 ? 'person' : 'people' }}
           {{ isMine ? "you've reviewed or who reviewed you" : 'they reviewed or who reviewed them' }},
-          and who they're connected to
+          and who they're connected to{{ trimmed ? `. Showing the ${MAX_PEOPLE} most recent.` : '' }}
         </p>
         <router-link v-if="!isMine" :to="{ name: 'reviews' }" class="back-to-mine">Back to your network</router-link>
       </div>
@@ -141,7 +145,7 @@ import { useReviewsStore } from '@/stores/reviews'
 import { useUserStore } from '@/stores/user'
 import { KIND_STYLE } from '@/utils/radar'
 import {
-  connectionsFrom, layoutNetwork, branchPath, formatRating, WIDTH, YOU, NODE_RADIUS,
+  connectionsFrom, recentNetwork, layoutNetwork, MAX_PEOPLE, branchPath, formatRating, WIDTH, YOU, NODE_RADIUS,
   type Branch, type PlacedConnection, type Via
 } from '@/utils/network'
 
@@ -162,6 +166,10 @@ const VIAS = ['gig', 'item', 'both'] as const
 const POPUP_MS = 10_000
 
 const branches = ref<Branch[]>([])
+// Everyone the centre person is connected to, and whether the tree leaves
+// some people out to stay within MAX_PEOPLE
+const connectionCount = ref(0)
+const trimmed = ref(false)
 const loading = ref(true)
 const failed = ref(false)
 const selected = ref<PlacedConnection | null>(null)
@@ -256,13 +264,19 @@ async function load() {
   close()
   try {
     const centre = centreId.value
-    const firsts = connectionsFrom(await reviewsStore.fetchInteractions(centre))
+    const all = connectionsFrom(await reviewsStore.fetchInteractions(centre))
+    // Only the most recent can make the tree: no need to fetch the others'
+    const firsts = [...all].sort((a, b) => b.latest.localeCompare(a.latest)).slice(0, MAX_PEOPLE)
     const children = await Promise.all(firsts.map(first =>
       reviewsStore.fetchInteractions(first.userId)
         .then(list => connectionsFrom(list).filter(child => child.userId !== centre))
         .catch(() => [])
     ))
-    branches.value = firsts.map((connection, i) => ({ connection, children: children[i] }))
+    const full = firsts.map((connection, i) => ({ connection, children: children[i] }))
+    branches.value = recentNetwork(full)
+    connectionCount.value = all.length
+    const shown = branches.value.reduce((sum, b) => sum + 1 + b.children.length, 0)
+    trimmed.value = shown < all.length + children.reduce((sum, c) => sum + c.length, 0)
   } catch (err) {
     console.error('Failed to load network:', err)
     failed.value = true
@@ -306,6 +320,12 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 600;
+}
+
+.network-intro {
+  margin: 0.375rem 0 0;
+  font-size: 0.95rem;
+  color: #374151;
 }
 
 .network-summary,

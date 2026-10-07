@@ -1,4 +1,4 @@
-// Grouping and layout for "your network" on the Reviews page: you at the top,
+// Grouping and layout for "your network" on the Network page: you at the top,
 // one node per person you reviewed or who reviewed you, below you in columns,
 // most deals first. Each line is labelled with the average rating between you.
 
@@ -152,6 +152,29 @@ const BOTTOM = 8
 export interface Branch {
   connection: Connection
   children: Connection[]
+}
+
+/** The most people a tree shows, so it stays a size you can take in on a phone */
+export const MAX_PEOPLE = 15
+
+const newestFirst = (a: Connection, b: Connection) => b.latest.localeCompare(a.latest)
+
+/**
+ * Keeps the tree to max people in all: the centre person's most recent
+ * connections first, then, in the spots left, the most recent of the people
+ * those are connected to. Each branch keeps its own newest first.
+ */
+export function recentNetwork(branches: Branch[], max = MAX_PEOPLE): Branch[] {
+  const kept = [...branches].sort((a, b) => newestFirst(a.connection, b.connection)).slice(0, max)
+  const spare = max - kept.length
+  const children = kept
+    .flatMap(branch => branch.children.map(child => ({ branch, child })))
+    .sort((a, b) => newestFirst(a.child, b.child))
+    .slice(0, spare)
+  return kept.map(branch => ({
+    connection: branch.connection,
+    children: children.filter(c => c.branch === branch).map(c => c.child)
+  }))
 }
 
 export interface PlacedConnection {
