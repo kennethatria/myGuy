@@ -79,7 +79,10 @@
     </div>
     
     <!-- Message Input: a gig chat opens once the poster accepts -->
-    <div v-if="locked" class="message-locked" role="status">
+    <div v-if="ended" class="message-locked" role="status">
+      This conversation has ended. You can still read it{{ hasReviewStep ? ' and leave your review above' : '' }}.
+    </div>
+    <div v-else-if="locked" class="message-locked" role="status">
       {{ lockedNote }}
     </div>
     <div v-else class="message-input-container">
@@ -118,6 +121,8 @@ const props = defineProps<{
   hasMore: boolean;
   // Nobody can write here yet (a gig chat before the poster accepts)
   locked?: boolean;
+  // The deal is done or closed: readable, not writable
+  ended?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -143,6 +148,10 @@ const latestEventId = computed(() => {
   }
   return null;
 });
+
+// A completed deal still offers its review in the conversation
+const hasReviewStep = computed(() => props.messages.some(m =>
+  m.metadata?.event === 'completed' || m.message_type === 'booking_completed'));
 
 // Before a match, the poster or seller is the one who can open the chat
 const lockedNote = computed(() => {

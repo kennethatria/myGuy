@@ -2,7 +2,7 @@
   <div class="container py-4">
     <section class="network-card" aria-labelledby="network-title">
       <div class="network-header">
-        <h1 id="network-title" class="network-title">{{ isMine ? 'Your network' : `${nameOf(centreId)}'s network` }}</h1>
+        <h1 id="network-title" class="network-title">{{ isMine ? 'Network' : `${nameOf(centreId)}'s network` }}</h1>
         <p v-if="branches.length" class="network-summary">
           {{ branches.length }} {{ branches.length === 1 ? 'person' : 'people' }}
           {{ isMine ? "you've reviewed or who reviewed you" : 'they reviewed or who reviewed them' }},

@@ -41,12 +41,18 @@
         <div
           v-for="conversation in chatStore.sortedConversations"
           :key="conversationKey(conversation) ?? undefined"
-          class="conversation-item"
+          :class="['conversation-item', { ended: isEnded(conversation) }]"
           @click="chatStore.joinConversation(conversation)"
         >
           <div class="conversation-info">
             <h4>{{ conversation.task_title || conversation.item_title || (conversation.task_id ? `Gig #${conversation.task_id}` : `Item #${conversation.item_id}`) }}</h4>
             <p>{{ conversation.other_user_name }}</p>
+            <!-- Where the deal stands, and the rating between you once given -->
+            <p class="conversation-status">
+              <span v-if="isEnded(conversation)" class="status-chip expired">Expired</span>
+              <span v-if="statusLabel(conversation)" class="status-chip">{{ statusLabel(conversation) }}</span>
+              <span v-if="ratingOf(conversation) !== null" class="conversation-rating">★ {{ formatRating(ratingOf(conversation)!) }}</span>
+            </p>
           </div>
           <span v-if="conversation.unread_count > 0" class="unread-count">
             {{ conversation.unread_count }}
@@ -71,6 +77,7 @@
           :loading="chatStore.isLoadingMessages"
           :has-more="chatStore.activeHasMoreMessages"
           :locked="chatStore.activeLocked"
+          :ended="chatStore.activeEnded"
           @send-message="sendMessage"
           @edit-message="chatStore.editMessage"
           @delete-message="chatStore.deleteMessage"
@@ -85,11 +92,43 @@
 </template>
 
 <script setup lang="ts">
+import { ref, watch } from 'vue';
 import { useChatStore, conversationKey } from '@/stores/chat';
+import { useReviewsStore } from '@/stores/reviews';
+import { statusLabel } from '@/utils/conversationStatus';
+import { formatRating, type Interaction } from '@/utils/network';
+import type { ConversationSummary } from '@/stores/messages';
 import MessageThread from './MessageThread.vue';
 import DeletionWarningBanner from '@/components/shared/DeletionWarningBanner.vue';
 
 const chatStore = useChatStore();
+const reviewsStore = useReviewsStore();
+
+function isEnded(conversation: ConversationSummary): boolean {
+  return !!conversation.ended || chatStore.endedConversations.has(conversationKey(conversation) ?? '');
+}
+
+// Your reviews with others, for the average rating between you on each
+// conversation's gig or item (refreshed whenever the chat opens)
+const interactions = ref<Interaction[]>([]);
+watch(() => chatStore.widgetOpen, async (open) => {
+  if (!open) return;
+  try {
+    interactions.value = await reviewsStore.fetchInteractions();
+  } catch {
+    // Ratings are extra: the list works without them
+  }
+}, { immediate: true });
+
+function ratingOf(conversation: ConversationSummary): number | null {
+  const ratings = interactions.value
+    .filter(i => i.otherId === conversation.other_user_id &&
+      (conversation.task_id ? i.via === 'gig' && i.linkId === conversation.task_id
+        : i.via === 'item' && i.linkId === conversation.item_id))
+    .map(i => i.rating);
+  if (!ratings.length) return null;
+  return Math.round((ratings.reduce((sum, r) => sum + r, 0) / ratings.length) * 10) / 10;
+}
 
 function toggleWidget() {
   chatStore.widgetOpen = !chatStore.widgetOpen;
@@ -257,6 +296,37 @@ function sendMessage(content: string) {
   font-size: 0.75rem;
   color: #6b7280;
   margin: 0;
+}
+
+.conversation-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.25rem !important;
+}
+
+.status-chip {
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-weight: 600;
+}
+
+.status-chip.expired {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.conversation-rating {
+  color: #b45309;
+  font-weight: 700;
+}
+
+/* Done or closed: still opens, shown quieter */
+.conversation-item.ended h4 {
+  color: #6b7280;
 }
 
 .unread-count {

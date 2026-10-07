@@ -191,6 +191,28 @@ describe('MessageService', () => {
       expect(insert[1]).toContain(JSON.stringify({ event: 'application', application_id: 3 }));
     });
 
+    it('refuses messages once the deal is done or closed, but still posts events', async () => {
+      for (const [context, state] of [[{ taskId: 1 }, 'completed'], [{ taskId: 1 }, 'declined'], [{ taskId: undefined, storeItemId: 4 }, 'released']]) {
+        mockClient.query.mockReset();
+        mockClient.query.mockImplementation(async (sql) => {
+          if (sql.includes('FROM contact_unlocks')) return { rows: [{}] };
+          if (sql.includes('AS state')) return { rows: [{ state }] };
+          if (sql.includes('INSERT INTO messages')) return { rows: [{ id: 7 }] };
+          return { rows: [] };
+        });
+        await expect(send(context)).rejects.toMatchObject({ code: 'chat_ended', message: 'This conversation has ended.' });
+        await expect(send({ ...context, messageType: 'system_alert' })).resolves.toMatchObject({ id: 7 });
+      }
+    });
+
+    it('reports a chat as ended to the app', async () => {
+      db.query.mockResolvedValueOnce({ rows: [{ state: 'completed' }] });
+      expect(await messageService.isChatEnded({ taskId: 1, userId: 2, otherUserId: 9 })).toBe(true);
+      db.query.mockResolvedValueOnce({ rows: [{ state: 'picked_up' }] });
+      expect(await messageService.isChatEnded({ itemId: 4, userId: 2, otherUserId: 9 })).toBe(false);
+      expect(await messageService.isChatEnded({ applicationId: 3, userId: 2, otherUserId: 9 })).toBe(false);
+    });
+
     it('reports a gig chat as locked to the app', async () => {
       db.query.mockResolvedValueOnce({ rows: [] });
       expect(await messageService.isChatLocked({ taskId: 1, userId: 2, otherUserId: 9 })).toBe(true);
@@ -248,15 +270,30 @@ describe('MessageService', () => {
 
   describe('getUserConversations', () => {
     it('returns conversation rows for the user', async () => {
-      const mockRows = [{ id: 1, task_id: 5, content: 'hi', other_user_id: 3 }];
+      const mockRows = [
+        { id: 1, task_id: 5, content: 'hi', other_user_id: 3, context_type: 'task', state: 'accepted' },
+        { id: 2, store_item_id: 7, content: 'done', other_user_id: 4, context_type: 'store', state: 'completed' },
+        { id: 3, task_id: 6, content: 'no', other_user_id: 5, context_type: 'task', state: 'declined' }
+      ];
       db.query.mockResolvedValue({ rows: mockRows });
 
       const result = await messageService.getUserConversations(10);
 
-      expect(result).toEqual(mockRows);
+      // Each says where it stands, and whether it has ended (done or closed)
+      expect(result.map(r => [r.id, r.state, r.ended])).toEqual([[1, 'accepted', false], [2, 'completed', true], [3, 'declined', true]]);
       expect(db.query).toHaveBeenCalledWith(expect.any(String), [10]);
       // One conversation per context AND other participant, never per bare id
       expect(db.query.mock.calls[0][0]).toContain('DISTINCT ON (context_type, context_id, other_user_id)');
+    });
+
+    it('lists each conversation with where it stands and its last message type', () => {
+      const { formatConversation } = require('../src/services/messageService');
+      expect(formatConversation({
+        store_item_id: 7, content: 'Booking request for Bike', message_type: 'booking_request',
+        created_at: 't', other_user_id: 4, unread_count: 1, state: 'completed', ended: true
+      })).toMatchObject({
+        item_id: 7, last_message_type: 'booking_request', state: 'completed', ended: true, conversation_type: 'store'
+      });
     });
 
     it('returns empty array when user has no conversations', async () => {
@@ -515,6 +552,7 @@ describe('MessageService', () => {
       mockClient.query
         .mockResolvedValueOnce({})             // BEGIN
         .mockResolvedValueOnce({ rows: [{}] }) // matched: the gig chat is open
+        .mockResolvedValueOnce({ rows: [{ state: 'accepted' }] }) // still going
         .mockResolvedValueOnce({ rows: [{}] }) // contact unlock check
         .mockResolvedValueOnce({ rows: [mockMsg] }) // INSERT message
         .mockResolvedValueOnce({});            // COMMIT
@@ -536,6 +574,7 @@ describe('MessageService', () => {
       mockClient.query
         .mockResolvedValueOnce({})
         .mockResolvedValueOnce({ rows: [{}] }) // approved: the chat is open
+        .mockResolvedValueOnce({ rows: [{ state: 'approved' }] }) // still going
         .mockResolvedValueOnce({ rows: [{}] }) // contact unlock check
         .mockResolvedValueOnce({ rows: [mockMsg] })
         .mockResolvedValueOnce({});
@@ -586,6 +625,7 @@ describe('MessageService', () => {
       mockClient.query.mockImplementation(async (sql) => {
         if (/FROM contact_unlocks/.test(sql)) return { rows: unlocked ? [{ '?column?': 1 }] : [] };
         if (/INSERT INTO messages/.test(sql)) return { rows: [{ id: 1 }] };
+        if (/AS state/.test(sql)) return { rows: [{ state: 'approved' }] };
         return {};
       });
       return messageService.sendMessage({ taskId: 4, senderId: 9, recipientId: 2, content: 'call 0772 123 456', ...extra });

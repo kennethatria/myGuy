@@ -323,8 +323,10 @@ const load = async () => {
         getJSON('/user/listings', 'Failed to load your listings'),
         getJSON('/user/requests', 'Failed to load your requests')
       ])
-      myItems.value = listings
-      myRequests.value = asks
+      // Sold listings and fulfilled requests leave your lists; their history
+      // stays in the conversation and their pages still open from links
+      myItems.value = listings.filter((item: StoreItem) => item.status !== 'sold')
+      myRequests.value = asks.filter((request: ItemRequest) => request.status !== 'fulfilled')
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to load the marketplace'

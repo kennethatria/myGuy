@@ -6,6 +6,7 @@ import { useUserStore } from './user';
 import { useContextStore } from './context';
 import config from '@/config';
 import type { Message, ConversationSummary, BookingAction } from './messages';
+import { stateFromMessage, endsConversation } from '@/utils/conversationStatus';
 
 interface TypingUser {
   userId: number;
@@ -61,6 +62,8 @@ export const useChatStore = defineStore('chat', () => {
   // Gig conversations nobody can write in yet: the poster hasn't accepted.
   // Holds conversation keys; the chat service decides and enforces it.
   const lockedConversations = ref<Set<string>>(new Set());
+  // Conversations whose deal is done or closed: readable, not writable
+  const endedConversations = ref<Set<string>>(new Set());
   // All maps below are keyed by conversationKey().
   const messages = ref<Map<string, Message[]>>(new Map());
   const typingUsers = ref<Map<string, TypingUser[]>>(new Map());
@@ -89,6 +92,10 @@ export const useChatStore = defineStore('chat', () => {
   // Conversations as the floating chat lists them: booking requests waiting
   // for an answer, then unread, then most recent
   const sortedConversations = computed(() => [...conversations.value].sort((a, b) => {
+    // Ended ones (done or closed) go after everything still going on
+    const aEnded = !!a.ended || endedConversations.value.has(conversationKey(a) ?? '');
+    const bEnded = !!b.ended || endedConversations.value.has(conversationKey(b) ?? '');
+    if (aEnded !== bEnded) return aEnded ? 1 : -1;
     const aBooking = !!a.item_id && a.last_message_type === 'booking_request' && a.unread_count > 0;
     const bBooking = !!b.item_id && b.last_message_type === 'booking_request' && b.unread_count > 0;
     if (aBooking !== bBooking) return aBooking ? -1 : 1;
@@ -98,6 +105,7 @@ export const useChatStore = defineStore('chat', () => {
 
   const activeKey = computed(() => activeConversation.value ? conversationKey(activeConversation.value) : null);
   const activeLocked = computed(() => !!activeKey.value && lockedConversations.value.has(activeKey.value));
+  const activeEnded = computed(() => !!activeKey.value && endedConversations.value.has(activeKey.value));
 
   const totalUnreadCount = computed(() =>
     conversations.value.reduce((total, conv) => total + (Number(conv.unread_count) || 0), 0)
@@ -277,6 +285,14 @@ export const useChatStore = defineStore('chat', () => {
     });
 
     socket.value.on('error', (error: Error & { code?: string; taskId?: number; itemId?: number; recipientId?: number }) => {
+      // A message to a conversation that has ended: show it as ended
+      if (error?.code === 'chat_ended') {
+        const key = conversationKey(error.itemId
+          ? { item_id: Number(error.itemId), other_user_id: Number(error.recipientId) }
+          : { task_id: Number(error.taskId), other_user_id: Number(error.recipientId) });
+        if (key) setEnded(key, true);
+        return;
+      }
       // A message to a gig or marketplace chat that isn't open yet: show it as locked
       if (error?.code === 'chat_locked') {
         const key = conversationKey(error.itemId
@@ -336,6 +352,15 @@ export const useChatStore = defineStore('chat', () => {
 
     // Accepted or approved: the two can talk from now on
     if (message.metadata?.event === 'accepted' || message.message_type === 'booking_approved') setLocked(key, false);
+
+    // The conversation moves on: its state, and whether it has now ended
+    const state = stateFromMessage(message);
+    if (state) {
+      const ended = endsConversation(ref.task_id ? 'task' : ref.item_id ? 'store' : null, state);
+      setEnded(key, ended);
+      const conv = findConversation(key);
+      if (conv) Object.assign(conv, { state, ended });
+    }
 
     // Append only to an already-loaded thread; an unloaded one fetches its
     // full history when opened. The same message can arrive twice (e.g.
@@ -418,6 +443,10 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function handleConversationsList(convs: ConversationSummary[]) {
+    for (const conv of convs) {
+      const key = conversationKey(conv);
+      if (key) setEnded(key, !!conv.ended);
+    }
     conversations.value = convs.map(conv => ({ ...conv, unread_count: Number(conv.unread_count) || 0 }));
 
     // Keep the open conversation pointing at the refreshed object; one that
@@ -533,6 +562,13 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
   
+  function setEnded(key: string, ended: boolean) {
+    if (endedConversations.value.has(key) === ended) return;
+    const next = new Set(endedConversations.value);
+    if (ended) next.add(key); else next.delete(key);
+    endedConversations.value = next;
+  }
+
   function setLocked(key: string, locked: boolean) {
     if (lockedConversations.value.has(key) === locked) return;
     const next = new Set(lockedConversations.value);
@@ -540,7 +576,7 @@ export const useChatStore = defineStore('chat', () => {
     lockedConversations.value = next;
   }
 
-  function handleMessagesList({ taskId, applicationId, itemId, otherUserId, messages: msgs, offset, totalCount, locked }: { taskId?: number; applicationId?: number; itemId?: number; otherUserId?: number; messages: Message[]; offset: number; totalCount?: number; locked?: boolean }) {
+  function handleMessagesList({ taskId, applicationId, itemId, otherUserId, messages: msgs, offset, totalCount, locked, ended }: { taskId?: number; applicationId?: number; itemId?: number; otherUserId?: number; messages: Message[]; offset: number; totalCount?: number; locked?: boolean; ended?: boolean }) {
     const key = conversationKey({
       task_id: taskId ? Number(taskId) : undefined,
       application_id: applicationId ? Number(applicationId) : undefined,
@@ -549,6 +585,7 @@ export const useChatStore = defineStore('chat', () => {
     });
     if (!key) return;
     setLocked(key, !!locked);
+    setEnded(key, !!ended);
 
     // Enrich messages with sender/recipient data
     enrichMessages(msgs);
@@ -911,6 +948,8 @@ export const useChatStore = defineStore('chat', () => {
     activeTypingUsers,
     activeHasMoreMessages,
     activeLocked,
+    activeEnded,
+    endedConversations,
     
     // Store message methods
     getStoreMessages,

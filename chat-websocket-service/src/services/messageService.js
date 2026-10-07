@@ -61,6 +61,24 @@ function chatLockedError(storeItemId) {
   return error;
 }
 
+// Where a conversation stands, from its latest gig event or booking request.
+// A conversation that ended (deal done, or closed without one) is read-only.
+const ENDED_STATES = {
+  task: new Set(['completed', 'declined', 'cancelled']),
+  store: new Set(['completed', 'rejected', 'released'])
+};
+
+function hasEnded(contextType, state) {
+  return !!state && !!ENDED_STATES[contextType]?.has(state);
+}
+
+function chatEndedError() {
+  const error = new Error('This conversation has ended.');
+  error.status = 403;
+  error.code = 'chat_ended';
+  return error;
+}
+
 class MessageService {
   constructor() {
     // Initialization if needed
@@ -92,6 +110,36 @@ class MessageService {
       key
     );
     return result.rows.length > 0;
+  }
+
+  /**
+   * Where the conversation between two people about a gig or an item stands
+   * (its latest gig event or booking status), and whether it has ended.
+   */
+  async conversationState(client, { taskId, storeItemId, userA, userB }) {
+    if ((!taskId && !storeItemId) || !userA || !userB) return { state: null, ended: false };
+    const [contextType, column, condition] = taskId
+      ? ['task', 'task_id', "metadata ? 'event'"]
+      : ['store', 'store_item_id', "message_type = 'booking_request'"];
+    const result = await client.query(
+      `SELECT CASE WHEN message_type = 'booking_request' THEN metadata->>'status' ELSE metadata->>'event' END AS state
+       FROM messages
+       WHERE ${column} = $1 AND ${condition}
+         AND ((sender_id = $2 AND recipient_id = $3) OR (sender_id = $3 AND recipient_id = $2))
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`,
+      [taskId || storeItemId, userA, userB]
+    );
+    const state = result.rows?.[0]?.state ?? null;
+    return { state, ended: hasEnded(contextType, state) };
+  }
+
+  /**
+   * Whether the conversation between userId and otherUserId about the gig
+   * taskId or item itemId has ended (read-only from now on).
+   */
+  async isChatEnded({ taskId, itemId, userId, otherUserId }) {
+    return (await this.conversationState(db, { taskId, storeItemId: itemId, userA: userId, userB: otherUserId })).ended;
   }
 
   /**
@@ -129,6 +177,11 @@ class MessageService {
       if ((taskId || storeItemId) && !messageType &&
           !(await this.contactsUnlocked(client, { taskId, storeItemId, senderId, recipientId }))) {
         throw chatLockedError(storeItemId);
+      }
+      // ...and no longer once the deal is done or closed (read-only history)
+      if ((taskId || storeItemId) && !messageType &&
+          (await this.conversationState(client, { taskId, storeItemId, userA: senderId, userB: recipientId })).ended) {
+        throw chatEndedError();
       }
 
       const { filtered, hasRemovedContent } = await this.filterFor(
@@ -355,18 +408,32 @@ class MessageService {
         FROM UserMessages
         WHERE recipient_id = $1 AND is_read = false
         GROUP BY context_type, context_id, other_user_id
+      ),
+      -- Where each conversation stands: its latest booking request's status
+      -- (kept current as the booking moves on) or its latest gig event
+      LatestState AS (
+        SELECT DISTINCT ON (context_type, context_id, other_user_id)
+          context_type, context_id, other_user_id,
+          CASE WHEN message_type = 'booking_request' THEN metadata->>'status' ELSE metadata->>'event' END AS state
+        FROM UserMessages
+        WHERE message_type = 'booking_request' OR (task_id IS NOT NULL AND metadata ? 'event')
+        ORDER BY context_type, context_id, other_user_id, created_at DESC, id DESC
       )
-      SELECT lm.*, COALESCE(uc.unread_count, 0) AS unread_count
+      SELECT lm.*, COALESCE(uc.unread_count, 0) AS unread_count, ls.state
       FROM LatestMessages lm
       LEFT JOIN UnreadCounts uc
         ON uc.context_type = lm.context_type
        AND uc.context_id = lm.context_id
        AND uc.other_user_id = lm.other_user_id
+      LEFT JOIN LatestState ls
+        ON ls.context_type = lm.context_type
+       AND ls.context_id = lm.context_id
+       AND ls.other_user_id = lm.other_user_id
       ORDER BY lm.created_at DESC
     `;
 
     const result = await db.query(query, [userId]);
-    return result.rows;
+    return result.rows.map(row => ({ ...row, ended: hasEnded(row.context_type, row.state) }));
   }
 
   /**
@@ -640,5 +707,33 @@ class MessageService {
   }
 }
 
+/**
+ * A conversation as the app lists it: where it is, its last message, unread
+ * count, and where it stands (state, ended).
+ */
+function formatConversation(conv) {
+  return {
+    task_id: conv.task_id,
+    application_id: conv.application_id,
+    item_id: conv.store_item_id,
+    task_title: conv.task_title,
+    task_description: conv.task_description,
+    task_status: conv.task_status,
+    item_title: conv.item_title,
+    last_message: conv.content || '',
+    last_message_type: conv.message_type,
+    last_message_time: conv.created_at,
+    other_user_id: conv.other_user_id,
+    other_user_name: conv.other_user_name,
+    unread_count: conv.unread_count || 0,
+    state: conv.state ?? null,
+    ended: !!conv.ended,
+    conversation_type: conv.task_id ? 'task'
+      : conv.application_id ? 'application'
+        : conv.store_item_id ? 'store' : 'unknown'
+  };
+}
+
 module.exports = new MessageService();
+module.exports.formatConversation = formatConversation;
 module.exports.MAX_MESSAGE_LENGTH = MAX_MESSAGE_LENGTH;
