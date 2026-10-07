@@ -2,7 +2,11 @@
   <div class="container py-4">
     <section class="network-card" aria-labelledby="network-title">
       <div class="network-header">
-        <h1 id="network-title" class="network-title">{{ isMine ? 'Network' : `${nameOf(centreId)}'s network` }}</h1>
+        <h1 id="network-title" class="network-title">{{ isMine ? 'Explore network' : `${nameOf(centreId)}'s network` }}</h1>
+        <p v-if="isMine" class="network-intro">
+          Everyone you've done a gig or a sale with, the rating you gave each other, and who they've worked with in turn.
+          Tap someone to see what others say about them.
+        </p>
         <p v-if="branches.length" class="network-summary">
           {{ branches.length }} {{ branches.length === 1 ? 'person' : 'people' }}
           {{ isMine ? "you've reviewed or who reviewed you" : 'they reviewed or who reviewed them' }},
@@ -306,6 +310,12 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 600;
+}
+
+.network-intro {
+  margin: 0.375rem 0 0;
+  font-size: 0.95rem;
+  color: #374151;
 }
 
 .network-summary,

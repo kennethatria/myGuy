@@ -71,7 +71,7 @@ const router = createRouter({
       path: '/reviews',
       name: 'reviews',
       component: () => import('@/views/reviews/ReviewsView.vue'),
-      meta: { title: 'Reviews', requiresAuth: true }
+      meta: { title: 'Network', requiresAuth: true }
     },
     {
       // Reviews are left in the gig's conversation now; old links go to the gig

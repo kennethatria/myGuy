@@ -1,4 +1,4 @@
-// Grouping and layout for "your network" on the Reviews page: you at the top,
+// Grouping and layout for "your network" on the Network page: you at the top,
 // one node per person you reviewed or who reviewed you, below you in columns,
 // most deals first. Each line is labelled with the average rating between you.
 
