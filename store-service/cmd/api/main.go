@@ -172,6 +172,7 @@ func main() {
 			auth.GET("/user/booking-requests", storeHandler.GetUserBookingRequests)
 			auth.GET("/users/:id/ratings", storeHandler.GetUserRatings)
 			auth.GET("/user/ratings", storeHandler.GetMyRatings)
+			auth.GET("/users/:id/ratings/network", storeHandler.GetUserNetwork)
 		}
 	}
 

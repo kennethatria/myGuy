@@ -571,6 +571,41 @@ func (h *Handler) GetMyReviews(c *gin.Context) {
 	c.JSON(http.StatusOK, reviewsForViewer(reviews, userID))
 }
 
+// networkRating is one gig rating in someone's network as anyone signed in
+// sees it: who rated whom and how, without the comment or the gig's details.
+type networkRating struct {
+	ReviewerID     uint      `json:"reviewer_id"`
+	ReviewedUserID uint      `json:"reviewed_user_id"`
+	Rating         int       `json:"rating"`
+	TaskID         uint      `json:"task_id"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// GetUserNetwork lists the gig ratings a user gave or received, ratings
+// only, so others can see who they have worked with.
+func (h *Handler) GetUserNetwork(c *gin.Context) {
+	userID, err := parseID(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	reviews, err := h.reviewService.GetMyReviews(c.Request.Context(), userID)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	ratings := make([]networkRating, 0, len(reviews))
+	for _, r := range reviews {
+		ratings = append(ratings, networkRating{
+			ReviewerID: r.ReviewerID, ReviewedUserID: r.ReviewedUserID,
+			Rating: r.Rating, TaskID: r.TaskID, CreatedAt: r.CreatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, ratings)
+}
+
 // reviewsForViewer strips what viewerID may not see from the people and gigs
 // in reviews.
 func reviewsForViewer(reviews []models.Review, viewerID uint) []models.Review {

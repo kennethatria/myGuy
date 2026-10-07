@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"store-service/internal/media"
 	"store-service/internal/models"
@@ -707,6 +708,40 @@ func bookingStepStatus(err error) int {
 	default:
 		return http.StatusBadRequest
 	}
+}
+
+// networkRating is one marketplace rating in someone's network as anyone
+// signed in sees it: who rated whom and how, without the review or item.
+type networkRating struct {
+	BookingID uint      `json:"booking_id"`
+	RaterID   uint      `json:"rater_id"`
+	RatedID   uint      `json:"rated_id"`
+	Rating    int       `json:"rating"`
+	RatedAt   time.Time `json:"rated_at"`
+}
+
+// GetUserNetwork lists the marketplace ratings a user gave or received,
+// ratings only, so others can see who they have traded with.
+func (h *StoreHandler) GetUserNetwork(c *gin.Context) {
+	userID, err := parseID(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	ratings, err := h.service.GetMyRatings(userID)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	network := make([]networkRating, 0, len(ratings))
+	for _, r := range ratings {
+		network = append(network, networkRating{
+			BookingID: r.BookingID, RaterID: r.RaterID, RatedID: r.RatedID, Rating: r.Rating, RatedAt: r.RatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, network)
 }
 
 // ConfirmItemReceived allows buyer to confirm they received the item

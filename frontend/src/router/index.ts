@@ -61,6 +61,13 @@ const router = createRouter({
       meta: { title: 'Profile', requiresAuth: true }
     },
     {
+      // Someone else's network, ratings only
+      path: '/reviews/:userId(\\d+)',
+      name: 'user-network',
+      component: () => import('@/views/reviews/ReviewsView.vue'),
+      meta: { title: 'Network', requiresAuth: true }
+    },
+    {
       path: '/reviews',
       name: 'reviews',
       component: () => import('@/views/reviews/ReviewsView.vue'),
