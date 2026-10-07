@@ -146,6 +146,7 @@ func main() {
 		auth.GET("/tasks/:id/reviews/mine", handler.GetMyTaskReview)
 		auth.GET("/users/:id/reviews", handler.GetUserReviews)
 		auth.GET("/user/reviews", handler.GetMyReviews)
+		auth.GET("/users/:id/network", handler.GetUserNetwork)
 		// User routes
 		auth.GET("/users/:id", handler.GetUserByID)
 

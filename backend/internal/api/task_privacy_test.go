@@ -135,6 +135,36 @@ func TestHandler_GetMyReviews(t *testing.T) {
 	mockReviewRepo.AssertExpectations(t)
 }
 
+func TestHandler_GetUserNetwork(t *testing.T) {
+	router, handler, _, _, mockReviewRepo, _ := setupTestRouter()
+	router.Use(func(c *gin.Context) { c.Set("userID", uint(9)); c.Next() })
+	router.GET("/users/:id/network", handler.GetUserNetwork)
+	mockReviewRepo.On("ListInvolving", mock.Anything, uint(5)).Return([]models.Review{{
+		ID: 1, TaskID: 3, ReviewerID: 6, ReviewedUserID: 5, Rating: 4, Comment: "Lovely work, call me on 0772 123 456",
+		Reviewer: models.User{ID: 6, Username: "ann", Email: "ann@example.com"},
+		Task:     models.Task{ID: 3, Title: "Fix sink"},
+	}}, nil)
+
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/users/5/network", nil))
+
+	assert.Equal(t, http.StatusOK, resp.Code)
+	// Ratings only: who rated whom, how, on which gig and when
+	var got []map[string]interface{}
+	assert.NoError(t, json.Unmarshal(resp.Body.Bytes(), &got))
+	assert.Len(t, got, 1)
+	assert.Equal(t, float64(6), got[0]["reviewer_id"])
+	assert.Equal(t, float64(5), got[0]["reviewed_user_id"])
+	assert.Equal(t, float64(4), got[0]["rating"])
+	assert.NotContains(t, resp.Body.String(), "Lovely work")
+	assert.NotContains(t, resp.Body.String(), "example.com")
+	assert.NotContains(t, resp.Body.String(), "Fix sink")
+
+	bad := httptest.NewRecorder()
+	router.ServeHTTP(bad, httptest.NewRequest(http.MethodGet, "/users/abc/network", nil))
+	assert.Equal(t, http.StatusBadRequest, bad.Code)
+}
+
 func TestHandler_GetMyReviews_Error(t *testing.T) {
 	router, handler, _, _, mockReviewRepo, _ := setupTestRouter()
 	router.Use(func(c *gin.Context) { c.Set("userID", uint(5)); c.Next() })

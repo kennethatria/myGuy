@@ -2249,3 +2249,28 @@ func TestReleaseBooking(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestGetUserNetwork(t *testing.T) {
+	mockService := new(MockStoreService)
+	handler := NewStoreHandler(mockService)
+	router := setupTestRouter(handler)
+	router.GET("/api/v1/users/:id/ratings/network", handler.GetUserNetwork)
+
+	mockService.On("GetMyRatings", uint(7)).Return([]models.BookingRating{
+		{BookingID: 1, ItemID: 2, ItemTitle: "Bike", RaterID: 3, RatedID: 7, RatedAs: "seller", Rating: 5, Review: "Great, call 0772 123 456"},
+	}, nil).Once()
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/users/7/ratings/network", nil))
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"rater_id":3`)
+	assert.Contains(t, w.Body.String(), `"rating":5`)
+	// Ratings only
+	assert.NotContains(t, w.Body.String(), "Great")
+	assert.NotContains(t, w.Body.String(), "Bike")
+
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/users/abc/ratings/network", nil))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
