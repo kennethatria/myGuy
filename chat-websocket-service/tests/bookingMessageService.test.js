@@ -98,10 +98,12 @@ describe('bookingMessageService', () => {
   });
 
   describe('updateBookingMessageStatus', () => {
+    // The buyer (2) asked the seller (3) to book
     const mockRequestMessage = {
       id: 10,
       store_item_id: 5,
       sender_id: 2,
+      recipient_id: 3,
       metadata: { booking_id: 100, item_id: 1 }
     };
 
@@ -242,12 +244,46 @@ describe('bookingMessageService', () => {
         .mockResolvedValueOnce({ rows: [mockStatusMsg] });
 
       const emitFn = jest.fn();
-      const mockIo = { to: jest.fn().mockReturnValue({ emit: emitFn }) };
+      const chain = { emit: emitFn };
+      const mockIo = { to: jest.fn(() => chain) };
+      chain.to = mockIo.to;
 
       await updateBookingMessageStatus(100, 'approved', 3, mockIo);
 
-      expect(mockIo.to).toHaveBeenCalled();
+      expect(mockIo.to).toHaveBeenCalledWith('user:2');
+      expect(mockIo.to).toHaveBeenCalledWith('user:3');
       expect(emitFn).toHaveBeenCalledWith('message:new', mockStatusMsg);
+    });
+
+    it('addresses a note to the other person, whoever acted', async () => {
+      for (const [actor, other] of [[3, 2], [2, 3]]) {
+        db.query.mockReset();
+        db.query
+          .mockResolvedValueOnce({ rows: [mockRequestMessage] })
+          .mockResolvedValueOnce({ rows: [] })
+          .mockResolvedValueOnce({ rows: [] })
+          .mockResolvedValueOnce({ rows: [{ id: 30 }] });
+
+        await updateBookingMessageStatus(100, actor === 3 ? 'picked_up' : 'completed', actor, null);
+
+        const insert = db.query.mock.calls[3][1];
+        // sender, recipient: never the actor to themselves
+        expect([insert[0], insert[1]]).toEqual([actor, other]);
+      }
+    });
+
+    it('asks the buyer to confirm once the seller marks it picked up', async () => {
+      db.query
+        .mockResolvedValueOnce({ rows: [mockRequestMessage] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ id: 31 }] });
+
+      await updateBookingMessageStatus(100, 'picked_up', 3, null);
+
+      const insert = db.query.mock.calls[3][1];
+      expect(insert[3]).toBe('booking_picked_up');
+      expect(insert[4]).toContain('Confirm once you have it');
     });
 
     it('includes rating data in metadata when bookingData has ratings', async () => {
