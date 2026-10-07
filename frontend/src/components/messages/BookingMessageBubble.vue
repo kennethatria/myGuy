@@ -1,6 +1,7 @@
 <template>
-  <!-- A booking in the conversation, shown like a gig event: what happened,
-       then the step it asks of whoever acts next. -->
+  <!-- A booking request at the top of the conversation: who asked, and where
+       it stands. The seller answers it here; later steps arrive as messages
+       below (BookingStepMessage), like gig events. -->
   <div class="system-message booking-event">
     <p class="event-text">{{ headline }}</p>
     <p v-if="note" class="event-quote">“{{ note }}”</p>
@@ -12,58 +13,6 @@
       <button type="button" class="btn btn-primary btn-sm btn-approve" :disabled="isProcessing" @click="act('approve')">Approve</button>
       <button type="button" class="btn btn-outline btn-sm btn-decline-request" :disabled="isProcessing" @click="act('decline')">Decline</button>
     </div>
-
-    <!-- Seller, approved: waiting for the buyer, or release it if the sale
-         went nowhere (asks once more first) -->
-    <template v-else-if="isSeller && status === 'approved'">
-      <p class="event-note">Reserved. Waiting for the buyer to collect it.</p>
-      <p v-if="confirmingRelease" class="event-note">Put it back on the board for others?</p>
-      <div class="event-actions">
-        <button v-if="!confirmingRelease" type="button" class="btn btn-outline btn-sm btn-release" :disabled="isProcessing" @click="confirmingRelease = true">
-          Release reservation
-        </button>
-        <template v-else>
-          <button type="button" class="btn btn-danger btn-sm btn-decline" :disabled="isProcessing" @click="release">Yes, release</button>
-          <button type="button" class="btn btn-outline btn-sm btn-keep" :disabled="isProcessing" @click="confirmingRelease = false">Keep it</button>
-        </template>
-      </div>
-    </template>
-
-    <!-- Buyer, approved: say when it's collected -->
-    <div v-else-if="!isSeller && status === 'approved'" class="event-actions">
-      <button type="button" class="btn btn-primary btn-sm btn-confirm-received" :disabled="isProcessing" @click="act('confirm-received')">
-        I've collected it
-      </button>
-    </div>
-
-    <!-- Seller, collected: confirm the handover to finish -->
-    <div v-else-if="isSeller && status === 'item_received'" class="event-actions">
-      <button type="button" class="btn btn-primary btn-sm btn-confirm-delivery" :disabled="isProcessing" @click="act('confirm-delivery')">
-        Confirm handover
-      </button>
-    </div>
-
-    <!-- Completed: both review each other, comment optional -->
-    <form v-else-if="status === 'completed' && !hasRated" class="event-review" @submit.prevent="submitRating">
-      <div class="stars" role="radiogroup" :aria-label="isSeller ? 'Rate the buyer' : 'Rate the seller'">
-        <button
-          v-for="star in 5"
-          :key="star"
-          type="button"
-          role="radio"
-          :aria-checked="selectedRating === star"
-          :aria-label="`${star} star${star === 1 ? '' : 's'}`"
-          :class="['star', { on: star <= selectedRating }]"
-          @click="selectedRating = star"
-        >★</button>
-      </div>
-      <textarea v-model="reviewText" rows="2" maxlength="500" placeholder="Add a comment (optional)" class="event-comment"></textarea>
-      <button type="submit" class="btn btn-primary btn-sm" :disabled="isProcessing || !selectedRating">Leave review</button>
-    </form>
-
-    <p v-else-if="status === 'completed'" class="event-note done">
-      You gave ★ {{ displayedRating }}<template v-if="displayedReview">: “{{ displayedReview }}”</template>
-    </p>
 
     <!-- Waiting on the other person, or closed -->
     <p v-else-if="waitingNote" class="event-note">{{ waitingNote }}</p>
@@ -88,9 +37,6 @@ const emit = defineEmits<{
 const userStore = useUserStore();
 const isProcessing = ref(false);
 const processingTimeout = ref<number | null>(null);
-const confirmingRelease = ref(false);
-const selectedRating = ref(0);
-const reviewText = ref('');
 
 // The buyer sent the request; the seller received it
 const isSeller = computed(() => !props.isOwnMessage);
@@ -120,6 +66,7 @@ const statusText = computed(() => {
     case 'pending': return 'Pending';
     case 'approved': return 'Approved';
     case 'rejected': return 'Declined';
+    case 'picked_up': return 'Picked up';
     case 'item_received': return 'Collected';
     case 'completed': return 'Completed';
     case 'released': return 'Released';
@@ -130,22 +77,11 @@ const statusText = computed(() => {
 const waitingNote = computed(() => {
   switch (status.value) {
     case 'pending': return 'Waiting for the seller to answer.';
-    case 'item_received': return 'Waiting for the seller to confirm the handover.';
     case 'rejected': return '❌ Booking declined';
     case 'released': return '↩️ Reservation released';
     default: return '';
   }
 });
-
-// Whether the viewer already reviewed the other person
-const hasRated = computed(() => {
-  const rating = props.isOwnMessage ? props.message.metadata?.buyer_rating : props.message.metadata?.seller_rating;
-  return rating !== undefined && rating !== null;
-});
-const displayedRating = computed(() =>
-  (props.isOwnMessage ? props.message.metadata?.buyer_rating : props.message.metadata?.seller_rating) || 0);
-const displayedReview = computed(() =>
-  (props.isOwnMessage ? props.message.metadata?.buyer_review : props.message.metadata?.seller_review) || '');
 
 function resetProcessing() {
   isProcessing.value = false;
@@ -169,33 +105,13 @@ function act(action: BookingAction) {
   emit('bookingAction', bookingId, action);
 }
 
-function release() {
-  confirmingRelease.value = false;
-  act('release');
-}
-
-function submitRating() {
-  const bookingId = props.message.metadata?.booking_id;
-  if (!bookingId || !selectedRating.value) return;
-  startProcessing();
-  emit('bookingAction', bookingId, props.isOwnMessage ? 'rate-seller' : 'rate-buyer', selectedRating.value, reviewText.value.trim());
-}
-
 function formatTime(timestamp: string): string {
   const d = new Date(timestamp);
   return isNaN(d.getTime()) ? '' : d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-// The step is done once the message's status or ratings change
-watch(
-  () => props.message.metadata,
-  (next, prev) => {
-    if (next?.status !== prev?.status || next?.buyer_rating !== prev?.buyer_rating || next?.seller_rating !== prev?.seller_rating) {
-      resetProcessing();
-    }
-  },
-  { deep: true }
-);
+// The answer is in once the request's status changes
+watch(() => props.message.metadata?.status, resetProcessing);
 
 onUnmounted(resetProcessing);
 </script>
@@ -211,10 +127,6 @@ onUnmounted(resetProcessing);
   overflow-wrap: anywhere;
 }
 
-.event-note.done {
-  color: #166534;
-}
-
 .event-status {
   display: inline-block;
   margin-top: 0.375rem;
@@ -226,6 +138,7 @@ onUnmounted(resetProcessing);
 }
 
 .status-approved,
+.status-picked_up,
 .status-item_received,
 .status-completed {
   background: #dcfce7;

@@ -20,7 +20,7 @@ export interface Message {
   sender_id: number
   recipient_id: number
   content: string
-  message_type: 'text' | 'booking_request' | 'booking_approved' | 'booking_declined' | 'booking_item_received' | 'booking_completed' | 'booking_status_update' | 'system_alert'
+  message_type: 'text' | 'booking_request' | 'booking_approved' | 'booking_declined' | 'booking_picked_up' | 'booking_item_received' | 'booking_completed' | 'booking_status_update' | 'system_alert'
   metadata?: {
     // Events: what happened, for the action shown on the message
     event?: TaskEvent | StoreEvent
@@ -30,7 +30,7 @@ export interface Message {
     item_id?: number
     item_title?: string
     item_image?: string
-    status?: 'pending' | 'approved' | 'rejected' | 'item_received' | 'completed' | 'released'
+    status?: 'pending' | 'approved' | 'rejected' | 'picked_up' | 'item_received' | 'completed' | 'released'
     buyer_rating?: number
     buyer_review?: string
     seller_rating?: number

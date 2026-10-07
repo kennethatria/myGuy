@@ -696,6 +696,19 @@ func (h *StoreHandler) GetMyRatings(c *gin.Context) {
 	c.JSON(http.StatusOK, ratings)
 }
 
+// bookingStepStatus is the HTTP status for a refused pickup step: not
+// found, not this person's step, or not the right moment.
+func bookingStepStatus(err error) int {
+	switch err.Error() {
+	case "booking request not found":
+		return http.StatusNotFound
+	case "only the buyer can confirm receipt", "only the seller can confirm delivery":
+		return http.StatusForbidden
+	default:
+		return http.StatusBadRequest
+	}
+}
+
 // ConfirmItemReceived allows buyer to confirm they received the item
 func (h *StoreHandler) ConfirmItemReceived(c *gin.Context) {
 	userID := c.GetUint("userID")
@@ -709,19 +722,7 @@ func (h *StoreHandler) ConfirmItemReceived(c *gin.Context) {
 
 	booking, err := h.service.ConfirmItemReceived(requestID, userID)
 	if err != nil {
-		if err.Error() == "booking request not found" {
-			respondError(c, http.StatusNotFound, err)
-			return
-		}
-		if err.Error() == "only the buyer can confirm receipt" {
-			respondError(c, http.StatusForbidden, err)
-			return
-		}
-		if err.Error() == "booking must be approved before confirming receipt" {
-			respondError(c, http.StatusBadRequest, err)
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to confirm item received"})
+		respondError(c, bookingStepStatus(err), err)
 		return
 	}
 
@@ -741,19 +742,7 @@ func (h *StoreHandler) ConfirmDelivery(c *gin.Context) {
 
 	booking, err := h.service.ConfirmDelivery(requestID, userID)
 	if err != nil {
-		if err.Error() == "booking request not found" {
-			respondError(c, http.StatusNotFound, err)
-			return
-		}
-		if err.Error() == "only the seller can confirm delivery" {
-			respondError(c, http.StatusForbidden, err)
-			return
-		}
-		if err.Error() == "buyer must confirm receipt before seller can confirm delivery" {
-			respondError(c, http.StatusBadRequest, err)
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to confirm delivery"})
+		respondError(c, bookingStepStatus(err), err)
 		return
 	}
 

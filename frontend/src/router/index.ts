@@ -72,10 +72,9 @@ const router = createRouter({
       redirect: to => ({ name: 'task-detail', params: { id: to.params.taskId } })
     },
     {
+      // Conversations live in the floating chat; old links land on home
       path: '/messages',
-      name: 'messages',
-      component: () => import('@/views/messages/MessageCenter.vue'),
-      meta: { title: 'Messages', requiresAuth: true }
+      redirect: { name: 'dashboard' }
     },
     {
       // Your own gigs and applications, one list each (side navigation)

@@ -1789,7 +1789,7 @@ func TestConfirmItemReceived(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("ConfirmItemReceived", uint(1), uint(1)).Return(nil, services.NewUserError("database error"))
+		mockService.On("ConfirmItemReceived", uint(1), uint(1)).Return(nil, errors.New("database error"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/confirm-received", nil)
@@ -1879,7 +1879,7 @@ func TestConfirmDelivery(t *testing.T) {
 		handler := NewStoreHandler(mockService)
 		router := setupTestRouter(handler)
 
-		mockService.On("ConfirmDelivery", uint(1), uint(1)).Return(nil, services.NewUserError("database error"))
+		mockService.On("ConfirmDelivery", uint(1), uint(1)).Return(nil, errors.New("database error"))
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("POST", "/api/v1/booking-requests/1/confirm-delivery", nil)

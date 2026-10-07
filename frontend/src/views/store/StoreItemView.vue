@@ -37,11 +37,14 @@
         <div class="item-info-section">
           <StickyNote :seed="item.id" size="large" class="item-note">
             <template #header>
-              <span v-if="item.status !== 'active'" class="note-status">{{ statusLabel }}</span>
+              <span v-if="noteStatus" class="note-status">{{ noteStatus }}</span>
               <h1 class="note-detail-headline">{{ item.title }}</h1>
               <p class="note-detail-body">{{ item.description }}</p>
             </template>
             <template #footer>
+              <router-link :to="{ name: 'user-profile', params: { id: String(item.seller.id) } }" class="note-seller">
+                @{{ item.seller.username }}
+              </router-link>
               <span>Posted {{ formatDate(item.created_at) }}</span>
               <span v-if="item.status === 'active' && item.deadline && expiryLabel(item.deadline)">
                 {{ expiryLabel(item.deadline) }}
@@ -57,35 +60,15 @@
             Listed for the request "{{ item.request.title }}"
           </router-link>
           
-          <div class="seller-info">
-            <h3>Seller</h3>
-            <div class="seller-details">
-              <span class="seller-name">{{ item.seller.name || item.seller.full_name || item.seller.username }}</span>
-              <div class="seller-actions">
-                <router-link
-                  :to="{ name: 'user-profile', params: { id: String(item.seller.id) } }"
-                  class="view-profile"
-                >
-                  View Profile
-                </router-link>
-                <!-- Show transaction complete badge if booking is completed/item received -->
-                <div v-if="item.seller.id !== userId && hasCompletedBooking" class="transaction-complete-badge">
-                  <i class="fas fa-check-circle"></i>
-                  Transaction Complete
-                </div>
-                <!-- Once you've booked, your conversation with the seller (it opens
-                     for typing when they approve), as with applying for a gig -->
-                <button
-                  v-else-if="item.seller.id !== userId && hasBookingRequest"
-                  @click="openStoreChat"
-                  class="btn btn-outline btn-sm message-btn"
-                >
-                  <i class="fas fa-comment"></i> Message {{ item.seller.username }}
-                </button>
-              </div>
-            </div>
-          </div>
-          
+          <!-- Once you've booked, your conversation with the seller (it opens
+               for typing when they approve), as "Message …" on a gig -->
+          <button
+            v-if="item.seller.id !== userId && hasBookingRequest"
+            @click="openStoreChat"
+            class="btn btn-outline message-btn"
+          >
+            Message {{ item.seller.username }}
+          </button>
 
           <div class="price-section">
             <div v-if="item.is_auction" class="auction-info">
@@ -113,14 +96,13 @@
                 <p class="price">{{ listingPriceLabel(item) }}</p>
               </template>
               
-              <!-- Booking Request Section -->
-              <!-- Open to bookings while active; once reserved, only the buyer
-                   with a booking still follows it here -->
+              <!-- Book while it's for sale; afterwards the note shows where your
+                   booking stands and the chat takes it from there -->
               <div
-                v-if="item.seller.id !== userId && (item.status === 'active' || (item.status === 'reserved' && hasBookingRequest))"
+                v-if="item.seller.id !== userId && item.status === 'active' && !hasBookingRequest"
                 class="booking-section"
               >
-                <div v-if="!hasBookingRequest" class="booking-request">
+                <div class="booking-request">
                   <button
                     @click="sendBookingRequest"
                     :disabled="loadingBookingRequest"
@@ -133,55 +115,6 @@
                   <p class="booking-info">Ask to book it, then agree the price and pickup in chat</p>
                 </div>
                 
-                <div v-else class="booking-status">
-                  <div v-if="bookingStatus === 'pending'" class="status-pending">
-                    <i class="fas fa-clock"></i>
-                    <div>
-                      <p><strong>Booking Request Sent</strong></p>
-                      <p>Waiting for the owner to respond</p>
-                    </div>
-                  </div>
-
-                  <div v-else-if="bookingStatus === 'approved'" class="status-approved">
-                    <i class="fas fa-check-circle"></i>
-                    <div>
-                      <p><strong>Booking Approved!</strong></p>
-                      <p>You can now message the owner to coordinate pickup/delivery</p>
-                    </div>
-                  </div>
-
-                  <div v-else-if="bookingStatus === 'item_received'" class="status-item-received">
-                    <i class="fas fa-box-open"></i>
-                    <div>
-                      <p><strong>Item Received</strong></p>
-                      <p>Waiting for seller to confirm delivery. Go to Messages to complete the transaction.</p>
-                    </div>
-                  </div>
-
-                  <div v-else-if="bookingStatus === 'completed'" class="status-completed">
-                    <i class="fas fa-check-double"></i>
-                    <div>
-                      <p><strong>Transaction Completed!</strong></p>
-                      <p>This transaction has been completed. You can rate your experience in Messages.</p>
-                    </div>
-                  </div>
-
-                  <div v-else-if="bookingStatus === 'rejected'" class="status-rejected">
-                    <i class="fas fa-times-circle"></i>
-                    <div>
-                      <p><strong>Booking Request Declined</strong></p>
-                      <p>The owner has declined your booking request</p>
-                    </div>
-                  </div>
-                  <!-- One booking per buyer per item: no booking it again -->
-                  <div v-else-if="bookingStatus === 'released'" class="status-rejected">
-                    <i class="fas fa-undo"></i>
-                    <div>
-                      <p><strong>Reservation Released</strong></p>
-                      <p>The seller released your reservation, so you can't book this item again</p>
-                    </div>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -238,12 +171,6 @@
 
           </div>
           
-          <!-- (the buyer holding the reservation follows it in their booking above) -->
-          <div v-else-if="item.status !== 'active' && !(item.status === 'reserved' && hasBookingRequest)" class="item-status">
-            <p class="status-message">
-              {{ item.status === 'expired' ? 'This listing has come off the board.' : `This item is ${item.status}` }}
-            </p>
-          </div>
         </div>
       </div>
       
@@ -385,6 +312,23 @@ const biddingClosed = computed(() =>
   !!item.value?.bid_deadline && new Date(item.value.bid_deadline).getTime() <= Date.now()
 );
 
+// What the note says about where things stand: your booking, if you have
+// one, else the item itself (nothing while it's simply for sale)
+const BOOKING_LABELS: Record<string, string> = {
+  pending: 'Requested',
+  approved: 'Booked for you',
+  picked_up: 'Picked up',
+  item_received: 'Collected',
+  completed: 'Bought',
+  rejected: 'Declined',
+  released: 'Released'
+};
+const noteStatus = computed(() => {
+  if (!item.value) return '';
+  if (item.value.seller.id !== userId.value && bookingStatus.value) return BOOKING_LABELS[bookingStatus.value] ?? '';
+  return item.value.status === 'active' ? '' : statusLabel.value;
+});
+
 const statusLabel = computed(() => {
   const status = item.value?.status ?? '';
   return status === 'expired' ? 'Expired' : status.charAt(0).toUpperCase() + status.slice(1);
@@ -439,13 +383,6 @@ async function removeItem() {
 // Booking computed properties
 const bookingStatus = computed(() => {
   return bookingRequest.value?.status || null;
-});
-
-const hasCompletedBooking = computed(() => {
-  if (!bookingRequest.value) return false;
-  const status = bookingRequest.value.status;
-  // Consider booking complete when item is received or fully completed
-  return status === 'completed' || status === 'item_received';
 });
 
 async function loadItem() {
@@ -873,51 +810,11 @@ onMounted(() => {
   color: #6b7280;
 }
 
-.seller-info h3,
 .price-section h3 {
   font-size: 1.125rem;
   font-weight: 600;
   margin-bottom: 0.5rem;
   color: #111827;
-}
-
-.seller-info {
-  margin-bottom: 2rem;
-  padding-bottom: 2rem;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.seller-details {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.seller-name {
-  font-weight: 500;
-  color: #374151;
-}
-
-.seller-actions {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-}
-
-.view-profile {
-  color: #4F46E5;
-  text-decoration: none;
-  font-size: 0.875rem;
-  padding: 0.5rem 1rem;
-  border: 1px solid #4F46E5;
-  border-radius: 0.375rem;
-  transition: all 0.2s;
-}
-
-.view-profile:hover {
-  color: #4338CA;
-  border-color: #4338CA;
-  background-color: #f8fafc;
 }
 
 /* An outline button, as "Message …" on the gig page */
@@ -935,24 +832,6 @@ onMounted(() => {
 
 .message-btn i {
   font-size: 0.875rem;
-}
-
-.transaction-complete-badge {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: #d1fae5;
-  color: #065f46;
-  border: 1px solid #10b981;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.transaction-complete-badge i {
-  font-size: 0.875rem;
-  color: #10b981;
 }
 
 .price-section {
@@ -1015,18 +894,6 @@ onMounted(() => {
 .btn-large {
   padding: 1rem 2rem;
   font-size: 1.125rem;
-}
-
-.item-status {
-  background: #fef3c7;
-  padding: 1rem;
-  border-radius: 0.375rem;
-  text-align: center;
-}
-
-.status-message {
-  color: #92400e;
-  font-weight: 500;
 }
 
 .owner-note {
@@ -1100,7 +967,6 @@ onMounted(() => {
     min-height: 44px;
   }
 
-  .view-profile,
   .message-btn,
   .owner-actions .btn,
   .bid-form input,
@@ -1144,12 +1010,6 @@ onMounted(() => {
     flex-direction: column;
   }
 
-  .seller-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .view-profile,
   .message-btn {
     text-align: center;
     justify-content: center;
@@ -1172,74 +1032,6 @@ onMounted(() => {
   margin-top: 0.5rem;
 }
 
-.booking-status {
-  margin-top: 1rem;
-  padding: 1rem;
-  border-radius: 0.5rem;
-  border: 1px solid;
-}
-
-.status-pending {
-  background: #fef3c7;
-  border-color: #fbbf24;
-  color: #92400e;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.status-approved {
-  background: #d1fae5;
-  border-color: #10b981;
-  color: #065f46;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-}
-
-.status-rejected {
-  background: #fee2e2;
-  border-color: #f87171;
-  color: #991b1b;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.status-item-received {
-  background: #dbeafe;
-  border-color: #3b82f6;
-  color: #1e40af;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-}
-
-.status-completed {
-  background: #d1fae5;
-  border-color: #10b981;
-  color: #065f46;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-}
-
-.status-pending i,
-.status-approved i,
-.status-rejected i,
-.status-item-received i,
-.status-completed i {
-  font-size: 1.25rem;
-  margin-top: 0.125rem;
-}
-
-.message-limit-info {
-  font-size: 0.75rem;
-  color: #065f46;
-  font-weight: 500;
-  margin-top: 0.25rem;
-}
-
 .owner-section {
   background: #e0f2fe;
   padding: 1rem;
@@ -1247,51 +1039,11 @@ onMounted(() => {
   border: 1px solid #b3e5fc;
 }
 
-.status-badge {
-  display: inline-block;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  margin-top: 0.5rem;
-}
-
-.status-pending {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.status-approved {
-  background: #d1fae5;
-  color: #065f46;
-}
-
-.status-rejected {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
 .message-approved-btn {
   margin-top: 0.5rem;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-}
-
-.booking-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.btn-success {
-  background: #10b981;
-  color: white;
-  border: none;
-}
-
-.btn-success:hover {
-  background: #059669;
 }
 
 .btn-danger {
@@ -1304,148 +1056,29 @@ onMounted(() => {
   background: #dc2626;
 }
 
-.limit-info {
-  font-size: 0.75rem;
-  color: #059669;
-}
-
-/* Owner Messages Styles */
-.owner-messages {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid #b3e5fc;
-}
-
 @media (max-width: 768px) {
   .booking-request-card {
     flex-direction: column;
     align-items: stretch;
     gap: 0.75rem;
   }
-
-  .booking-actions {
-    justify-content: center;
-  }
 }
 
-/* Success Message Styles */
-.success-message {
-  background: #f0f9f0;
-  border: 1px solid #c3e6c3;
-  border-radius: 8px;
-  padding: 1rem;
-  margin-bottom: 1rem;
-}
-
-.success-content {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-}
-
-.success-content i {
-  color: #28a745;
-  font-size: 1.25rem;
-  flex-shrink: 0;
-  margin-top: 0.125rem;
-}
-
-.success-content p {
-  margin: 0 0 0.5rem 0;
-  color: #155724;
-}
-
-.success-content p:last-of-type {
-  margin-bottom: 0;
-}
-
-/* Conversation Starter Styles */
-.conversation-starters {
-  margin-top: 1.5rem;
-  padding: 1rem;
-  background: #f8f9fa;
-  border-radius: 8px;
-  border: 1px solid #e9ecef;
-}
-
-.starter-label {
-  font-size: 0.875rem;
-  color: #6c757d;
-  margin-bottom: 0.75rem;
-  font-weight: 500;
-}
-
-.starter-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.starter-btn {
-  background: white;
-  border: 1px solid #dee2e6;
-  border-radius: 6px;
-  padding: 0.75rem;
-  text-align: left;
-  color: #495057;
-  font-size: 0.875rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.starter-btn:hover {
-  background: #e9ecef;
-  border-color: #adb5bd;
-  transform: translateY(-1px);
-}
-
-.starter-btn:active {
-  transform: translateY(0);
-}
-
-/* Enhanced No Messages Styling */
-.no-messages {
-  text-align: center;
-  padding: 2rem 1rem;
-  color: #6c757d;
-}
-
-.no-messages i {
-  font-size: 1.5rem;
-  color: #adb5bd;
-  margin-right: 0.5rem;
-}
-
-.no-messages p:first-child {
-  font-size: 1.1rem;
-  font-weight: 500;
-  color: #495057;
-  margin-bottom: 0.5rem;
-}
-
-.message-limit {
-  font-size: 0.875rem;
-  color: #6c757d;
-  margin-bottom: 1rem !important;
-}
-
-/* Button Link Style */
-.btn-link {
-  color: var(--color-primary);
+/* The seller, on the note: their profile is one tap away */
+.note-seller {
+  color: inherit;
+  font-weight: 600;
   text-decoration: none;
-  background: none;
-  border: none;
-  padding: 0;
-  font-size: 0.875rem;
-  cursor: pointer;
 }
 
-.btn-link:hover {
-  color: #0056b3;
+.note-seller:hover,
+.note-seller:focus-visible {
   text-decoration: underline;
 }
 
-.btn-link i {
-  margin-right: 0.375rem;
+.message-btn {
+  width: 100%;
+  margin-top: 1rem;
+  min-height: 44px;
 }
 </style>

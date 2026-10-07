@@ -121,7 +121,7 @@ func (r *bookingRequestRepository) GetRatingsReceived(userID uint) ([]models.Boo
 func (r *bookingRequestRepository) ListMatched() ([]models.BookingRequest, error) {
 	var requests []models.BookingRequest
 	err := r.db.Preload("Item").
-		Where("status IN ?", []string{"approved", "item_received", "completed", "released"}).
+		Where("status IN ?", []string{"approved", "item_received", "picked_up", "completed", "released"}).
 		Find(&requests).Error
 	return requests, err
 }

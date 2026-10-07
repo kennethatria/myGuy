@@ -936,6 +936,8 @@ func bookingRatings(requests []models.BookingRequest) []models.BookingRating {
 	return ratings
 }
 
+// ConfirmItemReceived is the buyer's last step: the seller marked the item
+// picked up, the buyer confirms they have it, and the sale completes.
 func (s *StoreService) ConfirmItemReceived(requestID uint, buyerID uint) (*models.BookingRequest, error) {
 	request, err := s.bookingRepo.GetByID(requestID)
 	if err != nil {
@@ -944,26 +946,18 @@ func (s *StoreService) ConfirmItemReceived(requestID uint, buyerID uint) (*model
 	if request == nil {
 		return nil, NewUserError("booking request not found")
 	}
-
-	// Only the requester (buyer) can confirm receipt
 	if request.RequesterID != buyerID {
 		return nil, NewUserError("only the buyer can confirm receipt")
 	}
-
-	// Must be in approved status
-	if request.Status != "approved" {
-		return nil, NewUserError("booking must be approved before confirming receipt")
+	if request.Status != "picked_up" {
+		return nil, NewUserError("the seller marks it picked up first")
 	}
-
-	err = s.bookingRepo.UpdateStatus(requestID, "item_received")
-	if err != nil {
-		return nil, err
-	}
-
-	// Get and return the updated booking request
-	return s.bookingRepo.GetByID(requestID)
+	return s.completeSale(request)
 }
 
+// ConfirmDelivery is the seller's step once the buyer has collected the
+// item: it is marked picked up, and the buyer is asked to confirm. A booking
+// from before this order (the buyer confirmed first) completes here instead.
 func (s *StoreService) ConfirmDelivery(requestID uint, sellerID uint) (*models.BookingRequest, error) {
 	request, err := s.bookingRepo.GetByID(requestID)
 	if err != nil {
@@ -972,38 +966,37 @@ func (s *StoreService) ConfirmDelivery(requestID uint, sellerID uint) (*models.B
 	if request == nil {
 		return nil, NewUserError("booking request not found")
 	}
-
-	// Get item to verify seller
 	item, err := s.itemRepo.GetByID(request.ItemID)
 	if err != nil {
 		return nil, err
 	}
-
-	// Only the item owner (seller) can confirm delivery
 	if item.SellerID != sellerID {
 		return nil, NewUserError("only the seller can confirm delivery")
 	}
 
-	// Must be in item_received status
-	if request.Status != "item_received" {
-		return nil, NewUserError("buyer must confirm receipt before seller can confirm delivery")
+	switch request.Status {
+	case "approved":
+		if err := s.bookingRepo.UpdateStatus(requestID, "picked_up"); err != nil {
+			return nil, err
+		}
+		return s.bookingRepo.GetByID(requestID)
+	case "item_received":
+		return s.completeSale(request)
+	default:
+		return nil, NewUserError("only an approved booking can be marked picked up")
 	}
+}
 
-	// Update booking status
-	err = s.bookingRepo.UpdateStatus(requestID, "completed")
-	if err != nil {
+// completeSale closes the booking and marks the item sold to its buyer.
+func (s *StoreService) completeSale(request *models.BookingRequest) (*models.BookingRequest, error) {
+	if err := s.bookingRepo.UpdateStatus(request.ID, "completed"); err != nil {
 		return nil, err
 	}
-
-	// Mark the item as sold
-	err = s.itemRepo.MarkAsSold(item.ID, request.RequesterID)
-	if err != nil {
-		// Log error but don't fail the request since booking is already completed
-		fmt.Printf("Error marking item %d as sold: %v\n", item.ID, err)
+	if err := s.itemRepo.MarkAsSold(request.ItemID, request.RequesterID); err != nil {
+		// The sale is complete either way; the item's status catches up later
+		fmt.Printf("Error marking item %d as sold: %v\n", request.ItemID, err)
 	}
-
-	// Get and return the updated booking request
-	return s.bookingRepo.GetByID(requestID)
+	return s.bookingRepo.GetByID(request.ID)
 }
 
 func (s *StoreService) SubmitBuyerRating(requestID uint, buyerID uint, rating int, review string) (*models.BookingRequest, error) {

@@ -70,7 +70,7 @@ type BookingRequest struct {
 	Item                     *StoreItem     `json:"item,omitempty" gorm:"foreignKey:ItemID"`
 	RequesterID              uint           `json:"requester_id" gorm:"not null;index:idx_booking_requests_requester_id"`
 	Requester                *User          `json:"requester,omitempty" gorm:"foreignKey:RequesterID"`
-	Status                   string         `json:"status" gorm:"default:'pending';index:idx_booking_requests_status"` // pending, approved, rejected, item_received, completed, released
+	Status                   string         `json:"status" gorm:"default:'pending';index:idx_booking_requests_status"` // pending, approved, picked_up (seller), completed (buyer confirmed), rejected, released; item_received only on older bookings
 	Message                  string         `json:"message"`
 	BuyerRating              *int           `json:"buyer_rating,omitempty"` // Buyer's rating of seller (1-5)
 	BuyerReview              string         `json:"buyer_review,omitempty"`

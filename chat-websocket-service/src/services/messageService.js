@@ -35,7 +35,7 @@ function unlockKey({ taskId, storeItemId, userA, userB }) {
 
 // Messages that record what happened (gig events, booking status notes):
 // nobody may edit or delete them.
-const RECORD_TYPES = "('system_alert', 'booking_approved', 'booking_declined', 'booking_item_received', 'booking_completed', 'booking_status_update')";
+const RECORD_TYPES = "('system_alert', 'booking_approved', 'booking_declined', 'booking_picked_up', 'booking_item_received', 'booking_completed', 'booking_status_update')";
 
 // The app's message box allows 1000 characters; this is the hard ceiling for
 // anything sent to the API directly, which also bounds filtering work.

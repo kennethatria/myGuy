@@ -66,6 +66,7 @@ async function createBookingRequestMessage({
  */
 // note, when given, replaces the usual status note: a system message saying
 // why (e.g. the seller removed the listing).
+// approverId is whoever acted (seller or buyer); the note goes to the other.
 async function updateBookingMessageStatus(bookingId, status, approverId, io, bookingData = null, note = null) {
   try {
     // Find the original booking request message
@@ -82,6 +83,13 @@ async function updateBookingMessageStatus(bookingId, status, approverId, io, boo
     }
 
     const requestMessage = findResult.rows[0];
+
+    // The buyer sent the request to the seller; a note goes from whoever
+    // acted to the other one (never to themselves, which would make a
+    // conversation of its own)
+    const buyerId = Number(requestMessage.sender_id);
+    const sellerId = Number(requestMessage.recipient_id);
+    const otherParty = Number(approverId) === buyerId ? sellerId : buyerId;
 
     // Update the original message metadata with status and ratings
     const updatedMetadata = {
@@ -142,16 +150,19 @@ async function updateBookingMessageStatus(bookingId, status, approverId, io, boo
         content = note;
       } else if (status === 'approved') {
         messageType = 'booking_approved';
-        content = 'Booking approved ✅. You can now discuss pickup details.';
+        content = '✅ Booking approved. Arrange the pickup here; the seller marks it picked up.';
       } else if (status === 'rejected') {
         messageType = 'booking_declined';
         content = 'Booking request was declined.';
+      } else if (status === 'picked_up') {
+        messageType = 'booking_picked_up';
+        content = '📦 The seller marked it picked up. Confirm once you have it.';
       } else if (status === 'item_received') {
         messageType = 'booking_item_received';
         content = '📦 Buyer confirmed they received the item.';
       } else if (status === 'completed') {
         messageType = 'booking_completed';
-        content = '✅ Transaction completed! Both parties have confirmed.';
+        content = '🎉 Sale complete. Leave each other a review.';
       } else if (status === 'released') {
         // A note to both, not anyone's message to edit or delete
         messageType = 'system_alert';
@@ -174,7 +185,7 @@ async function updateBookingMessageStatus(bookingId, status, approverId, io, boo
         RETURNING *`,
         [
           approverId,
-          requestMessage.sender_id,
+          otherParty,
           requestMessage.store_item_id,
           messageType,
           content,
@@ -190,17 +201,10 @@ async function updateBookingMessageStatus(bookingId, status, approverId, io, boo
       console.log(`✅ Created new status message for booking ${bookingId} status ${status}`);
     }
 
-    // Emit to both users via WebSocket
+    // Deliver to both buyer and seller, whoever acted
     if (io) {
-      io.to(`user:${requestMessage.sender_id}`).emit('message:new', statusMessage);
-      io.to(`user:${approverId}`).emit('message:new', statusMessage);
-
-      // Also emit update for the original message
-      io.to(`user:${requestMessage.sender_id}`).emit('message:updated', {
-        ...requestMessage,
-        metadata: updatedMetadata
-      });
-      io.to(`user:${approverId}`).emit('message:updated', {
+      io.to(`user:${buyerId}`).to(`user:${sellerId}`).emit('message:new', statusMessage);
+      io.to(`user:${buyerId}`).to(`user:${sellerId}`).emit('message:updated', {
         ...requestMessage,
         metadata: updatedMetadata
       });

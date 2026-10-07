@@ -86,6 +86,16 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // Computed
+  // Conversations as the floating chat lists them: booking requests waiting
+  // for an answer, then unread, then most recent
+  const sortedConversations = computed(() => [...conversations.value].sort((a, b) => {
+    const aBooking = !!a.item_id && a.last_message_type === 'booking_request' && a.unread_count > 0;
+    const bBooking = !!b.item_id && b.last_message_type === 'booking_request' && b.unread_count > 0;
+    if (aBooking !== bBooking) return aBooking ? -1 : 1;
+    if ((a.unread_count > 0) !== (b.unread_count > 0)) return a.unread_count > 0 ? -1 : 1;
+    return new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime();
+  }));
+
   const activeKey = computed(() => activeConversation.value ? conversationKey(activeConversation.value) : null);
   const activeLocked = computed(() => !!activeKey.value && lockedConversations.value.has(activeKey.value));
 
@@ -896,6 +906,7 @@ export const useChatStore = defineStore('chat', () => {
     
     // Computed
     totalUnreadCount,
+    sortedConversations,
     activeMessages,
     activeTypingUsers,
     activeHasMoreMessages,

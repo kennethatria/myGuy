@@ -119,8 +119,7 @@ const navigation = [
   { name: 'dashboard', to: { name: 'dashboard' }, text: 'Home' },
   { name: 'tasks', to: { name: 'tasks' }, text: 'Browse Gigs' },
   { name: 'create-task', to: { name: 'create-task' }, text: 'Post a Gig' },
-  { name: 'store', to: { name: 'store' }, text: 'Marketplace' },
-  { name: 'messages', to: { name: 'messages' }, text: 'Messages' }
+  { name: 'store', to: { name: 'store' }, text: 'Marketplace' }
 ]
 
 const handleSignOut = async () => {

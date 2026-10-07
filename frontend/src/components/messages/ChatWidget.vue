@@ -22,16 +22,6 @@
         <div class="header-actions">
           <!-- Inline SVG: crisp at any size and shown immediately, without
                waiting for the icon font -->
-          <button
-            @click="openMessageCenter"
-            class="expand-btn"
-            title="Open full Messages page"
-            aria-label="Open full Messages page"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
           <button @click="toggleWidget" class="close-btn" title="Close" aria-label="Close messages">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
@@ -42,14 +32,20 @@
 
       <!-- Conversation Switcher -->
       <div v-if="!chatStore.activeConversation" class="conversation-list">
+        <!-- Conversations about finished gigs are deleted after 30 days -->
+        <DeletionWarningBanner
+          v-if="chatStore.deletionWarnings.length > 0"
+          :warnings="chatStore.deletionWarnings"
+          @dismiss="chatStore.dismissWarning"
+        />
         <div
-          v-for="conversation in recentConversations"
+          v-for="conversation in chatStore.sortedConversations"
           :key="conversationKey(conversation) ?? undefined"
           class="conversation-item"
           @click="chatStore.joinConversation(conversation)"
         >
           <div class="conversation-info">
-            <h4>{{ conversation.task_title || conversation.item_title }}</h4>
+            <h4>{{ conversation.task_title || conversation.item_title || (conversation.task_id ? `Gig #${conversation.task_id}` : `Item #${conversation.item_id}`) }}</h4>
             <p>{{ conversation.other_user_name }}</p>
           </div>
           <span v-if="conversation.unread_count > 0" class="unread-count">
@@ -89,29 +85,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import { useRouter } from 'vue-router';
 import { useChatStore, conversationKey } from '@/stores/chat';
 import MessageThread from './MessageThread.vue';
+import DeletionWarningBanner from '@/components/shared/DeletionWarningBanner.vue';
 
-const router = useRouter();
 const chatStore = useChatStore();
-
-const recentConversations = computed(() => {
-  return chatStore.conversations.slice(0, 5);
-});
 
 function toggleWidget() {
   chatStore.widgetOpen = !chatStore.widgetOpen;
 
-  if (chatStore.widgetOpen && !chatStore.connected) {
-    chatStore.connectSocket();
+  if (chatStore.widgetOpen) {
+    if (!chatStore.connected) chatStore.connectSocket();
+    chatStore.loadDeletionWarnings();
   }
-}
-
-function openMessageCenter() {
-  router.push('/messages');
-  chatStore.widgetOpen = false;
 }
 
 function sendMessage(content: string) {
@@ -218,7 +204,7 @@ function sendMessage(content: string) {
   gap: 0.5rem;
 }
 
-.expand-btn, .close-btn {
+.close-btn {
   width: 36px;
   height: 36px;
   background: rgba(255, 255, 255, 0.25);
@@ -232,8 +218,8 @@ function sendMessage(content: string) {
   transition: background-color 0.15s;
 }
 
-.expand-btn:hover, .close-btn:hover,
-.expand-btn:focus-visible, .close-btn:focus-visible {
+.close-btn:hover,
+.close-btn:focus-visible {
   background: rgba(255, 255, 255, 0.4);
   outline: none;
 }
