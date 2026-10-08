@@ -11,6 +11,8 @@ declare module 'vue-router' {
     // Detail pages show a back arrow instead of the menu; this is where it
     // goes when there's no page to go back to (a shared link)
     back?: RouteLocationRaw
+    // The page's title, shown in the header (pages without one keep their own)
+    heading?: string
   }
 }
 
@@ -39,7 +41,7 @@ const router = createRouter({
       path: '/dashboard',
       name: 'dashboard',
       component: () => import('@/views/tasks/DashboardView.vue'),
-      meta: { title: 'Home', requiresAuth: true }
+      meta: { title: 'Home', heading: 'Near you', requiresAuth: true }
     },
     {
       path: '/tasks',

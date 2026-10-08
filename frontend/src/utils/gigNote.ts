@@ -40,9 +40,14 @@ export function noteTilt(id: number): number {
  * (which must have applicants) get no countdown.
  */
 export function expiryLabel(deadline: string, now: Date = new Date()): string {
+  const left = timeLeft(deadline, now)
+  return left ? `Expires in ${left}` : ''
+}
+
+/** Time left before a note expires, short ("23h", "20m"), or '' once past. */
+export function timeLeft(deadline: string, now: Date = new Date()): string {
   const ms = new Date(deadline).getTime() - now.getTime()
   if (Number.isNaN(ms) || ms <= 0) return ''
   const minutes = Math.ceil(ms / 60000)
-  if (minutes < 60) return `Expires in ${minutes}m`
-  return `Expires in ${Math.floor(minutes / 60)}h`
+  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h`
 }

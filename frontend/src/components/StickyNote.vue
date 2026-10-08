@@ -30,8 +30,11 @@ const props = withDefaults(defineProps<{
   body?: string
   // Picks the note's colour and tilt; the gig id keeps them stable.
   seed?: number
+  // Colour by what the note is, instead of by seed
+  tone?: 'gig' | 'sell' | 'want'
   to?: RouteLocationRaw
-  size?: 'small' | 'large'
+  // A row is one line of a list: the slot lays out its own content
+  size?: 'small' | 'large' | 'row'
   flat?: boolean
   // A photo taped to the top of the note (marketplace listings)
   photo?: string
@@ -51,7 +54,7 @@ const props = withDefaults(defineProps<{
   fold: false
 })
 
-const color = computed(() => noteColor(props.seed))
+const color = computed(() => props.tone ?? noteColor(props.seed))
 const tilt = computed(() => (props.flat ? 0 : noteTilt(props.seed)))
 </script>
 
@@ -141,6 +144,17 @@ const tilt = computed(() => (props.flat ? 0 : noteTilt(props.seed)))
   border-radius: 0 0 4px 0;
   background: linear-gradient(135deg, var(--bg) 50%, rgba(17, 24, 39, 0.14) 50%);
 }
+
+.note-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.note-gig { --note-bg: var(--note-gig); }
+.note-sell { --note-bg: var(--note-sell); }
+.note-want { --note-bg: var(--note-want); }
 
 .note-yellow { --note-bg: #fef3a3; }
 .note-pink { --note-bg: #fbcfe8; }
