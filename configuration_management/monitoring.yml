@@ -12,11 +12,15 @@
   vars:
     # Run as rootless Podman Quadlet units owned by myguy: systemd starts,
     # restarts and boots each container (linger is enabled in users.yml).
+    # memory: a hard limit with no swap.  On this 1 GB server a container
+    # that outgrows it is killed and restarted (Restart=always) instead of
+    # pushing the whole server into swap, where everything stalls.
     monitoring_containers:
       # Traces: the services send OTLP/HTTP to 4318; Grafana reads 3200.
       # Runs as container root (still the unprivileged myguy on the host)
       # because the image's user can't write a fresh named volume.
       - name: tempo
+        memory: 256m
         image: docker.io/grafana/tempo:2.6.1
         ports: ["4318:4318", "3200:3200"]
         user: "0"
@@ -25,11 +29,16 @@
           - tempo-data:/var/tempo
         exec: -config.file=/etc/tempo/tempo.yml
       - name: prometheus
+        memory: 256m
         image: docker.io/prom/prometheus:latest
         ports: ["9090:9090"]
         volumes:
-          - /etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+          # The directory, not the file: Ansible replaces prometheus.yml
+          # with a new file, and a single-file mount keeps showing the old
+          # one, so the HUP reload would reread stale config.
+          - /etc/prometheus:/etc/prometheus:ro
       - name: grafana
+        memory: 256m
         image: docker.io/grafana/grafana:latest
         ports: ["3000:3000"]
         volumes:
@@ -43,6 +52,7 @@
         # GF_SECURITY_ADMIN_PASSWORD (GRAFANA_ADMIN_PASSWORD secret)
         env_file: /etc/grafana/admin.env
       - name: loki
+        memory: 320m
         image: docker.io/grafana/loki:2.9.10
         ports: ["3100:3100"]
         volumes:
@@ -54,12 +64,14 @@
       # Umami port (3000 in-container) is therefore published on umami-db.
       # Only the tracker endpoints are public, via nginx on the app instance.
       - name: umami-db
+        memory: 128m
         image: docker.io/library/postgres:16-alpine
         ports: ["3001:3000"]
         volumes:
           - umami-db-data:/var/lib/postgresql/data
         env_file: /etc/umami/umami.env
       - name: umami
+        memory: 300m
         image: ghcr.io/umami-software/umami:postgresql-latest
         network: container:umami-db
         env_file: /etc/umami/umami.env
@@ -797,7 +809,7 @@
               {
                 "type": "stat",
                 "title": "Disk used now",
-                "description": "Share of the monitoring server's disk in use: 90 days of logs (Loki), 14 days of traces (Tempo), metrics and Umami. Act before 85%: a full disk stops log and trace collection.",
+                "description": "Share of the monitoring server's disk in use: 8 days of logs (Loki), 14 days of traces (Tempo), metrics and Umami. Act before 85%: a full disk stops log and trace collection.",
                 "gridPos": {
                   "x": 16,
                   "y": 0,
@@ -2467,8 +2479,9 @@
           limits_config:
             # Unique-visitor queries create one series per client IP.
             max_query_series: 50000
-            # Access logs contain client IPs; keep them 90 days.
-            retention_period: 2160h
+            # Access logs contain client IPs; keep them 8 days (the
+            # dashboards look back 7 at most).
+            retention_period: 192h
 
           compactor:
             working_directory: /loki/compactor
@@ -2580,6 +2593,9 @@
           {% endif %}
           {% if item.user is defined %}
           User={{ item.user }}
+          {% endif %}
+          {% if item.memory is defined %}
+          PodmanArgs=--memory={{ item.memory }} --memory-swap={{ item.memory }}
           {% endif %}
           {% if item.exec is defined %}
           Exec={{ item.exec }}
