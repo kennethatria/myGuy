@@ -45,47 +45,33 @@
               <p>Start by posting your first gig and connect with talented freelancers.</p>
               <router-link :to="{ name: 'create-task' }" class="btn btn-primary">Post Your First Gig</router-link>
             </div>
-            <div v-else class="task-list">
-              <div 
-                v-for="task in createdTasks" 
-                :key="task.id"
-                class="task-item"
-                @click="navigateToTask(task.id)"
-              >
-                <div class="task-header">
-                  <h3 class="task-title">{{ task.title }}</h3>
-                  <span class="badge" :class="'badge-' + task.status">
-                    {{ task.status.replace('_', ' ') }}
-                  </span>
-                </div>
-                <p class="task-description">{{ task.description }}</p>
-                <div class="task-footer">
-                  <div class="task-meta">
-                    <span v-if="task.status === 'expired'" class="task-deadline">No replies within 24 hours</span>
-                    <span v-else-if="task.status === 'open' && expiryLabel(task.deadline)" class="task-deadline">
-                      {{ expiryLabel(task.deadline) }}
-                    </span>
-                    <span v-else class="task-deadline">Posted {{ formatDate(task.created_at) }}</span>
-                  </div>
-                  <button
-                    v-if="task.status === 'expired'"
-                    class="btn btn-primary btn-sm"
-                    :disabled="repostingId === task.id"
-                    @click.stop="repost(task.id)"
-                  >
-                    {{ repostingId === task.id ? 'Reposting...' : 'Repost' }}
-                  </button>
-                  <div class="task-stats">
-                    <span v-if="pendingCount(task) > 0" class="applications-count">
-                      {{ pendingCount(task) }} awaiting your reply
-                    </span>
-                    <span v-else-if="task.applications?.length" class="text-sm text-gray">
+            <ul v-else class="note-board" aria-label="Gigs you posted">
+              <li v-for="task in createdTasks" :key="task.id">
+                <StickyNote :seed="task.id">
+                  <template #header>
+                    <h3 class="note-headline">
+                      <router-link :to="{ name: 'task-detail', params: { id: task.id } }" class="note-title-link">{{ task.title }}</router-link>
+                    </h3>
+                    <p class="note-text">{{ task.description }}</p>
+                  </template>
+                  <template #footer>
+                    <span :class="['note-status', 'badge-' + task.status]">{{ task.status.replace('_', ' ') }}</span>
+                    <span v-if="task.status === 'expired'">No replies within 24 hours</span>
+                    <span v-else-if="task.status === 'open' && expiryLabel(task.deadline)">{{ expiryLabel(task.deadline) }}</span>
+                    <span v-else>Posted {{ formatDate(task.created_at) }}</span>
+                    <span v-if="pendingCount(task) > 0" class="note-alert">{{ pendingCount(task) }} awaiting your reply</span>
+                    <span v-else-if="task.applications?.length">
                       {{ task.applications.length }} {{ task.applications.length === 1 ? 'application' : 'applications' }}
                     </span>
-                  </div>
-                </div>
-              </div>
-            </div>
+                    <span v-if="task.status === 'expired'" class="note-actions">
+                      <button class="btn btn-primary btn-sm" :disabled="repostingId === task.id" @click="repost(task.id)">
+                        {{ repostingId === task.id ? 'Reposting...' : 'Repost' }}
+                      </button>
+                    </span>
+                  </template>
+                </StickyNote>
+              </li>
+            </ul>
           </div>
 
           <!-- Assignments Tab -->
@@ -103,30 +89,22 @@
               <p>Browse available gigs and apply to start working on exciting projects.</p>
               <router-link :to="{ name: 'tasks' }" class="btn btn-primary">Browse Available Gigs</router-link>
             </div>
-            <div v-else class="task-list">
-              <div 
-                v-for="task in assignedTasks" 
-                :key="task.id"
-                class="task-item"
-                @click="navigateToTask(task.id)"
-              >
-                <div class="task-header">
-                  <h3 class="task-title">{{ task.title }}</h3>
-                  <span class="badge" :class="'badge-' + task.status">
-                    {{ task.status.replace('_', ' ') }}
-                  </span>
-                </div>
-                <p class="task-description">{{ task.description }}</p>
-                <div class="task-footer">
-                  <div class="task-meta">
-                    <span class="task-deadline">Posted {{ formatDate(task.created_at) }}</span>
-                  </div>
-                  <div class="task-creator">
-                    <span>Created by: {{ task.creator?.username || 'Anonymous' }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <ul v-else class="note-board" aria-label="Gigs you're doing">
+              <li v-for="task in assignedTasks" :key="task.id">
+                <StickyNote :seed="task.id">
+                  <template #header>
+                    <h3 class="note-headline">
+                      <router-link :to="{ name: 'task-detail', params: { id: task.id } }" class="note-title-link">{{ task.title }}</router-link>
+                    </h3>
+                    <p class="note-text">{{ task.description }}</p>
+                  </template>
+                  <template #footer>
+                    <span :class="['note-status', 'badge-' + task.status]">{{ task.status.replace('_', ' ') }}</span>
+                    <span>Posted by {{ task.creator?.username || 'someone' }}</span>
+                  </template>
+                </StickyNote>
+              </li>
+            </ul>
           </div>
 
           <!-- Applications Tab -->
@@ -136,29 +114,22 @@
               <p>Gigs you apply for show up here, with whether you got them.</p>
               <router-link :to="{ name: 'tasks' }" class="btn btn-primary">Browse Available Gigs</router-link>
             </div>
-            <div v-else class="task-list">
-              <div
-                v-for="application in activeApplications"
-                :key="application.id"
-                class="task-item"
-                @click="navigateToTask(application.task_id)"
-              >
-                <div class="task-header">
-                  <h3 class="task-title">{{ application.task.title }}</h3>
-                  <span class="badge" :class="'application-' + application.status">
-                    {{ applicationStatusLabel[application.status] }}
-                  </span>
-                </div>
-                <div class="task-footer">
-                  <div class="task-meta">
-                    <span class="task-deadline">Applied {{ formatDate(application.created_at) }}</span>
-                  </div>
-                  <div class="task-creator">
-                    <span>Posted by {{ application.task.creator?.username || 'unknown' }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <ul v-else class="note-board" aria-label="Gigs you applied for">
+              <li v-for="application in activeApplications" :key="application.id">
+                <StickyNote :seed="application.task_id">
+                  <template #header>
+                    <h3 class="note-headline">
+                      <router-link :to="{ name: 'task-detail', params: { id: application.task_id } }" class="note-title-link">{{ application.task.title }}</router-link>
+                    </h3>
+                    <p v-if="application.task.description" class="note-text">{{ application.task.description }}</p>
+                  </template>
+                  <template #footer>
+                    <span :class="['note-status', 'application-' + application.status]">{{ applicationStatusLabel[application.status] }}</span>
+                    <span>Applied {{ formatDate(application.created_at) }} · posted by {{ application.task.creator?.username || 'someone' }}</span>
+                  </template>
+                </StickyNote>
+              </li>
+            </ul>
           </div>
         </div>
       </div>
@@ -173,6 +144,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useTasksStore } from '@/stores/tasks'
 import { useAuthStore } from '@/stores/auth'
 import { expiryLabel } from '@/utils/gigNote'
+import StickyNote from '@/components/StickyNote.vue'
 
 const tasksStore = useTasksStore()
 const router = useRouter()
@@ -237,10 +209,6 @@ const repost = async (taskId: number) => {
   } finally {
     repostingId.value = null
   }
-}
-
-const navigateToTask = (taskId: number) => {
-  router.push({ name: 'task-detail', params: { id: taskId } })
 }
 
 const fetchMyGigs = async () => {
@@ -346,98 +314,78 @@ onMounted(async () => {
   padding: 2rem;
 }
 
-/* Task List */
-.task-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.task-item {
-  background: #f8f9fa;
-  border-radius: 8px;
-  padding: 1.5rem;
-  cursor: pointer;
-  transition: all 0.2s;
-  border-left: 4px solid #dee2e6;
-}
-
-.task-item:hover {
-  background: #e9ecef;
-  border-left-color: var(--color-primary);
-}
-
-.task-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 0.75rem;
-}
-
-.task-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #212529;
+/* Your gigs as sticky notes, like Marketplace → Yours */
+.note-board {
+  list-style: none;
   margin: 0;
+  padding: 0.5rem 0.25rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 1.75rem;
+}
+
+/* The title link covers the whole note (see .note-title-link::after) */
+.note-board > li {
+  position: relative;
+}
+
+.note-headline {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.note-title-link {
+  color: inherit;
+  font-weight: inherit;
+  text-decoration: none;
+}
+
+/* Tap anywhere on the note to open the gig */
+.note-title-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.note-title-link:hover,
+.note-title-link:focus-visible {
+  text-decoration: underline;
+}
+
+.note-text {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.45;
   flex: 1;
-  margin-right: 1rem;
 }
 
-.task-description {
-  color: #6c757d;
-  margin-bottom: 1rem;
-  line-height: 1.5;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.task-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-
-.task-meta {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.task-deadline {
-  color: #6c757d;
-  font-size: 0.875rem;
-}
-
-.task-stats, .task-creator {
-  color: #6c757d;
-  font-size: 0.875rem;
-}
-
-.applications-count {
-  background: #eef2ff;
-  color: var(--color-primary);
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
+.note-status {
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
   font-size: 0.75rem;
-  font-weight: 500;
+  font-weight: 600;
+  text-transform: capitalize;
 }
 
-/* Badge Styles */
-.badge {
-  padding: 0.25rem 0.75rem;
-  border-radius: 50px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.note-alert {
+  font-weight: 600;
 }
 
+/* Above the note-wide link, and big enough for a thumb */
+.note-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.note-actions .btn {
+  min-height: 44px;
+}
+
+/* Status colours */
 .badge-open {
   background: #e8f5e9;
   color: #2e7d32;
@@ -456,6 +404,11 @@ onMounted(async () => {
 .badge-completed {
   background: #eef2ff;
   color: var(--color-primary);
+}
+
+.badge-expired {
+  background: #f3f4f6;
+  color: #4b5563;
 }
 
 .badge-cancelled {
@@ -553,18 +506,7 @@ onMounted(async () => {
     padding: 1rem;
   }
 
-  .task-item {
-    padding: 1rem;
-  }
-
-  .task-header {
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  /* Three compact counters side by side instead of a screen per card */
-  
-  .tasks-grid {
+  .note-board {
     grid-template-columns: 1fr;
   }
 }

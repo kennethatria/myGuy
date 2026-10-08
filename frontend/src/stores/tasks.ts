@@ -51,6 +51,7 @@ export interface MyApplication {
   task: {
     id: number
     title: string
+    description?: string
     status: string
     deadline: string
     creator?: { id: number; username: string }

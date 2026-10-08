@@ -283,6 +283,17 @@ function sendMessage(content: string) {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 0.5rem;
+  position: relative;
+}
+
+/* A faint line in the gap between conversations, so each reads as its own */
+.conversation-item + .conversation-item::before {
+  content: '';
+  position: absolute;
+  top: -0.25rem;
+  left: 0.75rem;
+  right: 0.75rem;
+  border-top: 1px solid #eceef2;
 }
 
 .conversation-item:hover {
