@@ -133,6 +133,13 @@ type CreateItemRequestRequest struct {
 	Lng         *float64 `json:"lng,omitempty"`
 }
 
+// UpdateItemRequestRequest changes a request's headline and note; the same
+// rules apply as when posting it
+type UpdateItemRequestRequest struct {
+	Title       string `json:"title" binding:"required"`
+	Description string `json:"description"`
+}
+
 type ItemRequestFilter struct {
 	Search             string
 	Status             string

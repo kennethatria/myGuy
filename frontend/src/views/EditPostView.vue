@@ -17,7 +17,7 @@
 </template>
 
 <script setup lang="ts">
-// Change a gig's or listing's headline and note. The service checks the
+// Change a post's headline and note. The service checks the
 // same rules as when posting (word limits, no contact details).
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

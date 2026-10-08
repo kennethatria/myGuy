@@ -145,6 +145,7 @@ func main() {
 			// Requests ("wanted" notes)
 			auth.POST("/requests", requestHandler.CreateRequest)
 			auth.POST("/requests/:id/repost", requestHandler.RepostRequest)
+			auth.PUT("/requests/:id", requestHandler.UpdateRequest)
 			auth.DELETE("/requests/:id", requestHandler.DeleteRequest)
 			auth.GET("/user/requests", requestHandler.GetUserRequests)
 			auth.POST("/items/:id/purchase", storeHandler.PurchaseItem)

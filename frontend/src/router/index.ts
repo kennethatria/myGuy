@@ -65,8 +65,8 @@ const router = createRouter({
       meta: { title: 'Posted', heading: 'Your post', hideChatButton: true, requiresAuth: true }
     },
     {
-      // Change a gig's or listing's headline and note (requests can't be edited)
-      path: '/edit/:kind(task|item)/:id(\\d+)',
+      // Change a post's headline and note
+      path: '/edit/:kind(task|item|request)/:id(\\d+)',
       name: 'edit-post',
       component: () => import('@/views/EditPostView.vue'),
       meta: { title: 'Edit post', heading: 'Edit post', hideChatButton: true, requiresAuth: true, back: { name: 'my-gigs', params: { tab: 'created' } } }
