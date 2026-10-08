@@ -8,9 +8,7 @@
           Tap someone to see what others say about them.
         </p>
         <p v-if="branches.length" class="network-summary">
-          {{ connectionCount }} {{ connectionCount === 1 ? 'person' : 'people' }}
-          {{ isMine ? "you've reviewed or who reviewed you" : 'they reviewed or who reviewed them' }},
-          and who they're connected to{{ trimmed ? `. Showing the ${MAX_PEOPLE} most recent.` : '' }}
+          {{ peopleCount }} {{ peopleCount === 1 ? 'person' : 'people' }} in {{ isMine ? 'your' : 'their' }} network{{ trimmed ? `. Showing the ${MAX_PEOPLE} most recent.` : '' }}
         </p>
         <router-link v-if="!isMine" :to="{ name: 'reviews' }" class="back-to-mine">Back to your network</router-link>
       </div>
@@ -31,33 +29,38 @@
           class="network"
           :viewBox="`0 0 ${WIDTH} ${layout.height}`"
           role="group"
-          :aria-label="`${isMine ? 'Your' : `${nameOf(centreId)}'s`} network: ${branches.length} people`"
+          :aria-label="`${isMine ? 'Your' : `${nameOf(centreId)}'s`} network: ${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}`"
         >
-          <!-- The branches: a smooth curve down from each person and round to
-               whom they're connected to -->
-          <g class="branches" aria-hidden="true">
-            <path
-              v-for="node in placed"
-              :key="`branch-${keyOf(node)}`"
-              :d="branchPath(node)"
-              :class="['branch', { active: selectedKey === keyOf(node) }]"
+          <!-- The rings: connections on the inner one, theirs on the outer -->
+          <g class="rings" aria-hidden="true">
+            <ellipse
+              v-for="(ring, i) in layout.rings"
+              :key="`ring-${i}`"
+              :cx="layout.centre.x"
+              :cy="layout.centre.y"
+              :rx="ring.rx"
+              :ry="ring.ry"
+              class="ring"
             />
           </g>
 
-          <!-- The average rating between the two, both ways, on each branch -->
-          <g class="ratings" aria-hidden="true">
-            <g v-for="node in placed" :key="`rating-${keyOf(node)}`">
-              <rect :x="node.label.x - 6" :y="node.label.y - 3.1" width="12" height="6.2" rx="3.1" class="rating-pill" />
-              <text :x="node.label.x" :y="node.label.y + 1.3" text-anchor="middle" class="rating-text">
-                ★{{ formatRating(node.connection.averageRating) }}
-              </text>
-            </g>
+          <!-- The links, coloured by the average rating between the two;
+               the tapped one stands out -->
+          <g class="links" aria-hidden="true">
+            <line
+              v-for="node in placed"
+              :key="`link-${keyOf(node)}`"
+              :x1="node.from.x"
+              :y1="node.from.y"
+              :x2="node.x"
+              :y2="node.y"
+              :class="['link', tierOf(node.connection.averageRating), { active: selectedKey === keyOf(node) }]"
+            />
           </g>
 
           <g class="you" aria-hidden="true">
-            <circle :cx="YOU.x" :cy="YOU.y" :r="NODE_RADIUS" class="you-dot" />
-            <text :x="YOU.x" :y="YOU.y + 1.4" text-anchor="middle" class="you-label">{{ isMine ? 'You' : initialOf(centreId) }}</text>
-            <text v-if="!isMine" :x="YOU.x + NODE_RADIUS + 2" :y="YOU.y + 1.4" class="node-name">{{ shortName(centreId) }}</text>
+            <circle :cx="layout.centre.x" :cy="layout.centre.y" :r="CENTRE_RADIUS" class="you-dot" />
+            <text :x="layout.centre.x" :y="layout.centre.y + 1.4" text-anchor="middle" class="you-label">{{ isMine ? 'You' : initialOf(centreId) }}</text>
           </g>
 
           <g
@@ -75,18 +78,24 @@
             <title>{{ nameOf(node.connection.userId) }}</title>
             <!-- A larger, invisible circle makes the node easier to tap -->
             <circle :cx="node.x" :cy="node.y" :r="node.r + 3" class="node-hit" />
-            <circle
-              :cx="node.x"
-              :cy="node.y"
-              :r="node.r"
-              :fill="VIA_STYLE[node.connection.via].fill"
-              :stroke="VIA_STYLE[node.connection.via].stroke"
-              stroke-width="0.5"
-            />
-            <text :x="node.x" :y="node.y + 1.4" text-anchor="middle" class="node-initial" :fill="VIA_STYLE[node.connection.via].text">
+            <circle :cx="node.x" :cy="node.y" :r="node.r" :class="['node-dot', tierOf(node.connection.averageRating)]" />
+            <text :x="node.x" :y="node.y + 1.4" text-anchor="middle" class="node-initial">
               {{ initialOf(node.connection.userId) }}
             </text>
-            <text :x="node.x + node.r + 2" :y="node.y + 1.4" class="node-name">{{ shortName(node.connection.userId) }}</text>
+          </g>
+
+          <!-- The tapped person's name, and the rating on their link -->
+          <g v-if="selected" class="selection" aria-hidden="true">
+            <text
+              :x="selected.x < layout.centre.x ? selected.x - selected.r - 1.5 : selected.x + selected.r + 1.5"
+              :y="selected.y + 1.4"
+              :text-anchor="selected.x < layout.centre.x ? 'end' : 'start'"
+              class="node-name"
+            >{{ shortName(selected.connection.userId) }}</text>
+            <rect :x="selected.label.x - 6" :y="selected.label.y - 3.1" width="12" height="6.2" rx="3.1" :class="['rating-pill', tierOf(selected.connection.averageRating)]" />
+            <text :x="selected.label.x" :y="selected.label.y + 1.3" text-anchor="middle" :class="['rating-text', tierOf(selected.connection.averageRating)]">
+              ★ {{ formatRating(selected.connection.averageRating) }}
+            </text>
           </g>
         </svg>
 
@@ -107,7 +116,8 @@
           <button type="button" class="popup-close" aria-label="Close" @click="close">×</button>
           <p class="popup-meta">
             ★ {{ formatRating(selected.connection.averageRating) }} ·
-            {{ selected.connection.deals }} {{ selected.connection.deals === 1 ? 'deal' : 'deals' }}
+            {{ selected.connection.deals }} {{ selected.connection.deals === 1 ? 'deal' : 'deals' }} ·
+            {{ VIA_LABEL[selected.connection.via] }}
           </p>
           <!-- What others said about them lately (public on their profile) -->
           <ul v-if="comments.length" class="popup-comments">
@@ -124,13 +134,13 @@
 
       <div v-if="branches.length && !loading" class="network-side">
         <ul class="legend" aria-label="Key">
-          <li v-for="via in VIAS" :key="via">
-            <span class="legend-dot" :style="{ background: VIA_STYLE[via].fill, borderColor: VIA_STYLE[via].stroke }" aria-hidden="true"></span>
-            {{ VIA_STYLE[via].label }}
+          <li v-for="tier in TIERS" :key="tier.tier">
+            <span :class="['legend-dot', tier.tier]" aria-hidden="true"></span>
+            {{ tier.label }}
           </li>
         </ul>
         <p class="network-note">
-          Each branch shows the average rating between the two people, both ways. Under each person, the people they're connected to.
+          Each line's colour is the average rating between the two people, both ways. On the outer ring, the people each connection has worked with.
         </p>
       </div>
     </section>
@@ -143,10 +153,9 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useReviewsStore } from '@/stores/reviews'
 import { useUserStore } from '@/stores/user'
-import { KIND_STYLE } from '@/utils/radar'
 import {
-  connectionsFrom, recentNetwork, layoutNetwork, MAX_PEOPLE, branchPath, formatRating, WIDTH, YOU, NODE_RADIUS,
-  type Branch, type PlacedConnection, type Via
+  connectionsFrom, recentNetwork, layoutNetwork, networkSize, tierOf, MAX_PEOPLE, formatRating, WIDTH, CENTRE_RADIUS,
+  type Branch, type PlacedConnection, type Via, type Tier
 } from '@/utils/network'
 
 const reviewsStore = useReviewsStore()
@@ -154,21 +163,20 @@ const authStore = useAuthStore()
 const route = useRoute()
 const userStore = useUserStore()
 
-// Gigs and marketplace items keep the colours they have on the home radar
-const VIA_STYLE: Record<Via | 'both', { fill: string; stroke: string; text: string; label: string }> = {
-  gig: { fill: KIND_STYLE.task.fill, stroke: KIND_STYLE.task.stroke, text: '#fff', label: 'Gigs' },
-  item: { fill: KIND_STYLE.item.fill, stroke: KIND_STYLE.item.stroke, text: '#422006', label: 'Marketplace' },
-  both: { fill: '#16a34a', stroke: '#14532d', text: '#fff', label: 'Gigs and marketplace' }
-}
-const VIAS = ['gig', 'item', 'both'] as const
+const VIA_LABEL: Record<Via | 'both', string> = { gig: 'gigs', item: 'marketplace', both: 'gigs and marketplace' }
+const TIERS: { tier: Tier; label: string }[] = [
+  { tier: 'strong', label: 'Strong 4.5+' },
+  { tier: 'fair', label: 'Fair 3–4.4' },
+  { tier: 'weak', label: 'Weak below 3' }
+]
 
 // The card closes by itself after this long
 const POPUP_MS = 10_000
 
 const branches = ref<Branch[]>([])
-// Everyone the centre person is connected to, and whether the tree leaves
+// Everyone in the centre person's network, and whether the picture leaves
 // some people out to stay within MAX_PEOPLE
-const connectionCount = ref(0)
+const peopleCount = ref(0)
 const trimmed = ref(false)
 const loading = ref(true)
 const failed = ref(false)
@@ -266,7 +274,8 @@ async function load() {
     const centre = centreId.value
     const all = connectionsFrom(await reviewsStore.fetchInteractions(centre))
     // Only the most recent can make the tree: no need to fetch the others'
-    const firsts = [...all].sort((a, b) => b.latest.localeCompare(a.latest)).slice(0, MAX_PEOPLE)
+    const newest = [...all].sort((a, b) => b.latest.localeCompare(a.latest))
+    const firsts = newest.slice(0, MAX_PEOPLE)
     const children = await Promise.all(firsts.map(first =>
       reviewsStore.fetchInteractions(first.userId)
         .then(list => connectionsFrom(list).filter(child => child.userId !== centre))
@@ -274,9 +283,9 @@ async function load() {
     ))
     const full = firsts.map((connection, i) => ({ connection, children: children[i] }))
     branches.value = recentNetwork(full)
-    connectionCount.value = all.length
-    const shown = branches.value.reduce((sum, b) => sum + 1 + b.children.length, 0)
-    trimmed.value = shown < all.length + children.reduce((sum, c) => sum + c.length, 0)
+    // Everyone, including connections too old to have made the picture
+    peopleCount.value = networkSize([...full, ...newest.slice(MAX_PEOPLE).map(connection => ({ connection, children: [] }))], centre)
+    trimmed.value = networkSize(branches.value, centre) < peopleCount.value
   } catch (err) {
     console.error('Failed to load network:', err)
     failed.value = true
@@ -354,30 +363,40 @@ onBeforeUnmount(() => {
   height: auto;
 }
 
-/* Branches: one smooth, solid curve each */
-.branch {
+/* Tiers: strong, fair and weak links (lines, outlines, pills, legend) */
+.strong { --tier: #15803d; --tier-soft: #dcfce7; --tier-text: #14532d; }
+.fair { --tier: #b7791f; --tier-soft: #fef3c7; --tier-text: #78350f; }
+.weak { --tier: #c0392b; --tier-soft: #fee2e2; --tier-text: #7f1d1d; }
+
+.ring {
   fill: none;
-  stroke: #94a3b8;
-  stroke-width: 0.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  stroke: #d1d5db;
+  stroke-width: 0.4;
+  stroke-dasharray: 1.2 1.2;
 }
 
-.branch.active {
-  stroke: var(--color-primary, #4f46e5);
+.link {
+  stroke: var(--tier);
+  stroke-width: 0.6;
+  stroke-linecap: round;
+  opacity: 0.5;
+}
+
+.link.active {
+  stroke-width: 1.4;
   opacity: 1;
 }
 
 .rating-pill {
-  fill: #fff;
-  stroke: #e5e7eb;
+  fill: var(--tier-soft);
+  stroke: var(--tier);
   stroke-width: 0.3;
 }
 
 .rating-text {
-  font-size: 3.6px;
+  font-size: 3.4px;
   font-weight: 700;
-  fill: #b45309;
+  fill: var(--tier-text);
 }
 
 .you-dot {
@@ -399,9 +418,20 @@ onBeforeUnmount(() => {
   fill: transparent;
 }
 
+.node-dot {
+  fill: #475569;
+  stroke: var(--tier);
+  stroke-width: 1;
+}
+
+.level-2 .node-dot {
+  fill: #6b7280;
+}
+
 .node-initial {
   font-size: 4.2px;
   font-weight: 700;
+  fill: #fff;
   pointer-events: none;
 }
 
@@ -410,16 +440,16 @@ onBeforeUnmount(() => {
 }
 
 .node-name {
-  font-size: 3.8px;
-  fill: #374151;
+  font-size: 3.6px;
+  font-weight: 700;
+  fill: #111827;
   pointer-events: none;
 }
 
-.node:hover circle:not(.node-hit),
-.node:focus-visible circle:not(.node-hit),
-.node.active circle:not(.node-hit) {
-  stroke: var(--color-primary, #4f46e5);
-  stroke-width: 0.9;
+.node:hover .node-dot,
+.node:focus-visible .node-dot,
+.node.active .node-dot {
+  stroke-width: 1.6;
 }
 
 /* A small square card: name, rating and deals, then what others said */
@@ -507,8 +537,8 @@ onBeforeUnmount(() => {
   width: 0.75rem;
   height: 0.75rem;
   margin-right: 0.35rem;
-  border: 1px solid;
   border-radius: 50%;
+  background: var(--tier);
   vertical-align: -0.1rem;
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { connectionsFrom, interactionsFor, recentNetwork, layoutNetwork, branchPath, formatRating, YOU, NODE_RADIUS, CHILD_RADIUS, type Interaction, type Connection } from '../network'
+import { connectionsFrom, interactionsFor, recentNetwork, layoutNetwork, networkSize, tierOf, formatRating, NODE_RADIUS, CHILD_RADIUS, WIDTH, type Interaction, type Connection } from '../network'
 
 const review = (over: Partial<Interaction>): Interaction => ({
   otherId: 2,
@@ -101,8 +101,8 @@ describe('network', () => {
     expect(formatRating(4.25)).toBe('4.3')
   })
 
-  it('lays out a branching tree, one person per row, children indented under their parent', () => {
-    const { placed, height } = layoutNetwork([
+  it('puts connections on the inner ring and theirs beyond them on the outer ring', () => {
+    const { placed, centre, rings, height } = layoutNetwork([
       { connection: person(2), children: [person(5), person(6)] },
       { connection: person(3), children: [] }
     ], 1)
@@ -110,37 +110,61 @@ describe('network', () => {
     expect(placed.map(n => [n.connection.userId, n.level, n.parentId])).toEqual([
       [2, 1, 1], [5, 2, 2], [6, 2, 2], [3, 1, 1]
     ])
-    // One row each, top to bottom
-    const ys = placed.map(n => n.y)
-    expect([...ys].sort((a, b) => a - b)).toEqual(ys)
-    expect(new Set(ys).size).toBe(4)
-    // Children are indented further than their parent, and smaller
-    expect(placed[1].x).toBeGreaterThan(placed[0].x)
-    expect(placed[1].r).toBe(CHILD_RADIUS)
+    expect(rings).toHaveLength(2)
+    const ringOf = (n: { x: number; y: number }, ring: { rx: number; ry: number }) =>
+      ((n.x - centre.x) / ring.rx) ** 2 + ((n.y - centre.y) / ring.ry) ** 2
+    for (const n of placed) expect(ringOf(n, rings[n.level - 1])).toBeCloseTo(1)
     expect(placed[0].r).toBe(NODE_RADIUS)
-    // Each line starts at its parent: the centre, or the person above
-    expect(placed[0].from).toEqual({ x: YOU.x, y: YOU.y })
+    expect(placed[1].r).toBe(CHILD_RADIUS)
+    // The first connection is at the top
+    expect(placed[0].x).toBeCloseTo(centre.x)
+    expect(placed[0].y).toBeLessThan(centre.y)
+    // Each line runs from whom they're connected to, labelled halfway
+    expect(placed[0].from).toEqual(centre)
     expect(placed[1].from).toEqual({ x: placed[0].x, y: placed[0].y })
-    expect(placed[3].from).toEqual({ x: YOU.x, y: YOU.y })
-    // The rating sits on the line's horizontal part, in its own row
-    expect(placed[1].label.y).toBe(placed[1].y)
-    expect(placed[1].label.x).toBeGreaterThan(placed[0].x)
-    expect(placed[1].label.x).toBeLessThan(placed[1].x)
-    expect(height).toBeGreaterThan(placed[3].y)
+    expect(placed[3].from).toEqual(centre)
+    expect(placed[1].label).toEqual({ x: (placed[0].x + placed[1].x) / 2, y: (placed[0].y + placed[1].y) / 2 })
+    // Everything fits the picture
+    for (const n of placed) {
+      expect(n.x - n.r).toBeGreaterThan(0)
+      expect(n.x + n.r).toBeLessThan(WIDTH)
+      expect(n.y - n.r).toBeGreaterThan(0)
+      expect(n.y + n.r).toBeLessThan(height)
+    }
   })
 
-  it('curves each branch from its parent round to just before the person', () => {
-    const [node] = layoutNetwork([{ connection: person(2), children: [] }], 1).placed
-    const path = branchPath(node)
-    expect(path.startsWith(`M ${YOU.x} ${YOU.y + NODE_RADIUS}`)).toBe(true)
-    expect(path).toContain(' Q ')
-    expect(path.trim().endsWith(`${node.x - node.r} ${node.y}`)).toBe(true)
-    // The rating sits on the straight run across, clear of both nodes
-    expect(node.label.x - 6).toBeGreaterThan(YOU.x)
-    expect(node.label.x + 6).toBeLessThan(node.x - node.r)
+  it("keeps someone's connections in their own slice, so lines don't cross", () => {
+    const { placed, centre } = layoutNetwork([
+      { connection: person(2), children: [person(5), person(6)] },
+      { connection: person(3), children: [person(7)] },
+      { connection: person(4), children: [] }
+    ], 1)
+    // 2 has half the people under it, so its slice runs from the left (9
+    // o'clock) round over the top; measure clockwise from there
+    const angle = (n: { x: number; y: number }) => Math.atan2(n.y - centre.y, n.x - centre.x) + Math.PI
+    // 2's slice (5, 6), then 3's (7), then 4
+    const order = [...placed].sort((a, b) => angle(a) - angle(b)).map(n => n.connection.userId)
+    expect(order.indexOf(5)).toBeLessThan(order.indexOf(7))
+    expect(order.indexOf(6)).toBeLessThan(order.indexOf(3))
+    expect(order.indexOf(7)).toBeLessThan(order.indexOf(4))
   })
 
-  it('is as short as one row with nobody in it', () => {
+  it('needs only the inner ring when nobody has connections of their own', () => {
+    const one = layoutNetwork([{ connection: person(2), children: [] }], 1)
+    expect(one.rings).toHaveLength(1)
+    expect(one.height).toBeLessThan(layoutNetwork([{ connection: person(2), children: [person(3)] }], 1).height)
     expect(layoutNetwork([]).placed).toEqual([])
+    expect(layoutNetwork([]).rings).toEqual([])
+  })
+
+  it('counts each person in the network once, the centre person left out', () => {
+    expect(networkSize([
+      { connection: person(2), children: [person(5), person(3)] },
+      { connection: person(3), children: [person(1), person(5)] }
+    ], 1)).toBe(3)
+  })
+
+  it('grades a link by its average rating', () => {
+    expect([5, 4.5, 4.4, 3, 2.9, 1].map(tierOf)).toEqual(['strong', 'strong', 'fair', 'fair', 'weak', 'weak'])
   })
 })
