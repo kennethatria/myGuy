@@ -155,7 +155,9 @@ type CreateStoreItemRequest struct {
 	StartingBid     float64   `json:"starting_bid,omitempty"`
 	MinBidIncrement float64   `json:"min_bid_increment,omitempty"`
 	Category        string    `json:"category"`
-	Images          []string  `json:"images"`
+	// Set only from uploads the handler has cleaned (media.Clean), never
+	// from the request body: a client-sent URL could point anywhere
+	Images          []string  `json:"-"`
 	Condition       string    `json:"condition" binding:"omitempty,oneof=new like-new good fair poor"`
 	Location        string    `json:"location"`
 	ShippingInfo    string    `json:"shipping_info"`
@@ -170,7 +172,6 @@ type UpdateStoreItemRequest struct {
 	Title        string   `json:"title,omitempty"`
 	Description  string   `json:"description,omitempty"`
 	Category     string   `json:"category,omitempty"`
-	Images       []string `json:"images,omitempty"`
 	Condition    string   `json:"condition,omitempty"`
 	Location     string   `json:"location,omitempty"`
 	ShippingInfo string   `json:"shipping_info,omitempty"`
