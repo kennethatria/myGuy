@@ -32,11 +32,9 @@ type StoreItem struct {
 	Request         *ItemRequest   `json:"request,omitempty" gorm:"foreignKey:RequestID"`
 	BuyerID         *uint          `json:"buyer_id,omitempty" gorm:"index:idx_store_items_buyer_id"`
 	SoldAt          *time.Time     `json:"sold_at,omitempty"`
-	Bids            []Bid          `json:"bids,omitempty" gorm:"foreignKey:ItemID"`
-	BidCount        int            `json:"bid_count" gorm:"-"`
+	// An older listing that was an auction (none are made now)
 	IsAuction       bool           `json:"is_auction" gorm:"-"`
 	Distance        string         `json:"distance,omitempty" gorm:"-"` // rough distance tag for the viewer
-	Price           float64        `json:"price" gorm:"-"`
 	CreatedAt       time.Time      `json:"created_at" gorm:"index:idx_store_items_created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
 	DeletedAt       gorm.DeletedAt `json:"-" gorm:"index"`
@@ -48,19 +46,6 @@ type ItemImage struct {
 	URL       string         `json:"url" gorm:"not null"`
 	Order     int            `json:"order" gorm:"default:0"`
 	CreatedAt time.Time      `json:"created_at"`
-	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
-}
-
-type Bid struct {
-	ID        uint           `json:"id" gorm:"primaryKey"`
-	ItemID    uint           `json:"item_id" gorm:"not null;index:idx_bids_item_id"`
-	Item      StoreItem      `json:"item,omitempty" gorm:"foreignKey:ItemID"`
-	BidderID  uint           `json:"bidder_id" gorm:"not null;index:idx_bids_bidder_id"`
-	Amount    float64        `json:"amount" gorm:"not null"`
-	Message   string         `json:"message"`
-	Status    string         `json:"status" gorm:"default:'active';index:idx_bids_status"` // active, outbid, won, cancelled
-	CreatedAt time.Time      `json:"created_at" gorm:"index:idx_bids_created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
@@ -180,11 +165,6 @@ type UpdateStoreItemRequest struct {
 	ShippingInfo string   `json:"shipping_info,omitempty"`
 }
 
-type CreateBidRequest struct {
-	Amount  float64 `json:"amount" binding:"required"`
-	Message string  `json:"message,omitempty"`
-}
-
 type CreateBookingRequestRequest struct {
 	Message string `json:"message,omitempty"`
 }
@@ -197,9 +177,6 @@ type SubmitRatingRequest struct {
 type StoreItemFilter struct {
 	Search      string
 	Category    string
-	PriceType   string
-	MinPrice    float64
-	MaxPrice    float64
 	Condition   string
 	SellerID    uint
 	// ExcludeSellerID leaves out one seller's listings (the viewer's own)
@@ -216,22 +193,8 @@ type StoreItemFilter struct {
 	PerPage     int
 }
 
-// AfterFind hook to populate computed fields
+// AfterFind marks older auctions, which can no longer be bid on or booked
 func (s *StoreItem) AfterFind(tx *gorm.DB) error {
 	s.IsAuction = s.PriceType == "bidding"
-	if s.IsAuction {
-		s.Price = s.CurrentBid
-		if s.Price == 0 {
-			s.Price = s.StartingBid
-		}
-	} else {
-		s.Price = s.FixedPrice
-	}
-	
-	// Count bids
-	var bidCount int64
-	tx.Model(&Bid{}).Where("item_id = ?", s.ID).Count(&bidCount)
-	s.BidCount = int(bidCount)
-	
 	return nil
 }

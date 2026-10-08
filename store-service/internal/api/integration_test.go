@@ -49,7 +49,7 @@ func setupIntegrationTestDB(t *testing.T) (*gorm.DB, error) {
 	})
 
 	// Auto migrate the schema
-	err = db.AutoMigrate(&models.StoreItem{}, &models.ItemImage{}, &models.Bid{}, &models.BookingRequest{}, &models.User{}, &models.ItemRequest{})
+	err = db.AutoMigrate(&models.StoreItem{}, &models.ItemImage{}, &models.BookingRequest{}, &models.User{}, &models.ItemRequest{})
 	if err != nil {
 		return nil, err
 	}
@@ -73,12 +73,11 @@ func setupIntegrationTestRouter(db *gorm.DB) *gin.Engine {
 
 	// Initialize repositories
 	itemRepo := repositories.NewStoreItemRepository(db)
-	bidRepo := repositories.NewBidRepository(db)
 	bookingRepo := repositories.NewBookingRequestRepository(db)
 	userRepo := repositories.NewUserRepository(db)
 
 	// Initialize service
-	storeService := services.NewStoreService(db, itemRepo, bidRepo, bookingRepo, userRepo)
+	storeService := services.NewStoreService(db, itemRepo, bookingRepo, userRepo)
 
 	// Initialize handler
 	storeHandler := handlers.NewStoreHandler(storeService)
@@ -125,13 +124,7 @@ func setupIntegrationTestRouter(db *gorm.DB) *gin.Engine {
 		api.GET("/items", storeHandler.GetItems)
 		api.PUT("/items/:id", storeHandler.UpdateItem)
 		api.DELETE("/items/:id", storeHandler.DeleteItem)
-		api.POST("/items/:id/bids", storeHandler.PlaceBid)
-		api.GET("/items/:id/bids", storeHandler.GetItemBids)
-		api.POST("/items/:id/bids/:bidId/accept", storeHandler.AcceptBid)
-		api.POST("/items/:id/purchase", storeHandler.PurchaseItem)
 		api.GET("/user/listings", storeHandler.GetUserListings)
-		api.GET("/user/purchases", storeHandler.GetUserPurchases)
-		api.GET("/user/bids", storeHandler.GetUserBids)
 		api.POST("/items/:id/booking-request", storeHandler.CreateBookingRequest)
 		api.GET("/items/:id/booking-request", storeHandler.GetBookingRequest)
 		api.POST("/booking-requests/:requestId/approve", storeHandler.ApproveBookingRequest)
@@ -142,16 +135,12 @@ func setupIntegrationTestRouter(db *gorm.DB) *gin.Engine {
 	return router
 }
 
-// seedListing stores a live listing as older data had it (a price, or an
-// auction): new listings can't carry a price, so these go straight in
+// seedListing stores a live listing straight in the database
 func seedListing(t *testing.T, db *gorm.DB, item models.StoreItem) uint {
 	t.Helper()
 	deadline := time.Now().UTC().Add(24 * time.Hour)
 	item.Status = "active"
 	item.Deadline = &deadline
-	if item.PriceType == "bidding" {
-		item.BidDeadline = &deadline
-	}
 	require.NoError(t, db.Create(&item).Error)
 	return item.ID
 }
@@ -232,17 +221,11 @@ func TestIntegration_ItemLifecycle(t *testing.T) {
 		assert.Equal(t, updateReq.Description, response.Description)
 	})
 
-	t.Run("Purchase item", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/items/%d/purchase", itemID), nil)
-		httpReq.Header.Set("X-User-ID", "2") // Different user
-
-		router.ServeHTTP(w, httpReq)
-
-		require.Equal(t, http.StatusOK, w.Code)
-	})
-
 	t.Run("Verify item is sold", func(t *testing.T) {
+		// A handover in chat marks it sold (there is no direct purchase)
+		buyer := uint(2)
+		require.NoError(t, db.Model(&models.StoreItem{}).Where("id = ?", itemID).Updates(map[string]interface{}{"status": "sold", "buyer_id": buyer}).Error)
+
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("GET", fmt.Sprintf("/api/v1/items/%d", itemID), nil)
 
@@ -268,137 +251,6 @@ func TestIntegration_ItemLifecycle(t *testing.T) {
 		httpReq, _ := http.NewRequest("PUT", fmt.Sprintf("/api/v1/items/%d", itemID), bytes.NewBuffer(jsonData))
 		httpReq.Header.Set("Content-Type", "application/json")
 		httpReq.Header.Set("X-User-ID", "1")
-
-		router.ServeHTTP(w, httpReq)
-
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-	})
-}
-
-func TestIntegration_BiddingLifecycle(t *testing.T) {
-	db, err := setupIntegrationTestDB(t)
-	require.NoError(t, err)
-
-	router := setupIntegrationTestRouter(db)
-
-	var itemID uint
-
-	t.Run("Older auction item", func(t *testing.T) {
-		itemID = seedListing(t, db, models.StoreItem{
-			Title:           "Vintage Guitar",
-			Description:     "Classic acoustic guitar in excellent condition",
-			SellerID:        1,
-			PriceType:       "bidding",
-			StartingBid:     500.0,
-			MinBidIncrement: 25.0,
-			Category:        "music",
-			Condition:       "good",
-		})
-	})
-
-	var secondBidID uint
-
-	t.Run("Place first bid", func(t *testing.T) {
-		bidReq := models.CreateBidRequest{
-			Amount:  525.0,
-			Message: "Great looking guitar!",
-		}
-
-		jsonData, _ := json.Marshal(bidReq)
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/items/%d/bids", itemID), bytes.NewBuffer(jsonData))
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("X-User-ID", "2")
-
-		router.ServeHTTP(w, httpReq)
-
-		require.Equal(t, http.StatusCreated, w.Code)
-
-		var response models.Bid
-		err := json.Unmarshal(w.Body.Bytes(), &response)
-		require.NoError(t, err)
-		assert.Equal(t, bidReq.Amount, response.Amount)
-		assert.Equal(t, bidReq.Message, response.Message)
-		assert.Equal(t, uint(2), response.BidderID)
-	})
-
-	t.Run("Place higher bid", func(t *testing.T) {
-		bidReq := models.CreateBidRequest{
-			Amount:  575.0,
-			Message: "I really want this guitar!",
-		}
-
-		jsonData, _ := json.Marshal(bidReq)
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/items/%d/bids", itemID), bytes.NewBuffer(jsonData))
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("X-User-ID", "3")
-
-		router.ServeHTTP(w, httpReq)
-
-		require.Equal(t, http.StatusCreated, w.Code)
-
-		var response models.Bid
-		err := json.Unmarshal(w.Body.Bytes(), &response)
-		require.NoError(t, err)
-		assert.Equal(t, bidReq.Amount, response.Amount)
-		assert.Equal(t, uint(3), response.BidderID)
-
-		secondBidID = response.ID
-	})
-
-	t.Run("Get item bids", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", fmt.Sprintf("/api/v1/items/%d/bids", itemID), nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		require.Equal(t, http.StatusOK, w.Code)
-
-		var response []models.Bid
-		err := json.Unmarshal(w.Body.Bytes(), &response)
-		require.NoError(t, err)
-		assert.Len(t, response, 2)
-
-		// Should be ordered by amount DESC
-		assert.True(t, response[0].Amount >= response[1].Amount)
-	})
-
-	t.Run("Accept winning bid", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/items/%d/bids/%d/accept", itemID, secondBidID), nil)
-		httpReq.Header.Set("X-User-ID", "1") // Item owner
-
-		router.ServeHTTP(w, httpReq)
-
-		require.Equal(t, http.StatusOK, w.Code)
-	})
-
-	t.Run("Verify item is sold to winning bidder", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", fmt.Sprintf("/api/v1/items/%d", itemID), nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		require.Equal(t, http.StatusOK, w.Code)
-
-		var response models.StoreItem
-		err := json.Unmarshal(w.Body.Bytes(), &response)
-		require.NoError(t, err)
-		assert.Equal(t, "sold", response.Status)
-		assert.Equal(t, uint(3), *response.BuyerID)
-	})
-
-	t.Run("Cannot place bid on sold item", func(t *testing.T) {
-		bidReq := models.CreateBidRequest{
-			Amount: 600.0,
-		}
-
-		jsonData, _ := json.Marshal(bidReq)
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/items/%d/bids", itemID), bytes.NewBuffer(jsonData))
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("X-User-ID", "2")
 
 		router.ServeHTTP(w, httpReq)
 
@@ -680,12 +532,11 @@ func TestIntegration_ItemFiltering(t *testing.T) {
 
 	router := setupIntegrationTestRouter(db)
 
-	// Older listings, with the prices they carried before notes had none
 	t.Run("Create test items", func(t *testing.T) {
 		for _, item := range []models.StoreItem{
-			{Title: "Expensive Electronics", Description: "High-end gadget", SellerID: 1, PriceType: "fixed", FixedPrice: 1000.0, Category: "electronics", Condition: "new"},
-			{Title: "Cheap Book", Description: "Interesting novel", SellerID: 1, PriceType: "fixed", FixedPrice: 15.0, Category: "books", Condition: "good"},
-			{Title: "Electronics Auction", Description: "Bidding item", SellerID: 1, PriceType: "bidding", StartingBid: 100.0, Category: "electronics", Condition: "fair"},
+			{Title: "Expensive Electronics", Description: "High-end gadget", SellerID: 1, PriceType: "fixed", Category: "electronics", Condition: "new"},
+			{Title: "Cheap Book", Description: "Interesting novel", SellerID: 1, PriceType: "fixed", Category: "books", Condition: "good"},
+			{Title: "Electronics Lamp", Description: "Desk lamp", SellerID: 1, PriceType: "fixed", Category: "electronics", Condition: "fair"},
 		} {
 			seedListing(t, db, item)
 		}
@@ -725,20 +576,6 @@ func TestIntegration_ItemFiltering(t *testing.T) {
 		assert.Len(t, items, 2)
 	})
 
-	t.Run("Filter by price range", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", "/api/v1/items?min_price=50&max_price=500", nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		require.Equal(t, http.StatusOK, w.Code)
-
-		var response map[string]interface{}
-		err := json.Unmarshal(w.Body.Bytes(), &response)
-		require.NoError(t, err)
-		assert.True(t, response["total"].(float64) >= 1)
-	})
-
 	t.Run("Search items", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("GET", "/api/v1/items?search=electronics", nil)
@@ -751,20 +588,6 @@ func TestIntegration_ItemFiltering(t *testing.T) {
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		require.NoError(t, err)
 		assert.True(t, response["total"].(float64) >= 1)
-	})
-
-	t.Run("Filter by price type", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", "/api/v1/items?price_type=bidding", nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		require.Equal(t, http.StatusOK, w.Code)
-
-		var response map[string]interface{}
-		err := json.Unmarshal(w.Body.Bytes(), &response)
-		require.NoError(t, err)
-		assert.Equal(t, float64(1), response["total"])
 	})
 
 	t.Run("Pagination", func(t *testing.T) {
@@ -819,16 +642,6 @@ func TestIntegration_UserSpecificEndpoints(t *testing.T) {
 			router.ServeHTTP(w, httpReq)
 			require.Equal(t, http.StatusCreated, w.Code)
 		}
-
-		// User 2 has an older auction
-		seedListing(t, db, models.StoreItem{
-			Title:       "Auction Item",
-			Description: "A short note",
-			SellerID:    2,
-			PriceType:   "bidding",
-			StartingBid: 50.0,
-			Condition:   "good",
-		})
 	})
 
 	t.Run("Get user listings", func(t *testing.T) {
@@ -850,62 +663,4 @@ func TestIntegration_UserSpecificEndpoints(t *testing.T) {
 		}
 	})
 
-	t.Run("Place bid and get user bids", func(t *testing.T) {
-		// First, place a bid
-		bidReq := models.CreateBidRequest{
-			Amount: 75.0,
-		}
-
-		jsonData, _ := json.Marshal(bidReq)
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items/3/bids", bytes.NewBuffer(jsonData))
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("X-User-ID", "1")
-
-		router.ServeHTTP(w, httpReq)
-		require.Equal(t, http.StatusCreated, w.Code)
-
-		// Now get user bids
-		w = httptest.NewRecorder()
-		httpReq, _ = http.NewRequest("GET", "/api/v1/user/bids", nil)
-		httpReq.Header.Set("X-User-ID", "1")
-
-		router.ServeHTTP(w, httpReq)
-
-		require.Equal(t, http.StatusOK, w.Code)
-
-		var response []models.Bid
-		err := json.Unmarshal(w.Body.Bytes(), &response)
-		require.NoError(t, err)
-		assert.Len(t, response, 1)
-		assert.Equal(t, uint(1), response[0].BidderID)
-		assert.Equal(t, 75.0, response[0].Amount)
-	})
-
-	t.Run("Purchase item and get user purchases", func(t *testing.T) {
-		// Purchase an item
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/purchase", nil)
-		httpReq.Header.Set("X-User-ID", "2")
-
-		router.ServeHTTP(w, httpReq)
-		require.Equal(t, http.StatusOK, w.Code)
-
-		// Get user purchases
-		w = httptest.NewRecorder()
-		httpReq, _ = http.NewRequest("GET", "/api/v1/user/purchases", nil)
-		httpReq.Header.Set("X-User-ID", "2")
-
-		router.ServeHTTP(w, httpReq)
-
-		require.Equal(t, http.StatusOK, w.Code)
-
-		var response []models.StoreItem
-		err := json.Unmarshal(w.Body.Bytes(), &response)
-		require.NoError(t, err)
-		assert.Len(t, response, 1)
-		require.NotNil(t, response[0].BuyerID)
-		assert.Equal(t, uint(2), *response[0].BuyerID)
-		assert.Equal(t, "sold", response[0].Status)
-	})
 }

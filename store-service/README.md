@@ -1,6 +1,6 @@
 # Store Service - MyGuy Marketplace
 
-This microservice provides a comprehensive marketplace for the MyGuy platform, allowing users to list, sell, and bid on items. It features robust support for fixed-price sales, auctions, item bookings, and secure image handling.
+This microservice provides the marketplace for the MyGuy platform: listings and "wanted" requests as short sticky notes, bookings agreed in chat, and secure image handling. Listings carry no price; it goes in the note or is agreed in chat.
 
 The service is built with Go, using the Gin framework for its API, and GORM for database interactions with PostgreSQL.
 
@@ -24,7 +24,6 @@ The service is built with Go, using the Gin framework for its API, and GORM for 
 ## 1. Features
 
 -   **Item Management**: Create, update, and delete item listings with rich details.
--   **Dual Pricing Models**: Supports both fixed-price sales and auction-style bidding.
 -   **Image Handling**: Allows multiple image uploads per item.
 -   **Booking System**: Users can request to "book" an item, which owners can approve or reject.
 -   **User Synchronization**: Automatically creates and updates a local cache of users from incoming JWTs to ensure data integrity and prevent "Unknown User" errors.
@@ -113,7 +112,6 @@ A `Makefile` provides convenient commands for testing:
     -   All API endpoints, including success and error cases.
     -   JWT validation and automatic user synchronization.
     -   Booking request workflows (creation, approval, rejection, edge cases).
-    -   Bidding and purchasing logic.
     -   Database constraints and repository logic.
 
 ---
@@ -146,15 +144,13 @@ The service currently stores uploaded images on the **local server filesystem**.
 
 ### Common Endpoints
 -   `GET /items`: Browse items with filtering, sorting, and pagination.
--   `POST /items`: Post a listing: `title` (≤ 5 words) and `description` (≤ 20 words), no contact details, optional `images`. Price fields are optional. It stays up 24 hours unless someone bids or asks to book.
+-   `POST /items`: Post a listing: `title` (≤ 5 words) and `description` (≤ 20 words), no contact details, optional `images`. No price fields. It stays up 24 hours unless someone asks to book.
 -   `POST /items/:id/repost`: Put the seller's expired listing back up for 24 hours.
 -   `GET /requests`, `GET /requests/:id`, `GET /requests/:id/listings`: "Wanted" notes and the listings made for one.
 -   `POST /requests`: Post a request (same note rules as a listing). `POST /requests/:id/repost` and `DELETE /requests/:id` for the requester. `GET /user/requests`: your own.
 -   A listing created with `request_id` answers that request: the requester gets a message through chat's `/internal/store-message` (needs `INTERNAL_API_KEY` and `CHAT_API_URL`).
 -   `GET /items/:id`: Get details for a single item.
--   `PUT /items/:id`: Update an item (owner only).
--   `POST /items/:id/bids`: Place a bid on an auction item.
--   `POST /items/:id/purchase`: Purchase a fixed-price item.
+-   `PUT /items/:id`: Change a live listing's headline and note (owner only). `PUT /requests/:id` does the same for a request.
 -   `POST /items/:id/booking-request`: Request to book an item.
 -   `POST /booking-requests/:id/approve|reject|confirm-received|confirm-delivery|rate-seller|rate-buyer`: Booking workflow steps.
 -   `GET /users/:id/ratings`: Store ratings a user has received (as seller or buyer). Profiles combine these with task reviews into one rating.
@@ -164,8 +160,7 @@ User records embedded in responses (e.g. an item's seller) never include the ema
 ---
 
 ## 7. Data Models
--   **StoreItem**: Represents an item for sale. Includes fields for title, description, seller, price, status, category, images, etc.
--   **Bid**: Represents a bid made on an auction item.
+-   **StoreItem**: Represents an item for sale: title, description, seller, status, images, and its 24-hour deadline. Price and auction columns remain only on older rows (`is_auction` marks old auctions, which can't be bid on or booked).
 -   **BookingRequest**: Represents a user's request to book an item.
 -   **User**: A local cache of user information, synchronized from JWTs.
 

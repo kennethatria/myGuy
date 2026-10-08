@@ -85,42 +85,9 @@ func (m *MockStoreService) RepostItem(id uint, userID uint) (*models.StoreItem, 
 	return args.Get(0).(*models.StoreItem), args.Error(1)
 }
 
-func (m *MockStoreService) PlaceBid(itemID uint, userID uint, req models.CreateBidRequest) (*models.Bid, error) {
-	args := m.Called(itemID, userID, req)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.Bid), args.Error(1)
-}
-
-func (m *MockStoreService) GetItemBids(itemID uint) ([]models.Bid, error) {
-	args := m.Called(itemID)
-	return args.Get(0).([]models.Bid), args.Error(1)
-}
-
-func (m *MockStoreService) AcceptBid(itemID uint, bidID uint, sellerID uint) error {
-	args := m.Called(itemID, bidID, sellerID)
-	return args.Error(0)
-}
-
-func (m *MockStoreService) PurchaseItem(itemID uint, buyerID uint) error {
-	args := m.Called(itemID, buyerID)
-	return args.Error(0)
-}
-
 func (m *MockStoreService) GetUserListings(userID uint) ([]models.StoreItem, error) {
 	args := m.Called(userID)
 	return args.Get(0).([]models.StoreItem), args.Error(1)
-}
-
-func (m *MockStoreService) GetUserPurchases(userID uint) ([]models.StoreItem, error) {
-	args := m.Called(userID)
-	return args.Get(0).([]models.StoreItem), args.Error(1)
-}
-
-func (m *MockStoreService) GetUserBids(userID uint) ([]models.Bid, error) {
-	args := m.Called(userID)
-	return args.Get(0).([]models.Bid), args.Error(1)
 }
 
 func (m *MockStoreService) CreateBookingRequest(itemID uint, requesterID uint, message string) (*models.BookingRequest, error) {
@@ -263,13 +230,7 @@ func setupTestRouterRoutes(router *gin.Engine, handler *StoreHandler) *gin.Engin
 		api.GET("/items", handler.GetItems)
 		api.PUT("/items/:id", handler.UpdateItem)
 		api.DELETE("/items/:id", handler.DeleteItem)
-		api.POST("/items/:id/bids", handler.PlaceBid)
-		api.GET("/items/:id/bids", handler.GetItemBids)
-		api.POST("/items/:id/bids/:bidId/accept", handler.AcceptBid)
-		api.POST("/items/:id/purchase", handler.PurchaseItem)
 		api.GET("/user/listings", handler.GetUserListings)
-		api.GET("/user/purchases", handler.GetUserPurchases)
-		api.GET("/user/bids", handler.GetUserBids)
 		api.POST("/items/:id/booking-request", handler.CreateBookingRequest)
 		api.GET("/items/:id/booking-request", handler.GetBookingRequest)
 		api.GET("/items/:id/booking-requests", handler.GetAllBookingRequests)
@@ -808,135 +769,6 @@ func TestRepostItem(t *testing.T) {
 	}
 }
 
-func TestPlaceBid(t *testing.T) {
-	t.Run("successful bid", func(t *testing.T) {
-		mockService := new(MockStoreService)
-		handler := NewStoreHandler(mockService)
-		router := setupTestRouter(handler)
-
-		req := models.CreateBidRequest{
-			Amount:  150.0,
-			Message: "My bid",
-		}
-
-		bid := &models.Bid{
-			ID:       1,
-			ItemID:   1,
-			BidderID: 1,
-			Amount:   req.Amount,
-			Message:  req.Message,
-			Status:   "active",
-		}
-
-		mockService.On("PlaceBid", uint(1), uint(1), req).Return(bid, nil)
-
-		jsonData, _ := json.Marshal(req)
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/bids", bytes.NewBuffer(jsonData))
-		httpReq.Header.Set("Content-Type", "application/json")
-
-		router.ServeHTTP(w, httpReq)
-
-		assert.Equal(t, http.StatusCreated, w.Code)
-		mockService.AssertExpectations(t)
-	})
-
-	t.Run("invalid bid amount", func(t *testing.T) {
-		mockService := new(MockStoreService)
-		handler := NewStoreHandler(mockService)
-		router := setupTestRouter(handler)
-
-		req := models.CreateBidRequest{
-			Amount: 50.0,
-		}
-
-		mockService.On("PlaceBid", uint(1), uint(1), req).Return(nil, services.NewUserError("bid amount too low"))
-
-		jsonData, _ := json.Marshal(req)
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/bids", bytes.NewBuffer(jsonData))
-		httpReq.Header.Set("Content-Type", "application/json")
-
-		router.ServeHTTP(w, httpReq)
-
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-		mockService.AssertExpectations(t)
-	})
-}
-
-func TestGetItemBids(t *testing.T) {
-	t.Run("successful get bids", func(t *testing.T) {
-		mockService := new(MockStoreService)
-		handler := NewStoreHandler(mockService)
-		router := setupTestRouter(handler)
-
-		bids := []models.Bid{
-			{ID: 1, ItemID: 1, BidderID: 1, Amount: 150.0, Status: "active"},
-			{ID: 2, ItemID: 1, BidderID: 2, Amount: 120.0, Status: "outbid"},
-		}
-
-		mockService.On("GetItemBids", uint(1)).Return(bids, nil)
-
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", "/api/v1/items/1/bids", nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		mockService.AssertExpectations(t)
-	})
-
-	t.Run("service error", func(t *testing.T) {
-		mockService := new(MockStoreService)
-		handler := NewStoreHandler(mockService)
-		router := setupTestRouter(handler)
-
-		mockService.On("GetItemBids", uint(1)).Return([]models.Bid{}, services.NewUserError("service error"))
-
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", "/api/v1/items/1/bids", nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
-		mockService.AssertExpectations(t)
-	})
-}
-
-func TestPurchaseItem(t *testing.T) {
-	t.Run("successful purchase", func(t *testing.T) {
-		mockService := new(MockStoreService)
-		handler := NewStoreHandler(mockService)
-		router := setupTestRouter(handler)
-
-		mockService.On("PurchaseItem", uint(1), uint(1)).Return(nil)
-
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/purchase", nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		mockService.AssertExpectations(t)
-	})
-
-	t.Run("cannot purchase own item", func(t *testing.T) {
-		mockService := new(MockStoreService)
-		handler := NewStoreHandler(mockService)
-		router := setupTestRouter(handler)
-
-		mockService.On("PurchaseItem", uint(1), uint(1)).Return(services.NewUserError("cannot purchase own item"))
-
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/purchase", nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-		mockService.AssertExpectations(t)
-	})
-}
-
 func TestGetUserListings(t *testing.T) {
 	t.Run("successful get user listings", func(t *testing.T) {
 		mockService := new(MockStoreService)
@@ -1376,144 +1208,6 @@ func TestGetUserBookingRequests(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Empty(t, response)
 
-		mockService.AssertExpectations(t)
-	})
-}
-
-func TestAcceptBid(t *testing.T) {
-	t.Run("successful accept bid", func(t *testing.T) {
-		mockService := new(MockStoreService)
-		handler := NewStoreHandler(mockService)
-		router := setupTestRouter(handler)
-
-		mockService.On("AcceptBid", uint(1), uint(1), uint(1)).Return(nil)
-
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/bids/1/accept", nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		mockService.AssertExpectations(t)
-	})
-
-	t.Run("invalid item ID", func(t *testing.T) {
-		mockService := new(MockStoreService)
-		handler := NewStoreHandler(mockService)
-		router := setupTestRouter(handler)
-
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items/invalid/bids/1/accept", nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-	})
-
-	t.Run("invalid bid ID", func(t *testing.T) {
-		mockService := new(MockStoreService)
-		handler := NewStoreHandler(mockService)
-		router := setupTestRouter(handler)
-
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/bids/invalid/accept", nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-	})
-
-	t.Run("unauthorized", func(t *testing.T) {
-		mockService := new(MockStoreService)
-		handler := NewStoreHandler(mockService)
-		router := setupTestRouter(handler)
-
-		mockService.On("AcceptBid", uint(1), uint(1), uint(1)).Return(services.NewUserError("unauthorized"))
-
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items/1/bids/1/accept", nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-		mockService.AssertExpectations(t)
-	})
-}
-
-func TestGetUserPurchases(t *testing.T) {
-	t.Run("successful get user purchases", func(t *testing.T) {
-		mockService := new(MockStoreService)
-		handler := NewStoreHandler(mockService)
-		router := setupTestRouter(handler)
-
-		items := []models.StoreItem{
-			{ID: 1, Title: "Purchased Item 1", SellerID: 2, Status: "sold"},
-			{ID: 2, Title: "Purchased Item 2", SellerID: 3, Status: "sold"},
-		}
-
-		mockService.On("GetUserPurchases", uint(1)).Return(items, nil)
-
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", "/api/v1/user/purchases", nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		mockService.AssertExpectations(t)
-	})
-
-	t.Run("service error", func(t *testing.T) {
-		mockService := new(MockStoreService)
-		handler := NewStoreHandler(mockService)
-		router := setupTestRouter(handler)
-
-		mockService.On("GetUserPurchases", uint(1)).Return([]models.StoreItem{}, services.NewUserError("service error"))
-
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", "/api/v1/user/purchases", nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
-		mockService.AssertExpectations(t)
-	})
-}
-
-func TestGetUserBids(t *testing.T) {
-	t.Run("successful get user bids", func(t *testing.T) {
-		mockService := new(MockStoreService)
-		handler := NewStoreHandler(mockService)
-		router := setupTestRouter(handler)
-
-		bids := []models.Bid{
-			{ID: 1, ItemID: 1, BidderID: 1, Amount: 150.0, Status: "active"},
-			{ID: 2, ItemID: 2, BidderID: 1, Amount: 120.0, Status: "outbid"},
-		}
-
-		mockService.On("GetUserBids", uint(1)).Return(bids, nil)
-
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", "/api/v1/user/bids", nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		mockService.AssertExpectations(t)
-	})
-
-	t.Run("service error", func(t *testing.T) {
-		mockService := new(MockStoreService)
-		handler := NewStoreHandler(mockService)
-		router := setupTestRouter(handler)
-
-		mockService.On("GetUserBids", uint(1)).Return([]models.Bid{}, services.NewUserError("service error"))
-
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("GET", "/api/v1/user/bids", nil)
-
-		router.ServeHTTP(w, httpReq)
-
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
 		mockService.AssertExpectations(t)
 	})
 }
@@ -2220,7 +1914,7 @@ func TestStoreErrorsDontLeak(t *testing.T) {
 	mockService := new(MockStoreService)
 	router := setupTestRouter(NewStoreHandler(mockService))
 	mockService.On("DeleteItem", uint(1), uint(1)).Return(errors.New("dial tcp 10.0.0.5:5432: connect: connection refused"))
-	mockService.On("PlaceBid", uint(1), uint(1), mock.Anything).Return(nil, gorm.ErrRecordNotFound)
+	mockService.On("UpdateItem", uint(1), uint(1), mock.Anything).Return(nil, gorm.ErrRecordNotFound)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("DELETE", "/api/v1/items/1", nil)
@@ -2229,14 +1923,14 @@ func TestStoreErrorsDontLeak(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "5432")
 
 	w = httptest.NewRecorder()
-	req, _ = http.NewRequest("POST", "/api/v1/items/1/bids", strings.NewReader(`{"amount":10}`))
+	req, _ = http.NewRequest("PUT", "/api/v1/items/1", strings.NewReader(`{"title":"Lamp","description":"Brass"}`))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.JSONEq(t, `{"error":"not found"}`, w.Body.String())
 
 	w = httptest.NewRecorder()
-	req, _ = http.NewRequest("POST", "/api/v1/items/1/bids", strings.NewReader(`{"amount":"lots"}`))
+	req, _ = http.NewRequest("PUT", "/api/v1/items/1", strings.NewReader(`{"title":5}`))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusBadRequest, w.Code)

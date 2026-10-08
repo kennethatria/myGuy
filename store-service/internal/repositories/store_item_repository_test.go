@@ -17,7 +17,7 @@ func setupTestDB() (*gorm.DB, error) {
 	}
 
 	// Auto migrate the schema
-	err = db.AutoMigrate(&models.StoreItem{}, &models.ItemImage{}, &models.Bid{}, &models.BookingRequest{}, &models.User{}, &models.ItemRequest{})
+	err = db.AutoMigrate(&models.StoreItem{}, &models.ItemImage{}, &models.BookingRequest{}, &models.User{}, &models.ItemRequest{})
 	if err != nil {
 		return nil, err
 	}
@@ -138,15 +138,6 @@ func TestStoreItemRepository_GetByID(t *testing.T) {
 	}
 	db.Create(testItem)
 
-	// Create test bids
-	testBids := []models.Bid{
-		{ItemID: testItem.ID, BidderID: 2, Amount: 110.0, Status: "active"},
-		{ItemID: testItem.ID, BidderID: 3, Amount: 105.0, Status: "outbid"},
-	}
-	for _, bid := range testBids {
-		db.Create(&bid)
-	}
-
 	t.Run("successful get by ID", func(t *testing.T) {
 		item, err := repo.GetByID(testItem.ID)
 
@@ -157,7 +148,6 @@ func TestStoreItemRepository_GetByID(t *testing.T) {
 		assert.Equal(t, testItem.SellerID, item.SellerID)
 		assert.NotNil(t, item.Seller)
 		assert.Len(t, item.Images, 2)
-		assert.Len(t, item.Bids, 1) // Only active bids
 		
 		// Check image ordering
 		assert.Equal(t, 0, item.Images[0].Order)
@@ -271,21 +261,6 @@ func TestStoreItemRepository_GetAll(t *testing.T) {
 		assert.Equal(t, "electronics", items[0].Category)
 	})
 
-	t.Run("price type filter", func(t *testing.T) {
-		filter := models.StoreItemFilter{
-			PriceType: "bidding",
-			Page:      1,
-			PerPage:   10,
-		}
-
-		items, total, err := repo.GetAll(filter)
-
-		assert.NoError(t, err)
-		assert.Len(t, items, 1)
-		assert.Equal(t, int64(1), total)
-		assert.Equal(t, "bidding", items[0].PriceType)
-	})
-
 	t.Run("condition filter", func(t *testing.T) {
 		filter := models.StoreItemFilter{
 			Condition: "new",
@@ -331,59 +306,6 @@ func TestStoreItemRepository_GetAll(t *testing.T) {
 		for _, item := range items {
 			assert.Equal(t, uint(1), item.SellerID)
 		}
-	})
-
-	t.Run("price range filter for fixed price", func(t *testing.T) {
-		filter := models.StoreItemFilter{
-			PriceType: "fixed",
-			MinPrice:  50.0,
-			MaxPrice:  150.0,
-			Page:      1,
-			PerPage:   10,
-		}
-
-		items, total, err := repo.GetAll(filter)
-
-		assert.NoError(t, err)
-		assert.Len(t, items, 1)
-		assert.Equal(t, int64(1), total)
-		assert.True(t, items[0].FixedPrice >= 50.0 && items[0].FixedPrice <= 150.0)
-	})
-
-	t.Run("price range filter for bidding", func(t *testing.T) {
-		filter := models.StoreItemFilter{
-			PriceType: "bidding",
-			MinPrice:  70.0,
-			MaxPrice:  100.0,
-			Page:      1,
-			PerPage:   10,
-		}
-
-		items, total, err := repo.GetAll(filter)
-
-		assert.NoError(t, err)
-		assert.Len(t, items, 1)
-		assert.Equal(t, int64(1), total)
-		assert.Equal(t, "bidding", items[0].PriceType)
-		assert.True(t, items[0].CurrentBid >= 70.0 && items[0].CurrentBid <= 100.0)
-	})
-
-	t.Run("sort by price", func(t *testing.T) {
-		filter := models.StoreItemFilter{
-			SortBy:    "price",
-			SortOrder: "asc",
-			Page:      1,
-			PerPage:   10,
-		}
-
-		items, total, err := repo.GetAll(filter)
-
-		assert.NoError(t, err)
-		assert.Len(t, items, 3)
-		assert.Equal(t, int64(3), total)
-		
-		// Check ascending order
-		assert.True(t, items[0].FixedPrice <= items[1].FixedPrice || items[0].CurrentBid <= items[1].CurrentBid)
 	})
 
 	t.Run("sort by title", func(t *testing.T) {
@@ -561,42 +483,6 @@ func TestStoreItemRepository_GetBySellerID(t *testing.T) {
 	})
 }
 
-func TestStoreItemRepository_GetByBuyerID(t *testing.T) {
-	db, err := setupTestDB()
-	assert.NoError(t, err)
-	
-	repo := NewStoreItemRepository(db)
-
-	// Create test items
-	buyerID := uint(2)
-	testItems := []models.StoreItem{
-		{Title: "Purchased Item 1", SellerID: 1, BuyerID: &buyerID, Status: "sold"},
-		{Title: "Purchased Item 2", SellerID: 3, BuyerID: &buyerID, Status: "sold"},
-		{Title: "Not Purchased", SellerID: 1, Status: "active"},
-	}
-
-	for _, item := range testItems {
-		db.Create(&item)
-	}
-
-	t.Run("successful get by buyer ID", func(t *testing.T) {
-		items, err := repo.GetByBuyerID(2)
-
-		assert.NoError(t, err)
-		assert.Len(t, items, 2)
-		for _, item := range items {
-			assert.Equal(t, uint(2), *item.BuyerID)
-		}
-	})
-
-	t.Run("no purchases for buyer", func(t *testing.T) {
-		items, err := repo.GetByBuyerID(999)
-
-		assert.NoError(t, err)
-		assert.Empty(t, items)
-	})
-}
-
 func TestStoreItemRepository_UpdateStatus(t *testing.T) {
 	db, err := setupTestDB()
 	assert.NoError(t, err)
@@ -677,7 +563,7 @@ func TestStoreItemRepository_ExpireUnanswered(t *testing.T) {
 
 	items := map[string]*models.StoreItem{
 		"unanswered": {Title: "Lamp", SellerID: 1, PriceType: "fixed", Deadline: &past, Status: "active"},
-		"bid on":     {Title: "Bike", SellerID: 1, PriceType: "bidding", Deadline: &past, Status: "active"},
+		"old auction": {Title: "Bike", SellerID: 1, PriceType: "bidding", Deadline: &past, Status: "active"},
 		"booked":     {Title: "Desk", SellerID: 1, PriceType: "fixed", Deadline: &past, Status: "active"},
 		"released":   {Title: "Chair", SellerID: 1, PriceType: "fixed", Deadline: &past, Status: "active"},
 		"declined":   {Title: "Shelf", SellerID: 1, PriceType: "fixed", Deadline: &past, Status: "active"},
@@ -687,7 +573,6 @@ func TestStoreItemRepository_ExpireUnanswered(t *testing.T) {
 	for _, item := range items {
 		assert.NoError(t, db.Create(item).Error)
 	}
-	assert.NoError(t, db.Create(&models.Bid{ItemID: items["bid on"].ID, BidderID: 2, Amount: 10, Status: "active"}).Error)
 	assert.NoError(t, db.Create(&models.BookingRequest{ItemID: items["booked"].ID, RequesterID: 2, Status: "pending"}).Error)
 	// A released booking no longer holds the item up
 	assert.NoError(t, db.Create(&models.BookingRequest{ItemID: items["released"].ID, RequesterID: 2, Status: "released"}).Error)
@@ -697,8 +582,9 @@ func TestStoreItemRepository_ExpireUnanswered(t *testing.T) {
 	n, err := repo.ExpireUnanswered(time.Now())
 
 	assert.NoError(t, err)
-	assert.Equal(t, int64(3), n)
-	want := map[string]string{"unanswered": "expired", "bid on": "active", "booked": "active", "released": "expired", "declined": "expired", "still live": "active", "sold": "sold"}
+	assert.Equal(t, int64(4), n)
+	// Bids no longer hold a listing up: an older auction expires like any note
+	want := map[string]string{"unanswered": "expired", "old auction": "expired", "booked": "active", "released": "expired", "declined": "expired", "still live": "active", "sold": "sold"}
 	for name, item := range items {
 		var got models.StoreItem
 		assert.NoError(t, db.First(&got, item.ID).Error)

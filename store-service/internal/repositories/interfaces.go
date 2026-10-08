@@ -8,14 +8,12 @@ import (
 type StoreItemRepository interface {
 	Create(item *models.StoreItem) error
 	GetByID(id uint) (*models.StoreItem, error)
-	GetByIDForUpdate(id uint) (*models.StoreItem, error)
 	GetAll(filter models.StoreItemFilter) ([]models.StoreItem, int64, error)
 	ListIDs(filter models.StoreItemFilter) ([]uint, error)
 	GetByIDs(ids []uint) ([]models.StoreItem, error)
 	Update(item *models.StoreItem) error
 	Delete(id uint) error
 	GetBySellerID(sellerID uint) ([]models.StoreItem, error)
-	GetByBuyerID(buyerID uint) ([]models.StoreItem, error)
 	UpdateStatus(id uint, status string) error
 	MarkAsSold(id uint, buyerID uint) error
 	ExpireUnanswered(now time.Time) (int64, error)
@@ -34,17 +32,6 @@ type ItemRequestRepository interface {
 	MarkFulfilled(id uint, itemID uint) (bool, error)
 	Reopen(id uint, deadline time.Time) (bool, error)
 	ExpireUnanswered(now time.Time) (int64, error)
-}
-
-type BidRepository interface {
-	Create(bid *models.Bid) error
-	GetByID(id uint) (*models.Bid, error)
-	GetByItemID(itemID uint) ([]models.Bid, error)
-	GetByBidderID(bidderID uint) ([]models.Bid, error)
-	GetHighestBidForItem(itemID uint) (*models.Bid, error)
-	UpdateBidStatus(id uint, status string) error
-	MarkOutbidBids(itemID uint, winningBidID uint) error
-	GetActiveBidsForItem(itemID uint) ([]models.Bid, error)
 }
 
 type BookingRequestRepository interface {

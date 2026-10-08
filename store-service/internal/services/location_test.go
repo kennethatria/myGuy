@@ -28,7 +28,7 @@ func fp(v float64) *float64 { return &v }
 
 func TestListingLocations(t *testing.T) {
 	t.Run("saved on create when given, refused when invalid", func(t *testing.T) {
-		service, itemRepo, _, _ := setupService()
+		service, itemRepo, _ := setupService()
 		locator := &recordingLocator{}
 		service.WithLocator(locator)
 		itemRepo.On("Create", mock.Anything).Return(nil)
@@ -45,7 +45,7 @@ func TestListingLocations(t *testing.T) {
 	})
 
 	t.Run("nothing saved when the listing wasn't created", func(t *testing.T) {
-		service, itemRepo, _, _ := setupService()
+		service, itemRepo, _ := setupService()
 		locator := &recordingLocator{}
 		service.WithLocator(locator)
 		itemRepo.On("Create", mock.Anything).Return(errors.New("db down"))
@@ -56,7 +56,7 @@ func TestListingLocations(t *testing.T) {
 	})
 
 	t.Run("deleted with the listing", func(t *testing.T) {
-		service, itemRepo, _, bookingRepo := setupService()
+		service, itemRepo, bookingRepo := setupService()
 		locator := &recordingLocator{}
 		service.WithLocator(locator).WithLocator(nil) // nil keeps the current one
 		itemRepo.On("GetByID", uint(1)).Return(&models.StoreItem{ID: 1, SellerID: 1, Status: "expired"}, nil)

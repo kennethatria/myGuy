@@ -80,7 +80,6 @@ func validateListingText(title, description string) (string, string, error) {
 type StoreService struct {
 	db              *gorm.DB
 	itemRepo        repositories.StoreItemRepository
-	bidRepo         repositories.BidRepository
 	bookingRepo     repositories.BookingRequestRepository
 	userRepo        repositories.UserRepository
 	requestRepo     repositories.ItemRequestRepository
@@ -89,11 +88,10 @@ type StoreService struct {
 	distancer       Distancer // nil: no distance sorting or tags
 }
 
-func NewStoreService(db *gorm.DB, itemRepo repositories.StoreItemRepository, bidRepo repositories.BidRepository, bookingRepo repositories.BookingRequestRepository, userRepo repositories.UserRepository) *StoreService {
+func NewStoreService(db *gorm.DB, itemRepo repositories.StoreItemRepository, bookingRepo repositories.BookingRequestRepository, userRepo repositories.UserRepository) *StoreService {
 	return &StoreService{
 		db:          db,
 		itemRepo:    itemRepo,
-		bidRepo:     bidRepo,
 		bookingRepo: bookingRepo,
 		userRepo:    userRepo,
 		chat:        noopChatNotifier{},
@@ -198,12 +196,9 @@ func startListing(item *models.StoreItem) {
 	item.BidDeadline = nil
 }
 
-// hasReactions reports whether anyone bid on or asked to book item; such a
-// listing stays up past its deadline so the seller can deal.
+// hasReactions reports whether anyone asked to book item; such a listing
+// stays up past its deadline so the seller can deal.
 func (s *StoreService) hasReactions(item *models.StoreItem) (bool, error) {
-	if item.BidCount > 0 || len(item.Bids) > 0 {
-		return true, nil
-	}
 	requests, err := s.bookingRepo.GetAllByItemID(item.ID)
 	if err != nil {
 		return false, err
@@ -407,178 +402,8 @@ func (s *StoreService) DeleteItem(id uint, userID uint) error {
 	return nil
 }
 
-func (s *StoreService) PlaceBid(itemID uint, userID uint, req models.CreateBidRequest) (*models.Bid, error) {
-	// Function to execute the bidding logic
-	placeBidLogic := func(itemRepo repositories.StoreItemRepository, bidRepo repositories.BidRepository) (*models.Bid, error) {
-		// Use GetByIDForUpdate if available (not nil DB), otherwise fallback to GetByID (for tests)
-		var item *models.StoreItem
-		var err error
-		
-		// Ideally we should always use GetByIDForUpdate, but for tests mocking might be easier if we check
-		// However, standardizing on GetByIDForUpdate in the interface makes it clean.
-		item, err = itemRepo.GetByIDForUpdate(itemID)
-		if err != nil {
-			return nil, err
-		}
-
-		if item.PriceType != "bidding" {
-			return nil, NewUserError("this item is not available for bidding")
-		}
-
-		if item.Status != "active" {
-			return nil, NewUserError("item is not active")
-		}
-
-		if item.SellerID == userID {
-			return nil, NewUserError("you cannot bid on your own item")
-		}
-
-		// Bidding closes with the note; the seller can still accept a bid
-		if item.BidDeadline != nil && time.Now().After(*item.BidDeadline) {
-			return nil, NewUserError("bidding has ended for this item")
-		}
-
-		if contacts.Contains(req.Message) {
-			return nil, ErrContactDetails
-		}
-
-		// Check minimum bid amount
-		minBid := item.StartingBid
-		if item.CurrentBid > 0 {
-			minBid = item.CurrentBid + item.MinBidIncrement
-		}
-
-		if req.Amount < minBid {
-			return nil, NewUserError("bid amount must be at least $" + formatPrice(minBid))
-		}
-
-		// Create bid
-		bid := &models.Bid{
-			ItemID:   itemID,
-			BidderID: userID,
-			Amount:   req.Amount,
-			Message:  req.Message,
-			Status:   "active",
-		}
-
-		err = bidRepo.Create(bid)
-		if err != nil {
-			return nil, err
-		}
-
-		// Update item's current bid
-		item.CurrentBid = req.Amount
-		err = itemRepo.Update(item)
-		if err != nil {
-			return nil, err
-		}
-
-		// Mark other bids as outbid
-		_ = bidRepo.MarkOutbidBids(itemID, bid.ID)
-
-		return bid, nil
-	}
-
-	// If no DB (e.g. testing), just run logic
-	if s.db == nil {
-		return placeBidLogic(s.itemRepo, s.bidRepo)
-	}
-
-	// Run in transaction
-	var bid *models.Bid
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		txItemRepo := repositories.NewStoreItemRepository(tx)
-		txBidRepo := repositories.NewBidRepository(tx)
-		
-		var err error
-		bid, err = placeBidLogic(txItemRepo, txBidRepo)
-		return err
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return bid, nil
-}
-
-func (s *StoreService) GetItemBids(itemID uint) ([]models.Bid, error) {
-	return s.bidRepo.GetByItemID(itemID)
-}
-
-func (s *StoreService) AcceptBid(itemID uint, bidID uint, sellerID uint) error {
-	item, err := s.itemRepo.GetByID(itemID)
-	if err != nil {
-		return err
-	}
-
-	if item.SellerID != sellerID {
-		return NewUserError("unauthorized: only the seller can accept bids")
-	}
-
-	if item.Status != "active" {
-		return NewUserError("item is not active")
-	}
-
-	bid, err := s.bidRepo.GetByID(bidID)
-	if err != nil {
-		return err
-	}
-
-	if bid.ItemID != itemID {
-		return NewUserError("bid does not belong to this item")
-	}
-
-	// Mark item as sold
-	err = s.itemRepo.MarkAsSold(itemID, bid.BidderID)
-	if err != nil {
-		return err
-	}
-
-	// Mark winning bid
-	err = s.bidRepo.UpdateBidStatus(bidID, "won")
-	if err != nil {
-		return err
-	}
-
-	// Mark other bids as outbid
-	_ = s.bidRepo.MarkOutbidBids(itemID, bidID)
-
-	return nil
-}
-
-func (s *StoreService) PurchaseItem(itemID uint, buyerID uint) error {
-	item, err := s.itemRepo.GetByID(itemID)
-	if err != nil {
-		return err
-	}
-
-	if item.PriceType != "fixed" {
-		return NewUserError("this item is only available through bidding")
-	}
-
-	if item.Status != "active" {
-		return NewUserError("item is not available for purchase")
-	}
-
-	if item.SellerID == buyerID {
-		return NewUserError("you cannot purchase your own item")
-	}
-
-	// Mark item as sold
-	return s.itemRepo.MarkAsSold(itemID, buyerID)
-}
-
 func (s *StoreService) GetUserListings(userID uint) ([]models.StoreItem, error) {
 	return s.itemRepo.GetBySellerID(userID)
-}
-
-func (s *StoreService) GetUserPurchases(userID uint) ([]models.StoreItem, error) {
-	return s.itemRepo.GetByBuyerID(userID)
-}
-
-func (s *StoreService) GetUserBids(userID uint) ([]models.Bid, error) {
-	return s.bidRepo.GetByBidderID(userID)
 }
 
 // Booking Request methods

@@ -42,7 +42,7 @@ func TestGetItemsNear(t *testing.T) {
 	dist := &fakeDistancer{buckets: map[uint]int{5: 0, 2: 0, 4: 2, 1: 1}}
 
 	t.Run("ranked, paged and tagged", func(t *testing.T) {
-		service, itemRepo, _, _ := setupService()
+		service, itemRepo, _ := setupService()
 		service.WithDistancer(dist)
 		filter := models.StoreItemFilter{Status: "active", Page: 1, PerPage: 4}
 		itemRepo.On("ListIDs", filter).Return([]uint{6, 5, 4, 3, 2, 1}, nil)
@@ -58,7 +58,7 @@ func TestGetItemsNear(t *testing.T) {
 	})
 
 	t.Run("listings without a location come last, untagged", func(t *testing.T) {
-		service, itemRepo, _, _ := setupService()
+		service, itemRepo, _ := setupService()
 		service.WithDistancer(dist)
 		filter := models.StoreItemFilter{Page: 2, PerPage: 4}
 		itemRepo.On("ListIDs", filter).Return([]uint{6, 5, 4, 3, 2, 1}, nil)
@@ -72,7 +72,7 @@ func TestGetItemsNear(t *testing.T) {
 
 	t.Run("falls back to newest first when distances fail or are off", func(t *testing.T) {
 		for _, d := range []Distancer{&fakeDistancer{err: errors.New("timeout")}, nil} {
-			service, itemRepo, _, _ := setupService()
+			service, itemRepo, _ := setupService()
 			service.WithDistancer(d)
 			filter := models.StoreItemFilter{Page: 1, PerPage: 20}
 			itemRepo.On("ListIDs", filter).Return([]uint{1}, nil).Maybe()
@@ -86,7 +86,7 @@ func TestGetItemsNear(t *testing.T) {
 	})
 
 	t.Run("repository errors are returned", func(t *testing.T) {
-		service, itemRepo, _, _ := setupService()
+		service, itemRepo, _ := setupService()
 		service.WithDistancer(dist)
 		itemRepo.On("ListIDs", mock.Anything).Return([]uint(nil), errors.New("db down"))
 		_, _, err := service.GetItemsNear(models.StoreItemFilter{}, at)
@@ -95,7 +95,7 @@ func TestGetItemsNear(t *testing.T) {
 }
 
 func TestTagItemDistances(t *testing.T) {
-	service, _, _, _ := setupService()
+	service, _, _ := setupService()
 	items := []models.StoreItem{{ID: 1}, {ID: 2}}
 	service.TagItemDistances(items, at)
 	assert.Empty(t, items[1].Distance)

@@ -262,7 +262,7 @@ func TestCreateItem_ForRequest(t *testing.T) {
 	}
 
 	t.Run("links the listing and tells the requester", func(t *testing.T) {
-		service, itemRepo, _, _ := setupService()
+		service, itemRepo, _ := setupService()
 		requests, chat := new(MockItemRequestRepository), &fakeChat{}
 		service.WithRequests(requests, chat)
 		requests.On("GetByID", uint(5)).Return(&models.ItemRequest{ID: 5, RequesterID: 2, Status: "active", Title: "Printer wanted"}, nil)
@@ -277,7 +277,7 @@ func TestCreateItem_ForRequest(t *testing.T) {
 	})
 
 	t.Run("refused for a closed, missing or own request", func(t *testing.T) {
-		service, _, _, _ := setupService()
+		service, _, _ := setupService()
 		requests := new(MockItemRequestRepository)
 		service.WithRequests(requests, nil)
 		requests.On("GetByID", uint(5)).Return(&models.ItemRequest{ID: 5, RequesterID: 2, Status: "fulfilled"}, nil)
@@ -293,7 +293,7 @@ func TestCreateItem_ForRequest(t *testing.T) {
 	})
 
 	t.Run("refused when requests aren't wired up", func(t *testing.T) {
-		service, _, _, _ := setupService()
+		service, _, _ := setupService()
 		_, err := service.CreateItem(1, newReq(5))
 		assert.ErrorIs(t, err, ErrRequestClosed)
 	})
@@ -307,7 +307,7 @@ func TestApproveBookingRequest_FulfilsRequest(t *testing.T) {
 	}
 
 	t.Run("the requester's approved booking closes their request", func(t *testing.T) {
-		service, itemRepo, _, bookingRepo := setupService()
+		service, itemRepo, bookingRepo := setupService()
 		requests := new(MockItemRequestRepository)
 		service.WithRequests(requests, nil)
 		itemRepo.On("UpdateStatus", uint(9), "reserved").Return(nil)
@@ -325,7 +325,7 @@ func TestApproveBookingRequest_FulfilsRequest(t *testing.T) {
 	})
 
 	t.Run("someone else's booking leaves the request open", func(t *testing.T) {
-		service, itemRepo, _, bookingRepo := setupService()
+		service, itemRepo, bookingRepo := setupService()
 		requests := new(MockItemRequestRepository)
 		service.WithRequests(requests, nil)
 		itemRepo.On("UpdateStatus", uint(9), "reserved").Return(nil)

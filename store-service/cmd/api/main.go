@@ -51,19 +51,18 @@ func main() {
 	}
 
 	// Auto migrate database
-	if err := db.AutoMigrate(&models.StoreItem{}, &models.ItemImage{}, &models.Bid{}, &models.BookingRequest{}, &models.User{}, &models.ItemRequest{}); err != nil {
+	if err := db.AutoMigrate(&models.StoreItem{}, &models.ItemImage{}, &models.BookingRequest{}, &models.User{}, &models.ItemRequest{}); err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
 	// Initialize repositories
 	itemRepo := repositories.NewStoreItemRepository(db)
-	bidRepo := repositories.NewBidRepository(db)
 	bookingRepo := repositories.NewBookingRequestRepository(db)
 	userRepo := repositories.NewUserRepository(db)
 	requestRepo := repositories.NewItemRequestRepository(db)
 
 	// Initialize services
-	storeService := services.NewStoreService(db, itemRepo, bidRepo, bookingRepo, userRepo).
+	storeService := services.NewStoreService(db, itemRepo, bookingRepo, userRepo).
 		WithRequests(requestRepo, services.NewHTTPChatNotifier()).
 		WithLocator(newLocator()).
 		WithDistancer(newDistancer())
@@ -131,7 +130,6 @@ func main() {
 			// Browsing
 			auth.GET("/items", storeHandler.GetItems)
 			auth.GET("/items/:id", storeHandler.GetItem)
-			auth.GET("/items/:id/bids", storeHandler.GetItemBids)
 			auth.GET("/requests", requestHandler.GetRequests)
 			auth.GET("/requests/:id", requestHandler.GetRequest)
 			auth.GET("/requests/:id/listings", requestHandler.GetRequestListings)
@@ -148,11 +146,8 @@ func main() {
 			auth.PUT("/requests/:id", requestHandler.UpdateRequest)
 			auth.DELETE("/requests/:id", requestHandler.DeleteRequest)
 			auth.GET("/user/requests", requestHandler.GetUserRequests)
-			auth.POST("/items/:id/purchase", storeHandler.PurchaseItem)
 
 			// Bidding
-			auth.POST("/items/:id/bids", storeHandler.PlaceBid)
-			auth.POST("/items/:id/bids/:bidId/accept", storeHandler.AcceptBid)
 
 			// Booking requests
 			auth.POST("/items/:id/booking-request", storeHandler.CreateBookingRequest)
@@ -168,8 +163,6 @@ func main() {
 
 			// User specific endpoints
 			auth.GET("/user/listings", storeHandler.GetUserListings)
-			auth.GET("/user/purchases", storeHandler.GetUserPurchases)
-			auth.GET("/user/bids", storeHandler.GetUserBids)
 			auth.GET("/user/booking-requests", storeHandler.GetUserBookingRequests)
 			auth.GET("/users/:id/ratings", storeHandler.GetUserRatings)
 			auth.GET("/user/ratings", storeHandler.GetMyRatings)
@@ -239,7 +232,7 @@ func expireStaleNotes(storeService *services.StoreService, requestService *servi
 		if n, err := storeService.ExpireStaleItems(); err != nil {
 			log.Println("WARNING: expiring stale listings failed:", err)
 		} else if n > 0 {
-			log.Printf("expired %d listing(s) with no bids or booking requests", n)
+			log.Printf("expired %d listing(s) with no booking requests", n)
 		}
 		if n, err := requestService.ExpireStaleRequests(); err != nil {
 			log.Println("WARNING: expiring stale requests failed:", err)
