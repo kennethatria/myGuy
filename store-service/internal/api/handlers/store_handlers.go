@@ -52,7 +52,6 @@ func (h *StoreHandler) CreateItem(c *gin.Context) {
 		description := c.PostForm("description")
 		category := c.PostForm("category")
 		condition := c.PostForm("condition")
-		isAuction := c.PostForm("price_type") == "bidding" || c.PostForm("is_auction") == "true"
 		
 		if title == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "title is required"})
@@ -70,26 +69,7 @@ func (h *StoreHandler) CreateItem(c *gin.Context) {
 		}
 		req.Lat, req.Lng = formFloat(c, "lat"), formFloat(c, "lng")
 		
-		if isAuction {
-			req.PriceType = "bidding"
-			if startingBid, err := strconv.ParseFloat(c.PostForm("starting_bid"), 64); err == nil {
-				req.StartingBid = startingBid
-			}
-			// Try both field names for backward compatibility
-			if bidIncrement, err := strconv.ParseFloat(c.PostForm("min_bid_increment"), 64); err == nil {
-				req.MinBidIncrement = bidIncrement
-			} else if bidIncrement, err := strconv.ParseFloat(c.PostForm("bid_increment"), 64); err == nil {
-				req.MinBidIncrement = bidIncrement
-			}
-		} else {
-			req.PriceType = "fixed"
-			// Try both field names for backward compatibility
-			if price, err := strconv.ParseFloat(c.PostForm("fixed_price"), 64); err == nil {
-				req.FixedPrice = price
-			} else if price, err := strconv.ParseFloat(c.PostForm("price"), 64); err == nil {
-				req.FixedPrice = price
-			}
-		}
+		// No price fields: the price goes in the note or is agreed in chat
 	}
 	
 	// Photos: each is cleaned of metadata (EXIF can hold the GPS position

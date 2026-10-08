@@ -295,8 +295,6 @@ func TestCreateItem(t *testing.T) {
 		req := models.CreateStoreItemRequest{
 			Title:       "Test Item",
 			Description: "Test Description",
-			PriceType:   "fixed",
-			FixedPrice:  100.0,
 			Category:    "electronics",
 			Condition:   "new",
 		}
@@ -305,8 +303,6 @@ func TestCreateItem(t *testing.T) {
 			ID:          1,
 			Title:       req.Title,
 			Description: req.Description,
-			PriceType:   req.PriceType,
-			FixedPrice:  req.FixedPrice,
 			Category:    req.Category,
 			Condition:   req.Condition,
 			SellerID:    1,
@@ -347,8 +343,6 @@ func TestCreateItem(t *testing.T) {
 
 		req := models.CreateStoreItemRequest{
 			Title:      "Test Item",
-			PriceType:  "fixed",
-			FixedPrice: 100.0,
 			Condition:  "new",
 		}
 
@@ -419,12 +413,14 @@ func TestCreateItem(t *testing.T) {
 		mockService.AssertExpectations(t)
 	})
 
-	t.Run("form data auction keeps its price type", func(t *testing.T) {
+	// Older clients may still send a price or an auction: the listing is
+	// posted as a plain note (the service gives every listing no price)
+	t.Run("form data price fields are ignored", func(t *testing.T) {
 		mockService := new(MockStoreService)
 		router := setupTestRouter(NewStoreHandler(mockService))
 
 		mockService.On("CreateItem", uint(1), mock.MatchedBy(func(req models.CreateStoreItemRequest) bool {
-			return req.PriceType == "bidding" && req.StartingBid == 5000 && req.MinBidIncrement == 500
+			return req.Title == "Bike" && req.Description == "Red city bike"
 		})).Return(&models.StoreItem{ID: 2}, nil)
 
 		body := &bytes.Buffer{}

@@ -12,6 +12,7 @@ import (
 	"store-service/internal/repositories"
 	"store-service/internal/services"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -141,6 +142,20 @@ func setupIntegrationTestRouter(db *gorm.DB) *gin.Engine {
 	return router
 }
 
+// seedListing stores a live listing as older data had it (a price, or an
+// auction): new listings can't carry a price, so these go straight in
+func seedListing(t *testing.T, db *gorm.DB, item models.StoreItem) uint {
+	t.Helper()
+	deadline := time.Now().UTC().Add(24 * time.Hour)
+	item.Status = "active"
+	item.Deadline = &deadline
+	if item.PriceType == "bidding" {
+		item.BidDeadline = &deadline
+	}
+	require.NoError(t, db.Create(&item).Error)
+	return item.ID
+}
+
 func TestIntegration_ItemLifecycle(t *testing.T) {
 	db, err := setupIntegrationTestDB(t)
 	require.NoError(t, err)
@@ -153,8 +168,6 @@ func TestIntegration_ItemLifecycle(t *testing.T) {
 		req := models.CreateStoreItemRequest{
 			Title:       "iPhone 15 Pro",
 			Description: "Brand new iPhone 15 Pro in pristine condition",
-			PriceType:   "fixed",
-			FixedPrice:  999.99,
 			Category:    "electronics",
 			Condition:   "new",
 		}
@@ -173,8 +186,9 @@ func TestIntegration_ItemLifecycle(t *testing.T) {
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		require.NoError(t, err)
 		assert.Equal(t, req.Title, response.Title)
-		assert.Equal(t, req.PriceType, response.PriceType)
-		assert.Equal(t, req.FixedPrice, response.FixedPrice)
+		// Just a note: the price goes in it or is agreed in chat
+		assert.Equal(t, "fixed", response.PriceType)
+		assert.Zero(t, response.FixedPrice)
 		assert.Equal(t, uint(1), response.SellerID)
 
 		itemID = response.ID
@@ -269,35 +283,17 @@ func TestIntegration_BiddingLifecycle(t *testing.T) {
 
 	var itemID uint
 
-	t.Run("Create auction item", func(t *testing.T) {
-		req := models.CreateStoreItemRequest{
+	t.Run("Older auction item", func(t *testing.T) {
+		itemID = seedListing(t, db, models.StoreItem{
 			Title:           "Vintage Guitar",
 			Description:     "Classic acoustic guitar in excellent condition",
+			SellerID:        1,
 			PriceType:       "bidding",
 			StartingBid:     500.0,
 			MinBidIncrement: 25.0,
 			Category:        "music",
 			Condition:       "good",
-		}
-
-		jsonData, _ := json.Marshal(req)
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items", bytes.NewBuffer(jsonData))
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("X-User-ID", "1")
-
-		router.ServeHTTP(w, httpReq)
-
-		require.Equal(t, http.StatusCreated, w.Code)
-
-		var response models.StoreItem
-		err := json.Unmarshal(w.Body.Bytes(), &response)
-		require.NoError(t, err)
-		assert.Equal(t, req.Title, response.Title)
-		assert.Equal(t, req.PriceType, response.PriceType)
-		assert.Equal(t, req.StartingBid, response.StartingBid)
-
-		itemID = response.ID
+		})
 	})
 
 	var secondBidID uint
@@ -422,8 +418,6 @@ func TestIntegration_BookingLifecycle(t *testing.T) {
 		req := models.CreateStoreItemRequest{
 			Title:       "Camera Equipment",
 			Description: "Professional DSLR camera with lenses",
-			PriceType:   "fixed",
-			FixedPrice:  200.0,
 			Category:    "electronics",
 			Condition:   "good",
 		}
@@ -563,8 +557,6 @@ func TestIntegration_BookingRequestEdgeCases(t *testing.T) {
 		item := models.CreateStoreItemRequest{
 			Title:       "Edge Case Test Item",
 			Description: "Testing edge cases",
-			PriceType:   "fixed",
-			FixedPrice:  50.0,
 			Category:    "electronics",
 			Condition:   "new",
 		}
@@ -688,44 +680,14 @@ func TestIntegration_ItemFiltering(t *testing.T) {
 
 	router := setupIntegrationTestRouter(db)
 
-	// Create multiple test items
-	testItems := []models.CreateStoreItemRequest{
-		{
-			Title:       "Expensive Electronics",
-			Description: "High-end gadget",
-			PriceType:   "fixed",
-			FixedPrice:  1000.0,
-			Category:    "electronics",
-			Condition:   "new",
-		},
-		{
-			Title:       "Cheap Book",
-			Description: "Interesting novel",
-			PriceType:   "fixed",
-			FixedPrice:  15.0,
-			Category:    "books",
-			Condition:   "good",
-		},
-		{
-			Title:       "Electronics Auction",
-			Description: "Bidding item",
-			PriceType:   "bidding",
-			StartingBid: 100.0,
-			Category:    "electronics",
-			Condition:   "fair",
-		},
-	}
-
+	// Older listings, with the prices they carried before notes had none
 	t.Run("Create test items", func(t *testing.T) {
-		for _, item := range testItems {
-			jsonData, _ := json.Marshal(item)
-			w := httptest.NewRecorder()
-			httpReq, _ := http.NewRequest("POST", "/api/v1/items", bytes.NewBuffer(jsonData))
-			httpReq.Header.Set("Content-Type", "application/json")
-			httpReq.Header.Set("X-User-ID", "1")
-
-			router.ServeHTTP(w, httpReq)
-			require.Equal(t, http.StatusCreated, w.Code)
+		for _, item := range []models.StoreItem{
+			{Title: "Expensive Electronics", Description: "High-end gadget", SellerID: 1, PriceType: "fixed", FixedPrice: 1000.0, Category: "electronics", Condition: "new"},
+			{Title: "Cheap Book", Description: "Interesting novel", SellerID: 1, PriceType: "fixed", FixedPrice: 15.0, Category: "books", Condition: "good"},
+			{Title: "Electronics Auction", Description: "Bidding item", SellerID: 1, PriceType: "bidding", StartingBid: 100.0, Category: "electronics", Condition: "fair"},
+		} {
+			seedListing(t, db, item)
 		}
 	})
 
@@ -838,15 +800,11 @@ func TestIntegration_UserSpecificEndpoints(t *testing.T) {
 			{
 				Title:      "User 1 Item 1",
 				Description: "A short note",
-				PriceType:  "fixed",
-				FixedPrice: 100.0,
 				Condition:  "new",
 			},
 			{
 				Title:      "User 1 Item 2",
 				Description: "A short note",
-				PriceType:  "fixed",
-				FixedPrice: 200.0,
 				Condition:  "new",
 			},
 		}
@@ -862,23 +820,15 @@ func TestIntegration_UserSpecificEndpoints(t *testing.T) {
 			require.Equal(t, http.StatusCreated, w.Code)
 		}
 
-		// User 2 creates item for bidding
-		bidItem := models.CreateStoreItemRequest{
+		// User 2 has an older auction
+		seedListing(t, db, models.StoreItem{
 			Title:       "Auction Item",
 			Description: "A short note",
+			SellerID:    2,
 			PriceType:   "bidding",
 			StartingBid: 50.0,
 			Condition:   "good",
-		}
-
-		jsonData, _ := json.Marshal(bidItem)
-		w := httptest.NewRecorder()
-		httpReq, _ := http.NewRequest("POST", "/api/v1/items", bytes.NewBuffer(jsonData))
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("X-User-ID", "2")
-
-		router.ServeHTTP(w, httpReq)
-		require.Equal(t, http.StatusCreated, w.Code)
+		})
 	})
 
 	t.Run("Get user listings", func(t *testing.T) {

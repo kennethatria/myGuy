@@ -115,8 +115,7 @@
                   <span v-if="post.kind === 'item'" class="row-meta">{{ [distanceText(post), timeLeft(post.deadline)].filter(Boolean).join(' · ') }}</span>
                   <span v-else class="row-body">{{ post.description }}</span>
                 </span>
-                <span v-if="post.kind === 'item'" class="row-price">{{ post.price }}</span>
-                <span v-else class="row-side">
+                <span v-if="post.kind !== 'item'" class="row-side">
                   <span>{{ distanceText(post) }}</span>
                   <span>{{ timeLeft(post.deadline) }}</span>
                 </span>
@@ -394,11 +393,4 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   gap: 2px;
 }
 
-.row-price {
-  flex: none;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--price);
-  white-space: nowrap;
-}
 </style>

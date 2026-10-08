@@ -156,11 +156,7 @@ type ItemRequestFilter struct {
 type CreateStoreItemRequest struct {
 	Title           string    `json:"title" binding:"required"`
 	Description     string    `json:"description"`
-	// Optional: a listing is a note, and price can be agreed in chat
-	PriceType       string    `json:"price_type" binding:"omitempty,oneof=fixed bidding"`
-	FixedPrice      float64   `json:"fixed_price,omitempty"`
-	StartingBid     float64   `json:"starting_bid,omitempty"`
-	MinBidIncrement float64   `json:"min_bid_increment,omitempty"`
+	// No price: it goes in the note or is agreed in chat
 	Category        string    `json:"category"`
 	// Set only from uploads the handler has cleaned (media.Clean), never
 	// from the request body: a client-sent URL could point anywhere

@@ -292,13 +292,11 @@ func setupService() (*StoreService, *MockStoreItemRepository, *MockBidRepository
 }
 
 func TestCreateItem(t *testing.T) {
-	t.Run("successful fixed price item creation", func(t *testing.T) {
+	t.Run("successful item creation", func(t *testing.T) {
 		service, itemRepo, _, _ := setupService()
 		req := models.CreateStoreItemRequest{
 			Title:       "  Test Item  ",
 			Description: "Test Description",
-			PriceType:   "fixed",
-			FixedPrice:  100.0,
 			Category:    "electronics",
 			Condition:   "new",
 			Images:      []string{"image1.jpg", "image2.jpg"},
@@ -312,37 +310,13 @@ func TestCreateItem(t *testing.T) {
 		assert.NotNil(t, item)
 		assert.Equal(t, "Test Item", item.Title)
 		assert.Equal(t, req.Description, item.Description)
-		assert.Equal(t, req.PriceType, item.PriceType)
-		assert.Equal(t, req.FixedPrice, item.FixedPrice)
+		assert.Equal(t, "fixed", item.PriceType)
+		assert.Zero(t, item.FixedPrice)
 		assert.Equal(t, uint(1), item.SellerID)
 		assert.Equal(t, "active", item.Status)
 		assert.Len(t, item.Images, 2)
 		assert.WithinDuration(t, time.Now().Add(ListingLifetime), *item.Deadline, time.Minute)
 		assert.Nil(t, item.BidDeadline)
-		itemRepo.AssertExpectations(t)
-	})
-
-	t.Run("auction closes with the note", func(t *testing.T) {
-		service, itemRepo, _, _ := setupService()
-		req := models.CreateStoreItemRequest{
-			Title:           "Auction Item",
-			Description:     "Test Auction",
-			PriceType:       "bidding",
-			StartingBid:     50.0,
-			MinBidIncrement: 5.0,
-			Category:        "electronics",
-			Condition:       "good",
-		}
-
-		itemRepo.On("Create", mock.AnythingOfType("*models.StoreItem")).Return(nil)
-
-		item, err := service.CreateItem(1, req)
-
-		assert.NoError(t, err)
-		assert.Equal(t, req.StartingBid, item.StartingBid)
-		assert.Equal(t, req.MinBidIncrement, item.MinBidIncrement)
-		assert.NotNil(t, item.Deadline)
-		assert.Equal(t, item.Deadline, item.BidDeadline)
 		itemRepo.AssertExpectations(t)
 	})
 
@@ -385,63 +359,11 @@ func TestCreateItem(t *testing.T) {
 		assert.Empty(t, item.Condition)
 	})
 
-	t.Run("negative price", func(t *testing.T) {
-		service, _, _, _ := setupService()
-		req := models.CreateStoreItemRequest{
-			Title:       "Test Item",
-			Description: "Test Description",
-			PriceType:   "fixed",
-			FixedPrice:  -1,
-		}
-
-		item, err := service.CreateItem(1, req)
-
-		assert.Error(t, err)
-		assert.Nil(t, item)
-		assert.Contains(t, err.Error(), "price can't be negative")
-	})
-
-	t.Run("invalid starting bid", func(t *testing.T) {
-		service, _, _, _ := setupService()
-		req := models.CreateStoreItemRequest{
-			Title:       "Test Item",
-			Description: "Test Description",
-			PriceType:   "bidding",
-			StartingBid: 0,
-		}
-
-		item, err := service.CreateItem(1, req)
-
-		assert.Error(t, err)
-		assert.Nil(t, item)
-		assert.Contains(t, err.Error(), "starting bid must be greater than 0")
-	})
-
-	t.Run("default min bid increment", func(t *testing.T) {
-		service, itemRepo, _, _ := setupService()
-		req := models.CreateStoreItemRequest{
-			Title:       "Test Item",
-			Description: "Test Description",
-			PriceType:   "bidding",
-			StartingBid: 50.0,
-		}
-
-		itemRepo.On("Create", mock.AnythingOfType("*models.StoreItem")).Return(nil)
-
-		item, err := service.CreateItem(1, req)
-
-		assert.NoError(t, err)
-		assert.Equal(t, 1.0, item.MinBidIncrement)
-		itemRepo.AssertExpectations(t)
-	})
-
 	t.Run("repository error", func(t *testing.T) {
 		service, itemRepo, _, _ := setupService()
 		req := models.CreateStoreItemRequest{
 			Title:       "Test Item",
 			Description: "Test Description",
-			PriceType:   "fixed",
-			FixedPrice:  100.0,
 		}
 
 		itemRepo.On("Create", mock.AnythingOfType("*models.StoreItem")).Return(errors.New("database error"))
@@ -456,10 +378,11 @@ func TestCreateItem(t *testing.T) {
 }
 
 func TestRepostItem(t *testing.T) {
-	t.Run("expired listing goes back up for 24 hours", func(t *testing.T) {
+	t.Run("expired listing goes back up for 24 hours, as a plain note", func(t *testing.T) {
 		service, itemRepo, _, _ := setupService()
 		old := time.Now().Add(-2 * time.Hour)
-		item := &models.StoreItem{ID: 1, SellerID: 1, PriceType: "bidding", Status: "expired", Deadline: &old, BidDeadline: &old}
+		// An older auction: it comes back without a price or bidding
+		item := &models.StoreItem{ID: 1, SellerID: 1, PriceType: "bidding", StartingBid: 500, MinBidIncrement: 50, Status: "expired", Deadline: &old, BidDeadline: &old}
 		itemRepo.On("GetByID", uint(1)).Return(item, nil)
 		itemRepo.On("Update", item).Return(nil)
 
@@ -468,8 +391,24 @@ func TestRepostItem(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "active", got.Status)
 		assert.WithinDuration(t, time.Now().Add(ListingLifetime), *got.Deadline, time.Minute)
-		assert.Equal(t, got.Deadline, got.BidDeadline)
+		assert.Equal(t, "fixed", got.PriceType)
+		assert.Zero(t, got.StartingBid)
+		assert.Zero(t, got.MinBidIncrement)
+		assert.Nil(t, got.BidDeadline)
 		itemRepo.AssertExpectations(t)
+	})
+
+	t.Run("an older priced listing comes back without its price", func(t *testing.T) {
+		service, itemRepo, _, _ := setupService()
+		old := time.Now().Add(-2 * time.Hour)
+		item := &models.StoreItem{ID: 1, SellerID: 1, PriceType: "fixed", FixedPrice: 150000, Status: "expired", Deadline: &old}
+		itemRepo.On("GetByID", uint(1)).Return(item, nil)
+		itemRepo.On("Update", item).Return(nil)
+
+		got, err := service.RepostItem(1, 1)
+
+		assert.NoError(t, err)
+		assert.Zero(t, got.FixedPrice)
 	})
 
 	t.Run("only the seller", func(t *testing.T) {

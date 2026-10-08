@@ -151,30 +151,10 @@ func (s *StoreService) CreateItem(userID uint, req models.CreateStoreItemRequest
 		}
 	}
 
-	// A price is optional (0 means agree it in chat); auctions need a start
-	if req.PriceType == "" {
-		req.PriceType = "fixed"
-	}
-	if req.PriceType == "fixed" && req.FixedPrice < 0 {
-		return nil, NewUserError("price can't be negative")
-	}
-	if req.PriceType == "bidding" {
-		if req.StartingBid <= 0 {
-			return nil, NewUserError("starting bid must be greater than 0")
-		}
-		if req.MinBidIncrement <= 0 {
-			req.MinBidIncrement = 1.0 // Default increment
-		}
-	}
-
 	item := &models.StoreItem{
 		Title:           title,
 		Description:     description,
 		SellerID:        userID,
-		PriceType:       req.PriceType,
-		FixedPrice:      req.FixedPrice,
-		StartingBid:     req.StartingBid,
-		MinBidIncrement: req.MinBidIncrement,
 		Category:        req.Category,
 		Condition:       req.Condition,
 		Location:        req.Location,
@@ -207,14 +187,15 @@ func (s *StoreService) CreateItem(userID uint, req models.CreateStoreItemRequest
 	return item, nil
 }
 
-// startListing puts item on the board for a fresh ListingLifetime; an
-// auction's bidding runs for the same time.
+// startListing puts item on the board for a fresh ListingLifetime as a plain
+// note: no price (it goes in the note or is agreed in chat) and no bidding.
+// Older priced listings and auctions become notes when reposted or released.
 func startListing(item *models.StoreItem) {
 	deadline := time.Now().UTC().Add(ListingLifetime)
 	item.Deadline = &deadline
-	if item.PriceType == "bidding" {
-		item.BidDeadline = &deadline
-	}
+	item.PriceType = "fixed"
+	item.FixedPrice, item.StartingBid, item.CurrentBid, item.MinBidIncrement = 0, 0, 0, 0
+	item.BidDeadline = nil
 }
 
 // hasReactions reports whether anyone bid on or asked to book item; such a

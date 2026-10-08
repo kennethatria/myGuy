@@ -3,10 +3,7 @@
   <StickyNote :tone="tone" :seed="seed" size="large" class="detail-note">
     <template #header>
       <span v-if="status" class="detail-status">{{ status }}</span>
-      <span class="detail-top">
-        <h1 class="detail-title">{{ title }}</h1>
-        <span v-if="price" class="detail-price">{{ price }}</span>
-      </span>
+      <h1 class="detail-title">{{ title }}</h1>
       <p class="detail-body">{{ body }}</p>
     </template>
     <template #footer>
@@ -32,13 +29,11 @@ const props = withDefaults(defineProps<{
   seed: number
   title: string
   body: string
-  price?: string
   status?: string
   person?: { id: number; username: string } | null
   // "Posted 2h ago · Expires in 23h"
   meta?: string
 }>(), {
-  price: '',
   status: '',
   person: null,
   meta: ''
@@ -68,27 +63,14 @@ const initial = computed(() => (props.person?.username ?? '?').charAt(0).toUpper
   color: var(--text-body);
 }
 
-.detail-top {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
 
 .detail-title {
-  flex: 1;
-  min-width: 0;
   margin: 0;
   font-size: 22px;
   font-weight: 700;
   line-height: 1.25;
 }
 
-.detail-price {
-  flex: none;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--price);
-}
 
 .detail-body {
   margin: 0;
