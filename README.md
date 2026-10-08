@@ -369,7 +369,7 @@ Two complementary views, both self-hosted:
 | Tool | What it counts | Notes |
 | :--- | :--- | :--- |
 | **Grafana → Visitors** | Client IPs whose browser ran the app (downloaded its code or called the API), plus app usage, from the nginx access log | Zero setup. Approximate: counts IPs not people. Every unknown path returns the app page, so scanners posing as browsers are excluded by requiring the app to actually run. Query strings are never logged. |
-| **Umami** | Real visitors, sessions, SPA route changes, referrers, devices, countries; heatmaps (clicks and scroll depth) | The frontend loads `/umami/script.js` and `/umami/recorder.js` only when `VITE_UMAMI_WEBSITE_ID` is set at build time. Keep **replays** off in Umami: they would record chats and contact details. |
+| **Umami** | Real visitors, sessions, SPA route changes, referrers, devices, countries; heatmaps (clicks and scroll depth) | The frontend loads `/umami/script.js` and `/umami/recorder.js` only when `VITE_UMAMI_WEBSITE_ID` is set at build time. Keep **replays** off in Umami: they would record chats and contact details. Key actions show on Umami's **Events** page (`utils/analytics.ts`: sign-in, sign-up, gig posted/applied/status, application answered, listing/request posted, item booked, booking step, review left, post reposted), with only fixed options, never ids or text. |
 
 First-time Umami setup:
 

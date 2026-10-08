@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import config from '@/config'
 import { useUserStore } from './user'
+import { trackEvent } from '@/utils/analytics'
 
 interface User {
   id: number
@@ -93,6 +94,7 @@ export const useAuthStore = defineStore('auth', () => {
       return { signupToken: data.signup_token }
     }
     startSession(data as { user: User; token: string })
+    trackEvent('sign-in')
     return {}
   }
 
@@ -103,6 +105,7 @@ export const useAuthStore = defineStore('auth', () => {
       'Could not create account'
     )
     startSession(data)
+    trackEvent('sign-up')
   }
 
   const logout = () => {

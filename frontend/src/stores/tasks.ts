@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import config from '@/config'
 import { useAuthStore } from './auth'
+import { trackEvent } from '@/utils/analytics'
 
 interface Task {
   id: number
@@ -315,7 +316,8 @@ export const useTasksStore = defineStore('tasks', () => {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to create task');
       }
-      
+
+      trackEvent('gig-posted', { area: task.lat !== undefined })
       return await response.json()
     } catch (error) {
       console.error('Error creating task:', error)
@@ -341,7 +343,8 @@ export const useTasksStore = defineStore('tasks', () => {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to update task status');
       }
-      
+
+      trackEvent('gig-status', { status })
       return await response.json()
     } catch (error) {
       console.error('Error updating task status:', error)
@@ -376,6 +379,8 @@ export const useTasksStore = defineStore('tasks', () => {
         }
         throw new Error(message);
       }
+
+      trackEvent('gig-applied')
 
       // Check if response has content
       const responseText = await response.text();
@@ -429,7 +434,8 @@ export const useTasksStore = defineStore('tasks', () => {
         console.error('Server error response:', errorData)
         throw new Error(errorData.error || 'Failed to respond to application')
       }
-      
+
+      trackEvent('application-answered', { answer: status })
       return await response.json()
     } catch (error) {
       console.error('Error responding to application:', error)
