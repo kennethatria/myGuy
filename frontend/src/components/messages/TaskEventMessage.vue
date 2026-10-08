@@ -1,6 +1,8 @@
 <template>
-  <div class="system-message" :class="{ 'has-actions': showActions }">
+  <div class="system-message gig-event" :class="{ 'has-actions': showActions }">
     <p class="event-text">{{ message.content }}</p>
+    <!-- An application nobody has answered yet -->
+    <RequestTracker v-if="waiting" class="event-tracker" :steps="['Sent', 'Poster', 'Chat']" :current="1" />
     <span class="system-message-time">{{ time }}</span>
 
     <!-- The step this event asks of the person viewing it. Only the newest
@@ -50,6 +52,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useTasksStore } from '@/stores/tasks'
 import { useReviewsStore } from '@/stores/reviews'
 import type { Message } from '@/stores/messages'
+import RequestTracker from './RequestTracker.vue'
 
 const props = defineProps<{
   message: Message
@@ -78,6 +81,8 @@ const action = computed<'answer' | 'mark-done' | 'approve' | 'review' | null>(()
     default: return null
   }
 })
+
+const waiting = computed(() => props.latest && props.message.metadata?.event === 'application')
 
 const showActions = computed(() => props.latest && !!action.value && !!props.message.task_id)
 

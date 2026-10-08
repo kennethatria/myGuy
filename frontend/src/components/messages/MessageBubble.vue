@@ -1,10 +1,8 @@
 <template>
   <div class="message-bubble" :class="{ 'own-message': isOwnMessage }">
     <div class="message-content">
-      <div class="message-header">
-        <span class="sender-name">{{ senderName }}</span>
-        <span class="message-time">{{ formatTime(message.created_at) }}</span>
-      </div>
+      <!-- One person on each side: the name is for screen readers -->
+      <span class="visually-hidden">{{ senderName }}:</span>
       
       <div v-if="!isEditing" class="message-text">
         {{ message.content }}
@@ -32,6 +30,7 @@
       </div>
       
       <div class="message-footer">
+        <span class="message-time">{{ formatTime(message.created_at) }}</span>
         <span v-if="message.is_read && isOwnMessage" class="read-receipt">
           <i class="fas fa-check-double"></i>
           Read<template v-if="message.read_at"> {{ formatTime(message.read_at) }}</template>
@@ -143,56 +142,44 @@ function deleteMessage() {
 <style scoped>
 .message-bubble {
   display: flex;
-  margin-bottom: 0.5rem;
+  margin-bottom: 14px;
 }
 
 .message-bubble.own-message {
   justify-content: flex-end;
 }
 
+/* Theirs: white on the page; yours: coral */
 .message-content {
-  max-width: 70%;
-  padding: 0.75rem 1rem;
-  background: white;
-  border-radius: 0.5rem;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  max-width: 78%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px 16px 16px 4px;
+  background: var(--surface);
+  color: var(--text);
 }
 
 .own-message .message-content {
-  background: #ede9fe;
-}
-
-.message-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 0.25rem;
-  font-size: 0.75rem;
-}
-
-.sender-name {
-  font-weight: 600;
-  color: var(--color-primary);
-}
-
-.own-message .sender-name {
-  color: var(--color-primary-dark);
+  border-color: var(--accent);
+  border-radius: 16px 16px 4px 16px;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .message-time {
-  color: #6b7280;
-  margin-left: 0.5rem;
+  font-size: 11px;
+  opacity: 0.7;
 }
 
 .message-text {
-  font-size: 0.875rem;
-  color: #111827;
+  font-size: 15px;
+  line-height: 1.35;
   word-wrap: break-word;
 }
 
 .edited-indicator {
   font-size: 0.75rem;
-  color: #6b7280;
+  opacity: 0.7;
   font-style: italic;
   margin-left: 0.25rem;
 }
@@ -264,14 +251,15 @@ function deleteMessage() {
 /* Message Footer */
 .message-footer {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
-  margin-top: 0.5rem;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .read-receipt {
-  font-size: 0.75rem;
-  color: #10b981;
+  font-size: 11px;
+  opacity: 0.7;
   display: flex;
   align-items: center;
   gap: 0.25rem;
@@ -292,7 +280,8 @@ function deleteMessage() {
   padding: 0.25rem 0.5rem;
   background: transparent;
   border: none;
-  color: #6b7280;
+  color: inherit;
+  opacity: 0.75;
   cursor: pointer;
   font-size: 0.75rem;
   border-radius: 0.25rem;
@@ -300,13 +289,13 @@ function deleteMessage() {
 }
 
 .action-btn:hover {
-  background: #f3f4f6;
-  color: #111827;
+  background: rgba(255, 255, 255, 0.35);
+  opacity: 1;
 }
 
 /* Deleted Message */
 .message-text[data-deleted="true"] {
-  color: #6b7280;
+  opacity: 0.7;
   font-style: italic;
 }
 

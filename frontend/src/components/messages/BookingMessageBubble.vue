@@ -6,6 +6,8 @@
     <p class="event-text">{{ headline }}</p>
     <p v-if="note" class="event-quote">“{{ note }}”</p>
     <span v-if="statusText" :class="['event-status', `status-${status}`]">{{ statusText }}</span>
+    <!-- Not answered yet -->
+    <RequestTracker v-if="status === 'pending'" class="event-tracker" :steps="['Sent', 'Seller', 'Chat']" :current="1" />
     <span class="system-message-time">{{ formatTime(message.created_at) }}</span>
 
     <!-- Seller: answer the request -->
@@ -23,6 +25,7 @@
 import { ref, computed, watch, onUnmounted } from 'vue';
 import { useUserStore } from '@/stores/user';
 import type { Message, BookingAction } from '@/stores/messages';
+import RequestTracker from './RequestTracker.vue';
 
 const props = defineProps<{
   message: Message;
@@ -122,7 +125,7 @@ onUnmounted(resetProcessing);
 /* The buyer's own note on the booking */
 .event-quote {
   margin: 0.25rem 0 0;
-  color: var(--color-primary-dark);
+  color: var(--text-body);
   font-style: italic;
   overflow-wrap: anywhere;
 }
@@ -130,11 +133,12 @@ onUnmounted(resetProcessing);
 .event-status {
   display: inline-block;
   margin-top: 0.375rem;
-  padding: 0 0.5rem;
-  border-radius: 999px;
-  background: var(--accent-tint);
-  font-size: 0.75rem;
-  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--price);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .status-approved,

@@ -2,18 +2,15 @@
   <div class="message-thread">
     <!-- Thread Header -->
     <div class="thread-header">
+      <!-- The floating chat puts its back button here -->
+      <slot name="back" />
       <div class="header-info">
         <h2>{{ conversationTitle }}</h2>
         <p v-if="conversationDescription">{{ conversationDescription }}</p>
       </div>
-      <div class="header-meta">
-        <span v-if="conversation.task_status" class="task-status" :class="`status-${conversation.task_status}`">
-          {{ conversation.task_status }}
-        </span>
-        <router-link v-if="contextLink" :to="contextLink.to" class="context-link">
-          {{ contextLink.label }}
-        </router-link>
-      </div>
+      <router-link v-if="contextLink" :to="contextLink.to" class="context-link">
+        {{ contextLink.label }}
+      </router-link>
     </div>
     
     <!-- Messages Container -->
@@ -46,9 +43,9 @@
           :latest="message.id === latestStepIds.get(Number(message.metadata?.booking_id))"
           @booking-action="handleBookingAction"
         />
-        <div v-else-if="isNote(message)" class="system-message">
+        <div v-else-if="isNote(message)" class="thread-note">
           {{ message.content }}
-          <span class="system-message-time">{{ formatTime(message.created_at) }}</span>
+          <span class="thread-note-time">{{ formatTime(message.created_at) }}</span>
         </div>
         <BookingMessageBubble
           v-else-if="isBookingMessage(message)"
@@ -79,24 +76,31 @@
     </div>
     
     <!-- Message Input: a gig chat opens once the poster accepts -->
-    <div v-if="ended" class="message-locked" role="status">
-      This conversation has ended. You can still read it{{ hasReviewStep ? ' and leave your review above' : '' }}.
-    </div>
-    <div v-else-if="locked" class="message-locked" role="status">
-      {{ lockedNote }}
-    </div>
-    <div v-else class="message-input-container">
-      <form @submit.prevent="sendMessage" class="message-form">
+    <div class="message-input-container">
+      <!-- Closed to typing: why, in the box's place, with a padlock -->
+      <div v-if="ended || locked" class="message-form">
+        <p class="message-locked" role="status">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="5" y="11" width="14" height="9" rx="2" />
+            <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+          </svg>
+          <span v-if="ended">This conversation has ended. You can still read it{{ hasReviewStep ? ' and leave your review above' : '' }}.</span>
+          <span v-else>{{ lockedNote }}</span>
+        </p>
+        <span class="send-button" aria-hidden="true"><i class="fas fa-paper-plane"></i></span>
+      </div>
+      <form v-else @submit.prevent="sendMessage" class="message-form">
         <input
           v-model="messageText"
           type="text"
           placeholder="Type a message..."
+          aria-label="Message"
           class="message-input"
           @input="handleTyping"
           maxlength="1000"
         />
-        <button type="submit" class="send-button" :disabled="!messageText.trim()">
-          <i class="fas fa-paper-plane"></i>
+        <button type="submit" class="send-button" :disabled="!messageText.trim()" aria-label="Send">
+          <i class="fas fa-paper-plane" aria-hidden="true"></i>
         </button>
       </form>
     </div>
@@ -323,102 +327,81 @@ watch(() => props.messages.length, () => {
 </script>
 
 <style scoped>
-.context-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 0.25rem;
-  color: var(--color-primary);
-  font-weight: 500;
-  white-space: nowrap;
-  text-decoration: none;
-}
-
-.context-link:hover,
-.context-link:focus-visible {
-  text-decoration: underline;
-}
-
 .message-thread {
   display: flex;
   flex-direction: column;
   height: 100%;
-  /* In a flex column (Message Center), take the space left after siblings
-     such as the mobile back button, so the reply box stays on screen. */
   flex: 1;
   min-height: 0;
+  background: var(--bg);
 }
 
-/* Thread Header */
+/* Thread Header: back, what it's about and with whom, a link to it */
 .thread-header {
-  padding: 1.5rem;
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 56px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.header-info {
+  flex: 1;
+  min-width: 0;
+  padding-left: 4px;
+  line-height: 1.2;
 }
 
 .header-info h2 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #111827;
-  margin: 0 0 0.25rem 0;
-}
-
-.header-info p {
-  font-size: 0.875rem;
-  color: #6b7280;
   margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.header-meta {
-  display: flex;
-  gap: 1rem;
-  margin-top: 0.5rem;
-  font-size: 0.875rem;
+.header-info p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.task-status {
-  padding: 0.125rem 0.5rem;
-  border-radius: 0.25rem;
-  font-weight: 500;
+.context-link {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  margin-right: 8px;
+  padding: 0 12px;
+  border-radius: 16px;
+  background: var(--accent-tint);
+  color: var(--accent-text);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-.status-open {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.status-in_progress {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-/* Marked done, waiting for the poster's approval */
-.status-pending_approval {
-  background: #ede9fe;
-  color: #5b21b6;
-}
-
-.status-completed {
-  background: #d1fae5;
-  color: #065f46;
-}
-
-.other-user {
-  color: var(--color-primary);
-  font-weight: 500;
+.context-link:hover,
+.context-link:focus-visible {
+  color: var(--color-primary-dark);
 }
 
 /* Messages Container */
 .messages-container {
   flex: 1;
   overflow-y: auto;
-  padding: 1.5rem;
+  padding: 20px 16px;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 6px;
 }
 
 .load-more {
@@ -427,19 +410,18 @@ watch(() => props.messages.length, () => {
 }
 
 .load-more button {
-  padding: 0.5rem 1rem;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.375rem;
-  color: #6b7280;
-  font-size: 0.875rem;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
   cursor: pointer;
-  transition: all 0.15s;
 }
 
 .load-more button:hover:not(:disabled) {
-  background: #f9fafb;
-  color: #111827;
+  color: var(--text);
 }
 
 .load-more button:disabled {
@@ -452,11 +434,11 @@ watch(() => props.messages.length, () => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.75rem;
-  background: white;
-  border-radius: 0.5rem;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px 16px 16px 4px;
+  background: var(--surface);
   width: fit-content;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
 }
 
 .typing-dots {
@@ -467,7 +449,7 @@ watch(() => props.messages.length, () => {
 .typing-dots span {
   width: 0.5rem;
   height: 0.5rem;
-  background: #6b7280;
+  background: var(--text-muted);
   border-radius: 50%;
   animation: typing 1.4s infinite;
 }
@@ -489,99 +471,106 @@ watch(() => props.messages.length, () => {
   }
 }
 
-.typing-text {
-  font-size: 0.875rem;
-  color: #6b7280;
+@media (prefers-reduced-motion: reduce) {
+  .typing-dots span {
+    animation: none;
+  }
 }
 
-/* Message Input */
+.typing-text {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Composer: a rounded box and a round send button */
 .message-input-container {
-  padding: 1.5rem;
-  background: white;
-  border-top: 1px solid #e5e7eb;
+  flex: none;
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .message-form {
   display: flex;
-  gap: 0.75rem;
+  align-items: center;
+  gap: 10px;
 }
 
 .message-input {
   flex: 1;
-  padding: 0.75rem 1rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.5rem;
-  font-size: 0.875rem;
-  transition: border-color 0.15s;
+  min-width: 0;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 22px;
+  background: #F3F4F6;
+  color: var(--text);
+  font-size: 15px;
 }
 
 .message-input:focus {
   outline: none;
-  border-color: var(--color-primary);
+  border-color: var(--accent);
+  background: var(--surface);
 }
 
 .send-button {
-  padding: 0.75rem 1.25rem;
-  background: var(--color-primary);
-  color: white;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: none;
-  border-radius: 0.5rem;
+  border-radius: 22px;
+  background: var(--accent);
+  color: var(--on-accent);
   cursor: pointer;
-  transition: background-color 0.15s;
 }
 
-.send-button:hover:not(:disabled) {
-  background: var(--color-primary-dark);
-}
-
-.send-button:disabled {
-  background: #e5e7eb;
+.send-button:disabled,
+span.send-button {
+  background: #E5E7EB;
+  color: #fff;
   cursor: not-allowed;
 }
 
-/* Mobile Responsive */
-@media (max-width: 768px) {
-  .thread-header {
-    padding: 1rem;
-  }
-  
-  .messages-container {
-    padding: 1rem;
-  }
-  
-  .message-input-container {
-    padding: 1rem;
-  }
+/* Closed to typing: the reason sits where you'd type */
+.message-locked {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin: 0;
+  padding: 6px 16px;
+  border-radius: 22px;
+  background: #F3F4F6;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.3;
 }
 
-/* Task events (new application, accepted, declined): shown as a notice */
-.system-message {
+.message-locked svg {
+  flex: none;
+}
+
+/* Notes in the conversation (not events): small and centred. Not named
+   .system-message: scoped styles reach child roots, and the event cards use it. */
+.thread-note {
   align-self: center;
   max-width: 90%;
-  margin: 0.5rem auto;
-  padding: 0.625rem 0.875rem;
-  background: var(--accent-tint);
-  border: 1px solid #FFD0C4;
-  border-radius: 0.5rem;
-  color: #3730a3;
-  font-size: 0.875rem;
+  margin: 6px auto;
+  color: var(--text-muted);
+  font-size: 12px;
   text-align: center;
   white-space: pre-line;
 }
 
-.system-message-time {
+.thread-note-time {
   display: block;
-  margin-top: 0.25rem;
-  font-size: 0.75rem;
-  color: var(--accent-text);
-}
-
-.message-locked {
-  padding: 1rem;
-  border-top: 1px solid #e5e7eb;
-  background: #f9fafb;
-  color: #4b5563;
-  font-size: 0.875rem;
-  text-align: center;
+  margin-top: 2px;
+  font-size: 11px;
 }
 </style>
