@@ -14,66 +14,84 @@
       <span v-if="chatStore.totalUnreadCount > 0" class="unread-dot"></span>
     </button>
 
-    <!-- Expanded Widget -->
-    <div v-if="chatStore.widgetOpen" class="chat-widget-expanded">
-      <!-- Widget Header -->
-      <div class="widget-header">
-        <h3>Messages</h3>
-        <div class="header-actions">
-          <!-- Inline SVG: crisp at any size and shown immediately, without
-               waiting for the icon font -->
-          <button @click="toggleWidget" class="close-btn" title="Close" aria-label="Close messages">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+    <!-- Expanded: the list of conversations, or one of them. Full screen on
+         phones, a panel on wider screens. -->
+    <div v-if="chatStore.widgetOpen" class="chat-widget-expanded" role="dialog" aria-label="Messages">
+      <template v-if="!chatStore.activeConversation">
+        <div class="widget-header">
+          <button @click="toggleWidget" class="icon-btn" aria-label="Close messages">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M15 5l-7 7 7 7" />
             </svg>
           </button>
+          <h3>Messages</h3>
         </div>
-      </div>
 
-      <!-- Conversation Switcher -->
-      <div v-if="!chatStore.activeConversation" class="conversation-list">
-        <!-- Conversations about finished gigs are deleted after 30 days -->
-        <DeletionWarningBanner
-          v-if="chatStore.deletionWarnings.length > 0"
-          :warnings="chatStore.deletionWarnings"
-          @dismiss="chatStore.dismissWarning"
-        />
-        <div
-          v-for="conversation in chatStore.sortedConversations"
-          :key="conversationKey(conversation) ?? undefined"
-          :class="['conversation-item', { ended: isEnded(conversation) }]"
-          @click="chatStore.joinConversation(conversation)"
-        >
-          <div class="conversation-info">
-            <h4>{{ conversation.task_title || conversation.item_title || (conversation.task_id ? `Gig #${conversation.task_id}` : `Item #${conversation.item_id}`) }}</h4>
-            <p>{{ conversation.other_user_name }}</p>
-            <!-- Where the deal stands, and the rating between you once given -->
-            <p class="conversation-status">
-              <span v-if="isEnded(conversation)" class="status-chip expired">Expired</span>
-              <span v-if="statusLabel(conversation)" :class="['status-chip', statusIcon(conversation)?.tone]">
-                <i v-if="statusIcon(conversation)" :class="['fas', statusIcon(conversation)!.icon]" aria-hidden="true"></i>
-                {{ statusLabel(conversation) }}
+        <div class="list-tabs" role="tablist" aria-label="Which conversations">
+          <button
+            role="tab"
+            :aria-selected="listTab === 'active'"
+            :class="['list-tab', { active: listTab === 'active' }]"
+            @click="listTab = 'active'"
+          >
+            Active <span class="tab-count">{{ activeCount }}</span>
+          </button>
+          <button
+            role="tab"
+            :aria-selected="listTab === 'all'"
+            :class="['list-tab', { active: listTab === 'all' }]"
+            @click="listTab = 'all'"
+          >
+            All
+          </button>
+        </div>
+
+        <div class="conversation-list">
+          <!-- Conversations about finished gigs are deleted after 30 days -->
+          <DeletionWarningBanner
+            v-if="chatStore.deletionWarnings.length > 0"
+            :warnings="chatStore.deletionWarnings"
+            @dismiss="chatStore.dismissWarning"
+          />
+          <button
+            v-for="conversation in listed"
+            :key="conversationKey(conversation) ?? undefined"
+            type="button"
+            :class="['conversation-item', { ended: isEnded(conversation) }]"
+            @click="chatStore.joinConversation(conversation)"
+          >
+            <span class="conversation-avatar" aria-hidden="true">{{ initialOf(conversation.other_user_name) }}</span>
+            <span class="conversation-info">
+              <span class="conversation-title">{{ titleOf(conversation) }}</span>
+              <span class="visually-hidden">with {{ conversation.other_user_name }}</span>
+              <!-- Where the deal stands, and the rating between you once given -->
+              <span class="conversation-status">
+                <span v-if="isEnded(conversation)" class="status-chip expired">Expired</span>
+                <span v-if="statusLabel(conversation)" :class="['status-chip', statusIcon(conversation)?.tone]">
+                  <i v-if="statusIcon(conversation)" :class="['fas', statusIcon(conversation)!.icon]" aria-hidden="true"></i>
+                  {{ statusLabel(conversation) }}
+                </span>
+                <span v-else-if="!isEnded(conversation)" class="status-chip going">Active</span>
+                <span v-if="isEnded(conversation) && conversation.state_at" class="conversation-ago">{{ timeAgo(conversation.state_at) }}</span>
+                <span v-if="ratingOf(conversation) !== null" class="conversation-rating">★ {{ formatRating(ratingOf(conversation)!) }}</span>
               </span>
-              <span v-if="isEnded(conversation) && conversation.state_at" class="conversation-ago">{{ timeAgo(conversation.state_at) }}</span>
-              <span v-if="ratingOf(conversation) !== null" class="conversation-rating">★ {{ formatRating(ratingOf(conversation)!) }}</span>
-            </p>
-          </div>
-          <span v-if="conversation.unread_count > 0" class="unread-count">
-            {{ conversation.unread_count }}
-          </span>
-        </div>
+            </span>
+            <span
+              v-if="conversation.unread_count > 0"
+              class="unread-mark"
+              role="img"
+              :aria-label="`${conversation.unread_count} unread`"
+            ></span>
+          </button>
 
-        <div v-if="chatStore.conversations.length === 0" class="no-conversations">
-          <p>No conversations yet</p>
+          <p v-if="chatStore.conversations.length === 0" class="no-conversations">No conversations yet</p>
+          <p v-else-if="listed.length === 0" class="no-conversations">Nothing active right now</p>
+          <p class="list-footer">You can type once the poster or seller says yes</p>
         </div>
-      </div>
+      </template>
 
-      <!-- Active Conversation: the same thread as on the Messages page -->
+      <!-- One conversation: its header has the way back to the list -->
       <div v-else class="active-conversation">
-        <button @click="chatStore.activeConversation = null" class="back-btn" aria-label="All conversations">
-          <i class="fas fa-arrow-left" aria-hidden="true"></i>
-          All conversations
-        </button>
         <MessageThread
           :conversation="chatStore.activeConversation"
           :messages="chatStore.activeMessages"
@@ -89,14 +107,22 @@
           @typing-start="chatStore.startTyping"
           @typing-stop="chatStore.stopTyping"
           @booking-action="chatStore.handleBookingAction"
-        />
+        >
+          <template #back>
+            <button @click="chatStore.activeConversation = null" class="icon-btn" aria-label="All conversations">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 5l-7 7 7 7" />
+              </svg>
+            </button>
+          </template>
+        </MessageThread>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { actionBarHeight } from '@/composables/useActionBar';
 import { useChatStore, conversationKey } from '@/stores/chat';
@@ -114,6 +140,17 @@ const reviewsStore = useReviewsStore();
 function isEnded(conversation: ConversationSummary): boolean {
   return !!conversation.ended || chatStore.endedConversations.has(conversationKey(conversation) ?? '');
 }
+
+// Active: deals still under way. All (the default): everything, ended last.
+const listTab = ref<'active' | 'all'>('all');
+const activeCount = computed(() => chatStore.sortedConversations.filter(c => !isEnded(c)).length);
+const listed = computed(() =>
+  listTab.value === 'active' ? chatStore.sortedConversations.filter(c => !isEnded(c)) : chatStore.sortedConversations
+);
+
+const titleOf = (c: ConversationSummary) =>
+  c.task_title || c.item_title || (c.task_id ? `Gig #${c.task_id}` : `Item #${c.item_id}`);
+const initialOf = (name?: string | null) => (name || '?').charAt(0).toUpperCase();
 
 // Your reviews with others, for the average rating between you on each
 // conversation's gig or item (refreshed whenever the chat opens)
@@ -203,226 +240,239 @@ function sendMessage(content: string) {
   border: 2px solid var(--bg);
 }
 
-/* Expanded Widget */
+/* Expanded: a panel; full screen on phones */
 .chat-widget-expanded {
   width: 400px;
   height: 600px;
-  background: white;
-  border-radius: 0.75rem;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  max-height: calc(100dvh - 40px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 20px 25px -5px rgba(17, 24, 39, 0.12), 0 10px 10px -5px rgba(17, 24, 39, 0.05);
 }
 
-/* Widget Header */
+@media (max-width: 640px) {
+  .chat-widget-expanded {
+    position: fixed;
+    inset: 0;
+    width: auto;
+    height: auto;
+    max-height: none;
+    border-radius: 0;
+  }
+}
+
 .widget-header {
-  padding: 1rem;
-  background: var(--color-primary);
-  color: white;
+  flex: none;
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 4px;
+  height: 56px;
+  padding: 0 8px;
+  border-bottom: 1px solid #EEF0F3;
 }
 
 .widget-header h3 {
-  font-size: 1.125rem;
-  font-weight: 600;
   margin: 0;
-  color: white; /* global heading colour is dark, unreadable on the purple header */
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
 }
 
-.header-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.close-btn {
-  width: 36px;
-  height: 36px;
-  background: rgba(255, 255, 255, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  border-radius: 0.375rem;
-  color: white;
-  cursor: pointer;
+.icon-btn {
+  flex: none;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.15s;
+  padding: 0;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: #374151;
+  cursor: pointer;
 }
 
-.close-btn:hover,
-.close-btn:focus-visible {
-  background: rgba(255, 255, 255, 0.4);
-  outline: none;
+.icon-btn:hover,
+.icon-btn:focus-visible {
+  background: rgba(17, 24, 39, 0.05);
+}
+
+/* Active / All */
+.list-tabs {
+  flex: none;
+  display: flex;
+  gap: 24px;
+  padding: 0 20px;
+  border-bottom: 1px solid #EEF0F3;
+}
+
+.list-tab {
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.list-tab.active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tab-count {
+  color: var(--accent-text);
+  font-weight: 600;
 }
 
 /* Conversation List */
 .conversation-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0.5rem;
+  padding: 0 20px;
 }
 
 .conversation-item {
-  padding: 0.75rem;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  transition: background-color 0.15s;
+  width: 100%;
   display: flex;
-  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 0;
+  border: 0;
+  border-bottom: 1px solid #F3F4F6;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conversation-item:hover .conversation-title,
+.conversation-item:focus-visible .conversation-title {
+  text-decoration: underline;
+}
+
+.conversation-avatar {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: flex;
   align-items: center;
-  margin-bottom: 0.5rem;
-  position: relative;
-}
-
-/* A faint line in the gap between conversations, so each reads as its own */
-.conversation-item + .conversation-item::before {
-  content: '';
-  position: absolute;
-  top: -0.25rem;
-  left: 0.75rem;
-  right: 0.75rem;
-  border-top: 1px solid #eceef2;
-}
-
-.conversation-item:hover {
-  background: #f3f4f6;
-}
-
-.conversation-info h4 {
-  font-size: 0.875rem;
+  justify-content: center;
+  border-radius: 22px;
+  background: var(--accent-tint);
+  color: var(--accent-text);
+  font-size: 17px;
   font-weight: 600;
-  color: #111827;
-  margin: 0 0 0.25rem 0;
 }
 
-.conversation-info p {
-  font-size: 0.75rem;
-  color: #6b7280;
-  margin: 0;
+.conversation-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.conversation-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Done or closed: still opens, shown quieter */
+.conversation-item.ended .conversation-title {
+  color: var(--text-muted);
 }
 
 .conversation-status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.375rem;
-  margin-top: 0.25rem !important;
+  gap: 8px;
+  padding-top: 2px;
+  font-size: 13px;
 }
 
 .status-chip {
-  padding: 0 0.4rem;
-  border-radius: 999px;
-  background: var(--accent-tint);
-  color: #3730a3;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 14px;
+  background: #F3F4F6;
+  color: #4B5563;
   font-weight: 600;
 }
 
-.status-chip i {
-  margin-right: 0.2rem;
+/* Tones: under way, done (green tick), waiting on someone, stopped */
+.status-chip.going {
+  background: var(--accent-tint);
+  color: var(--accent-text);
 }
 
-/* Tones: done (green tick), waiting on someone, under way, stopped */
 .status-chip.done {
-  background: #dcfce7;
-  color: #15803d;
+  background: #DCFCE7;
+  color: #15803D;
 }
 
 .status-chip.waiting {
-  background: #fef3c7;
-  color: #92400e;
+  background: #FEF3C7;
+  color: #92400E;
 }
 
 .status-chip.stopped {
-  background: #fee2e2;
-  color: #b91c1c;
-}
-
-.status-chip.neutral {
-  background: #f3f4f6;
-  color: #4b5563;
-}
-
-.status-chip.expired {
-  background: #f3f4f6;
-  color: #6b7280;
+  background: #FEE2E2;
+  color: #B91C1C;
 }
 
 .conversation-ago {
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .conversation-rating {
-  color: #b45309;
+  color: #B45309;
   font-weight: 700;
 }
 
-/* Done or closed: still opens, shown quieter */
-.conversation-item.ended h4 {
-  color: #6b7280;
-}
-
-.unread-count {
-  background: var(--color-primary);
-  color: white;
-  font-size: 0.75rem;
-  font-weight: 500;
-  padding: 0.125rem 0.375rem;
-  border-radius: 9999px;
-  min-width: 1.25rem;
-  text-align: center;
+.unread-mark {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-top: 8px;
+  border-radius: 5px;
+  background: var(--accent);
 }
 
 .no-conversations {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: #9ca3af;
+  margin: 0;
+  padding: 2rem 0 0;
+  text-align: center;
+  color: #9CA3AF;
 }
 
+.list-footer {
+  margin: 0;
+  padding: 20px 0;
+  font-size: 13px;
+  text-align: center;
+  color: #9CA3AF;
+}
 
-/* Active Conversation */
 .active-conversation {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
-}
-
-.back-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  background: #f9fafb;
-  border: none;
-  border-bottom: 1px solid #e5e7eb;
-  color: #4b5563;
-  font-size: 0.875rem;
-  cursor: pointer;
-  text-align: left;
-}
-
-.back-btn:hover,
-.back-btn:focus-visible {
-  background: #f3f4f6;
-  color: #111827;
-}
-
-/* The thread's own header is roomy for the Messages page; tighten it here */
-.active-conversation :deep(.thread-header) {
-  padding: 0.75rem 1rem;
-}
-
-/* Mobile Responsive */
-@media (max-width: 768px) {
-  .chat-widget-expanded {
-    width: calc(100vw - 2rem);
-    height: calc(100vh - 8rem);
-    height: calc(100dvh - 8rem);
-    max-width: 400px;
-  }
 }
 </style>
