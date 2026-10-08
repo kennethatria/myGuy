@@ -1,0 +1,166 @@
+/* Boards of sticky notes: the gig board and the marketplace. Imported
+   scoped by each board (<style scoped src="@/assets/board.css">). */
+
+.board {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 0 1.5rem;
+}
+
+.board-tabs {
+  display: flex;
+  gap: 24px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.board-tab {
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.board-tab.active {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+.board-tab:focus-visible {
+  outline: 3px solid var(--accent-text);
+  outline-offset: 2px;
+}
+
+.board-content {
+  padding: 16px 22px 0;
+}
+
+.note-board {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+  margin: 0;
+  padding: 6px 0;
+}
+
+.note-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.note-headline {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.note-price {
+  flex: none;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--price);
+}
+
+.note-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-body);
+}
+
+.note-meta {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Booked by someone: still shown, no longer open to bookings */
+.reserved-tag {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: #374151;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.empty-board {
+  padding: 3rem 1rem;
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.empty-board h2 {
+  margin: 0 0 0.25rem;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.empty-board p {
+  margin: 0 0 0.75rem;
+}
+
+.board-status {
+  padding: 2rem 0;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.alert-danger {
+  padding: 12px 14px;
+  border: 1px solid #f5c2c7;
+  border-radius: 12px;
+  background: #f8d7da;
+  color: #842029;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.page-link {
+  display: block;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  line-height: 42px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.page-item.active .page-link {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.page-item.disabled .page-link {
+  color: #9CA3AF;
+  pointer-events: none;
+}

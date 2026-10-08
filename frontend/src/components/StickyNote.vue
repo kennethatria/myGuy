@@ -2,7 +2,7 @@
   <component
     :is="to ? RouterLink : 'article'"
     :to="to"
-    :class="['sticky-note', `note-${color}`, `note-${size}`, { 'is-link': to, 'has-photo': photo }]"
+    :class="['sticky-note', `note-${color}`, `note-${size}`, { 'is-link': to, 'has-photo': photo, 'has-tape': tape }]"
     :style="{ '--tilt': `${tilt}deg` }"
   >
     <span v-if="tape" class="note-tape" aria-hidden="true"></span>
@@ -76,9 +76,15 @@ const tilt = computed(() => (props.flat ? 0 : noteTilt(props.seed)))
   overflow-wrap: anywhere;
 }
 
+/* Sized to its words, like a real note */
 .note-small {
-  aspect-ratio: 1;
-  padding: 1.1rem 1.1rem 0.9rem;
+  gap: 10px;
+  padding: 14px;
+}
+
+/* Room under the tape */
+.note-small.has-tape {
+  padding-top: 20px;
 }
 
 .note-large {
@@ -86,22 +92,18 @@ const tilt = computed(() => (props.flat ? 0 : noteTilt(props.seed)))
   min-height: 16rem;
 }
 
-/* A photo makes the note taller than a square */
-.note-small.has-photo {
-  aspect-ratio: auto;
-}
-
+/* The photo sits in a white frame on the note */
 .note-photo {
   position: relative;
-  margin: 0 0 0.25rem;
-  padding: 0.35rem 0.35rem 0.9rem;
+  margin: 0;
+  padding: 5px;
+  border-radius: 3px;
   background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  transform: rotate(calc(var(--tilt) * -1.5));
+  box-shadow: 0 1px 3px rgba(17, 24, 39, 0.12);
 }
 
-/* A strip of tape holding the photo on */
-.note-photo::before {
+/* A strip of tape holding the photo on, unless the note is taped itself */
+.sticky-note:not(.has-tape) .note-photo::before {
   content: '';
   position: absolute;
   top: -0.5rem;
@@ -117,7 +119,13 @@ const tilt = computed(() => (props.flat ? 0 : noteTilt(props.seed)))
   display: block;
   width: 100%;
   aspect-ratio: 4 / 3;
+  border-radius: 2px;
   object-fit: cover;
+}
+
+.note-small .note-photo img {
+  aspect-ratio: auto;
+  height: 150px;
 }
 
 .note-large .note-photo img {
@@ -133,6 +141,15 @@ const tilt = computed(() => (props.flat ? 0 : noteTilt(props.seed)))
   margin-left: -24px;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.6);
+}
+
+/* Photo notes take a wider strip */
+.has-photo > .note-tape {
+  top: -8px;
+  width: 64px;
+  height: 18px;
+  margin-left: -32px;
+  background: rgba(255, 255, 255, 0.55);
 }
 
 .note-fold {
@@ -175,19 +192,9 @@ const tilt = computed(() => (props.flat ? 0 : noteTilt(props.seed)))
 
 /* One note per row on a phone: let it size to its words, not a big square */
 @media (max-width: 480px) {
-  .note-small {
-    aspect-ratio: auto;
-    min-height: 9rem;
-  }
-
   .note-large {
     padding: 1.25rem;
     min-height: 0;
-  }
-
-  /* A wide crop keeps the headline in view on a narrow screen */
-  .note-small .note-photo img {
-    aspect-ratio: 16 / 10;
   }
 }
 

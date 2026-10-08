@@ -1,20 +1,5 @@
 <template>
-  <div class="container py-4">
-    <div class="board-header">
-      <div>
-        <h1 class="text-2xl font-semibold">Marketplace</h1>
-        <p class="text-muted mt-1">
-          {{ view === 'wanted'
-            ? 'Things people are looking for. List one you have and they get a message.'
-            : 'Things people are selling. Each note stays up for 24 hours.' }}
-        </p>
-      </div>
-      <div class="board-actions">
-        <router-link :to="{ name: 'create-listing' }" class="btn btn-primary">Post Item</router-link>
-        <router-link :to="{ name: 'create-request' }" class="btn btn-outline">Post Request</router-link>
-      </div>
-    </div>
-
+  <div class="board">
     <div class="board-tabs" role="tablist" aria-label="Marketplace views">
       <button
         v-for="tab in tabs"
@@ -28,159 +13,166 @@
       </button>
     </div>
 
-    <NearbyBanner v-if="view !== 'mine'" :state="viewer.state.value" @request="viewer.request" />
+    <div class="board-content">
+      <NearbyBanner v-if="view !== 'mine'" :state="viewer.state.value" @request="viewer.request" />
 
-    <div v-if="loading" class="text-center py-5">
-      <div class="spinner-border" role="status">
-        <span class="visually-hidden">Loading...</span>
+      <p v-if="loading" class="board-status" role="status">Loading...</p>
+
+      <div v-else-if="error" class="alert-danger" role="alert">
+        {{ error }}
+        <button @click="load" class="btn btn-sm btn-outline">Retry</button>
       </div>
+
+      <template v-else-if="view === 'board'">
+        <ul v-if="items.length > 0" class="note-board" aria-label="Listings">
+          <li v-for="item in items" :key="item.id">
+            <StickyNote
+              tone="sell"
+              :seed="item.id"
+              :tape="!!photoUrl(item)"
+              :photo="photoUrl(item)"
+              :photo-alt="item.title"
+              :to="{ name: 'store-item', params: { id: item.id } }"
+            >
+              <template #header>
+                <span class="note-top">
+                  <h3 class="note-headline">{{ item.title }}</h3>
+                  <span v-if="listingPriceLabel(item)" class="note-price">{{ listingPriceLabel(item) }}</span>
+                </span>
+                <p class="note-text">{{ item.description }}</p>
+              </template>
+              <template #footer>
+                <span class="note-meta">{{ noteMeta(item, item.seller?.username || 'someone', showUnknownItems, now) }}</span>
+                <span v-if="item.status === 'reserved'" class="reserved-tag">Reserved</span>
+              </template>
+            </StickyNote>
+          </li>
+        </ul>
+
+        <div v-else class="empty-board">
+          <h2>Nothing for sale yet</h2>
+          <p>Be the first to sell something.</p>
+          <router-link :to="{ name: 'create-listing' }" class="btn btn-primary">Sell something</router-link>
+        </div>
+      </template>
+
+      <template v-else-if="view === 'wanted'">
+        <ul v-if="requests.length > 0" class="note-board" aria-label="Requests">
+          <li v-for="request in requests" :key="request.id">
+            <StickyNote
+              tone="want"
+              tape
+              :seed="request.id"
+              :to="{ name: 'store-request', params: { id: request.id } }"
+            >
+              <template #header>
+                <span class="note-top">
+                  <h3 class="note-headline">{{ request.title }}</h3>
+                </span>
+                <p class="note-text">{{ request.description }}</p>
+              </template>
+              <template #footer>
+                <span class="note-meta">{{ noteMeta(request, request.requester?.username || 'someone', showUnknownRequests, now) }}</span>
+                <span v-if="request.offer_count" class="note-meta offers">{{ offersLabel(request.offer_count) }}</span>
+              </template>
+            </StickyNote>
+          </li>
+        </ul>
+
+        <div v-else class="empty-board">
+          <h2>Nobody is looking for anything yet</h2>
+          <p>Ask for something you need, and sellers can list it for you.</p>
+          <router-link :to="{ name: 'create-request' }" class="btn btn-primary">Ask for something</router-link>
+        </div>
+      </template>
+
+      <template v-else>
+        <h2 class="section-title">Your listings</h2>
+        <ul v-if="myItems.length > 0" class="note-board" aria-label="Your listings">
+          <li v-for="item in myItems" :key="item.id">
+            <StickyNote tone="sell" :seed="item.id" :photo="photoUrl(item)" :photo-alt="item.title">
+              <template #header>
+                <span class="note-top">
+                  <h3 class="note-headline">
+                    <router-link :to="{ name: 'store-item', params: { id: item.id } }" class="note-title-link">
+                      {{ item.title }}
+                    </router-link>
+                  </h3>
+                  <span v-if="listingPriceLabel(item)" class="note-price">{{ listingPriceLabel(item) }}</span>
+                </span>
+                <p class="note-text">{{ item.description }}</p>
+              </template>
+              <template #footer>
+                <span class="note-meta">{{ statusLabel(item) }}</span>
+                <span v-if="item.status === 'expired'" class="note-actions">
+                  <button class="btn btn-sm btn-primary" :disabled="busyId === `items-${item.id}`" @click="repost('items', item)">
+                    {{ busyId === `items-${item.id}` ? 'Reposting...' : 'Repost' }}
+                  </button>
+                  <button class="btn btn-sm btn-outline" :disabled="busyId === `items-${item.id}`" @click="remove('items', item)">
+                    Remove
+                  </button>
+                </span>
+              </template>
+            </StickyNote>
+          </li>
+        </ul>
+        <div v-else class="empty-board">
+          <p>You haven't listed anything.</p>
+          <router-link :to="{ name: 'create-listing' }" class="btn btn-primary">Sell something</router-link>
+        </div>
+
+        <h2 class="section-title">Your requests</h2>
+        <ul v-if="myRequests.length > 0" class="note-board" aria-label="Your requests">
+          <li v-for="request in myRequests" :key="request.id">
+            <StickyNote tone="want" :seed="request.id">
+              <template #header>
+                <span class="note-top">
+                  <h3 class="note-headline">
+                    <router-link :to="{ name: 'store-request', params: { id: request.id } }" class="note-title-link">
+                      {{ request.title }}
+                    </router-link>
+                  </h3>
+                </span>
+                <p class="note-text">{{ request.description }}</p>
+              </template>
+              <template #footer>
+                <span class="note-meta">{{ requestStatusLabel(request) }}</span>
+                <span v-if="request.status === 'expired'" class="note-actions">
+                  <button class="btn btn-sm btn-primary" :disabled="busyId === `requests-${request.id}`" @click="repost('requests', request)">
+                    {{ busyId === `requests-${request.id}` ? 'Reposting...' : 'Repost' }}
+                  </button>
+                  <button class="btn btn-sm btn-outline" :disabled="busyId === `requests-${request.id}`" @click="remove('requests', request)">
+                    Remove
+                  </button>
+                </span>
+              </template>
+            </StickyNote>
+          </li>
+        </ul>
+        <div v-else class="empty-board">
+          <p>You haven't asked for anything.</p>
+          <router-link :to="{ name: 'create-request' }" class="btn btn-primary">Ask for something</router-link>
+        </div>
+      </template>
+
+      <nav v-if="view !== 'mine' && !loading && totalPages > 1" aria-label="Board pages">
+        <ul class="pagination">
+          <li class="page-item" :class="{ disabled: currentPage === 1 }">
+            <button class="page-link" @click="goToPage(currentPage - 1)" :disabled="currentPage === 1">
+              Previous
+            </button>
+          </li>
+          <li class="page-item active">
+            <span class="page-link" aria-current="page">{{ currentPage }} of {{ totalPages }}</span>
+          </li>
+          <li class="page-item" :class="{ disabled: currentPage === totalPages }">
+            <button class="page-link" @click="goToPage(currentPage + 1)" :disabled="currentPage === totalPages">
+              Next
+            </button>
+          </li>
+        </ul>
+      </nav>
     </div>
-
-    <div v-else-if="error" class="alert alert-danger" role="alert">
-      {{ error }}
-      <button @click="load" class="btn btn-sm btn-outline ms-3">Retry</button>
-    </div>
-
-    <template v-else-if="view === 'board'">
-      <ul v-if="items.length > 0" class="note-board" aria-label="Listings">
-        <li v-for="item in items" :key="item.id">
-          <StickyNote
-            :title="item.title"
-            :body="item.description"
-            :seed="item.id"
-            :photo="photoUrl(item)"
-            :photo-alt="item.title"
-            :to="{ name: 'store-item', params: { id: item.id } }"
-          >
-            <template #footer>
-              <DistanceTag :distance="item.distance" :show-unknown="showUnknownItems" />
-              <span>@{{ item.seller?.username || 'someone' }}</span>
-              <span v-if="listingPriceLabel(item)">{{ listingPriceLabel(item) }}</span>
-              <span v-if="item.status === 'reserved'" class="reserved-tag">Reserved</span>
-              <span v-else-if="item.deadline && expiryLabel(item.deadline, now)">{{ expiryLabel(item.deadline, now) }}</span>
-            </template>
-          </StickyNote>
-        </li>
-      </ul>
-
-      <div v-else class="empty-board">
-        <h2 class="h5">No notes on the board</h2>
-        <p class="text-muted">
-          Be the first to sell something.
-        </p>
-        <router-link :to="{ name: 'create-listing' }" class="btn btn-primary mt-2">Post Item</router-link>
-      </div>
-    </template>
-
-    <template v-else-if="view === 'wanted'">
-      <ul v-if="requests.length > 0" class="note-board" aria-label="Requests">
-        <li v-for="request in requests" :key="request.id">
-          <StickyNote
-            :title="request.title"
-            :body="request.description"
-            :seed="request.id"
-            :to="{ name: 'store-request', params: { id: request.id } }"
-          >
-            <template #footer>
-              <DistanceTag :distance="request.distance" :show-unknown="showUnknownRequests" />
-              <span>@{{ request.requester?.username || 'someone' }}</span>
-              <span v-if="request.offer_count">{{ offersLabel(request.offer_count) }}</span>
-              <span v-if="request.deadline && expiryLabel(request.deadline, now)">{{ expiryLabel(request.deadline, now) }}</span>
-            </template>
-          </StickyNote>
-        </li>
-      </ul>
-
-      <div v-else class="empty-board">
-        <h2 class="h5">Nobody is looking for anything yet</h2>
-        <p class="text-muted">
-          Ask for something you need, and sellers can list it for you.
-        </p>
-        <router-link :to="{ name: 'create-request' }" class="btn btn-primary mt-2">Post Request</router-link>
-      </div>
-    </template>
-
-    <template v-else>
-      <h2 class="section-title">Your listings</h2>
-      <ul v-if="myItems.length > 0" class="note-board" aria-label="Your listings">
-        <li v-for="item in myItems" :key="item.id">
-          <StickyNote :seed="item.id" :photo="photoUrl(item)" :photo-alt="item.title">
-            <template #header>
-              <h3 class="note-headline">
-                <router-link :to="{ name: 'store-item', params: { id: item.id } }" class="note-title-link">
-                  {{ item.title }}
-                </router-link>
-              </h3>
-              <p class="note-text">{{ item.description }}</p>
-            </template>
-            <template #footer>
-              <span>{{ statusLabel(item) }}</span>
-              <span v-if="item.status === 'expired'" class="note-actions">
-                <button class="btn btn-sm btn-primary" :disabled="busyId === `items-${item.id}`" @click="repost('items', item)">
-                  {{ busyId === `items-${item.id}` ? 'Reposting...' : 'Repost' }}
-                </button>
-                <button class="btn btn-sm btn-outline" :disabled="busyId === `items-${item.id}`" @click="remove('items', item)">
-                  Remove
-                </button>
-              </span>
-            </template>
-          </StickyNote>
-        </li>
-      </ul>
-      <div v-else class="empty-board">
-        <p class="text-muted">You haven't listed anything.</p>
-        <router-link :to="{ name: 'create-listing' }" class="btn btn-primary mt-2">Post Item</router-link>
-      </div>
-
-      <h2 class="section-title">Your requests</h2>
-      <ul v-if="myRequests.length > 0" class="note-board" aria-label="Your requests">
-        <li v-for="request in myRequests" :key="request.id">
-          <StickyNote :seed="request.id">
-            <template #header>
-              <h3 class="note-headline">
-                <router-link :to="{ name: 'store-request', params: { id: request.id } }" class="note-title-link">
-                  {{ request.title }}
-                </router-link>
-              </h3>
-              <p class="note-text">{{ request.description }}</p>
-            </template>
-            <template #footer>
-              <span>{{ requestStatusLabel(request) }}</span>
-              <span v-if="request.status === 'expired'" class="note-actions">
-                <button class="btn btn-sm btn-primary" :disabled="busyId === `requests-${request.id}`" @click="repost('requests', request)">
-                  {{ busyId === `requests-${request.id}` ? 'Reposting...' : 'Repost' }}
-                </button>
-                <button class="btn btn-sm btn-outline" :disabled="busyId === `requests-${request.id}`" @click="remove('requests', request)">
-                  Remove
-                </button>
-              </span>
-            </template>
-          </StickyNote>
-        </li>
-      </ul>
-      <div v-else class="empty-board">
-        <p class="text-muted">You haven't asked for anything.</p>
-        <router-link :to="{ name: 'create-request' }" class="btn btn-primary mt-2">Post Request</router-link>
-      </div>
-    </template>
-
-    <nav v-if="view !== 'mine' && !loading && totalPages > 1" class="mt-4" aria-label="Board pages">
-      <ul class="pagination justify-content-center">
-        <li class="page-item" :class="{ disabled: currentPage === 1 }">
-          <button class="page-link" @click="goToPage(currentPage - 1)" :disabled="currentPage === 1">
-            Previous
-          </button>
-        </li>
-        <li class="page-item active">
-          <span class="page-link" aria-current="page">{{ currentPage }} of {{ totalPages }}</span>
-        </li>
-        <li class="page-item" :class="{ disabled: currentPage === totalPages }">
-          <button class="page-link" @click="goToPage(currentPage + 1)" :disabled="currentPage === totalPages">
-            Next
-          </button>
-        </li>
-      </ul>
-    </nav>
   </div>
 </template>
 
@@ -191,10 +183,9 @@ import { useAuthStore } from '@/stores/auth'
 import config from '@/config'
 import StickyNote from '@/components/StickyNote.vue'
 import NearbyBanner from '@/components/NearbyBanner.vue'
-import DistanceTag from '@/components/DistanceTag.vue'
 import { hasDistances } from '@/utils/distance'
 import { useViewerLocation, nearParam } from '@/composables/useViewerLocation'
-import { expiryLabel } from '@/utils/gigNote'
+import { expiryLabel, noteMeta } from '@/utils/gigNote'
 import { listingPriceLabel, offersLabel } from '@/utils/listingNote'
 
 interface StoreItem {
@@ -227,7 +218,7 @@ type View = 'board' | 'wanted' | 'mine'
 type Kind = 'items' | 'requests'
 
 const tabs: { view: View; label: string }[] = [
-  { view: 'board', label: 'Board' },
+  { view: 'board', label: 'For sale' },
   { view: 'wanted', label: 'Wanted' },
   { view: 'mine', label: 'Yours' }
 ]
@@ -409,72 +400,18 @@ onUnmounted(() => {
 })
 </script>
 
+<style scoped src="@/assets/board.css"></style>
+
 <style scoped>
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.board-header {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.board-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
 .section-title {
-  margin: 1.5rem 0 0.75rem;
-  font-size: 1.15rem;
+  margin: 8px 0 12px;
+  font-size: 15px;
   font-weight: 600;
+  color: var(--text-muted);
 }
 
-.section-title:first-of-type {
-  margin-top: 0;
-}
-
-.board-tabs {
-  display: flex;
-  gap: 0.25rem;
-  margin-bottom: 1.25rem;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
-}
-
-.board-tab {
-  min-height: 44px;
-  padding: 0.5rem 0.9rem;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: none;
-  font-size: 1rem;
-  color: var(--color-text-light, #6b7280);
-  cursor: pointer;
-}
-
-.board-tab.active {
-  color: var(--color-primary);
-  border-bottom-color: var(--color-primary);
-  font-weight: 600;
-}
-
-.board-tab:focus-visible {
-  outline: 3px solid var(--color-primary);
-  outline-offset: 2px;
-}
-.note-board {
-  list-style: none;
-  margin: 0;
-  padding: 0.5rem 0.25rem;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 1.75rem;
+.section-title ~ .section-title {
+  margin-top: 28px;
 }
 
 /* The title link covers the whole note (see .note-title-link::after) */
@@ -482,20 +419,11 @@ onUnmounted(() => {
   position: relative;
 }
 
-.note-headline {
-  margin: 0;
-  font-size: 1.15rem;
-  font-weight: 700;
-  line-height: 1.25;
-}
-
 .note-title-link {
   color: inherit;
   font-weight: inherit;
-  text-decoration: none;
 }
 
-/* Tap anywhere on your note to open it, like on the board */
 .note-title-link::after {
   content: '';
   position: absolute;
@@ -504,14 +432,8 @@ onUnmounted(() => {
 
 .note-title-link:hover,
 .note-title-link:focus-visible {
+  color: inherit;
   text-decoration: underline;
-}
-
-.note-text {
-  margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.45;
-  flex: 1;
 }
 
 /* Above the note-wide link, and big enough for a thumb */
@@ -526,70 +448,8 @@ onUnmounted(() => {
   min-height: 44px;
 }
 
-.empty-board {
-  text-align: center;
-  padding: 3rem 1rem;
-  border: 2px dashed var(--color-border, #e5e7eb);
-  border-radius: 8px;
-}
-
-.alert {
-  padding: 0.75rem 1.25rem;
-  border-radius: 0.25rem;
-}
-
-.alert-danger {
-  color: #842029;
-  background-color: #f8d7da;
-  border: 1px solid #f5c2c7;
-}
-
-.text-muted {
-  color: var(--color-text-light, #6b7280);
-}
-
-.pagination {
-  display: flex;
-  justify-content: center;
-  padding-left: 0;
-  list-style: none;
-}
-
-.page-item:not(:first-child) .page-link {
-  margin-left: -1px;
-}
-
-.page-link {
-  display: block;
-  padding: 0.375rem 0.75rem;
-  color: var(--color-primary);
-  background-color: #fff;
-  border: 1px solid #dee2e6;
-}
-
-.page-item.active .page-link {
-  color: #fff;
-  background-color: var(--color-primary);
-  border-color: var(--color-primary);
-}
-
-.page-item.disabled .page-link {
-  color: #6c757d;
-  pointer-events: none;
-}
-
-@media (max-width: 480px) {
-  .note-board {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Booked by someone: still shown, no longer open to bookings */
-.reserved-tag {
-  padding: 0 0.4rem;
-  border-radius: 0.25rem;
-  background: #7c3aed;
-  color: #fff;
+.offers {
+  flex: none;
   font-weight: 600;
 }
 </style>

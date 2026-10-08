@@ -49,7 +49,7 @@ const router = createRouter({
       path: '/tasks',
       name: 'tasks',
       component: () => import('@/views/tasks/TaskListView.vue'),
-      meta: { title: 'Gigs', requiresAuth: true }
+      meta: { title: 'Gigs', heading: 'Gigs', requiresAuth: true }
     },
     {
       path: '/tasks/create',
@@ -123,7 +123,7 @@ const router = createRouter({
       path: '/store',
       name: 'store',
       component: () => import('@/views/store/StoreView.vue'),
-      meta: { title: 'Marketplace', requiresAuth: true }
+      meta: { title: 'Marketplace', heading: 'Marketplace', requiresAuth: true }
     },
     {
       path: '/store/new',
