@@ -50,7 +50,11 @@
             <!-- Where the deal stands, and the rating between you once given -->
             <p class="conversation-status">
               <span v-if="isEnded(conversation)" class="status-chip expired">Expired</span>
-              <span v-if="statusLabel(conversation)" class="status-chip">{{ statusLabel(conversation) }}</span>
+              <span v-if="statusLabel(conversation)" :class="['status-chip', statusIcon(conversation)?.tone]">
+                <i v-if="statusIcon(conversation)" :class="['fas', statusIcon(conversation)!.icon]" aria-hidden="true"></i>
+                {{ statusLabel(conversation) }}
+              </span>
+              <span v-if="isEnded(conversation) && conversation.state_at" class="conversation-ago">{{ timeAgo(conversation.state_at) }}</span>
               <span v-if="ratingOf(conversation) !== null" class="conversation-rating">★ {{ formatRating(ratingOf(conversation)!) }}</span>
             </p>
           </div>
@@ -95,7 +99,7 @@
 import { ref, watch } from 'vue';
 import { useChatStore, conversationKey } from '@/stores/chat';
 import { useReviewsStore } from '@/stores/reviews';
-import { statusLabel } from '@/utils/conversationStatus';
+import { statusLabel, statusIcon, timeAgo } from '@/utils/conversationStatus';
 import { formatRating, type Interaction } from '@/utils/network';
 import type { ConversationSummary } from '@/stores/messages';
 import MessageThread from './MessageThread.vue';
@@ -314,8 +318,37 @@ function sendMessage(content: string) {
   font-weight: 600;
 }
 
+.status-chip i {
+  margin-right: 0.2rem;
+}
+
+/* Tones: done (green tick), waiting on someone, under way, stopped */
+.status-chip.done {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-chip.waiting {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-chip.stopped {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.status-chip.neutral {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
 .status-chip.expired {
   background: #f3f4f6;
+  color: #6b7280;
+}
+
+.conversation-ago {
   color: #6b7280;
 }
 

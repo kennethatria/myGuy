@@ -359,7 +359,7 @@ export const useChatStore = defineStore('chat', () => {
       const ended = endsConversation(ref.task_id ? 'task' : ref.item_id ? 'store' : null, state);
       setEnded(key, ended);
       const conv = findConversation(key);
-      if (conv) Object.assign(conv, { state, ended });
+      if (conv) Object.assign(conv, { state, state_at: message.created_at, ended });
     }
 
     // Append only to an already-loaded thread; an unloaded one fetches its

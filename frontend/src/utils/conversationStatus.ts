@@ -39,6 +39,33 @@ export function statusLabel(c: { task_id?: number | null; item_id?: number | nul
   return (kind === 'task' ? TASK_LABELS : STORE_LABELS)[c.state] ?? ''
 }
 
+/** How a state's chip reads at a glance: a Font Awesome icon and a tone. */
+export interface StatusIcon {
+  icon: string
+  tone: 'done' | 'waiting' | 'going' | 'stopped' | 'neutral'
+}
+
+const ICONS: Record<string, StatusIcon> = {
+  application: { icon: 'fa-paper-plane', tone: 'neutral' },
+  pending: { icon: 'fa-paper-plane', tone: 'neutral' },
+  accepted: { icon: 'fa-handshake', tone: 'going' },
+  not_done: { icon: 'fa-handshake', tone: 'going' },
+  approved: { icon: 'fa-handshake', tone: 'going' },
+  done: { icon: 'fa-hourglass-half', tone: 'waiting' },
+  picked_up: { icon: 'fa-box', tone: 'waiting' },
+  item_received: { icon: 'fa-box-open', tone: 'waiting' },
+  completed: { icon: 'fa-circle-check', tone: 'done' },
+  declined: { icon: 'fa-circle-xmark', tone: 'stopped' },
+  rejected: { icon: 'fa-circle-xmark', tone: 'stopped' },
+  cancelled: { icon: 'fa-ban', tone: 'stopped' },
+  released: { icon: 'fa-rotate-left', tone: 'neutral' }
+}
+
+/** The icon for a conversation's state, or null when it has no label. */
+export function statusIcon(c: { task_id?: number | null; item_id?: number | null; state?: string | null }): StatusIcon | null {
+  return statusLabel(c) && c.state ? ICONS[c.state] ?? null : null
+}
+
 /** Whether a state ends the conversation for a gig or an item. */
 export function endsConversation(kind: Kind | null, state?: string | null): boolean {
   return !!kind && !!state && ENDED[kind].has(state)
@@ -54,6 +81,16 @@ export function stateFromMessage(m: { task_id?: number | null; message_type: str
     return m.metadata?.status ?? null
   }
   return null
+}
+
+/** How long ago a time was, shortly: "just now", "5 min ago", "3 h ago", "2 d ago". */
+export function timeAgo(at: string | Date, now: Date = new Date()): string {
+  const minutes = Math.floor((now.getTime() - new Date(at).getTime()) / 60000)
+  if (!(minutes >= 1)) return 'just now'
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} h ago`
+  return `${Math.floor(hours / 24)} d ago`
 }
 
 export { kindOf }

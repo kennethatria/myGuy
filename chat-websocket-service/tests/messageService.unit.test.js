@@ -284,15 +284,17 @@ describe('MessageService', () => {
       expect(db.query).toHaveBeenCalledWith(expect.any(String), [10]);
       // One conversation per context AND other participant, never per bare id
       expect(db.query.mock.calls[0][0]).toContain('DISTINCT ON (context_type, context_id, other_user_id)');
+      // And when it got there (for "Completed 3 d ago")
+      expect(db.query.mock.calls[0][0]).toContain('AS state_at');
     });
 
     it('lists each conversation with where it stands and its last message type', () => {
       const { formatConversation } = require('../src/services/messageService');
       expect(formatConversation({
         store_item_id: 7, content: 'Booking request for Bike', message_type: 'booking_request',
-        created_at: 't', other_user_id: 4, unread_count: 1, state: 'completed', ended: true
+        created_at: 't', other_user_id: 4, unread_count: 1, state: 'completed', state_at: 'done-at', ended: true
       })).toMatchObject({
-        item_id: 7, last_message_type: 'booking_request', state: 'completed', ended: true, conversation_type: 'store'
+        item_id: 7, last_message_type: 'booking_request', state: 'completed', state_at: 'done-at', ended: true, conversation_type: 'store'
       });
     });
 

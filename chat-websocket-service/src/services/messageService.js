@@ -419,7 +419,16 @@ class MessageService {
         WHERE message_type = 'booking_request' OR (task_id IS NOT NULL AND metadata ? 'event')
         ORDER BY context_type, context_id, other_user_id, created_at DESC, id DESC
       )
-      SELECT lm.*, COALESCE(uc.unread_count, 0) AS unread_count, ls.state
+      SELECT lm.*, COALESCE(uc.unread_count, 0) AS unread_count, ls.state,
+        -- When it got there: the latest message carrying that state (a gig
+        -- event, or a booking's step note; the request itself is updated in
+        -- place, so its own time is only the start)
+        (SELECT MAX(um.created_at) FROM UserMessages um
+          WHERE um.context_type = ls.context_type
+            AND um.context_id = ls.context_id
+            AND um.other_user_id = ls.other_user_id
+            AND (CASE WHEN um.task_id IS NOT NULL THEN um.metadata->>'event' ELSE um.metadata->>'status' END) = ls.state
+        ) AS state_at
       FROM LatestMessages lm
       LEFT JOIN UnreadCounts uc
         ON uc.context_type = lm.context_type
@@ -727,6 +736,7 @@ function formatConversation(conv) {
     other_user_name: conv.other_user_name,
     unread_count: conv.unread_count || 0,
     state: conv.state ?? null,
+    state_at: conv.state_at ?? null,
     ended: !!conv.ended,
     conversation_type: conv.task_id ? 'task'
       : conv.application_id ? 'application'
