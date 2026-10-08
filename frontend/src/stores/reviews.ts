@@ -4,6 +4,7 @@ import config from '@/config'
 import { useAuthStore } from './auth'
 import { useUserStore } from './user'
 import { interactionsFor, type Interaction, type GigRating, type StoreRating as NetworkStoreRating } from '@/utils/network'
+import { trackEvent } from '@/utils/analytics'
 
 export interface Review {
   // Task reviews use their numeric id; store ratings use "store-<booking id>".
@@ -84,7 +85,8 @@ export const useReviewsStore = defineStore('reviews', () => {
         const errorData = await response.json()
         throw new Error(errorData.error || 'Failed to create review')
       }
-      
+
+      trackEvent('review-left', { for: 'gig' })
       const review = await response.json()
       return review
     } catch (err) {

@@ -26,6 +26,7 @@ import { ref, computed, onMounted } from 'vue'
 import config from '@/config'
 import { useAuthStore } from '@/stores/auth'
 import type { Message } from '@/stores/messages'
+import { trackEvent } from '@/utils/analytics'
 
 const props = defineProps<{
   message: Message
@@ -85,6 +86,7 @@ async function book() {
       const data = await response.json().catch(() => ({}))
       throw new Error(data.error || 'Could not book it. Please try again.')
     }
+    trackEvent('item-booked', { from: 'request-offer' })
     state.value = 'booked'
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Could not book it. Please try again.'

@@ -128,6 +128,7 @@ import DetailNote from '@/components/DetailNote.vue';
 import ActionBar from '@/components/ActionBar.vue';
 import { postedMeta } from '@/utils/gigNote';
 import config from '@/config';
+import { trackEvent } from '@/utils/analytics';
 
 // Type definitions
 interface StoreItemImage {
@@ -264,6 +265,7 @@ async function repostItem() {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || 'Could not repost the listing. Please try again.');
+    trackEvent('post-reposted', { kind: 'listing' });
     await loadItem();
   } catch (err) {
     ownerError.value = err instanceof Error ? err.message : 'Could not repost the listing. Please try again.';
@@ -418,6 +420,7 @@ async function sendBookingRequest() {
       const request = await response.json();
       bookingRequest.value = request;
       hasBookingRequest.value = true;
+      trackEvent('item-booked', { from: 'item-page' });
 
       // Into the conversation, as applying for a gig does: the booking is
       // there, and the chat opens once the seller approves
