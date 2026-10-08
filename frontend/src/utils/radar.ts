@@ -9,7 +9,7 @@ export type PostKind = 'task' | 'item' | 'request'
 
 export const KIND_STYLE: Record<PostKind, { fill: string; stroke: string; one: string; many: string }> = {
   task: { fill: '#2563eb', stroke: '#1e3a8a', one: 'gig', many: 'gigs' },
-  item: { fill: '#facc15', stroke: '#854d0e', one: 'marketplace item', many: 'marketplace items' },
+  item: { fill: '#f59e0b', stroke: '#854d0e', one: 'marketplace item', many: 'marketplace items' },
   request: { fill: '#dc2626', stroke: '#7f1d1d', one: 'request', many: 'requests' }
 }
 

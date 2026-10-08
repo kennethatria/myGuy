@@ -4,14 +4,29 @@ import { useAuthStore } from '@/stores/auth'
 import { nearParam } from '@/composables/useViewerLocation'
 import type { RoughLocation } from '@/utils/geoCell'
 import { bucketIndex, type PostKind } from '@/utils/radar'
+import { listingPriceLabel, type ListingPrice } from '@/utils/listingNote'
 
 export interface NearbyPost {
   kind: PostKind
   id: number
   title: string
+  description: string
+  deadline: string
   distance: string
   // Index into BUCKETS, or -1 when the poster didn't share a location
   bucket: number
+  // Marketplace items only: the price label ('' when none) and first photo
+  price: string
+  photo: string
+}
+
+interface ListedPost extends ListingPrice {
+  id: number
+  title: string
+  description?: string
+  deadline?: string
+  distance?: string
+  images?: { url: string }[]
 }
 
 // Posts last 24 hours and distances don't move, so a few minutes is fresh
@@ -41,8 +56,17 @@ export function useNearbyPosts(location: Ref<RoughLocation | null>) {
     const response = await fetch(url, { headers: { Authorization: `Bearer ${authStore.token}` } })
     if (!response.ok) throw new Error(`${kind} ${response.status}`)
     const data = await response.json()
-    const list = ((data[listKey] ?? []) as { id: number; title: string; distance?: string }[])
-      .map((post) => ({ kind, id: post.id, title: post.title, distance: post.distance ?? '', bucket: bucketIndex(post.distance) }))
+    const list = ((data[listKey] ?? []) as ListedPost[]).map((post) => ({
+      kind,
+      id: post.id,
+      title: post.title,
+      description: post.description ?? '',
+      deadline: post.deadline ?? '',
+      distance: post.distance ?? '',
+      bucket: bucketIndex(post.distance),
+      price: kind === 'item' ? listingPriceLabel(post) : '',
+      photo: kind === 'item' && post.images?.length ? config.STORE_API_BASE_URL + post.images[0].url : ''
+    }))
     return { list, total: typeof data.total === 'number' ? data.total : list.length }
   }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { countWords, headlineFits, bodyFits, noteColor, noteTilt, expiryLabel } from '../gigNote'
+import { countWords, headlineFits, bodyFits, noteColor, noteTilt, expiryLabel, timeLeft } from '../gigNote'
 
 describe('gigNote', () => {
   it('counts words like the backend', () => {
@@ -30,5 +30,13 @@ describe('gigNote', () => {
     expect(expiryLabel('2026-10-05T10:20:00Z', now)).toBe('Expires in 20m')
     expect(expiryLabel('2026-10-05T09:59:00Z', now)).toBe('')
     expect(expiryLabel('not a date', now)).toBe('')
+  })
+
+  it('shows short time left for note rows', () => {
+    const now = new Date('2026-10-05T10:00:00Z')
+    expect(timeLeft('2026-10-06T09:30:00Z', now)).toBe('23h')
+    expect(timeLeft('2026-10-05T10:20:00Z', now)).toBe('20m')
+    expect(timeLeft('2026-10-05T09:59:00Z', now)).toBe('')
+    expect(timeLeft('not a date', now)).toBe('')
   })
 })

@@ -20,7 +20,8 @@
           <path d="M4 7h16M4 12h16M4 17h16" />
         </svg>
       </button>
-      <span class="bar-spacer"></span>
+      <h1 v-if="route.meta.heading" class="bar-title">{{ route.meta.heading }}</h1>
+      <span v-else class="bar-spacer"></span>
       <router-link v-if="postTarget" :to="postTarget" class="post-link">+ Post</router-link>
     </header>
 
@@ -227,8 +228,20 @@ onMounted(async () => {
   background: rgba(17, 24, 39, 0.05);
 }
 
-.bar-spacer {
+.bar-spacer,
+.bar-title {
   flex: 1;
+}
+
+.bar-title {
+  min-width: 0;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .post-link {
