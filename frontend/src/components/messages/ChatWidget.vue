@@ -63,9 +63,10 @@
             <span class="conversation-avatar" aria-hidden="true">{{ initialOf(conversation.other_user_name) }}</span>
             <span class="conversation-info">
               <span class="conversation-title">{{ titleOf(conversation) }}</span>
-              <span class="visually-hidden">with {{ conversation.other_user_name }}</span>
-              <!-- Where the deal stands, and the rating between you once given -->
+              <!-- Who it's with (an item or gig can have several conversations),
+                   where the deal stands, and the rating between you once given -->
               <span class="conversation-status">
+                <span class="conversation-who">{{ conversation.other_user_name }}</span>
                 <span v-if="isEnded(conversation)" class="status-chip expired">Expired</span>
                 <span v-if="statusLabel(conversation)" :class="['status-chip', statusIcon(conversation)?.tone]">
                   <i v-if="statusIcon(conversation)" :class="['fas', statusIcon(conversation)!.icon]" aria-hidden="true"></i>
@@ -434,6 +435,15 @@ function sendMessage(content: string) {
 .status-chip.stopped {
   background: #FEE2E2;
   color: #B91C1C;
+}
+
+.conversation-who {
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-body);
+  font-weight: 600;
 }
 
 .conversation-ago {
