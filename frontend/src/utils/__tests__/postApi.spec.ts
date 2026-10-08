@@ -49,6 +49,11 @@ describe('postApi', () => {
     await expect(removePost('request', 6)).rejects.toThrow('Something went wrong')
   })
 
+  it('refuses a kind it does not know, without calling anything', async () => {
+    await expect(fetchPost('constructor' as never, 1)).rejects.toThrow('That post does not exist.')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('links each kind to its page', () => {
     expect(postRoute('task', 1)).toEqual({ name: 'task-detail', params: { id: 1 } })
     expect(postRoute('item', 2)).toEqual({ name: 'store-item', params: { id: 2 } })

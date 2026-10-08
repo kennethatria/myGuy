@@ -21,10 +21,19 @@ export interface PostNote {
   status: string
 }
 
-const URLS: Record<PostKind, (id: number) => string> = {
-  task: (id) => `${config.API_URL}/tasks/${id}`,
-  item: (id) => `${config.STORE_API_URL}/items/${id}`,
-  request: (id) => `${config.STORE_API_URL}/requests/${id}`
+// The kind comes from the URL (/posted/:kind/:id), so it is checked here
+// rather than used to look anything up
+function urlFor(kind: PostKind, id: number): string {
+  switch (kind) {
+    case 'task':
+      return `${config.API_URL}/tasks/${id}`
+    case 'item':
+      return `${config.STORE_API_URL}/items/${id}`
+    case 'request':
+      return `${config.STORE_API_URL}/requests/${id}`
+    default:
+      throw new Error('That post does not exist.')
+  }
 }
 
 /** The page that shows a post. */
@@ -37,7 +46,7 @@ export function postRoute(kind: PostKind, id: number) {
 async function call(kind: PostKind, id: number, init: RequestInit = {}): Promise<Record<string, unknown>> {
   const headers: Record<string, string> = { Authorization: `Bearer ${useAuthStore().token}` }
   if (init.body) headers['Content-Type'] = 'application/json'
-  const response = await fetch(URLS[kind](id), { ...init, headers })
+  const response = await fetch(urlFor(kind, id), { ...init, headers })
   const data = await response.json().catch(() => ({}))
   // The services word their errors for people (limits, contact details)
   if (!response.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Something went wrong. Please try again.')
