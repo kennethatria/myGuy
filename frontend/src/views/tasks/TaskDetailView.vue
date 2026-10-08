@@ -285,7 +285,10 @@ const handleApply = async () => {
   try {
     await tasksStore.applyForTask(task.value.id, { message: '' })
     applications.value = await tasksStore.getTaskApplications(task.value.id) as unknown as Application[]
-    applyNotice.value = 'Applied. The poster can see it in Messages.'
+    applyNotice.value = 'Applied. The poster answers in your chat.'
+    // As with booking an item: straight into the conversation, where the
+    // application waits for the poster (typing opens once they accept)
+    openChat()
   } catch (error) {
     console.error('Failed to apply for task:', error)
     applyError.value = errorMessage(error, 'Could not apply for the gig. Please try again.')
