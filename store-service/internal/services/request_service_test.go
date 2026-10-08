@@ -193,6 +193,47 @@ func TestRepostRequest(t *testing.T) {
 	})
 }
 
+func TestUpdateRequest(t *testing.T) {
+	t.Run("live request takes the new note", func(t *testing.T) {
+		service, requests, _ := setupRequestService()
+		r := &models.ItemRequest{ID: 1, RequesterID: 1, Status: "active", Title: "Printer", Description: "Any"}
+		requests.On("GetByID", uint(1)).Return(r, nil)
+		requests.On("Update", r).Return(nil)
+
+		got, err := service.UpdateRequest(1, 1, models.UpdateItemRequestRequest{Title: " Laser printer ", Description: "For a small office"})
+
+		assert.NoError(t, err)
+		assert.Equal(t, "Laser printer", got.Title)
+		assert.Equal(t, "For a small office", got.Description)
+	})
+
+	t.Run("same rules as posting", func(t *testing.T) {
+		service, requests, _ := setupRequestService()
+		requests.On("GetByID", uint(1)).Return(&models.ItemRequest{ID: 1, RequesterID: 1, Status: "active"}, nil)
+
+		_, err := service.UpdateRequest(1, 1, models.UpdateItemRequestRequest{Title: "Printer", Description: "call 0772 123456"})
+		assert.Error(t, err)
+		_, err = service.UpdateRequest(1, 1, models.UpdateItemRequestRequest{Title: "One two three four five six"})
+		assert.Error(t, err)
+		requests.AssertNotCalled(t, "Update", mock.Anything)
+	})
+
+	t.Run("refused for others and closed requests", func(t *testing.T) {
+		service, requests, _ := setupRequestService()
+		requests.On("GetByID", uint(1)).Return(&models.ItemRequest{ID: 1, RequesterID: 2, Status: "active"}, nil)
+		requests.On("GetByID", uint(2)).Return(&models.ItemRequest{ID: 2, RequesterID: 1, Status: "fulfilled"}, nil)
+		requests.On("GetByID", uint(3)).Return(nil, gorm.ErrRecordNotFound)
+		edit := models.UpdateItemRequestRequest{Title: "Printer"}
+
+		_, err := service.UpdateRequest(1, 1, edit)
+		assert.ErrorContains(t, err, "unauthorized")
+		_, err = service.UpdateRequest(2, 1, edit)
+		assert.ErrorContains(t, err, "only a live request")
+		_, err = service.UpdateRequest(3, 1, edit)
+		assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+	})
+}
+
 func TestDeleteRequest(t *testing.T) {
 	service, requests, _ := setupRequestService()
 	requests.On("GetByID", uint(1)).Return(&models.ItemRequest{ID: 1, RequesterID: 1, Status: "expired"}, nil)

@@ -18,6 +18,7 @@ type RequestServiceInterface interface {
 	GetRequestListings(id uint) ([]models.StoreItem, error)
 	GetUserRequests(userID uint) ([]models.ItemRequest, error)
 	RepostRequest(id uint, userID uint) (*models.ItemRequest, error)
+	UpdateRequest(id uint, userID uint, req models.UpdateItemRequestRequest) (*models.ItemRequest, error)
 	DeleteRequest(id uint, userID uint) error
 }
 
@@ -192,6 +193,31 @@ func (s *RequestService) RepostRequest(id uint, userID uint) (*models.ItemReques
 	}
 	request.Status = "active"
 	startRequest(request)
+	if err := s.requestRepo.Update(request); err != nil {
+		return nil, err
+	}
+	return request, nil
+}
+
+// UpdateRequest changes the headline and note of the requester's live
+// request, under the same rules as posting it. Listings already made for it
+// stay linked, as with a listing edited while bookings wait.
+func (s *RequestService) UpdateRequest(id uint, userID uint, req models.UpdateItemRequestRequest) (*models.ItemRequest, error) {
+	request, err := s.requestRepo.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if request.RequesterID != userID {
+		return nil, NewUserError("unauthorized: you can only edit your own requests")
+	}
+	if request.Status != "active" {
+		return nil, NewUserError("only a live request can be edited")
+	}
+	title, description, err := validateListingText(req.Title, req.Description)
+	if err != nil {
+		return nil, err
+	}
+	request.Title, request.Description = title, description
 	if err := s.requestRepo.Update(request); err != nil {
 		return nil, err
 	}

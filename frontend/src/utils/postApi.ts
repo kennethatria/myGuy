@@ -11,7 +11,7 @@ export type { PostKind }
 export const TONE = { task: 'gig', item: 'sell', request: 'want' } as const
 
 /** Kinds whose headline and note can be changed after posting. */
-export const EDITABLE: readonly PostKind[] = ['task', 'item']
+export const EDITABLE: readonly PostKind[] = ['task', 'item', 'request']
 
 export interface PostNote {
   id: number

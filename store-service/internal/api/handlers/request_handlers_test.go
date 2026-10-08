@@ -62,6 +62,14 @@ func (m *MockRequestService) GetUserRequests(userID uint) ([]models.ItemRequest,
 	return args.Get(0).([]models.ItemRequest), args.Error(1)
 }
 
+func (m *MockRequestService) UpdateRequest(id uint, userID uint, req models.UpdateItemRequestRequest) (*models.ItemRequest, error) {
+	args := m.Called(id, userID, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.ItemRequest), args.Error(1)
+}
+
 func (m *MockRequestService) RepostRequest(id uint, userID uint) (*models.ItemRequest, error) {
 	args := m.Called(id, userID)
 	if args.Get(0) == nil {
@@ -84,6 +92,7 @@ func setupRequestRouter(service *MockRequestService) *gin.Engine {
 	r.GET("/requests/:id/listings", h.GetRequestListings)
 	r.POST("/requests", h.CreateRequest)
 	r.POST("/requests/:id/repost", h.RepostRequest)
+	r.PUT("/requests/:id", h.UpdateRequest)
 	r.DELETE("/requests/:id", h.DeleteRequest)
 	r.GET("/user/requests", h.GetUserRequests)
 	return r
@@ -162,6 +171,28 @@ func TestRequestHandlers_RepostAndDelete(t *testing.T) {
 	assert.Equal(t, http.StatusOK, call(r, "DELETE", "/requests/3", "").Code)
 	assert.Equal(t, http.StatusNotFound, call(r, "DELETE", "/requests/4", "").Code)
 	assert.Equal(t, http.StatusBadRequest, call(r, "DELETE", "/requests/x", "").Code)
+}
+
+func TestRequestHandlers_Update(t *testing.T) {
+	s := new(MockRequestService)
+	r := setupRequestRouter(s)
+	edit := models.UpdateItemRequestRequest{Title: "Laser printer", Description: "Any brand"}
+	s.On("UpdateRequest", uint(3), uint(1), edit).Return(&models.ItemRequest{ID: 3, Title: "Laser printer"}, nil)
+	s.On("UpdateRequest", uint(4), uint(1), edit).Return(nil, services.NewUserError("only a live request can be edited"))
+	s.On("UpdateRequest", uint(5), uint(1), edit).Return(nil, gorm.ErrRecordNotFound)
+
+	body := `{"title":"Laser printer","description":"Any brand"}`
+	w := call(r, "PUT", "/requests/3", body)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "Laser printer")
+
+	w = call(r, "PUT", "/requests/4", body)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "only a live request can be edited")
+
+	assert.Equal(t, http.StatusNotFound, call(r, "PUT", "/requests/5", body).Code)
+	assert.Equal(t, http.StatusBadRequest, call(r, "PUT", "/requests/x", body).Code)
+	assert.Equal(t, http.StatusBadRequest, call(r, "PUT", "/requests/3", `{"description":"no headline"}`).Code)
 }
 
 func TestUnexpectedErrorsDontLeak(t *testing.T) {

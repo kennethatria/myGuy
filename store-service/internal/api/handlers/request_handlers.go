@@ -142,6 +142,25 @@ func (h *RequestHandler) RepostRequest(c *gin.Context) {
 	c.JSON(http.StatusOK, request)
 }
 
+func (h *RequestHandler) UpdateRequest(c *gin.Context) {
+	id, err := parseID(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request id"})
+		return
+	}
+	var req models.UpdateItemRequestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "headline is required"})
+		return
+	}
+	request, err := h.service.UpdateRequest(id, c.GetUint("userID"), req)
+	if err != nil {
+		requestError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, request)
+}
+
 func (h *RequestHandler) DeleteRequest(c *gin.Context) {
 	id, err := parseID(c.Param("id"))
 	if err != nil {
