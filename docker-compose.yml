@@ -103,6 +103,7 @@ services:
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - REDIS_ADDR=proximity-redis:6379
       - REDIS_PASSWORD=${PROXIMITY_REDIS_PASSWORD}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}
     depends_on:
       proximity-redis:
         condition: service_healthy

@@ -132,6 +132,15 @@ resource "linode_firewall" "my_firewall" {
     ipv4     = ["${local.zipkin_vpc_ip}/32"]
   }
 
+  # Memory and CPU per container (prometheus-podman-exporter), same reader.
+  inbound {
+    label    = "allow-podman-exporter-from-mon"
+    action   = "ACCEPT"
+    protocol = "TCP"
+    ports    = "9882"
+    ipv4     = ["${local.zipkin_vpc_ip}/32"]
+  }
+
   inbound_policy  = "DROP"
   outbound_policy = "ACCEPT"
 

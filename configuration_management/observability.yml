@@ -1,4 +1,5 @@
-# observability.yml - node_exporter (CPU/memory/disk metrics for Prometheus)
+# observability.yml - node_exporter (CPU/memory/disk), Promtail (logs) and
+# prometheus-podman-exporter (memory and CPU per container) on the app server
 
 ---
 - name: Configure app instance observability
@@ -151,3 +152,78 @@
         enabled: yes
         state: started
         daemon_reload: yes
+
+    # --- Container metrics (prometheus-podman-exporter) ---
+    # Memory and CPU per app container, so a full server can be traced to the
+    # service using it.  The exporter reads myguy's Podman API socket, which
+    # can control those containers: it runs as myguy (never root), pinned,
+    # memory-capped, and its port is open to the monitoring server only.
+
+    - name: Get myguy user ID
+      ansible.builtin.command:
+        cmd: id -u myguy
+      register: myguy_uid
+      changed_when: false
+
+    - name: Set myguy's runtime directory
+      ansible.builtin.set_fact:
+        myguy_runtime_dir: "/run/user/{{ myguy_uid.stdout }}"
+
+    - name: Enable myguy's Podman API socket
+      ansible.builtin.systemd:
+        name: podman.socket
+        scope: user
+        enabled: yes
+        state: started
+      become_user: myguy
+      environment:
+        XDG_RUNTIME_DIR: "{{ myguy_runtime_dir }}"
+        DBUS_SESSION_BUS_ADDRESS: "unix:path={{ myguy_runtime_dir }}/bus"
+
+    - name: Create Quadlet directory for myguy
+      ansible.builtin.file:
+        path: /home/myguy/.config/containers/systemd
+        state: directory
+        owner: myguy
+        group: myguy
+        mode: "0755"
+
+    - name: Write the podman-exporter Quadlet unit
+      ansible.builtin.copy:
+        dest: /home/myguy/.config/containers/systemd/podman-exporter.container
+        owner: myguy
+        group: myguy
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=prometheus-podman-exporter (container metrics)
+
+          [Container]
+          ContainerName=podman-exporter
+          Image=quay.io/navidys/prometheus-podman-exporter:v1.21.2
+          PublishPort=9882:9882
+          # %t is myguy's runtime directory
+          Volume=%t/podman/podman.sock:/run/podman/podman.sock
+          Environment=CONTAINER_HOST=unix:///run/podman/podman.sock
+          PodmanArgs=--memory=64m --memory-swap=64m
+          # Put the container name on every metric (no join needed)
+          Exec=--collector.enhance-metrics
+
+          [Service]
+          Restart=always
+          TimeoutStartSec=300
+
+          [Install]
+          WantedBy=default.target
+      register: podman_exporter_unit
+
+    - name: Start podman-exporter (restart when its unit changed)
+      ansible.builtin.systemd:
+        name: podman-exporter.service
+        scope: user
+        state: "{{ 'restarted' if podman_exporter_unit.changed else 'started' }}"
+        daemon_reload: yes
+      become_user: myguy
+      environment:
+        XDG_RUNTIME_DIR: "{{ myguy_runtime_dir }}"
+        DBUS_SESSION_BUS_ADDRESS: "unix:path={{ myguy_runtime_dir }}/bus"

@@ -321,6 +321,9 @@ Every HTTP request handled by the backend, store service, or chat service is aut
 | **Backend** | Go SDK + `otelgin` middleware | `myguy-backend` |
 | **Store Service** | Go SDK + `otelgin` middleware | `myguy-store-service` |
 | **Chat Service** | Node.js SDK + Express/HTTP instrumentation | `myguy-chat-service` |
+| **Proximity Service** | Go SDK + `otelgin` middleware | `myguy-proximity-service` |
+
+Services don't pass trace context to each other yet, so a call from the backend or store to proximity or chat shows as its own trace.
 
 Each service reads the standard `OTEL_EXPORTER_OTLP_ENDPOINT` from its environment (unset means `http://localhost:4318`):
 
@@ -336,6 +339,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
 
 **On the app instance:**
 - `node_exporter` runs as a systemd service on `:9100`, exposing CPU, memory and disk metrics
+- `prometheus-podman-exporter` (Quadlet, as `myguy`, 64 MB limit) on `:9882` exposes memory and CPU per container, read from myguy's Podman API socket; the firewall opens it to the monitoring server only
 - `falco` monitors system calls for suspicious runtime behaviour and exposes Prometheus metrics on `:8765`
 - `promtail` ships ModSecurity audit logs, the nginx JSON access log (`/var/log/nginx/access.json.log`) and every app container's output to Loki on the monitoring instance. Containers log to the systemd journal (`log_driver = "journald"`, set by `deploy.yml`), so logs survive container replacement; lines carrying sign-in codes are dropped before shipping
 
@@ -343,7 +347,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
 - Prometheus scrapes `node_exporter` (`:9100`) on both servers (the app's via VPC, its own via `host.containers.internal`) and Falco metrics (`:8765`) on the app instance every 15 seconds
 - Grafana sends **alerts to Telegram** (provisioned in `monitoring.yml`, folder *Alerts*): site down (a blackbox prober on the monitoring server loads `https://<DOMAIN>/` and `/health`, and checks that old domains answer 301), certificate expiring within 14 days, more than 10 server errors in 10 minutes, disk above 85 %, memory above 90 %, a scrape target down (Loki and Tempo included), and any Falco rule match. Repeats every 12 hours while firing.
 - Grafana is pre-provisioned with these dashboards:
-  - **App Instance Metrics** / **Monitoring Instance Metrics** — CPU, memory and disk use now (green / amber / red) and over time, one dashboard per server
+  - **App Instance Metrics** / **Monitoring Instance Metrics** — CPU, memory and disk use now (green / amber / red) and over time, one dashboard per server; App Instance Metrics also shows memory and CPU per container
   - **Traces** — whether Tempo is running and receiving spans, then failed, slow (over 500 ms) and recent requests; a trace ID opens the full request timeline
   - **Accounts** — accounts, new sign-ups, people active in gigs and the marketplace, and gigs, listings, requests and bookings by status. Counts only: the backend (`:9464`) and store-service (`:9465`) publish them from their databases (`internal/metrics`), on ports nginx doesn't route and the firewall opens to the monitoring server alone; no names or emails leave the app server
   - **Falco Security Alerts** — whether Falco is reachable, alert count, and alerts by rule
