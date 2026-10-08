@@ -8,25 +8,32 @@
       :aria-label="chatStore.totalUnreadCount > 0 ? `Open messages, ${chatStore.totalUnreadCount} unread` : 'Open messages'"
     >
       <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M3 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H9l-4 3.5V14a2 2 0 0 1-2-2z" />
-        <path d="M19 8h0a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2v2.5L15.5 19H11a2 2 0 0 1-1.7-1h5.7a3 3 0 0 0 3-3z" opacity="0.7" />
+        <path d="M9 3.5c-3.9 0-7 2.5-7 5.7 0 1.8 1 3.4 2.6 4.4L4 17.5l3.4-1.9c.5.1 1 .2 1.6.2 3.9 0 7-2.5 7-5.7S12.9 3.5 9 3.5z" />
+        <path d="M17.5 9.2c.2.6.5 1.2.5 1.9 0 3-2.9 5.4-6.6 5.7 1 1.4 2.9 2.4 5.1 2.4.5 0 1-.1 1.5-.2l3 1.7-.6-3.3c1.4-.9 2.1-2.3 2.1-3.9 0-2.2-1.7-4.1-4-4.9z" opacity="0.7" />
       </svg>
       <span v-if="chatStore.totalUnreadCount > 0" class="unread-dot"></span>
     </button>
 
-    <!-- Expanded: the list of conversations, or one of them. Full screen on
-         phones, a panel on wider screens. -->
-    <div v-if="chatStore.widgetOpen" class="chat-widget-expanded" role="dialog" aria-label="Messages">
-      <template v-if="!chatStore.activeConversation">
-        <div class="widget-header">
-          <button @click="toggleWidget" class="icon-btn" aria-label="Close messages">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M15 5l-7 7 7 7" />
-            </svg>
-          </button>
-          <h3>Messages</h3>
-        </div>
+    <!-- Open: a sheet over the dimmed page with the list of conversations,
+         or one of them. Tapping the dimmed page closes it. -->
+    <div v-if="chatStore.widgetOpen" class="chat-backdrop" aria-hidden="true" @click="toggleWidget"></div>
+    <div
+      v-if="chatStore.widgetOpen"
+      class="chat-widget-expanded"
+      role="dialog"
+      aria-label="Messages"
+      @keydown.esc="toggleWidget"
+    >
+      <div class="widget-header">
+        <h3>Messages</h3>
+        <button ref="closeButton" @click="toggleWidget" class="close-btn" aria-label="Close messages">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
 
+      <template v-if="!chatStore.activeConversation">
         <div class="list-tabs" role="tablist" aria-label="Which conversations">
           <button
             role="tab"
@@ -87,12 +94,18 @@
 
           <p v-if="chatStore.conversations.length === 0" class="no-conversations">No conversations yet</p>
           <p v-else-if="listed.length === 0" class="no-conversations">Nothing active right now</p>
-          <p class="list-footer">You can type once the poster or seller says yes</p>
         </div>
+        <p class="list-footer">You can type once the poster or seller says yes</p>
       </template>
 
-      <!-- One conversation: its header has the way back to the list -->
+      <!-- One conversation, under a bar back to the list -->
       <div v-else class="active-conversation">
+        <button type="button" class="back-bar" @click="chatStore.activeConversation = null">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M19 12H5M11 6l-6 6 6 6" />
+          </svg>
+          All conversations
+        </button>
         <MessageThread
           :conversation="chatStore.activeConversation"
           :messages="chatStore.activeMessages"
@@ -108,22 +121,14 @@
           @typing-start="chatStore.startTyping"
           @typing-stop="chatStore.stopTyping"
           @booking-action="chatStore.handleBookingAction"
-        >
-          <template #back>
-            <button @click="chatStore.activeConversation = null" class="icon-btn" aria-label="All conversations">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M15 5l-7 7 7 7" />
-              </svg>
-            </button>
-          </template>
-        </MessageThread>
+        />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { actionBarHeight } from '@/composables/useActionBar';
 import { useChatStore, conversationKey } from '@/stores/chat';
@@ -156,8 +161,11 @@ const initialOf = (name?: string | null) => (name || '?').charAt(0).toUpperCase(
 // Your reviews with others, for the average rating between you on each
 // conversation's gig or item (refreshed whenever the chat opens)
 const interactions = ref<Interaction[]>([]);
+// Opening moves focus into the sheet, so Esc closes it straight away
+const closeButton = ref<HTMLButtonElement | null>(null);
 watch(() => chatStore.widgetOpen, async (open) => {
   if (!open) return;
+  nextTick(() => closeButton.value?.focus());
   try {
     interactions.value = await reviewsStore.fetchInteractions();
   } catch {
@@ -204,7 +212,7 @@ function sendMessage(content: string) {
   height: 56px;
   border-radius: 28px;
   background: var(--accent);
-  color: var(--on-accent);
+  color: #fff; /* icons on accent are white; text uses --on-accent */
   border: none;
   box-shadow: 0 4px 12px rgba(91, 148, 245, 0.4);
   cursor: pointer;
@@ -241,8 +249,17 @@ function sendMessage(content: string) {
   border: 2px solid var(--bg);
 }
 
-/* Expanded: a panel; full screen on phones */
+/* Open: the page behind is dimmed */
+.chat-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.28);
+}
+
+/* The sheet: a panel above the button on wide screens, nearly the whole
+   screen on phones */
 .chat-widget-expanded {
+  position: relative;
   width: 400px;
   height: 600px;
   max-height: calc(100dvh - 40px);
@@ -251,17 +268,19 @@ function sendMessage(content: string) {
   overflow: hidden;
   border-radius: 16px;
   background: var(--surface);
-  box-shadow: 0 20px 25px -5px rgba(17, 24, 39, 0.12), 0 10px 10px -5px rgba(17, 24, 39, 0.05);
+  box-shadow: 0 -4px 24px rgba(17, 24, 39, 0.18);
 }
 
 @media (max-width: 640px) {
   .chat-widget-expanded {
     position: fixed;
-    inset: 0;
+    top: 92px;
+    right: 16px;
+    bottom: 24px;
+    left: 16px;
     width: auto;
     height: auto;
     max-height: none;
-    border-radius: 0;
   }
 }
 
@@ -269,37 +288,64 @@ function sendMessage(content: string) {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 56px;
-  padding: 0 8px;
-  border-bottom: 1px solid #EEF0F3;
+  height: 64px;
+  padding: 0 16px 0 20px;
+  background: var(--accent);
 }
 
 .widget-header h3 {
+  flex: 1;
   margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--text);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--on-accent);
 }
 
-.icon-btn {
+.close-btn {
   flex: none;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 0;
-  border-radius: 22px;
-  background: transparent;
-  color: #374151;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.35);
+  color: #fff;
   cursor: pointer;
 }
 
-.icon-btn:hover,
-.icon-btn:focus-visible {
-  background: rgba(17, 24, 39, 0.05);
+.close-btn:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.close-btn:focus-visible {
+  outline: 3px solid var(--on-accent);
+  outline-offset: 2px;
+}
+
+/* In a conversation: the way back to the list */
+.back-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 1px solid #EEF0F3;
+  background: #F8F9FA;
+  color: var(--text-body);
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.back-bar:hover,
+.back-bar:focus-visible {
+  background: #F1F3F5;
 }
 
 /* Active / All */
@@ -472,11 +518,14 @@ function sendMessage(content: string) {
 }
 
 .list-footer {
+  flex: none;
   margin: 0;
-  padding: 20px 0;
+  padding: 14px 20px;
+  border-top: 1px solid #EEF0F3;
+  background: #F8F9FA;
   font-size: 13px;
   text-align: center;
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .active-conversation {

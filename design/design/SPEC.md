@@ -18,7 +18,7 @@ Goal: minimalist, sticky-note feel, friendly. Mobile-first (390px width).
 | `text-body` | `#4B5563` | secondary body |
 | `border` | `#E7E7E3` | dividers |
 | `accent` | `#5B94F5` | FAB, filled buttons, active tab underline, unread dot (soft blue) |
-| `on-accent` | `#14306B` | text/icons on accent fills (white fails contrast) |
+| `on-accent` | `#14306B` | **text** on accent fills (white text fails contrast). Icons on accent fills (FAB icon, sheet ✕) are white `#FFFFFF`. |
 | `accent-text` | `#2F5FC4` | links, text-only buttons ("+ Post"), accent text on light bg |
 | `accent-tint` | `#EAF1FF` | chips, avatars, light accent backgrounds |
 | `note-gig` | `#DCE8FF` (alt `#E8F0FF`) | Gig notes (blue) |
@@ -50,7 +50,8 @@ DM Sans (400/500/600/700). Screen titles 17/600. Note titles 16–18/600–700. 
 - All content notes show time left until expiry.
 
 ### Floating chat button (FAB)
-56px circle, `accent`, shadow `0 4px 12px rgba(91,148,245,0.40)`, icon `on-accent`, red dot top-right when unread. Fixed bottom-right, 16px from edges (20px from bottom). On the Detail screen it sits above the action bar (bottom 128px). Opens the Messages list.
+**Icon:** two rounded, overlapping chat bubbles (round, friendly, not rectangular). Front bubble solid white, back bubble white at 70% opacity. SVG path data is in any screen file with a FAB (e.g. `design/screens/Main.dc.html`). **Behaviour:** tap opens the Messages sheet (3.4), it does not navigate to a new page.
+56px circle, `accent`, shadow `0 4px 12px rgba(91,148,245,0.40)`, icon white (`#FFFFFF`), red dot top-right when unread. Fixed bottom-right, 16px from edges (20px from bottom). On the Detail screen it sits above the action bar (bottom 128px). Opens the Messages list.
 
 ### Navigation
 Hamburger left in the header, no bottom tab bar. Back arrow replaces hamburger on detail/chat screens. Text-only "+ Post" top-right (`accent-text`, 15/600).
@@ -103,19 +104,25 @@ Hamburger left in the header, no bottom tab bar. Back arrow replaces hamburger o
 - Share / Edit buttons, "Remove post".
 - Toast "Stuck on the board".
 
-### 3.4 Messages (`Messages`)
-- Tabs: **Active n / All** (default All; not "Done").
-- Row: initial avatar (circle, accent-tint, dark text) to the left, with title and chips to the right. No username label, and no distinct icons per type.
+### 3.4 Messages sheet (`Messages`)
+**Not a full screen.** Tapping the FAB opens Messages as a bottom sheet over the current page (same behaviour as the live app).
+- Sheet: inset 16px left/right, top ≈92px, bottom 24px, white, 16px radius, shadow `0 -4px 24px rgba(17,24,39,.18)`. Page behind is dimmed with `rgba(17,24,39,.28)`. The FAB is hidden while the sheet is open.
+- Header bar (64px): `accent` background, "Messages" 20/700 in `on-accent`, close (✕, white stroke) button right: 40×40, 10px radius, `rgba(255,255,255,.35)` fill, 1px `rgba(255,255,255,.6)` border. Tapping ✕ or the dimmed area closes the sheet.
+- Tabs: **Active n / All** (default All; not "Done"). Active tab has a 2px `accent` underline.
+- Row: initial avatar (circle, accent-tint, `accent-text` letter) to the left, with title and chips to the right. No username label, no distinct icons per type.
 - Chips: Active, Expired, Completed (green check), relative time, `★ rating`.
-- Unread dot on the right. Expired rows use muted title colour.
-- Footer text: "A chat opens once the owner approves your application".
+- Unread dot (`accent`) on the right. Expired rows use muted title colour.
+- Footer strip (`#F8F9FA`, top border): "A chat opens once the owner approves your application".
+- Tapping a row opens the conversation inside the same sheet (see 3.5).
 
 ### 3.5 Chat: pending request (`ChatPending`)
-Shown inside a conversation before approval.
-- Header: back, item title, "with @username", "View item" chip.
+Conversation view **inside the Messages sheet**, shown before the owner approves.
+- Same sheet frame and `accent` header ("Messages" + ✕).
+- Sub-bar (`#F8F9FA`): back arrow + "All conversations" (returns to the list).
+- Item header: item title 20/700, "with @username", "View item" chip (`accent-tint`, `accent-text`).
 - Sent message as an accent bubble (`accent` bg, `on-accent` text, right-aligned, time).
 - **Request note** (yellow sticky, taped): 📩 "Buy Now request sent" (use "Application sent" for gigs), item and price, Pending badge, 3-step tracker **Sent → Seller → Chat** (current step highlighted), "Waiting for the seller to answer", date/time, "Expires in 23h if there's no answer".
-- Composer **disabled** with a lock: "Chat opens when seller approves".
+- Footer strip instead of a composer: "You can chat once the seller approves your request." After approval the footer becomes a normal message composer.
 - States still to build (see §5): Approved (composer enabled, system note "Approved"), Declined (generic "didn't work out").
 
 ### 3.6 My stuff (`CreatedGigs`)

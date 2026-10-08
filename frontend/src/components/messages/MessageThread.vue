@@ -2,8 +2,6 @@
   <div class="message-thread">
     <!-- Thread Header -->
     <div class="thread-header">
-      <!-- The floating chat puts its back button here -->
-      <slot name="back" />
       <div class="header-info">
         <h2>{{ conversationTitle }}</h2>
         <p v-if="conversationDescription">{{ conversationDescription }}</p>
@@ -75,21 +73,14 @@
       </div>
     </div>
     
-    <!-- Message Input: a gig chat opens once the poster accepts -->
-    <div class="message-input-container">
-      <!-- Closed to typing: why, in the box's place, with a padlock -->
-      <div v-if="ended || locked" class="message-form">
-        <p class="message-locked" role="status">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="5" y="11" width="14" height="9" rx="2" />
-            <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-          </svg>
-          <span v-if="ended">This conversation has ended. You can still read it{{ hasReviewStep ? ' and leave your review above' : '' }}.</span>
-          <span v-else>{{ lockedNote }}</span>
-        </p>
-        <span class="send-button" aria-hidden="true"><i class="fas fa-paper-plane"></i></span>
-      </div>
-      <form v-else @submit.prevent="sendMessage" class="message-form">
+    <!-- Message Input: a gig chat opens once the poster accepts. Until then,
+         and once the deal has ended, a strip says why instead -->
+    <p v-if="ended || locked" class="message-closed" role="status">
+      <template v-if="ended">This conversation has ended. You can still read it{{ hasReviewStep ? ' and leave your review above' : '' }}.</template>
+      <template v-else>{{ lockedNote }}</template>
+    </p>
+    <div v-else class="message-input-container">
+      <form @submit.prevent="sendMessage" class="message-form">
         <input
           v-model="messageText"
           type="text"
@@ -341,24 +332,24 @@ watch(() => props.messages.length, () => {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-height: 56px;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid #EEF0F3;
   background: var(--surface);
 }
 
 .header-info {
   flex: 1;
   min-width: 0;
-  padding-left: 4px;
-  line-height: 1.2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .header-info h2 {
   margin: 0;
-  font-size: 17px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -367,7 +358,7 @@ watch(() => props.messages.length, () => {
 
 .header-info p {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -379,8 +370,7 @@ watch(() => props.messages.length, () => {
   display: inline-flex;
   align-items: center;
   height: 32px;
-  margin-right: 8px;
-  padding: 0 12px;
+  padding: 0 14px;
   border-radius: 16px;
   background: var(--accent-tint);
   color: var(--accent-text);
@@ -528,32 +518,23 @@ watch(() => props.messages.length, () => {
   cursor: pointer;
 }
 
-.send-button:disabled,
-span.send-button {
+.send-button:disabled {
   background: #E5E7EB;
   color: #fff;
   cursor: not-allowed;
 }
 
-/* Closed to typing: the reason sits where you'd type */
-.message-locked {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
+/* Closed to typing: the reason, in a strip where you'd type */
+.message-closed {
+  flex: none;
   margin: 0;
-  padding: 6px 16px;
-  border-radius: 22px;
-  background: #F3F4F6;
+  padding: 14px 20px;
+  border-top: 1px solid #EEF0F3;
+  background: #F8F9FA;
   color: var(--text-muted);
   font-size: 13px;
-  line-height: 1.3;
-}
-
-.message-locked svg {
-  flex: none;
+  line-height: 1.4;
+  text-align: center;
 }
 
 /* Notes in the conversation (not events): small and centred. Not named
