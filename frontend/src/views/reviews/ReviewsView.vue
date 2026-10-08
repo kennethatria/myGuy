@@ -71,7 +71,7 @@
 
           <g class="you" aria-hidden="true">
             <circle :cx="layout.centre.x" :cy="layout.centre.y" :r="CENTRE_RADIUS" class="you-dot" />
-            <text :x="layout.centre.x" :y="layout.centre.y + 1.4" text-anchor="middle" class="you-label">{{ isMine ? 'You' : initialOf(centreId) }}</text>
+            <text :x="layout.centre.x" :y="layout.centre.y + 1.1" text-anchor="middle" class="you-label">{{ isMine ? 'You' : initialOf(centreId) }}</text>
           </g>
 
           <g
@@ -90,7 +90,7 @@
             <!-- A larger, invisible circle makes the node easier to tap -->
             <circle :cx="node.x" :cy="node.y" :r="node.r + 3" class="node-hit" />
             <circle :cx="node.x" :cy="node.y" :r="node.r" :class="['node-dot', tierOf(node.connection.averageRating)]" />
-            <text :x="node.x" :y="node.y + 1.4" text-anchor="middle" class="node-initial">
+            <text :x="node.x" :y="node.y + 1.2" text-anchor="middle" class="node-initial">
               {{ initialOf(node.connection.userId) }}
             </text>
           </g>
@@ -394,9 +394,9 @@ onBeforeUnmount(() => {
 
 .link {
   stroke: var(--tier);
-  stroke-width: 0.6;
+  stroke-width: 0.9;
   stroke-linecap: round;
-  opacity: 0.5;
+  opacity: 0.85;
 }
 
 .link.active {
@@ -425,7 +425,7 @@ onBeforeUnmount(() => {
 }
 
 .you-label {
-  font-size: 3.4px;
+  font-size: 3px;
   font-weight: 700;
   fill: #fff;
 }
@@ -450,14 +450,14 @@ onBeforeUnmount(() => {
 }
 
 .node-initial {
-  font-size: 4.2px;
+  font-size: 3.6px;
   font-weight: 700;
   fill: #fff;
   pointer-events: none;
 }
 
 .level-2 .node-initial {
-  font-size: 3.6px;
+  font-size: 3px;
 }
 
 .node-name {
