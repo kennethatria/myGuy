@@ -314,6 +314,11 @@ func (h *Handler) ListTasks(c *gin.Context) {
 			filters["exclude_created_by"] = userID
 		}
 	}
+	// Browsing others' gigs shows only live notes: a gig past its 24 hours
+	// leaves the board even while an application waits for an answer
+	if _, own := filters["created_by"]; !own && filters["assigned_to"] == nil {
+		filters["deadline_after"] = time.Now().UTC()
+	}
 	
 	// The viewer's rough position ("lat,lng"), for distance sort and tags
 	near, err := parseNear(c.Query("near"))

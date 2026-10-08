@@ -73,6 +73,8 @@ export interface ConversationSummary {
   // Where it stands: the latest gig event or booking status, and whether
   // the deal is done or closed (then it's read-only)
   state?: string | null
+  // When it got to that state (e.g. when the deal completed)
+  state_at?: string | null
   ended?: boolean
 }
 

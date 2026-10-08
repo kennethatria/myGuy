@@ -1,6 +1,7 @@
-// Grouping and layout for "your network" on the Network page: you at the top,
-// one node per person you reviewed or who reviewed you, below you in columns,
-// most deals first. Each line is labelled with the average rating between you.
+// Grouping and layout for "your network" on the Network page: you in the
+// centre, the people you reviewed or who reviewed you on a ring round you, and
+// the people they're connected to on an outer ring. Each line is coloured by
+// the average rating between the two people it joins.
 
 /** Where a review came from: a gig, or a marketplace sale. */
 export type Via = 'gig' | 'item'
@@ -132,21 +133,25 @@ export function formatRating(rating: number): string {
   return Number.isInteger(rating) ? String(rating) : rating.toFixed(1)
 }
 
-/** The SVG is 100 units wide; its height grows with the rows. */
+/** The SVG is 100 units wide; its height depends on how many rings it needs. */
 export const WIDTH = 100
-/** Where the centre person sits: top left, the root of the tree */
-export const YOU = { x: 9, y: 10 } as const
+/** The centre person's circle */
+export const CENTRE_RADIUS = 8
+/** Their connections, and their connections' connections (a little smaller) */
 export const NODE_RADIUS = 5.5
-/** Their connections' connections are drawn a little smaller */
-export const CHILD_RADIUS = 4.5
-/** How far right each level of the tree starts */
-const LEVEL_X = [YOU.x, 38, 66] as const
-const ROW_GAP = 17
-/** How far the curve takes to turn from going down to going across */
-const BEND = 7
+export const CHILD_RADIUS = 4.2
+/** The two rings, taller than wide so the picture suits a phone */
+const RINGS = [{ rx: 23, ry: 28 }, { rx: 41, ry: 50 }] as const
+/** Room round the outer ring for its nodes */
+const MARGIN = 7
 
-/** Room under the last row */
-const BOTTOM = 8
+/** How strong a link is, from the average rating between the two people */
+export type Tier = 'strong' | 'fair' | 'weak'
+
+/** Strong 4.5 and up, fair 3 to 4.4, weak below 3 */
+export function tierOf(rating: number): Tier {
+  return rating >= 4.5 ? 'strong' : rating >= 3 ? 'fair' : 'weak'
+}
 
 /** One of your connections, and the people they are connected to in turn */
 export interface Branch {
@@ -154,13 +159,13 @@ export interface Branch {
   children: Connection[]
 }
 
-/** The most people a tree shows, so it stays a size you can take in on a phone */
+/** The most people the picture shows, so it stays a size you can take in on a phone */
 export const MAX_PEOPLE = 15
 
 const newestFirst = (a: Connection, b: Connection) => b.latest.localeCompare(a.latest)
 
 /**
- * Keeps the tree to max people in all: the centre person's most recent
+ * Keeps the network to max people in all: the centre person's most recent
  * connections first, then, in the spots left, the most recent of the people
  * those are connected to. Each branch keeps its own newest first.
  */
@@ -179,63 +184,76 @@ export function recentNetwork(branches: Branch[], max = MAX_PEOPLE): Branch[] {
 
 export interface PlacedConnection {
   connection: Connection
-  /** 1: connected to the centre person; 2: to one of those */
+  /** 1: connected to the centre person (inner ring); 2: to one of those (outer ring) */
   level: 1 | 2
   x: number
   y: number
   r: number
-  /** The branch it hangs from: who it belongs to and where their node is */
+  /** Who it is connected to here, and where their node is: the line runs from there */
   parentId: number
   from: { x: number; y: number }
-  /** Where the line's rating label sits: on its horizontal part */
+  /** Where the line's rating label sits: halfway along it */
   label: { x: number; y: number }
+}
+
+export interface Ring {
+  rx: number
+  ry: number
 }
 
 export interface NetworkLayout {
   placed: PlacedConnection[]
+  centre: { x: number; y: number }
+  /** The rings in use, drawn as dashed guides */
+  rings: Ring[]
   height: number
 }
 
 /**
- * Lays out a branching tree, one person per row: the centre person at the top
- * left, each of their connections below on its own row, and each of those
- * people's connections indented beneath them. Lines run down from the parent
- * and across to the person, so they never cross.
+ * Lays the network out on rings round the centre person. Each connection gets
+ * a slice of the circle as wide as the people under it (at least one), sits on
+ * the inner ring in the middle of its slice, and its own connections share
+ * that slice on the outer ring, so they sit beyond it and lines never cross.
+ * The first connection is at the top.
  */
 export function layoutNetwork(branches: Branch[], centreId = 0): NetworkLayout {
+  const hasOuter = branches.some(b => b.children.length > 0)
+  const rings: Ring[] = branches.length ? [...RINGS.slice(0, hasOuter ? 2 : 1)] : []
+  const outer = rings[rings.length - 1] ?? { rx: 0, ry: 0 }
+  const centre = { x: WIDTH / 2, y: outer.ry + MARGIN + (rings.length ? 0 : CENTRE_RADIUS) }
+  const at = (ring: Ring, angle: number) => ({
+    x: centre.x + ring.rx * Math.cos(angle),
+    y: centre.y + ring.ry * Math.sin(angle)
+  })
+  const node = (connection: Connection, level: 1 | 2, parentId: number, from: { x: number; y: number }, spot: { x: number; y: number }): PlacedConnection => ({
+    connection, level, ...spot, r: level === 1 ? NODE_RADIUS : CHILD_RADIUS, parentId, from,
+    label: { x: (from.x + spot.x) / 2, y: (from.y + spot.y) / 2 }
+  })
+
+  const weights = branches.map(b => Math.max(1, b.children.length))
+  const total = weights.reduce((sum, w) => sum + w, 0)
   const placed: PlacedConnection[] = []
-  let row = 0
-  const place = (connection: Connection, level: 1 | 2, parentId: number, from: { x: number; y: number }) => {
-    row++
-    const x = LEVEL_X[level]
-    const y = YOU.y + row * ROW_GAP
-    const node: PlacedConnection = {
-      connection, level, x, y, r: level === 1 ? NODE_RADIUS : CHILD_RADIUS, parentId, from,
-      label: { x: (from.x + BEND + x - (level === 1 ? NODE_RADIUS : CHILD_RADIUS)) / 2, y }
-    }
-    placed.push(node)
-    return node
-  }
-  for (const branch of branches) {
-    const parent = place(branch.connection, 1, centreId, { x: YOU.x, y: YOU.y })
-    for (const child of branch.children) place(child, 2, branch.connection.userId, { x: parent.x, y: parent.y })
-  }
-  const height = YOU.y + row * ROW_GAP + BOTTOM + (row ? 0 : NODE_RADIUS)
-  return { placed, height }
+  let start = -Math.PI / 2 - (total ? (weights[0] / total) * Math.PI : 0)
+  branches.forEach((branch, i) => {
+    const span = (2 * Math.PI * weights[i]) / total
+    const parent = node(branch.connection, 1, centreId, centre, at(RINGS[0], start + span / 2))
+    placed.push(parent)
+    const step = span / branch.children.length
+    branch.children.forEach((child, j) => {
+      placed.push(node(child, 2, branch.connection.userId, { x: parent.x, y: parent.y }, at(RINGS[1], start + (j + 0.5) * step)))
+    })
+    start += span
+  })
+  return { placed, centre, rings, height: centre.y * 2 }
 }
 
-/**
- * A branch's line: one smooth curve from just under the parent, bending
- * round to run across to the person.
- */
-export function branchPath(node: PlacedConnection): string {
-  const { from, x, y, r } = node
-  const top = from.y + NODE_RADIUS
-  const turn = Math.min(BEND, y - top)
-  return [
-    `M ${from.x} ${top}`,
-    `L ${from.x} ${y - turn}`,
-    `Q ${from.x} ${y} ${from.x + turn} ${y}`,
-    `L ${x - r} ${y}`
-  ].join(' ')
+/** How many different people are in a network, the centre person left out. */
+export function networkSize(branches: Branch[], centreId: number): number {
+  const ids = new Set<number>()
+  for (const branch of branches) {
+    ids.add(branch.connection.userId)
+    for (const child of branch.children) ids.add(child.userId)
+  }
+  ids.delete(centreId)
+  return ids.size
 }

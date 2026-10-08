@@ -137,6 +137,8 @@ type ItemRequestFilter struct {
 	Search             string
 	Status             string
 	ExcludeRequesterID uint
+	// LiveAt, when set, keeps only requests whose deadline is after it
+	LiveAt             time.Time
 	SortBy             string
 	SortOrder          string
 	Page               int
@@ -201,6 +203,9 @@ type StoreItemFilter struct {
 	// RequestID keeps only listings made for one request
 	RequestID   uint
 	Status      string
+	// LiveAt, when set, keeps only listings whose deadline is after it: a
+	// board shows a note for its 24 hours, waiting bookings or not
+	LiveAt      time.Time
 	SortBy      string
 	SortOrder   string
 	Page        int

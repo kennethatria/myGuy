@@ -135,6 +135,8 @@ func (r *GormTaskRepository) buildTaskQuery(ctx context.Context, filters map[str
 			query = query.Where("(title ILIKE ? OR description ILIKE ?)", searchTerm, searchTerm)
 		case "deadline_before":
 			query = query.Where("deadline <= ?", value)
+		case "deadline_after":
+			query = query.Where("deadline > ?", value)
 		case "exclude_created_by":
 			query = query.Where("created_by != ?", value)
 		case "status":

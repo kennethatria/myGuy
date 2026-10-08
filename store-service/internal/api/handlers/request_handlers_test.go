@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"store-service/internal/models"
 	"store-service/internal/proximity"
@@ -112,7 +113,12 @@ func TestRequestHandlers_Create(t *testing.T) {
 func TestRequestHandlers_Reads(t *testing.T) {
 	s := new(MockRequestService)
 	r := setupRequestRouter(s)
-	s.On("GetRequests", models.ItemRequestFilter{Search: "printer", SortBy: "deadline", SortOrder: "asc", ExcludeRequesterID: 1, Page: 2, PerPage: 10}).
+	// The board only shows live requests: LiveAt is the time of the call
+	s.On("GetRequests", mock.MatchedBy(func(f models.ItemRequestFilter) bool {
+		live := time.Since(f.LiveAt) < time.Minute
+		f.LiveAt = time.Time{}
+		return live && f == models.ItemRequestFilter{Search: "printer", SortBy: "deadline", SortOrder: "asc", ExcludeRequesterID: 1, Page: 2, PerPage: 10}
+	})).
 		Return([]models.ItemRequest{{ID: 3}}, int64(11), nil)
 	s.On("GetRequest", uint(3)).Return(&models.ItemRequest{ID: 3}, nil)
 	s.On("GetRequest", uint(4)).Return(nil, gorm.ErrRecordNotFound)

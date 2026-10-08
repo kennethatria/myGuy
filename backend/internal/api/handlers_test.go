@@ -294,6 +294,34 @@ func TestHandler_ListTasks(t *testing.T) {
 	})
 }
 
+// Browsing shows only gigs within their 24 hours; your own list shows all
+func TestHandler_ListTasksBoardIsLiveOnly(t *testing.T) {
+	router, handler, _, mockTaskRepo, _, _ := setupTestRouter()
+	router.Use(func(c *gin.Context) {
+		c.Set("userID", uint(1))
+		c.Next()
+	})
+	router.GET("/tasks", handler.ListTasks)
+	live := func(want bool) interface{} {
+		return mock.MatchedBy(func(f map[string]interface{}) bool {
+			at, ok := f["deadline_after"].(time.Time)
+			return ok == want && (!ok || time.Since(at) < time.Minute)
+		})
+	}
+	mockTaskRepo.On("ListWithPagination", mock.Anything, live(true)).Return([]models.Task{}, nil).Once()
+	mockTaskRepo.On("Count", mock.Anything, live(true)).Return(int64(0), nil).Once()
+	mockTaskRepo.On("ListWithPagination", mock.Anything, live(false)).Return([]models.Task{}, nil).Once()
+	mockTaskRepo.On("Count", mock.Anything, live(false)).Return(int64(0), nil).Once()
+
+	for _, path := range []string{"/tasks?status=open&exclude_created_by=1", "/tasks?created=true"} {
+		resp := httptest.NewRecorder()
+		req, _ := http.NewRequest(http.MethodGet, path, nil)
+		router.ServeHTTP(resp, req)
+		assert.Equal(t, http.StatusOK, resp.Code, path)
+	}
+	mockTaskRepo.AssertExpectations(t)
+}
+
 func TestHandler_ApplyForTask(t *testing.T) {
 	router, handler, _, mockTaskRepo, _, mockAppRepo := setupTestRouter()
 	router.Use(func(c *gin.Context) {

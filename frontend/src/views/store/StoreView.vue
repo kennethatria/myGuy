@@ -309,7 +309,7 @@ const load = async () => {
   error.value = ''
   try {
     if (view.value === 'board') {
-      // No status: the board's default, items for sale and reserved ones
+      // No status: the board's default, live items for sale
       const params = boardParams('exclude_seller_id')
       const data = await getJSON(`/items?${params}`, 'Failed to load listings')
       items.value = data.items ?? []

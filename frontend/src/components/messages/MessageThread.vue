@@ -25,8 +25,8 @@
         </button>
       </div>
       
-      <!-- Messages -->
-      <template v-for="message in messages" :key="message.id">
+      <!-- Messages, one row each with a line between them -->
+      <div v-for="message in messages" :key="message.id" class="message-row">
         <RequestOfferMessage
           v-if="message.message_type === 'system_alert' && message.metadata?.event === 'request_answered'"
           :message="message"
@@ -63,7 +63,7 @@
           @edit="$emit('edit-message', message.id, $event)"
           @delete="$emit('delete-message', message.id)"
         />
-      </template>
+      </div>
       
       <!-- Typing Indicators -->
       <div v-if="typingUsers.length > 0" class="typing-indicator">
@@ -418,7 +418,17 @@ watch(() => props.messages.length, () => {
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+}
+
+/* One message per row; a line between rows tells them apart */
+.message-row {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0;
+}
+
+.message-row + .message-row {
+  border-top: 1px solid #e5e7eb;
 }
 
 .load-more {
@@ -449,6 +459,7 @@ watch(() => props.messages.length, () => {
 
 /* Typing Indicator */
 .typing-indicator {
+  margin-top: 0.5rem;
   display: flex;
   align-items: center;
   gap: 0.5rem;
