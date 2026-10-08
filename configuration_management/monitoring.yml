@@ -173,6 +173,14 @@
       ansible.builtin.set_fact:
         otel_endpoint: "http://{{ ansible_host }}:4318"
 
+    # --- node_exporter (this server's CPU, memory and disk) ---
+
+    - name: Install node_exporter
+      ansible.builtin.include_tasks:
+        file: tasks/node_exporter.yml
+        apply:
+          become: yes
+
     # --- Prometheus ---
 
     - name: Create Prometheus config directory
@@ -196,6 +204,10 @@
                 - targets: ['{{ instance_vpc_ip }}:{{ node_exporter_port }}']
                   labels:
                     instance: app
+                # This server's own node_exporter, reached from the container.
+                - targets: ['host.containers.internal:{{ node_exporter_port }}']
+                  labels:
+                    instance: monitoring
 
             - job_name: falco
               static_configs:
@@ -278,9 +290,6 @@
       become: yes
 
     - name: Write node exporter dashboard
-      # Plain-language health board: a "now" number per resource coloured
-      # green / amber / red, then the same resource over time on a fixed
-      # 0-100 % scale so a flat line reads as calm, not as a scary zoom.
       ansible.builtin.copy:
         dest: /etc/grafana/dashboards/node-exporter.json
         mode: "0644"
@@ -294,73 +303,802 @@
                 "type": "stat",
                 "title": "CPU busy now",
                 "description": "How hard the app server's processors are working. Under 70% is healthy; sustained over 90% means requests will slow down.",
-                "gridPos": { "x": 0, "y": 0, "w": 8, "h": 5 },
-                "fieldConfig": { "defaults": { "unit": "percent", "decimals": 0, "min": 0, "max": 100,
-                  "thresholds": { "mode": "absolute", "steps": [
-                    { "color": "green", "value": null }, { "color": "orange", "value": 70 }, { "color": "red", "value": 90 } ] } } },
-                "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
-                "targets": [ { "refId": "A", "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])))" } ]
+                "gridPos": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 8,
+                  "h": 5
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "percent",
+                    "decimals": 0,
+                    "min": 0,
+                    "max": 100,
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 70
+                        },
+                        {
+                          "color": "red",
+                          "value": 90
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "background",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\", instance=\"app\"}[5m])))"
+                  }
+                ]
               },
               {
                 "type": "stat",
                 "title": "Memory used now",
                 "description": "Share of RAM in use (page cache the kernel can free is not counted). Under 80% is healthy; near 100% the kernel starts killing containers.",
-                "gridPos": { "x": 8, "y": 0, "w": 8, "h": 5 },
-                "fieldConfig": { "defaults": { "unit": "percent", "decimals": 0, "min": 0, "max": 100,
-                  "thresholds": { "mode": "absolute", "steps": [
-                    { "color": "green", "value": null }, { "color": "orange", "value": 80 }, { "color": "red", "value": 90 } ] } } },
-                "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
-                "targets": [ { "refId": "A", "expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)" } ]
+                "gridPos": {
+                  "x": 8,
+                  "y": 0,
+                  "w": 8,
+                  "h": 5
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "percent",
+                    "decimals": 0,
+                    "min": 0,
+                    "max": 100,
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 80
+                        },
+                        {
+                          "color": "red",
+                          "value": 90
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "background",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "100 * (1 - node_memory_MemAvailable_bytes{instance=\"app\"} / node_memory_MemTotal_bytes{instance=\"app\"})"
+                  }
+                ]
               },
               {
                 "type": "stat",
                 "title": "Disk used now",
                 "description": "Share of the main disk in use. Uploads, Postgres and container images all live here. Act before 85%: a full disk stops the database.",
-                "gridPos": { "x": 16, "y": 0, "w": 8, "h": 5 },
-                "fieldConfig": { "defaults": { "unit": "percent", "decimals": 0, "min": 0, "max": 100,
-                  "thresholds": { "mode": "absolute", "steps": [
-                    { "color": "green", "value": null }, { "color": "orange", "value": 75 }, { "color": "red", "value": 85 } ] } } },
-                "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
-                "targets": [ { "refId": "A", "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"})" } ]
+                "gridPos": {
+                  "x": 16,
+                  "y": 0,
+                  "w": 8,
+                  "h": 5
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "percent",
+                    "decimals": 0,
+                    "min": 0,
+                    "max": 100,
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 75
+                        },
+                        {
+                          "color": "red",
+                          "value": 85
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "background",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\", instance=\"app\"} / node_filesystem_size_bytes{mountpoint=\"/\", instance=\"app\"})"
+                  }
+                ]
               },
               {
                 "type": "timeseries",
                 "title": "CPU busy over time",
                 "description": "Shaded bands: green is healthy, amber is busy, red is overloaded.",
-                "gridPos": { "x": 0, "y": 5, "w": 8, "h": 9 },
-                "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "color": { "mode": "fixed", "fixedColor": "text" },
-                  "thresholds": { "mode": "absolute", "steps": [
-                    { "color": "green", "value": null }, { "color": "orange", "value": 70 }, { "color": "red", "value": 90 } ] },
-                  "custom": { "lineWidth": 2, "fillOpacity": 0, "thresholdsStyle": { "mode": "area" } } } },
-                "options": { "legend": { "showLegend": false }, "tooltip": { "mode": "single" } },
-                "targets": [ { "refId": "A", "legendFormat": "CPU", "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])))" } ]
+                "gridPos": {
+                  "x": 0,
+                  "y": 5,
+                  "w": 8,
+                  "h": 9
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "percent",
+                    "min": 0,
+                    "max": 100,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 70
+                        },
+                        {
+                          "color": "red",
+                          "value": 90
+                        }
+                      ]
+                    },
+                    "custom": {
+                      "lineWidth": 2,
+                      "fillOpacity": 0,
+                      "thresholdsStyle": {
+                        "mode": "area"
+                      }
+                    }
+                  }
+                },
+                "options": {
+                  "legend": {
+                    "showLegend": false
+                  },
+                  "tooltip": {
+                    "mode": "single"
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "legendFormat": "CPU",
+                    "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\", instance=\"app\"}[5m])))"
+                  }
+                ]
               },
               {
                 "type": "timeseries",
                 "title": "Memory used over time",
                 "description": "Shaded bands: green is healthy, amber is tight, red is close to running out.",
-                "gridPos": { "x": 8, "y": 5, "w": 8, "h": 9 },
-                "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "color": { "mode": "fixed", "fixedColor": "text" },
-                  "thresholds": { "mode": "absolute", "steps": [
-                    { "color": "green", "value": null }, { "color": "orange", "value": 80 }, { "color": "red", "value": 90 } ] },
-                  "custom": { "lineWidth": 2, "fillOpacity": 0, "thresholdsStyle": { "mode": "area" } } } },
-                "options": { "legend": { "showLegend": false }, "tooltip": { "mode": "single" } },
-                "targets": [ { "refId": "A", "legendFormat": "Memory", "expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)" } ]
+                "gridPos": {
+                  "x": 8,
+                  "y": 5,
+                  "w": 8,
+                  "h": 9
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "percent",
+                    "min": 0,
+                    "max": 100,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 80
+                        },
+                        {
+                          "color": "red",
+                          "value": 90
+                        }
+                      ]
+                    },
+                    "custom": {
+                      "lineWidth": 2,
+                      "fillOpacity": 0,
+                      "thresholdsStyle": {
+                        "mode": "area"
+                      }
+                    }
+                  }
+                },
+                "options": {
+                  "legend": {
+                    "showLegend": false
+                  },
+                  "tooltip": {
+                    "mode": "single"
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "legendFormat": "Memory",
+                    "expr": "100 * (1 - node_memory_MemAvailable_bytes{instance=\"app\"} / node_memory_MemTotal_bytes{instance=\"app\"})"
+                  }
+                ]
               },
               {
                 "type": "timeseries",
                 "title": "Disk used over time",
                 "description": "A steady climb means something is filling the disk (uploads, logs, old images).",
-                "gridPos": { "x": 16, "y": 5, "w": 8, "h": 9 },
-                "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "color": { "mode": "fixed", "fixedColor": "text" },
-                  "thresholds": { "mode": "absolute", "steps": [
-                    { "color": "green", "value": null }, { "color": "orange", "value": 75 }, { "color": "red", "value": 85 } ] },
-                  "custom": { "lineWidth": 2, "fillOpacity": 0, "thresholdsStyle": { "mode": "area" } } } },
-                "options": { "legend": { "showLegend": false }, "tooltip": { "mode": "single" } },
-                "targets": [ { "refId": "A", "legendFormat": "Disk", "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"})" } ]
+                "gridPos": {
+                  "x": 16,
+                  "y": 5,
+                  "w": 8,
+                  "h": 9
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "percent",
+                    "min": 0,
+                    "max": 100,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 75
+                        },
+                        {
+                          "color": "red",
+                          "value": 85
+                        }
+                      ]
+                    },
+                    "custom": {
+                      "lineWidth": 2,
+                      "fillOpacity": 0,
+                      "thresholdsStyle": {
+                        "mode": "area"
+                      }
+                    }
+                  }
+                },
+                "options": {
+                  "legend": {
+                    "showLegend": false
+                  },
+                  "tooltip": {
+                    "mode": "single"
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "legendFormat": "Disk",
+                    "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\", instance=\"app\"} / node_filesystem_size_bytes{mountpoint=\"/\", instance=\"app\"})"
+                  }
+                ]
               }
             ],
-            "time": { "from": "now-24h", "to": "now" },
+            "time": {
+              "from": "now-24h",
+              "to": "now"
+            },
+            "refresh": "1m"
+          }
+      become: yes
+
+    - name: Write Monitoring Instance dashboard
+      ansible.builtin.copy:
+        dest: /etc/grafana/dashboards/monitoring-instance.json
+        mode: "0644"
+        content: !unsafe |
+          {
+            "title": "Monitoring Instance Metrics",
+            "uid": "monitoring-instance",
+            "schemaVersion": 36,
+            "panels": [
+              {
+                "type": "stat",
+                "title": "CPU busy now",
+                "description": "How hard the monitoring server's processors are working. Under 70% is healthy; sustained over 90% means requests will slow down.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 8,
+                  "h": 5
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "percent",
+                    "decimals": 0,
+                    "min": 0,
+                    "max": 100,
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 70
+                        },
+                        {
+                          "color": "red",
+                          "value": 90
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "background",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\", instance=\"monitoring\"}[5m])))"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Memory used now",
+                "description": "Share of RAM in use (page cache the kernel can free is not counted). This server has only 1 GB for Grafana, Prometheus, Loki, Tempo and Umami; near 100% the kernel starts killing containers.",
+                "gridPos": {
+                  "x": 8,
+                  "y": 0,
+                  "w": 8,
+                  "h": 5
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "percent",
+                    "decimals": 0,
+                    "min": 0,
+                    "max": 100,
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 80
+                        },
+                        {
+                          "color": "red",
+                          "value": 90
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "background",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "100 * (1 - node_memory_MemAvailable_bytes{instance=\"monitoring\"} / node_memory_MemTotal_bytes{instance=\"monitoring\"})"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Disk used now",
+                "description": "Share of the monitoring server's disk in use: 90 days of logs (Loki), 14 days of traces (Tempo), metrics and Umami. Act before 85%: a full disk stops log and trace collection.",
+                "gridPos": {
+                  "x": 16,
+                  "y": 0,
+                  "w": 8,
+                  "h": 5
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "percent",
+                    "decimals": 0,
+                    "min": 0,
+                    "max": 100,
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 75
+                        },
+                        {
+                          "color": "red",
+                          "value": 85
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "background",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\", instance=\"monitoring\"} / node_filesystem_size_bytes{mountpoint=\"/\", instance=\"monitoring\"})"
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "CPU busy over time",
+                "description": "Shaded bands: green is healthy, amber is busy, red is overloaded.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 5,
+                  "w": 8,
+                  "h": 9
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "percent",
+                    "min": 0,
+                    "max": 100,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 70
+                        },
+                        {
+                          "color": "red",
+                          "value": 90
+                        }
+                      ]
+                    },
+                    "custom": {
+                      "lineWidth": 2,
+                      "fillOpacity": 0,
+                      "thresholdsStyle": {
+                        "mode": "area"
+                      }
+                    }
+                  }
+                },
+                "options": {
+                  "legend": {
+                    "showLegend": false
+                  },
+                  "tooltip": {
+                    "mode": "single"
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "legendFormat": "CPU",
+                    "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\", instance=\"monitoring\"}[5m])))"
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Memory used over time",
+                "description": "Shaded bands: green is healthy, amber is tight, red is close to running out.",
+                "gridPos": {
+                  "x": 8,
+                  "y": 5,
+                  "w": 8,
+                  "h": 9
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "percent",
+                    "min": 0,
+                    "max": 100,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 80
+                        },
+                        {
+                          "color": "red",
+                          "value": 90
+                        }
+                      ]
+                    },
+                    "custom": {
+                      "lineWidth": 2,
+                      "fillOpacity": 0,
+                      "thresholdsStyle": {
+                        "mode": "area"
+                      }
+                    }
+                  }
+                },
+                "options": {
+                  "legend": {
+                    "showLegend": false
+                  },
+                  "tooltip": {
+                    "mode": "single"
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "legendFormat": "Memory",
+                    "expr": "100 * (1 - node_memory_MemAvailable_bytes{instance=\"monitoring\"} / node_memory_MemTotal_bytes{instance=\"monitoring\"})"
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Disk used over time",
+                "description": "A steady climb means something is filling the disk (uploads, logs, old images).",
+                "gridPos": {
+                  "x": 16,
+                  "y": 5,
+                  "w": 8,
+                  "h": 9
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "percent",
+                    "min": 0,
+                    "max": 100,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 75
+                        },
+                        {
+                          "color": "red",
+                          "value": 85
+                        }
+                      ]
+                    },
+                    "custom": {
+                      "lineWidth": 2,
+                      "fillOpacity": 0,
+                      "thresholdsStyle": {
+                        "mode": "area"
+                      }
+                    }
+                  }
+                },
+                "options": {
+                  "legend": {
+                    "showLegend": false
+                  },
+                  "tooltip": {
+                    "mode": "single"
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "legendFormat": "Disk",
+                    "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\", instance=\"monitoring\"} / node_filesystem_size_bytes{mountpoint=\"/\", instance=\"monitoring\"})"
+                  }
+                ]
+              }
+            ],
+            "time": {
+              "from": "now-24h",
+              "to": "now"
+            },
+            "refresh": "1m"
+          }
+      become: yes
+
+    - name: Write Traces dashboard
+      # Tempo search (TraceQL) tables; a trace ID opens the trace view.
+      ansible.builtin.copy:
+        dest: /etc/grafana/dashboards/traces.json
+        mode: "0644"
+        content: !unsafe |
+          {
+            "title": "Traces",
+            "uid": "traces",
+            "schemaVersion": 36,
+            "panels": [
+              {
+                "type": "table",
+                "title": "Failed requests",
+                "description": "Requests that ended in an error, newest first. Click a trace ID to see every step and where it failed.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 24,
+                  "h": 9
+                },
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "datasource": {
+                      "type": "tempo",
+                      "uid": "tempo"
+                    },
+                    "queryType": "traceql",
+                    "query": "{ status = error }",
+                    "limit": 20,
+                    "tableType": "traces"
+                  }
+                ]
+              },
+              {
+                "type": "table",
+                "title": "Slow requests (over 500 ms)",
+                "description": "Requests that took longer than half a second. Click a trace ID to see which step was slow.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 9,
+                  "w": 24,
+                  "h": 9
+                },
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "datasource": {
+                      "type": "tempo",
+                      "uid": "tempo"
+                    },
+                    "queryType": "traceql",
+                    "query": "{ kind = server && duration > 500ms }",
+                    "limit": 20,
+                    "tableType": "traces"
+                  }
+                ]
+              },
+              {
+                "type": "table",
+                "title": "Recent requests",
+                "description": "The latest requests handled by the backend, store and chat services.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 18,
+                  "w": 24,
+                  "h": 9
+                },
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "datasource": {
+                      "type": "tempo",
+                      "uid": "tempo"
+                    },
+                    "queryType": "traceql",
+                    "query": "{ kind = server }",
+                    "limit": 20,
+                    "tableType": "traces"
+                  }
+                ]
+              }
+            ],
+            "time": {
+              "from": "now-24h",
+              "to": "now"
+            },
             "refresh": "1m"
           }
       become: yes
@@ -495,7 +1233,7 @@
               {
                 "type": "stat",
                 "title": "Visitors",
-                "description": "People whose browser actually ran the app (downloaded its code or used it signed in), counted by IP address. Scanners that only fetch the home page are left out.",
+                "description": "IP addresses whose browser actually ran the app (downloaded its code or used it). Not people: a phone on mobile data changes IP often and counts again each time. Umami counts real visitors.",
                 "gridPos": {
                   "x": 0,
                   "y": 0,
@@ -528,14 +1266,14 @@
                   {
                     "refId": "A",
                     "queryType": "instant",
-                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | uri =~ \"/assets/.*[.]js|/(api|store/api|chat/api)/.*\" | status < 400 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range])))"
+                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | uri =~ \"/assets/.*[.]js|/(api/v1|store/api/v1|chat/api/v1)/.*\" | status < 400 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range])))"
                   }
                 ]
               },
               {
                 "type": "stat",
-                "title": "Signed-in users",
-                "description": "IP addresses that used the app while signed in (made a successful API call).",
+                "title": "Signed-in IPs",
+                "description": "IP addresses that loaded a signed-in profile (only a valid session gets one). One person on mobile data shows up as many IPs; the number of accounts lives in the database, not in these logs.",
                 "gridPos": {
                   "x": 6,
                   "y": 0,
@@ -568,7 +1306,7 @@
                   {
                     "refId": "A",
                     "queryType": "instant",
-                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | uri =~ \"/(api|store/api|chat/api)/.*\" | status < 400 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range])))"
+                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | uri = \"/api/v1/profile\" | status = 200 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range])))"
                   }
                 ]
               },
@@ -608,7 +1346,7 @@
                   {
                     "refId": "A",
                     "queryType": "instant",
-                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | uri =~ \"/(api|store/api|chat/api)/.*\" | status < 400 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range]))"
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | uri =~ \"/(api/v1|store/api/v1|chat/api/v1)/.*\" | status < 400 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range]))"
                   }
                 ]
               },
@@ -696,7 +1434,7 @@
                   {
                     "refId": "A",
                     "legendFormat": "visitors",
-                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | uri =~ \"/assets/.*[.]js|/(api|store/api|chat/api)/.*\" | status < 400 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [1h])))"
+                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | uri =~ \"/assets/.*[.]js|/(api/v1|store/api/v1|chat/api/v1)/.*\" | status < 400 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [1h])))"
                   }
                 ]
               },
@@ -733,12 +1471,12 @@
                   {
                     "refId": "A",
                     "legendFormat": "requests",
-                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | uri =~ \"/(api|store/api|chat/api)/.*\" | status < 400 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [1h]))"
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | uri =~ \"/(api/v1|store/api/v1|chat/api/v1)/.*\" | status < 400 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [1h]))"
                   }
                 ]
               },
               {
-                "type": "bargauge",
+                "type": "table",
                 "title": "Pages opened directly",
                 "description": "App pages loaded from a link, bookmark or refresh (moving around inside the app isn't counted). The home page includes scanners.",
                 "gridPos": {
@@ -753,27 +1491,37 @@
                 },
                 "fieldConfig": {
                   "defaults": {
-                    "displayName": "${__field.labels.uri}",
-                    "decimals": 0,
-                    "color": {
-                      "mode": "fixed",
-                      "fixedColor": "blue"
-                    },
-                    "min": 0
-                  }
-                },
-                "options": {
-                  "orientation": "horizontal",
-                  "displayMode": "basic",
-                  "namePlacement": "left",
-                  "showUnfilled": true,
-                  "valueMode": "text",
-                  "reduceOptions": {
-                    "values": false,
-                    "calcs": [
-                      "lastNotNull"
-                    ]
-                  }
+                    "decimals": 0
+                  },
+                  "overrides": [
+                    {
+                      "matcher": {
+                        "id": "byName",
+                        "options": "Count"
+                      },
+                      "properties": [
+                        {
+                          "id": "custom.cellOptions",
+                          "value": {
+                            "type": "gauge",
+                            "mode": "basic",
+                            "valueDisplayMode": "text"
+                          }
+                        },
+                        {
+                          "id": "color",
+                          "value": {
+                            "mode": "fixed",
+                            "fixedColor": "blue"
+                          }
+                        },
+                        {
+                          "id": "custom.width",
+                          "value": 220
+                        }
+                      ]
+                    }
+                  ]
                 },
                 "targets": [
                   {
@@ -781,10 +1529,45 @@
                     "queryType": "instant",
                     "expr": "sort_desc(topk(10, sum by (uri) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri =~ \"/(dashboard|login|register|messages|profile(/[0-9]+)?|reviews(/[0-9]+|/create/[0-9]+)?|my-gigs(/(created|assigned|applications))?|store(/new|/[0-9]+|/requests/(new|[0-9]+))?|tasks(/create|/[0-9]+)?|(edit|posted)/(task|item|request)/[0-9]+)?/?\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range]))))"
                   }
+                ],
+                "options": {
+                  "showHeader": true,
+                  "cellHeight": "sm",
+                  "sortBy": [
+                    {
+                      "displayName": "Count",
+                      "desc": true
+                    }
+                  ]
+                },
+                "transformations": [
+                  {
+                    "id": "labelsToFields",
+                    "options": {
+                      "mode": "columns"
+                    }
+                  },
+                  {
+                    "id": "merge",
+                    "options": {}
+                  },
+                  {
+                    "id": "organize",
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {
+                        "uri": "Page",
+                        "Value": "Count",
+                        "Value #A": "Count"
+                      }
+                    }
+                  }
                 ]
               },
               {
-                "type": "bargauge",
+                "type": "table",
                 "title": "Top referrers",
                 "description": "Sites people came from (links to the bare server IP, used by scanners, are left out). Includes your own domain for internal links.",
                 "gridPos": {
@@ -799,33 +1582,78 @@
                 },
                 "fieldConfig": {
                   "defaults": {
-                    "displayName": "${__field.labels.referer}",
-                    "decimals": 0,
-                    "color": {
-                      "mode": "fixed",
-                      "fixedColor": "blue"
-                    },
-                    "min": 0
-                  }
-                },
-                "options": {
-                  "orientation": "horizontal",
-                  "displayMode": "basic",
-                  "namePlacement": "left",
-                  "showUnfilled": true,
-                  "valueMode": "text",
-                  "reduceOptions": {
-                    "values": false,
-                    "calcs": [
-                      "lastNotNull"
-                    ]
-                  }
+                    "decimals": 0
+                  },
+                  "overrides": [
+                    {
+                      "matcher": {
+                        "id": "byName",
+                        "options": "Count"
+                      },
+                      "properties": [
+                        {
+                          "id": "custom.cellOptions",
+                          "value": {
+                            "type": "gauge",
+                            "mode": "basic",
+                            "valueDisplayMode": "text"
+                          }
+                        },
+                        {
+                          "id": "color",
+                          "value": {
+                            "mode": "fixed",
+                            "fixedColor": "blue"
+                          }
+                        },
+                        {
+                          "id": "custom.width",
+                          "value": 220
+                        }
+                      ]
+                    }
+                  ]
                 },
                 "targets": [
                   {
                     "refId": "A",
                     "queryType": "instant",
                     "expr": "sort_desc(topk(10, sum by (referer) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri =~ \"/(dashboard|login|register|messages|profile(/[0-9]+)?|reviews(/[0-9]+|/create/[0-9]+)?|my-gigs(/(created|assigned|applications))?|store(/new|/[0-9]+|/requests/(new|[0-9]+))?|tasks(/create|/[0-9]+)?|(edit|posted)/(task|item|request)/[0-9]+)?/?\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" | referer != \"\" | referer !~ \"https?://[0-9.]+([:/].*)?\" [$__range]))))"
+                  }
+                ],
+                "options": {
+                  "showHeader": true,
+                  "cellHeight": "sm",
+                  "sortBy": [
+                    {
+                      "displayName": "Count",
+                      "desc": true
+                    }
+                  ]
+                },
+                "transformations": [
+                  {
+                    "id": "labelsToFields",
+                    "options": {
+                      "mode": "columns"
+                    }
+                  },
+                  {
+                    "id": "merge",
+                    "options": {}
+                  },
+                  {
+                    "id": "organize",
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {
+                        "referer": "Referrer",
+                        "Value": "Count",
+                        "Value #A": "Count"
+                      }
+                    }
                   }
                 ]
               },

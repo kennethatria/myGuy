@@ -301,6 +301,15 @@
     # Same as app instance except no .env secret access — there are no
     # application secrets on the monitoring server.
 
+    - name: Create node_exporter system user
+      ansible.builtin.user:
+        name: node_exporter
+        system: yes
+        shell: /usr/sbin/nologin
+        home: /nonexistent
+        create_home: no
+        state: present
+
     - name: Create ops group
       ansible.builtin.group:
         name: ops
