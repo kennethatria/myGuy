@@ -1,0 +1,10 @@
+# Grafana for local development: browse traces at http://localhost:3000
+# (Explore → Tempo).
+apiVersion: 1
+datasources:
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200
+    isDefault: true

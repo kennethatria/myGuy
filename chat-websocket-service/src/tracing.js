@@ -1,15 +1,13 @@
 'use strict';
 
 const { NodeSDK } = require('@opentelemetry/sdk-node');
-const { ZipkinExporter } = require('@opentelemetry/exporter-zipkin');
 const { HttpInstrumentation } = require('@opentelemetry/instrumentation-http');
 const { ExpressInstrumentation } = require('@opentelemetry/instrumentation-express');
 
+// With no traceExporter given, the SDK sends traces over OTLP/HTTP to
+// OTEL_EXPORTER_OTLP_ENDPOINT (Tempo), or http://localhost:4318 when unset.
 const sdk = new NodeSDK({
   serviceName: 'myguy-chat-service',
-  traceExporter: new ZipkinExporter({
-    url: process.env.ZIPKIN_URL || 'http://localhost:9411/api/v2/spans',
-  }),
   instrumentations: [
     new HttpInstrumentation(),
     new ExpressInstrumentation(),

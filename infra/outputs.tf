@@ -64,11 +64,11 @@ output "zipkin_instance_ip" {
 }
 
 output "zipkin_vpc_ip" {
-  description = "VPC IP of the Zipkin instance (use this for ZIPKIN_URL in app services)"
+  description = "VPC IP of the monitoring instance (named zipkin_* for history; renaming would replace it)"
   value       = local.zipkin_vpc_ip
 }
 
-output "zipkin_url" {
-  description = "Zipkin spans endpoint reachable from within the VPC"
-  value       = "http://${local.zipkin_vpc_ip}:9411/api/v2/spans"
+output "otel_endpoint" {
+  description = "Tempo OTLP/HTTP endpoint reachable from within the VPC (OTEL_EXPORTER_OTLP_ENDPOINT)"
+  value       = "http://${local.zipkin_vpc_ip}:4318"
 }

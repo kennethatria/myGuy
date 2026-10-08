@@ -15,7 +15,6 @@
     "migrate:down": "node-pg-migrate down"
   },
   "dependencies": {
-    "@opentelemetry/exporter-zipkin": "^2.11.0",
     "@opentelemetry/instrumentation-express": "^0.70.0",
     "@opentelemetry/instrumentation-http": "^0.222.0",
     "@opentelemetry/resources": "^2.11.0",
