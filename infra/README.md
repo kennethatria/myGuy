@@ -13,7 +13,7 @@ Terraform for MyGuy's Akamai Cloud (Linode) infrastructure. State and variables 
 | NodeBalancer config `:80` (HTTP mode) | Health-checks `/healthcheck/` expecting body `healthcheck`; adds `X-Forwarded-For` |
 | NodeBalancer config `:443` (TCP, **PROXY protocol v2**) | TLS passthrough; nginx must listen with `proxy_protocol` |
 | `linode_firewall.my_firewall` | App server: 80, 443, 22 public; node_exporter/Falco metrics from the VPC |
-| `linode_firewall.zipkin_firewall` | Monitoring server: Tempo (OTLP 4318), Prometheus, Loki, Grafana, Umami (3001), SSH — VPC only |
+| `linode_firewall.zipkin_firewall` | Monitoring server: Tempo (OTLP 4318, query 3200), Prometheus, Loki, Grafana, Umami (3001), SSH — VPC only |
 
 Outputs include `instance_ip_address`, `nodebalancer_ipv4`, `zipkin_vpc_ip` (the monitoring server) and `otel_endpoint`.
 

@@ -150,6 +150,16 @@ resource "linode_firewall" "zipkin_firewall" {
     ipv4     = ["10.0.0.0/24"]
   }
 
+  # Tempo's query API, for an SSH tunnel through the app server (Grafana
+  # reaches it locally and doesn't need this).
+  inbound {
+    label    = "allow-tempo-query-from-vpc"
+    action   = "ACCEPT"
+    protocol = "TCP"
+    ports    = "3200"
+    ipv4     = ["10.0.0.0/24"]
+  }
+
   inbound {
     label    = "allow-prometheus-from-vpc"
     action   = "ACCEPT"
