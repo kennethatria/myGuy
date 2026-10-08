@@ -133,9 +133,9 @@ onUnmounted(() => clearTimeout(toastTimer))
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px dashed #A5ACFF;
+  border: 1px dashed #B9CFFA;
   border-radius: 28px;
-  background: #F5F6FF;
+  background: #EAF1FF;
   font-size: 64px;
 }
 

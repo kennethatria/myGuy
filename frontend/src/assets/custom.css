@@ -15,21 +15,22 @@
   --text-muted: #6B7280;
   --text-body: #4B5563;
   --border: #E7E7E3;
-  --accent: #F58A7A;          /* fills: FAB, primary buttons, active tab */
-  --on-accent: #7A1F12;       /* text and icons on accent (white fails contrast) */
-  --accent-text: #B4402F;     /* links and accent text on light backgrounds */
-  --accent-tint: #FFF0ED;
+  --accent: #5B94F5;          /* fills: FAB, primary buttons, active tab */
+  --on-accent: #102A5E;       /* text and icons on accent (white fails contrast) */
+  --accent-text: #2F5FC4;     /* links and accent text on light backgrounds */
+  --accent-tint: #EAF1FF;
   --note-gig: #DCE8FF;
   --note-sell: #FBEFC0;
   --note-want: #FADCEB;
   --price: #713F12;
   --badge-red: #EF4444;
   --note-shadow: 0 2px 5px rgba(17, 24, 39, 0.12), 0 1px 1px rgba(17, 24, 39, 0.06);
+  --stamp: #41609E;           /* handwritten time left (darker than the mockup's #6B87C4, for contrast) */
 
   /* Older names, kept so every page picks up the new palette. Primary is the
      accent text colour: pages use it both as text and behind white text. */
   --color-primary: var(--accent-text);
-  --color-primary-dark: #963523;
+  --color-primary-dark: #234C9E;
   --color-secondary: #10B981;
   --color-secondary-dark: #059669;
   --color-text: var(--text);
@@ -45,6 +46,7 @@
   --radius: 0.25rem;
   --radius-lg: 0.5rem;
   
+  --font-hand: 'Caveat', cursive;
   --font-sans: 'DM Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
@@ -167,7 +169,7 @@ a:hover {
 .form-input:focus {
   border-color: var(--color-primary);
   outline: 0;
-  box-shadow: 0 0 0 3px rgba(245, 138, 122, 0.2);
+  box-shadow: 0 0 0 3px rgba(91, 148, 245, 0.2);
 }
 
 .form-input::placeholder {
@@ -265,8 +267,8 @@ input[type="datetime-local"].form-input {
 
 .btn-primary:hover {
   color: var(--on-accent);
-  background-color: #F2735F;
-  border-color: #F2735F;
+  background-color: #6FA2F7;
+  border-color: #6FA2F7;
 }
 
 .btn-danger {
@@ -1136,7 +1138,7 @@ input[type="datetime-local"].form-input {
   display: inline-block;
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(245, 138, 122, 0.2);
+  border: 3px solid rgba(91, 148, 245, 0.2);
   border-radius: 50%;
   border-top-color: var(--color-primary);
   animation: spin 1s ease-in-out infinite;

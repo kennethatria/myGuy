@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type storeItemRepository struct {
@@ -25,18 +24,7 @@ func (r *storeItemRepository) GetByID(id uint) (*models.StoreItem, error) {
 	var item models.StoreItem
 	err := r.db.Preload("Seller").Preload("Request").Preload("Images", func(db *gorm.DB) *gorm.DB {
 		return db.Order("\"order\" ASC")
-	}).Preload("Bids", "status = ?", "active").First(&item, id).Error
-	if err != nil {
-		return nil, err
-	}
-	return &item, nil
-}
-
-func (r *storeItemRepository) GetByIDForUpdate(id uint) (*models.StoreItem, error) {
-	var item models.StoreItem
-	err := r.db.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("Seller").Preload("Images", func(db *gorm.DB) *gorm.DB {
-		return db.Order("\"order\" ASC")
-	}).Preload("Bids", "status = ?", "active").First(&item, id).Error
+	}).First(&item, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -56,10 +44,6 @@ func (r *storeItemRepository) filtered(filter models.StoreItemFilter) *gorm.DB {
 
 	if filter.Category != "" {
 		query = query.Where("category = ?", filter.Category)
-	}
-
-	if filter.PriceType != "" {
-		query = query.Where("price_type = ?", filter.PriceType)
 	}
 
 	if filter.Condition != "" {
@@ -91,25 +75,6 @@ func (r *storeItemRepository) filtered(filter models.StoreItemFilter) *gorm.DB {
 		query = query.Where("request_id = ?", filter.RequestID)
 	}
 
-	// Price filtering based on price type
-	if filter.MinPrice > 0 || filter.MaxPrice > 0 {
-		if filter.PriceType == "fixed" {
-			if filter.MinPrice > 0 {
-				query = query.Where("fixed_price >= ?", filter.MinPrice)
-			}
-			if filter.MaxPrice > 0 {
-				query = query.Where("fixed_price <= ?", filter.MaxPrice)
-			}
-		} else if filter.PriceType == "bidding" {
-			if filter.MinPrice > 0 {
-				query = query.Where("current_bid >= ? OR (current_bid = 0 AND starting_bid >= ?)", filter.MinPrice, filter.MinPrice)
-			}
-			if filter.MaxPrice > 0 {
-				query = query.Where("current_bid <= ? OR (current_bid = 0 AND starting_bid <= ?)", filter.MaxPrice, filter.MaxPrice)
-			}
-		}
-	}
-
 	return query
 }
 
@@ -129,8 +94,6 @@ func (r *storeItemRepository) GetAll(filter models.StoreItemFilter) ([]models.St
 	}
 
 	switch filter.SortBy {
-	case "price":
-		query = query.Order(fmt.Sprintf("COALESCE(fixed_price, current_bid, starting_bid) %s", sortOrder))
 	case "created_at":
 		query = query.Order(fmt.Sprintf("created_at %s", sortOrder))
 	case "deadline":
@@ -199,12 +162,6 @@ func (r *storeItemRepository) GetBySellerID(sellerID uint) ([]models.StoreItem, 
 	return items, err
 }
 
-func (r *storeItemRepository) GetByBuyerID(buyerID uint) ([]models.StoreItem, error) {
-	var items []models.StoreItem
-	err := r.db.Where("buyer_id = ?", buyerID).Find(&items).Error
-	return items, err
-}
-
 func (r *storeItemRepository) UpdateStatus(id uint, status string) error {
 	return r.db.Model(&models.StoreItem{}).Where("id = ?", id).Update("status", status).Error
 }
@@ -218,15 +175,14 @@ func (r *storeItemRepository) MarkAsSold(id uint, buyerID uint) error {
 	}).Error
 }
 
-// ExpireUnanswered takes listings whose deadline passed before anyone bid
-// or asked to book off the board, in one statement, returning how many
+// ExpireUnanswered takes listings whose deadline passed before anyone
+// asked to book off the board, in one statement, returning how many
 // changed. A listing with a live reaction stays active so the seller can
 // still deal in chat (the board hides it after its deadline anyway); a
 // released or declined booking is no longer one.
 func (r *storeItemRepository) ExpireUnanswered(now time.Time) (int64, error) {
 	res := r.db.Model(&models.StoreItem{}).
 		Where("status = ? AND deadline < ?", "active", now).
-		Where("NOT EXISTS (SELECT 1 FROM bids WHERE bids.item_id = store_items.id AND bids.deleted_at IS NULL)").
 		Where("NOT EXISTS (SELECT 1 FROM booking_requests WHERE booking_requests.item_id = store_items.id AND booking_requests.deleted_at IS NULL AND booking_requests.status NOT IN ('released', 'rejected'))").
 		Update("status", "expired")
 	return res.RowsAffected, res.Error

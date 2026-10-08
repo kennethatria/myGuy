@@ -37,7 +37,6 @@
               <template #header>
                 <span class="note-top">
                   <h3 class="note-headline">{{ item.title }}</h3>
-                  <span v-if="listingPriceLabel(item)" class="note-price">{{ listingPriceLabel(item) }}</span>
                 </span>
                 <p class="note-text">{{ item.description }}</p>
               </template>
@@ -102,7 +101,6 @@
                       {{ item.title }}
                     </router-link>
                   </h3>
-                  <span v-if="listingPriceLabel(item)" class="note-price">{{ listingPriceLabel(item) }}</span>
                 </span>
                 <p class="note-text">{{ item.description }}</p>
               </template>
@@ -197,7 +195,7 @@ import EmptyState from '@/components/EmptyState.vue'
 import { hasDistances } from '@/utils/distance'
 import { useViewerLocation, nearParam } from '@/composables/useViewerLocation'
 import { expiryLabel, noteMeta } from '@/utils/gigNote'
-import { listingPriceLabel, offersLabel } from '@/utils/listingNote'
+import { offersLabel } from '@/utils/listingNote'
 
 interface StoreItem {
   id: number
@@ -206,10 +204,6 @@ interface StoreItem {
   status: string
   deadline?: string
   distance?: string
-  price_type?: string
-  fixed_price?: number
-  starting_bid?: number
-  current_bid?: number
   seller?: { id: number; username: string }
   images?: { id: number; url: string }[]
 }

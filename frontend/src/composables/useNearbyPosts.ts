@@ -4,7 +4,6 @@ import { useAuthStore } from '@/stores/auth'
 import { nearParam } from '@/composables/useViewerLocation'
 import type { RoughLocation } from '@/utils/geoCell'
 import { bucketIndex, type PostKind } from '@/utils/radar'
-import { listingPriceLabel, type ListingPrice } from '@/utils/listingNote'
 
 export interface NearbyPost {
   kind: PostKind
@@ -15,12 +14,11 @@ export interface NearbyPost {
   distance: string
   // Index into BUCKETS, or -1 when the poster didn't share a location
   bucket: number
-  // Marketplace items only: the price label ('' when none) and first photo
-  price: string
+  // Marketplace items only: the first photo
   photo: string
 }
 
-interface ListedPost extends ListingPrice {
+interface ListedPost {
   id: number
   title: string
   description?: string
@@ -64,7 +62,6 @@ export function useNearbyPosts(location: Ref<RoughLocation | null>) {
       deadline: post.deadline ?? '',
       distance: post.distance ?? '',
       bucket: bucketIndex(post.distance),
-      price: kind === 'item' ? listingPriceLabel(post) : '',
       photo: kind === 'item' && post.images?.length ? config.STORE_API_BASE_URL + post.images[0].url : ''
     }))
     return { list, total: typeof data.total === 'number' ? data.total : list.length }

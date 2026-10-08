@@ -14,13 +14,7 @@ type StoreServiceInterface interface {
 	UpdateItem(id uint, userID uint, req models.UpdateStoreItemRequest) (*models.StoreItem, error)
 	DeleteItem(id uint, userID uint) error
 	RepostItem(id uint, userID uint) (*models.StoreItem, error)
-	PlaceBid(itemID uint, userID uint, req models.CreateBidRequest) (*models.Bid, error)
-	GetItemBids(itemID uint) ([]models.Bid, error)
-	AcceptBid(itemID uint, bidID uint, sellerID uint) error
-	PurchaseItem(itemID uint, buyerID uint) error
 	GetUserListings(userID uint) ([]models.StoreItem, error)
-	GetUserPurchases(userID uint) ([]models.StoreItem, error)
-	GetUserBids(userID uint) ([]models.Bid, error)
 	CreateBookingRequest(itemID uint, requesterID uint, message string) (*models.BookingRequest, error)
 	GetBookingRequestByItem(itemID uint, userID uint) (*models.BookingRequest, error)
 	GetAllBookingRequestsByItem(itemID uint, userID uint) ([]models.BookingRequest, error)

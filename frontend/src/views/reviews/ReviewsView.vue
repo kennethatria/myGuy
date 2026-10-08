@@ -389,7 +389,7 @@ onBeforeUnmount(() => {
 /* Tiers: strong, fair and weak links (lines, outlines, pills, legend) */
 .strong { --tier: #3E7F46; --tier-soft: #E8F6EA; --tier-text: #2B5E32; }
 .fair { --tier: #B07A2C; --tier-soft: #FFF4D6; --tier-text: #713F12; }
-.weak { --tier: #B9402F; --tier-soft: #FDE8E4; --tier-text: #7A1F12; }
+.weak { --tier: #B9402F; --tier-soft: #FDE8E4; --tier-text: #102A5E; }
 
 /* Bands: darkest nearest the centre, as on the home radar; the white
    edges are the lines people sit on */
@@ -398,9 +398,9 @@ onBeforeUnmount(() => {
   stroke-width: 0.6;
 }
 
-.band-0 { fill: #FFE7E0; }
-.band-1 { fill: #FFF1EC; }
-.band-2 { fill: #FFF8F5; }
+.band-0 { fill: #E2ECFF; }
+.band-1 { fill: #EDF3FF; }
+.band-2 { fill: #F5F9FF; }
 
 .link {
   stroke: var(--tier);

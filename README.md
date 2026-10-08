@@ -4,7 +4,7 @@
 
 MyGuy is a modern, microservices-based task marketplace. It allows users to post tasks they need done, and enables other users to apply, negotiate, and complete those tasks.
 
-The platform is designed with a clean architecture, separating concerns into distinct services for task management, real-time chat, and a store/bidding marketplace.
+The platform is designed with a clean architecture, separating concerns into distinct services for task management, real-time chat, and a marketplace.
 
 ## Architecture & Tech Stack
 
@@ -155,7 +155,7 @@ graph TB
 | **Frontend** | TypeScript (Vue.js) | `5173` | The main user interface that communicates with all backend services. |
 | **Backend** | Go (Gin) | `8080` | The core API: passwordless sign-in, users, tasks, applications, and reviews. |
 | **Proximity Service** | Go (Gin) | `8083` (internal) | Rough locations of gigs, listings and requests; tells the other services how far each is, as a coarse bucket. Has its own Redis. |
-| **Store Service** | Go (Gin) | `8081` | Marketplace listings as sticky notes, with booking requests (and older auctions). |
+| **Store Service** | Go (Gin) | `8081` | Marketplace listings and requests as sticky notes, with booking requests. No prices. |
 | **Chat Service** | JavaScript (Node.js) | `8082` | A real-time WebSocket service for all messaging features. |
 | **Database** | PostgreSQL | `5432` | Primary data store, with each service connecting to its own database. |
 | **Redis** | Redis | `6379` | Socket.IO adapter for multi-instance chat scaling. |
@@ -213,7 +213,7 @@ There is **one private conversation per pair** (poster ↔ each person) per gig,
 
 ### Marketplace listings
 
-Selling works the same way. A listing is a sticky note with a headline (≤ 5 words), a note (≤ 20 words) and up to three photos (the first is taped to the note). There are no price, category or condition fields: put the price in the note or agree it in chat. A buyer presses **Book Now**; once the seller approves, the two can share contact details in chat. A listing nobody books within 24 hours expires; the seller can repost or remove it from the item page or the **Yours** tab. Older auctions keep working and close when their note comes down.
+Selling works the same way. A listing is a sticky note with a headline (≤ 5 words), a note (≤ 20 words) and up to three photos (the first is taped to the note). There are no price, category or condition fields: put the price in the note or agree it in chat. A buyer presses **Book**; once the seller approves, the two can share contact details in chat. A listing nobody books within 24 hours expires; the seller can repost or remove it from the item page or the **Yours** tab.
 
 **Requests.** Buyers can ask too. A request ("Printer wanted") is a note on the **Wanted** tab, with the same limits and 24-hour life. A seller who has the item presses **I have this** and posts a listing linked to the request; it goes on the board as usual, and the requester gets a message in Messages with a link to it. The requester books it like any listing, and once the seller approves that booking the request closes. A request no seller answers within 24 hours expires and can be reposted.
 

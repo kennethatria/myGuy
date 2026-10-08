@@ -65,12 +65,6 @@
   line-height: 1.25;
 }
 
-.note-price {
-  flex: none;
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--price);
-}
 
 .note-text {
   margin: 0;

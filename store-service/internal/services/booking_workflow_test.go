@@ -9,19 +9,18 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func setupServiceWithUserRepo() (*StoreService, *MockStoreItemRepository, *MockBidRepository, *MockBookingRequestRepository, *MockUserRepository) {
+func setupServiceWithUserRepo() (*StoreService, *MockStoreItemRepository, *MockBookingRequestRepository, *MockUserRepository) {
 	itemRepo := new(MockStoreItemRepository)
-	bidRepo := new(MockBidRepository)
 	bookingRepo := new(MockBookingRequestRepository)
 	userRepo := new(MockUserRepository)
-	service := NewStoreService(nil, itemRepo, bidRepo, bookingRepo, userRepo)
-	return service, itemRepo, bidRepo, bookingRepo, userRepo
+	service := NewStoreService(nil, itemRepo, bookingRepo, userRepo)
+	return service, itemRepo, bookingRepo, userRepo
 }
 
 func TestBookingWorkflow_Scenarios(t *testing.T) {
 	t.Run("Bug_ConfirmDelivery_ShouldMarkItemAsSold", func(t *testing.T) {
 		// Setup service and mocks
-		service, itemRepo, _, bookingRepo := setupService()
+		service, itemRepo, bookingRepo := setupService()
 
 		// Arrange
 		sellerID := uint(1)
@@ -76,7 +75,7 @@ func TestBookingWorkflow_Scenarios(t *testing.T) {
 
 	t.Run("ApproveBooking_ShouldPreventDoubleBooking", func(t *testing.T) {
 		// Setup service and mocks
-		service, _, _, bookingRepo := setupService()
+		service, _, bookingRepo := setupService()
 
 		// Arrange
 		sellerID := uint(1)
@@ -125,7 +124,7 @@ func TestBookingWorkflow_Scenarios(t *testing.T) {
 
 func TestConfirmItemReceived(t *testing.T) {
 	t.Run("the buyer confirms what the seller marked picked up: sold", func(t *testing.T) {
-		service, itemRepo, _, bookingRepo := setupService()
+		service, itemRepo, bookingRepo := setupService()
 
 		buyerID := uint(2)
 		requestID := uint(1)
@@ -156,7 +155,7 @@ func TestConfirmItemReceived(t *testing.T) {
 	})
 
 	t.Run("booking not found", func(t *testing.T) {
-		service, _, _, bookingRepo := setupService()
+		service, _, bookingRepo := setupService()
 
 		bookingRepo.On("GetByID", uint(1)).Return(nil, errors.New("record not found"))
 
@@ -167,7 +166,7 @@ func TestConfirmItemReceived(t *testing.T) {
 	})
 
 	t.Run("not the buyer", func(t *testing.T) {
-		service, _, _, bookingRepo := setupService()
+		service, _, bookingRepo := setupService()
 
 		request := &models.BookingRequest{
 			ID:          uint(1),
@@ -185,7 +184,7 @@ func TestConfirmItemReceived(t *testing.T) {
 
 	t.Run("not before the seller marks it picked up", func(t *testing.T) {
 		for _, status := range []string{"pending", "approved"} {
-			service, _, _, bookingRepo := setupService()
+			service, _, bookingRepo := setupService()
 			bookingRepo.On("GetByID", uint(1)).Return(&models.BookingRequest{ID: 1, RequesterID: 2, Status: status}, nil)
 
 			_, err := service.ConfirmItemReceived(1, 2)
@@ -197,7 +196,7 @@ func TestConfirmItemReceived(t *testing.T) {
 }
 
 func TestConfirmDeliveryMarksPickedUp(t *testing.T) {
-	service, itemRepo, _, bookingRepo := setupService()
+	service, itemRepo, bookingRepo := setupService()
 	itemRepo.On("GetByID", uint(100)).Return(&models.StoreItem{ID: 100, SellerID: 1, Status: "reserved"}, nil)
 	bookingRepo.On("GetByID", uint(1)).Return(&models.BookingRequest{ID: 1, ItemID: 100, RequesterID: 2, Status: "approved"}, nil).Once()
 	bookingRepo.On("UpdateStatus", uint(1), "picked_up").Return(nil)
@@ -211,7 +210,7 @@ func TestConfirmDeliveryMarksPickedUp(t *testing.T) {
 	itemRepo.AssertNotCalled(t, "MarkAsSold", mock.Anything, mock.Anything)
 
 	// Twice is refused
-	service, itemRepo, _, bookingRepo = setupService()
+	service, itemRepo, bookingRepo = setupService()
 	itemRepo.On("GetByID", uint(100)).Return(&models.StoreItem{ID: 100, SellerID: 1}, nil)
 	bookingRepo.On("GetByID", uint(1)).Return(&models.BookingRequest{ID: 1, ItemID: 100, Status: "picked_up"}, nil)
 	_, err = service.ConfirmDelivery(1, 1)
@@ -220,7 +219,7 @@ func TestConfirmDeliveryMarksPickedUp(t *testing.T) {
 
 func TestSubmitBuyerRating(t *testing.T) {
 	t.Run("successful buyer rating", func(t *testing.T) {
-		service, _, _, bookingRepo, userRepo := setupServiceWithUserRepo()
+		service, _, bookingRepo, userRepo := setupServiceWithUserRepo()
 
 		buyerID := uint(2)
 		requestID := uint(1)
@@ -254,7 +253,7 @@ func TestSubmitBuyerRating(t *testing.T) {
 	})
 
 	t.Run("not the buyer", func(t *testing.T) {
-		service, _, _, bookingRepo, _ := setupServiceWithUserRepo()
+		service, _, bookingRepo, _ := setupServiceWithUserRepo()
 
 		request := &models.BookingRequest{
 			ID:          uint(1),
@@ -271,7 +270,7 @@ func TestSubmitBuyerRating(t *testing.T) {
 	})
 
 	t.Run("booking not completed", func(t *testing.T) {
-		service, _, _, bookingRepo, _ := setupServiceWithUserRepo()
+		service, _, bookingRepo, _ := setupServiceWithUserRepo()
 
 		request := &models.BookingRequest{
 			ID:          uint(1),
@@ -288,7 +287,7 @@ func TestSubmitBuyerRating(t *testing.T) {
 	})
 
 	t.Run("already rated", func(t *testing.T) {
-		service, _, _, bookingRepo, _ := setupServiceWithUserRepo()
+		service, _, bookingRepo, _ := setupServiceWithUserRepo()
 
 		rating := 4
 		request := &models.BookingRequest{
@@ -309,7 +308,7 @@ func TestSubmitBuyerRating(t *testing.T) {
 
 func TestSubmitSellerRating(t *testing.T) {
 	t.Run("successful seller rating", func(t *testing.T) {
-		service, itemRepo, _, bookingRepo, userRepo := setupServiceWithUserRepo()
+		service, itemRepo, bookingRepo, userRepo := setupServiceWithUserRepo()
 
 		sellerID := uint(1)
 		buyerID := uint(2)
@@ -344,7 +343,7 @@ func TestSubmitSellerRating(t *testing.T) {
 	})
 
 	t.Run("not the seller", func(t *testing.T) {
-		service, itemRepo, _, bookingRepo, _ := setupServiceWithUserRepo()
+		service, itemRepo, bookingRepo, _ := setupServiceWithUserRepo()
 
 		item := &models.StoreItem{ID: uint(100), SellerID: uint(3)} // Different seller
 		request := &models.BookingRequest{
@@ -365,7 +364,7 @@ func TestSubmitSellerRating(t *testing.T) {
 	})
 
 	t.Run("booking not completed", func(t *testing.T) {
-		service, itemRepo, _, bookingRepo, _ := setupServiceWithUserRepo()
+		service, itemRepo, bookingRepo, _ := setupServiceWithUserRepo()
 
 		item := &models.StoreItem{ID: uint(100), SellerID: uint(1)}
 		request := &models.BookingRequest{
@@ -386,7 +385,7 @@ func TestSubmitSellerRating(t *testing.T) {
 	})
 
 	t.Run("already rated", func(t *testing.T) {
-		service, itemRepo, _, bookingRepo, _ := setupServiceWithUserRepo()
+		service, itemRepo, bookingRepo, _ := setupServiceWithUserRepo()
 
 		rating := 4
 		item := &models.StoreItem{ID: uint(100), SellerID: uint(1)}

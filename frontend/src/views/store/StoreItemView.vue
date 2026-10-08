@@ -32,7 +32,6 @@
         :status="noteStatus"
         :title="item.title"
         :body="item.description"
-        :price="item.is_auction ? '' : listingPriceLabel(item)"
         :person="item.seller"
         :meta="postedMeta(item.created_at, item.deadline, item.status === 'active')"
       />
@@ -45,31 +44,8 @@
         Listed for the request "{{ item.request.title }}"
       </router-link>
 
-      <!-- Older auctions still work: bid here, the bar is for booking -->
-      <section v-if="item.is_auction" class="auction" aria-labelledby="auction-title">
-        <h2 id="auction-title" class="detail-section-title">Auction</h2>
-        <p class="detail-line">Current bid: <strong>UGX {{ formatCurrency(item.current_bid || item.starting_bid) }}</strong></p>
-        <p class="detail-line">Minimum increment: UGX {{ formatCurrency(item.min_bid_increment) }} · {{ item.bid_count || 0 }} bids</p>
-        <p v-if="biddingClosed" class="detail-line">Bidding has closed.</p>
-        <div v-if="item.seller.id !== userId && item.status === 'active' && !biddingClosed" class="bid-form">
-          <input
-            v-model="bidAmount"
-            type="number"
-            :min="minBidAmount"
-            :step="item.min_bid_increment"
-            placeholder="Enter bid amount"
-            aria-label="Your bid in UGX"
-          />
-          <button @click="placeBid" class="btn btn-primary">Place bid</button>
-        </div>
-        <ul v-if="bids.length > 0" class="bid-list" aria-label="Bid history">
-          <li v-for="bid in bids" :key="bid.id" class="bid-item">
-            <span class="bidder">{{ bid.bidder?.name || bid.bidder?.full_name || bid.bidder?.username || 'Unknown bidder' }}</span>
-            <span class="bid-amount">UGX {{ formatCurrency(bid.amount) }}</span>
-            <span class="bid-time">{{ formatDate(bid.created_at) }}</span>
-          </li>
-        </ul>
-      </section>
+      <!-- Auctions are gone; older ones can't be bid on or booked -->
+      <p v-if="item.is_auction" class="detail-line">This older listing was an auction, and bidding has closed.</p>
 
       <!-- The seller's own listing: where it stands -->
       <template v-if="item.seller.id === userId">
@@ -151,7 +127,6 @@ import NoPhoto from '@/components/NoPhoto.vue';
 import DetailNote from '@/components/DetailNote.vue';
 import ActionBar from '@/components/ActionBar.vue';
 import { postedMeta } from '@/utils/gigNote';
-import { listingPriceLabel } from '@/utils/listingNote';
 import config from '@/config';
 
 // Type definitions
@@ -173,15 +148,7 @@ interface StoreItem {
   description: string;
   status: string;
   deadline?: string;
-  bid_deadline?: string;
   request?: { id: number; title: string };
-  price_type: string;
-  fixed_price?: number;
-  starting_bid?: number;
-  current_bid?: number;
-  min_bid_increment?: number;
-  bid_count?: number;
-  price?: number;
   is_auction?: boolean;
   seller_id: number;
   seller: Seller;
@@ -190,20 +157,6 @@ interface StoreItem {
   updated_at: string;
 }
 
-interface Bidder {
-  id: number;
-  username: string;
-  name?: string;
-  full_name?: string;
-}
-
-interface Bid {
-  id: number;
-  amount: number;
-  bidder_id: number;
-  bidder?: Bidder;
-  created_at: string;
-}
 
 interface Requester {
   id: number;
@@ -228,10 +181,8 @@ const authStore = useAuthStore();
 const chatStore = useChatStore();
 
 const item = ref<StoreItem | null>(null);
-const bids = ref<Bid[]>([]);
 const loading = ref(true);
 const error = ref('');
-const bidAmount = ref('');
 const selectedImage = ref('');
 
 // Booking-related variables
@@ -252,17 +203,8 @@ const hasUnreadMessages = ref(false);
 const userId = computed(() => authStore.user?.id);
 const itemId = computed(() => route.params.id);
 
-const minBidAmount = computed(() => {
-  if (!item.value?.is_auction) return 0;
-  // The first bid may match the starting bid; later ones must beat the current bid
-  if (!item.value.current_bid) return item.value.starting_bid ?? 0;
-  return item.value.current_bid + (item.value.min_bid_increment ?? 0);
-});
 
 // Auctions close when the note comes down
-const biddingClosed = computed(() =>
-  !!item.value?.bid_deadline && new Date(item.value.bid_deadline).getTime() <= Date.now()
-);
 
 // What the note says about where things stand: your booking, if you have
 // one, else the item itself (nothing while it's simply for sale)
@@ -388,10 +330,6 @@ async function loadItem() {
     setPageTitle(item.value?.title);
     console.log('Item loaded successfully:', item.value);
     
-    if (item.value?.is_auction) {
-      await loadBids();
-    }
-
     // Load booking request if user is involved
     await loadBookingRequest();
 
@@ -404,26 +342,6 @@ async function loadItem() {
     error.value = err instanceof Error ? err.message : 'Failed to load item';
   } finally {
     loading.value = false;
-  }
-}
-
-async function loadBids() {
-  try {
-    const response = await fetch(`${config.STORE_API_URL}/items/${itemId.value}/bids`, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (response.ok) {
-      bids.value = await response.json();
-      console.log('Bids loaded:', bids.value);
-    } else {
-      console.error('Failed to load bids, status:', response.status);
-    }
-  } catch (err) {
-    console.error('Error loading bids:', err);
   }
 }
 
@@ -477,35 +395,6 @@ async function loadBookingRequest() {
   }
 }
 
-async function placeBid() {
-  if (!bidAmount.value || parseFloat(bidAmount.value) < minBidAmount.value) {
-    alert(`Minimum bid amount is UGX ${formatCurrency(minBidAmount.value)}`);
-    return;
-  }
-  
-  try {
-    const response = await fetch(`${config.STORE_API_URL}/items/${itemId.value}/bids`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      },
-      body: JSON.stringify({ amount: parseFloat(bidAmount.value) })
-    });
-    
-    if (response.ok) {
-      await loadItem();
-      await loadBids();
-      bidAmount.value = '';
-    } else {
-      const error = await response.json();
-      alert(error.error || 'Failed to place bid');
-    }
-  } catch {
-    alert('Error placing bid');
-  }
-}
-
 // Booking request functions
 const bookingError = ref('');
 
@@ -543,32 +432,6 @@ async function sendBookingRequest() {
   } finally {
     loadingBookingRequest.value = false;
   }
-}
-
-function formatCurrency(amount: number | undefined): string {
-  return new Intl.NumberFormat('en-UG', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount ?? 0);
-}
-
-function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  
-  if (diff < 86400000) { // Less than 24 hours
-    const hours = Math.floor(diff / 3600000);
-    if (hours < 1) return 'just now';
-    return `${hours}h ago`;
-  }
-  
-  if (diff < 604800000) { // Less than 7 days
-    const days = Math.floor(diff / 86400000);
-    return `${days}d ago`;
-  }
-  
-  return date.toLocaleDateString();
 }
 
 // Every conversation opens in the floating chat. A buyer talks to the
@@ -681,54 +544,12 @@ onMounted(() => {
   font-weight: 600;
 }
 
-.auction {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
 
-.bid-form {
-  display: flex;
-  gap: 8px;
-}
 
-.bid-form input {
-  flex: 1;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid #D9D9D4;
-  border-radius: 12px;
-  font-size: 15px;
-}
 
-.bid-form .btn {
-  min-height: 44px;
-  border-radius: 12px;
-}
 
-.bid-list {
-  list-style: none;
-  margin: 4px 0 0;
-  padding: 0;
-}
 
-.bid-item {
-  display: flex;
-  gap: 8px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 14px;
-}
 
-.bidder {
-  flex: 1;
-}
 
-.bid-amount {
-  font-weight: 600;
-}
 
-.bid-time {
-  color: var(--text-muted);
-}
 </style>

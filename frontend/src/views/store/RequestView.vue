@@ -45,7 +45,6 @@
               <template #header>
                 <span class="note-top">
                   <h3 class="note-headline">{{ item.title }}</h3>
-                  <span v-if="listingPriceLabel(item)" class="note-price">{{ listingPriceLabel(item) }}</span>
                 </span>
                 <p class="note-text">{{ item.description }}</p>
               </template>
@@ -100,7 +99,6 @@ import DetailNote from '@/components/DetailNote.vue'
 import ActionBar from '@/components/ActionBar.vue'
 import { hasDistances } from '@/utils/distance'
 import { noteMeta, postedMeta } from '@/utils/gigNote'
-import { listingPriceLabel } from '@/utils/listingNote'
 import { setPageTitle } from '@/utils/pageTitle'
 
 interface ItemRequest {
@@ -120,10 +118,6 @@ interface StoreItem {
   description: string
   deadline?: string
   distance?: string
-  price_type?: string
-  fixed_price?: number
-  starting_bid?: number
-  current_bid?: number
   seller?: { id: number; username: string }
   images?: { id: number; url: string }[]
 }

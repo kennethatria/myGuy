@@ -52,7 +52,6 @@ func (h *StoreHandler) CreateItem(c *gin.Context) {
 		description := c.PostForm("description")
 		category := c.PostForm("category")
 		condition := c.PostForm("condition")
-		isAuction := c.PostForm("price_type") == "bidding" || c.PostForm("is_auction") == "true"
 		
 		if title == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "title is required"})
@@ -70,26 +69,7 @@ func (h *StoreHandler) CreateItem(c *gin.Context) {
 		}
 		req.Lat, req.Lng = formFloat(c, "lat"), formFloat(c, "lng")
 		
-		if isAuction {
-			req.PriceType = "bidding"
-			if startingBid, err := strconv.ParseFloat(c.PostForm("starting_bid"), 64); err == nil {
-				req.StartingBid = startingBid
-			}
-			// Try both field names for backward compatibility
-			if bidIncrement, err := strconv.ParseFloat(c.PostForm("min_bid_increment"), 64); err == nil {
-				req.MinBidIncrement = bidIncrement
-			} else if bidIncrement, err := strconv.ParseFloat(c.PostForm("bid_increment"), 64); err == nil {
-				req.MinBidIncrement = bidIncrement
-			}
-		} else {
-			req.PriceType = "fixed"
-			// Try both field names for backward compatibility
-			if price, err := strconv.ParseFloat(c.PostForm("fixed_price"), 64); err == nil {
-				req.FixedPrice = price
-			} else if price, err := strconv.ParseFloat(c.PostForm("price"), 64); err == nil {
-				req.FixedPrice = price
-			}
-		}
+		// No price fields: the price goes in the note or is agreed in chat
 	}
 	
 	// Photos: each is cleaned of metadata (EXIF can hold the GPS position
@@ -223,7 +203,6 @@ func (h *StoreHandler) GetItems(c *gin.Context) {
 	filter := models.StoreItemFilter{
 		Search:    c.Query("search"),
 		Category:  c.Query("category"),
-		PriceType: c.Query("price_type"),
 		Condition: c.Query("condition"),
 		Status:    c.Query("status"),
 		// The board: a listing past its 24 hours leaves it even while a
@@ -233,18 +212,6 @@ func (h *StoreHandler) GetItems(c *gin.Context) {
 		SortOrder: c.Query("sort_order"),
 		Page:      1,
 		PerPage:   20,
-	}
-
-	if minPrice := c.Query("min_price"); minPrice != "" {
-		if price, err := strconv.ParseFloat(minPrice, 64); err == nil {
-			filter.MinPrice = price
-		}
-	}
-
-	if maxPrice := c.Query("max_price"); maxPrice != "" {
-		if price, err := strconv.ParseFloat(maxPrice, 64); err == nil {
-			filter.MaxPrice = price
-		}
 	}
 
 	if sellerID := c.Query("seller_id"); sellerID != "" {
@@ -368,92 +335,6 @@ func (h *StoreHandler) RepostItem(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
-// PlaceBid places a bid on an item
-func (h *StoreHandler) PlaceBid(c *gin.Context) {
-	userID := c.GetUint("userID")
-	
-	itemID, err := parseID(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
-		return
-	}
-
-	var req models.CreateBidRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
-
-	bid, err := h.service.PlaceBid(itemID, userID, req)
-	if err != nil {
-		respondError(c, http.StatusBadRequest, err)
-		return
-	}
-
-	c.JSON(http.StatusCreated, bid)
-}
-
-// GetItemBids retrieves all bids for an item
-func (h *StoreHandler) GetItemBids(c *gin.Context) {
-	itemID, err := parseID(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
-		return
-	}
-
-	bids, err := h.service.GetItemBids(itemID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve bids"})
-		return
-	}
-
-	c.JSON(http.StatusOK, bids)
-}
-
-// AcceptBid accepts a bid for an item
-func (h *StoreHandler) AcceptBid(c *gin.Context) {
-	userID := c.GetUint("userID")
-	
-	itemID, err := parseID(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
-		return
-	}
-
-	bidID, err := parseID(c.Param("bidId"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid bid id"})
-		return
-	}
-
-	err = h.service.AcceptBid(itemID, bidID, userID)
-	if err != nil {
-		respondError(c, http.StatusBadRequest, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "bid accepted successfully"})
-}
-
-// PurchaseItem purchases a fixed-price item
-func (h *StoreHandler) PurchaseItem(c *gin.Context) {
-	userID := c.GetUint("userID")
-	
-	itemID, err := parseID(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
-		return
-	}
-
-	err = h.service.PurchaseItem(itemID, userID)
-	if err != nil {
-		respondError(c, http.StatusBadRequest, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "item purchased successfully"})
-}
-
 // GetUserListings retrieves all items listed by a user
 func (h *StoreHandler) GetUserListings(c *gin.Context) {
 	userID := c.GetUint("userID")
@@ -465,32 +346,6 @@ func (h *StoreHandler) GetUserListings(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, items)
-}
-
-// GetUserPurchases retrieves all items purchased by a user
-func (h *StoreHandler) GetUserPurchases(c *gin.Context) {
-	userID := c.GetUint("userID")
-	
-	items, err := h.service.GetUserPurchases(userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve purchases"})
-		return
-	}
-
-	c.JSON(http.StatusOK, items)
-}
-
-// GetUserBids retrieves all bids placed by a user
-func (h *StoreHandler) GetUserBids(c *gin.Context) {
-	userID := c.GetUint("userID")
-	
-	bids, err := h.service.GetUserBids(userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve bids"})
-		return
-	}
-
-	c.JSON(http.StatusOK, bids)
 }
 
 // Booking Request Handlers

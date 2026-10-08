@@ -17,10 +17,10 @@ Goal: minimalist, sticky-note feel, friendly. Mobile-first (390px width).
 | `text-muted` | `#6B7280` | meta, captions |
 | `text-body` | `#4B5563` | secondary body |
 | `border` | `#E7E7E3` | dividers |
-| `accent` | `#F58A7A` | FAB, filled buttons, active tab underline, unread dot (light coral) |
-| `on-accent` | `#7A1F12` | text/icons on accent fills (white fails contrast) |
-| `accent-text` | `#B4402F` | links, text-only buttons ("+ Post"), accent text on light bg |
-| `accent-tint` | `#FFF0ED` | chips, avatars, light accent backgrounds |
+| `accent` | `#5B94F5` | FAB, filled buttons, active tab underline, unread dot (soft blue) |
+| `on-accent` | `#14306B` | text/icons on accent fills (white fails contrast) |
+| `accent-text` | `#2F5FC4` | links, text-only buttons ("+ Post"), accent text on light bg |
+| `accent-tint` | `#EAF1FF` | chips, avatars, light accent backgrounds |
 | `note-gig` | `#DCE8FF` (alt `#E8F0FF`) | Gig notes (blue) |
 | `note-sell` | `#FBEFC0` (alt `#FBF1CE`) | For-sale notes (yellow) |
 | `note-want` | `#FADCEB` (alt `#FCE8F2`) | Wanted notes (pink) |
@@ -31,23 +31,26 @@ Goal: minimalist, sticky-note feel, friendly. Mobile-first (390px width).
 | Rating: strong ≥4.5 | `#3E7F46` | |
 | Rating: fair 3–4.4 | `#B07A2C` | |
 | Rating: weak <3 | `#B9402F` | |
-| Radar/network rings (outer→inner) | `#FFF8F5`, `#FFF1EC`, `#FFE7E0`, `#FFDDD3`, `#FFD0C4` | warm peach |
+| Radar/network rings (outer→inner) | `#F5F9FF`, `#EDF3FF`, `#E2ECFF`, `#D6E4FF`, `#C9DBFF` | cool light blue |
 
 ### Type
 DM Sans (400/500/600/700). Screen titles 17/600. Note titles 16–18/600–700. Meta 12–13. Body 14–15.
+
+**Handwriting accent (Home only, used sparingly):** Caveat 600 for note titles (21px), prices (21px) and the time-left stamp (16px, colour `#6B87C4`, rotated -2deg). Everything else stays DM Sans. Load via Google Fonts (`Caveat:wght@600;700`).
 
 ### Sticky-note component (core pattern)
 - Radius 4–6px, no border.
 - Shadow: `0 2px 5px rgba(17,24,39,.12), 0 1px 1px rgba(17,24,39,.06)`.
 - Slight tilt, alternating `±0.4–0.6deg`. Not on forms or inputs.
-- Optional "tape": 48×14 `rgba(255,255,255,.6)`, centred on top edge, radius 2px (photo notes use 64×18).
-- Folded corner (list rows): 14×14 bottom-right, `linear-gradient(135deg, #FAFAF8 50%, rgba(17,24,39,.14) 50%)`.
+- **Home rows use a pin, not tape:** an 8×8 grey dot (`radial-gradient(circle at 35% 30%, #E5E7EB, #9CA3AF)`, shadow `0 1px 1px rgba(17,24,39,.25)`), centred, 6px from the top edge, inside the note. Deliberately quiet.
+- Other screens use optional "tape": 48×14 `rgba(255,255,255,.6)`, centred on top edge, radius 2px (photo notes use 64×18).
+- Folded corner (used on Chat and Network notes; Home rows no longer have it): 14×14 bottom-right, `linear-gradient(135deg, #FAFAF8 50%, rgba(17,24,39,.14) 50%)`.
 - Dashed divider inside notes: `1px dashed rgba(17,24,39,.22)`.
 - Photo on a note: white frame, 3–5px padding, 3–4px radius, small shadow, optional ±3° tilt on row thumbnails (44px).
 - All content notes show time left until expiry.
 
 ### Floating chat button (FAB)
-56px circle, `accent`, shadow `0 4px 12px rgba(245,138,122,.40)`, icon `on-accent`, red dot top-right when unread. Fixed bottom-right, 16px from edges (20px from bottom). On the Detail screen it sits above the action bar (bottom 128px). Opens the Messages list.
+56px circle, `accent`, shadow `0 4px 12px rgba(91,148,245,0.40)`, icon `on-accent`, red dot top-right when unread. Fixed bottom-right, 16px from edges (20px from bottom). On the Detail screen it sits above the action bar (bottom 128px). Opens the Messages list.
 
 ### Navigation
 Hamburger left in the header, no bottom tab bar. Back arrow replaces hamburger on detail/chat screens. Text-only "+ Post" top-right (`accent-text`, 15/600).
@@ -76,11 +79,13 @@ Hamburger left in the header, no bottom tab bar. Back arrow replaces hamburger o
 - Header: hamburger, "Near you", "+ Post".
 - **Radar** (300px SVG): 5 rings with labels `<1 km`, `~2`, `~5`, `~10`, `10+`, plus `No loc.`. Centre "You" dot. Coloured dots per note by category. It replaces the old filter chips.
 - Legend under the radar: plain text buttons with counts (Gigs n, For sale n, Wanted n). They are pill-less. Tapping one should filter the list and radar by that category (an assumption, not drawn).
-- **Note list:** stacked horizontal sticky rows (gap 12, padding 14×16, 4px radius, tilt, tape on some, folded corner).
-  - Gig row: title + one-line description, right column distance and time left.
-  - Sell row: photo thumbnail, title, `distance · time`, price right.
-  - Reserved sell rows show "Reserved" instead of time.
+- **Note list:** stacked horizontal sticky rows (gap 14, padding 16×16×14, 4px radius, tilt ±0.4–0.6°, grey pin, standard note shadow).
+  - Titles and prices in Caveat (see Type). Description and meta in DM Sans.
+  - Gig row (blue): title, one-line description; right column distance and a handwritten `Nh left` stamp.
+  - Sell row (yellow): framed 44px emoji/photo thumbnail tilted -3°, title, `distance`, price (Caveat) above the stamp.
+  - Reserved sell rows show "Reserved" in the stamp slot and no time.
   - Wanted row: pink, same layout as gig.
+  - **Fade:** rows fade as expiry nears via `opacity` (23h → 1.0, 21h → 0.97, Reserved → 0.93, 3h → 0.82). Keep the minimum around 0.8 so text stays readable.
 - FAB. The "Need something?" prompt was intentionally removed.
 
 ### 3.2 New post (`PostGig`)
@@ -148,7 +153,7 @@ Cards grouped Pending / Approved (with "Open chat") / Not selected (generic mess
 ### 3.12 Network (`Network`)
 - Header: hamburger, "Network", "n people".
 - Intro as a small taped sticky: "Everyone you've done a gig or a sale with, and the rating you gave each other. Tap someone to see what others say."
-- Graph (340×440): concentric peach rings, "You" at the centre, connections placed outward. Lines are 2px with a 4px white casing and round caps. Line colour = average rating between the two people (both ways) using the rating colours. Small rating pill (36×16, 10px text, `★ 3.5`) on each line's midpoint. Node = 34px circle with initial and a 4px ring in the rating colour. Outer rings show who each connection has worked with.
+- Graph (340×440): concentric pale-blue rings, "You" at the centre, connections placed outward. Lines are 2px with a 4px white casing and round caps. Line colour = average rating between the two people (both ways) using the rating colours. Small rating pill (36×16, 10px text, `★ 3.5`) on each line's midpoint. Node = 34px circle with initial and a 4px ring in the rating colour. Outer rings show who each connection has worked with.
 - Legend: Strong 4.5+ / Fair 3–4.4 / Weak <3. Caption below.
 - Tap a person → profile with what others say (not mocked yet).
 
