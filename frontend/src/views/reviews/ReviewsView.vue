@@ -59,6 +59,16 @@
             />
           </g>
 
+          <!-- The average rating between the two on every link, in its colour -->
+          <g class="ratings" aria-hidden="true">
+            <g v-for="node in placed" :key="`rating-${keyOf(node)}`" :class="tierOf(node.connection.averageRating)">
+              <rect :x="node.label.x - 5" :y="node.label.y - 2.5" width="10" height="5" rx="2.5" class="rating-pill" />
+              <text :x="node.label.x" :y="node.label.y + 1.1" text-anchor="middle" class="rating-text small">
+                ★{{ formatRating(node.connection.averageRating) }}
+              </text>
+            </g>
+          </g>
+
           <g class="you" aria-hidden="true">
             <circle :cx="layout.centre.x" :cy="layout.centre.y" :r="CENTRE_RADIUS" class="you-dot" />
             <text :x="layout.centre.x" :y="layout.centre.y + 1.4" text-anchor="middle" class="you-label">{{ isMine ? 'You' : initialOf(centreId) }}</text>
@@ -85,7 +95,7 @@
             </text>
           </g>
 
-          <!-- The tapped person's name, and the rating on their link -->
+          <!-- The tapped person's name, and their link's rating drawn larger on top -->
           <g v-if="selected" class="selection" aria-hidden="true">
             <text
               :x="selected.x < layout.centre.x ? selected.x - selected.r - 1.5 : selected.x + selected.r + 1.5"
@@ -404,6 +414,10 @@ onBeforeUnmount(() => {
   font-size: 3.4px;
   font-weight: 700;
   fill: var(--tier-text);
+}
+
+.rating-text.small {
+  font-size: 2.8px;
 }
 
 .you-dot {
