@@ -49,11 +49,13 @@
           </li>
         </ul>
 
-        <div v-else class="empty-board">
-          <h2>Nothing for sale yet</h2>
-          <p>Be the first to sell something.</p>
-          <router-link :to="{ name: 'create-listing' }" class="btn btn-primary">Sell something</router-link>
-        </div>
+        <EmptyState
+          v-else
+          emoji="📦"
+          title="Nothing for sale yet"
+          text="Be the first to sell something."
+          :action="{ label: 'Sell something', to: { name: 'create-listing' } }"
+        />
       </template>
 
       <template v-else-if="view === 'wanted'">
@@ -79,11 +81,13 @@
           </li>
         </ul>
 
-        <div v-else class="empty-board">
-          <h2>Nobody is looking for anything yet</h2>
-          <p>Ask for something you need, and sellers can list it for you.</p>
-          <router-link :to="{ name: 'create-request' }" class="btn btn-primary">Ask for something</router-link>
-        </div>
+        <EmptyState
+          v-else
+          emoji="🙋"
+          title="Nobody is looking for anything yet"
+          text="Ask for something you need, and sellers can list it for you."
+          :action="{ label: 'Ask for something', to: { name: 'create-request' } }"
+        />
       </template>
 
       <template v-else>
@@ -116,10 +120,13 @@
             </StickyNote>
           </li>
         </ul>
-        <div v-else class="empty-board">
-          <p>You haven't listed anything.</p>
-          <router-link :to="{ name: 'create-listing' }" class="btn btn-primary">Sell something</router-link>
-        </div>
+        <EmptyState
+          v-else
+          emoji="📦"
+          title="Nothing listed"
+          text="Things you sell show up here, with who asked to book them."
+          :action="{ label: 'Sell something', to: { name: 'create-listing' } }"
+        />
 
         <h2 class="section-title">Your requests</h2>
         <ul v-if="myRequests.length > 0" class="note-board" aria-label="Your requests">
@@ -149,10 +156,13 @@
             </StickyNote>
           </li>
         </ul>
-        <div v-else class="empty-board">
-          <p>You haven't asked for anything.</p>
-          <router-link :to="{ name: 'create-request' }" class="btn btn-primary">Ask for something</router-link>
-        </div>
+        <EmptyState
+          v-else
+          emoji="🙋"
+          title="No requests"
+          text="Things you ask for show up here, with what sellers list for you."
+          :action="{ label: 'Ask for something', to: { name: 'create-request' } }"
+        />
       </template>
 
       <nav v-if="view !== 'mine' && !loading && totalPages > 1" aria-label="Board pages">
@@ -183,6 +193,7 @@ import { useAuthStore } from '@/stores/auth'
 import config from '@/config'
 import StickyNote from '@/components/StickyNote.vue'
 import NearbyBanner from '@/components/NearbyBanner.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { hasDistances } from '@/utils/distance'
 import { useViewerLocation, nearParam } from '@/composables/useViewerLocation'
 import { expiryLabel, noteMeta } from '@/utils/gigNote'

@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory, type RouteLocationRaw } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocationRaw, type RouteLocationNormalizedLoaded } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { setPageTitle } from '@/utils/pageTitle'
 import { reloadOnStaleBuild, clearStaleBuildReload } from '@/utils/staleBuild'
@@ -12,7 +12,7 @@ declare module 'vue-router' {
     // goes when there's no page to go back to (a shared link)
     back?: RouteLocationRaw
     // The page's title, shown in the header (pages without one keep their own)
-    heading?: string
+    heading?: string | ((route: RouteLocationNormalizedLoaded) => string)
     // Forms with a button pinned to the bottom, where the chat button would cover it
     hideChatButton?: boolean
   }
@@ -94,13 +94,13 @@ const router = createRouter({
       path: '/reviews/:userId(\\d+)',
       name: 'user-network',
       component: () => import('@/views/reviews/ReviewsView.vue'),
-      meta: { title: 'Network', requiresAuth: true, back: { name: 'reviews' } }
+      meta: { title: 'Network', heading: 'Network', requiresAuth: true, back: { name: 'reviews' } }
     },
     {
       path: '/reviews',
       name: 'reviews',
       component: () => import('@/views/reviews/ReviewsView.vue'),
-      meta: { title: 'Network', requiresAuth: true }
+      meta: { title: 'Network', heading: 'Network', requiresAuth: true }
     },
     {
       // Reviews are left in the gig's conversation now; old links go to the gig
@@ -117,7 +117,11 @@ const router = createRouter({
       path: '/my-gigs/:tab(created|assigned|applications)',
       name: 'my-gigs',
       component: () => import('@/views/tasks/MyGigsView.vue'),
-      meta: { title: 'My Gigs', requiresAuth: true }
+      meta: {
+        title: 'My Gigs',
+        heading: (route) => ({ created: 'My stuff', assigned: 'Assignments', applications: 'Applications' })[route.params.tab as string] ?? 'My stuff',
+        requiresAuth: true
+      }
     },
     {
       path: '/store',

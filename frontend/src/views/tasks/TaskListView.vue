@@ -30,11 +30,13 @@
           </li>
         </ul>
 
-        <div v-else class="empty-board">
-          <h2>No gigs on the board</h2>
-          <p>Be the first to ask for a hand.</p>
-          <router-link :to="{ name: 'create-task' }" class="btn btn-primary">Post a gig</router-link>
-        </div>
+        <EmptyState
+          v-else
+          emoji="🛠"
+          title="No gigs on the board"
+          text="Be the first to ask for a hand."
+          :action="{ label: 'Post a gig', to: { name: 'create-task' } }"
+        />
       </template>
 
       <nav v-if="paginatedResult && paginatedResult.total_pages > 1" aria-label="Board pages">
@@ -79,6 +81,7 @@ import { useAuthStore } from '@/stores/auth'
 import config from '@/config'
 import StickyNote from '@/components/StickyNote.vue'
 import NearbyBanner from '@/components/NearbyBanner.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { hasDistances } from '@/utils/distance'
 import { useViewerLocation, nearParam } from '@/composables/useViewerLocation'
 import { noteMeta } from '@/utils/gigNote'

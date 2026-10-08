@@ -1,16 +1,20 @@
 <template>
-  <div class="container py-4">
-    <section class="network-card" aria-labelledby="network-title">
+  <div class="network-page">
+    <section class="network-card" :aria-label="isMine ? 'Your network' : `${nameOf(centreId)}'s network`">
       <div class="network-header">
-        <h1 id="network-title" class="network-title">{{ isMine ? 'Explore network' : `${nameOf(centreId)}'s network` }}</h1>
-        <p v-if="isMine" class="network-intro">
-          Everyone you've done a gig or a sale with, the rating you gave each other, and who they've worked with in turn.
-          Tap someone to see what others say about them.
-        </p>
+        <h2 v-if="!isMine" class="network-title">{{ nameOf(centreId) }}'s network</h2>
+        <!-- What this is, on a small taped note -->
+        <StickyNote v-if="isMine" tone="sell" :seed="1" tape fold class="network-intro">
+          <template #header>
+            <p class="network-intro-text">
+              Everyone you've done a gig or a sale with, and the rating you gave each other.
+              <strong>Tap someone</strong> to see what others say.
+            </p>
+          </template>
+        </StickyNote>
         <p v-if="branches.length" class="network-summary">
           {{ peopleCount }} {{ peopleCount === 1 ? 'person' : 'people' }} in {{ isMine ? 'your' : 'their' }} network{{ trimmed ? `. Showing the ${MAX_PEOPLE} most recent.` : '' }}
         </p>
-        <router-link v-if="!isMine" :to="{ name: 'reviews' }" class="back-to-mine">Back to your network</router-link>
       </div>
 
       <p v-if="loading" class="network-note">Loading...</p>
@@ -164,6 +168,7 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useReviewsStore } from '@/stores/reviews'
 import { useUserStore } from '@/stores/user'
+import StickyNote from '@/components/StickyNote.vue'
 import {
   connectionsFrom, recentNetwork, layoutNetwork, networkSize, tierOf, MAX_PEOPLE, formatRating, WIDTH, HEIGHT, EDGE_RADIUS, CENTRE_RADIUS,
   type Branch, type PlacedConnection, type Via, type Tier
@@ -327,11 +332,10 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.network-card {
-  padding: 1rem;
-  border: 1px solid var(--color-border, #e5e7eb);
-  border-radius: 0.75rem;
-  background: #fff;
+.network-page {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 6px 22px 1.5rem;
 }
 
 .network-header {
@@ -340,30 +344,36 @@ onBeforeUnmount(() => {
 
 .network-title {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 17px;
   font-weight: 600;
 }
 
-.network-intro {
-  margin: 0.375rem 0 0;
-  font-size: 0.95rem;
-  color: #374151;
+/* Doubled to win over StickyNote's own size */
+.network-intro.network-intro {
+  margin-bottom: 12px;
+  padding: 16px 18px;
+  transform: rotate(-0.5deg);
+}
+
+.network-intro-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-body);
+}
+
+.network-intro-text strong {
+  font-weight: 600;
+  color: var(--text);
 }
 
 .network-summary,
 .network-note {
   margin: 0.25rem 0 0;
-  font-size: 0.9rem;
-  color: var(--color-text-light, #6b7280);
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
-.back-to-mine {
-  display: inline-block;
-  margin-top: 0.25rem;
-  color: var(--color-primary);
-  font-weight: 600;
-  font-size: 0.875rem;
-}
 
 .network-stage {
   position: relative;
@@ -377,9 +387,9 @@ onBeforeUnmount(() => {
 }
 
 /* Tiers: strong, fair and weak links (lines, outlines, pills, legend) */
-.strong { --tier: #15803d; --tier-soft: #dcfce7; --tier-text: #14532d; }
-.fair { --tier: #b7791f; --tier-soft: #fef3c7; --tier-text: #78350f; }
-.weak { --tier: #c0392b; --tier-soft: #fee2e2; --tier-text: #7f1d1d; }
+.strong { --tier: #3E7F46; --tier-soft: #E8F6EA; --tier-text: #2B5E32; }
+.fair { --tier: #B07A2C; --tier-soft: #FFF4D6; --tier-text: #713F12; }
+.weak { --tier: #B9402F; --tier-soft: #FDE8E4; --tier-text: #7A1F12; }
 
 /* Bands: darkest nearest the centre, as on the home radar; the white
    edges are the lines people sit on */
@@ -388,9 +398,9 @@ onBeforeUnmount(() => {
   stroke-width: 0.6;
 }
 
-.band-0 { fill: #d5ddfe; }
-.band-1 { fill: #e2e8ff; }
-.band-2 { fill: #f3f5ff; }
+.band-0 { fill: #FFE7E0; }
+.band-1 { fill: #FFF1EC; }
+.band-2 { fill: #FFF8F5; }
 
 .link {
   stroke: var(--tier);
@@ -421,13 +431,15 @@ onBeforeUnmount(() => {
 }
 
 .you-dot {
-  fill: var(--color-primary);
+  fill: var(--accent);
+  stroke: #fff;
+  stroke-width: 0.8;
 }
 
 .you-label {
   font-size: 3px;
   font-weight: 700;
-  fill: #fff;
+  fill: var(--on-accent);
 }
 
 .node {

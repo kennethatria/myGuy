@@ -97,25 +97,6 @@
   font-weight: 700;
 }
 
-.empty-board {
-  padding: 3rem 1rem;
-  border: 1.5px dashed var(--border);
-  border-radius: 12px;
-  text-align: center;
-  color: var(--text-muted);
-}
-
-.empty-board h2 {
-  margin: 0 0 0.25rem;
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.empty-board p {
-  margin: 0 0 0.75rem;
-}
-
 .board-status {
   padding: 2rem 0;
   text-align: center;

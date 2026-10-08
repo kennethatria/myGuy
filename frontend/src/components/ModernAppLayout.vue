@@ -20,7 +20,7 @@
           <path d="M4 7h16M4 12h16M4 17h16" />
         </svg>
       </button>
-      <h1 v-if="route.meta.heading" class="bar-title">{{ route.meta.heading }}</h1>
+      <h1 v-if="heading" class="bar-title">{{ heading }}</h1>
       <span v-else class="bar-spacer"></span>
       <router-link v-if="postTarget" :to="postTarget" class="post-link">+ Post</router-link>
     </header>
@@ -132,6 +132,10 @@ const ratingLabel = computed(() => {
 })
 
 const backTarget = computed(() => route.meta.back)
+const heading = computed(() => {
+  const value = route.meta.heading
+  return typeof value === 'function' ? value(route) : value
+})
 
 // Back to where the user came from; a shared link has nowhere to go back
 // to, so it goes to the page's parent list instead
