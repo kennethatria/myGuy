@@ -69,9 +69,14 @@ func (r *storeItemRepository) filtered(filter models.StoreItemFilter) *gorm.DB {
 	if filter.Status != "" {
 		query = query.Where("status = ?", filter.Status)
 	} else {
-		// By default the board: items still for sale, and reserved ones (shown
-		// as reserved, no longer bookable)
-		query = query.Where("status IN ?", []string{"active", "reserved"})
+		// By default the board: items still for sale. A reserved item can't
+		// be booked, so only its seller and buyer see it (releasing the
+		// reservation puts it back for a fresh 24 hours)
+		query = query.Where("status = ?", "active")
+	}
+
+	if !filter.LiveAt.IsZero() {
+		query = query.Where("deadline > ?", filter.LiveAt)
 	}
 
 	if filter.SellerID > 0 {
@@ -215,12 +220,14 @@ func (r *storeItemRepository) MarkAsSold(id uint, buyerID uint) error {
 
 // ExpireUnanswered takes listings whose deadline passed before anyone bid
 // or asked to book off the board, in one statement, returning how many
-// changed. A listing with a reaction stays up so the seller can deal.
+// changed. A listing with a live reaction stays active so the seller can
+// still deal in chat (the board hides it after its deadline anyway); a
+// released or declined booking is no longer one.
 func (r *storeItemRepository) ExpireUnanswered(now time.Time) (int64, error) {
 	res := r.db.Model(&models.StoreItem{}).
 		Where("status = ? AND deadline < ?", "active", now).
 		Where("NOT EXISTS (SELECT 1 FROM bids WHERE bids.item_id = store_items.id AND bids.deleted_at IS NULL)").
-		Where("NOT EXISTS (SELECT 1 FROM booking_requests WHERE booking_requests.item_id = store_items.id AND booking_requests.deleted_at IS NULL AND booking_requests.status <> 'released')").
+		Where("NOT EXISTS (SELECT 1 FROM booking_requests WHERE booking_requests.item_id = store_items.id AND booking_requests.deleted_at IS NULL AND booking_requests.status NOT IN ('released', 'rejected'))").
 		Update("status", "expired")
 	return res.RowsAffected, res.Error
 }

@@ -226,6 +226,9 @@ func (h *StoreHandler) GetItems(c *gin.Context) {
 		PriceType: c.Query("price_type"),
 		Condition: c.Query("condition"),
 		Status:    c.Query("status"),
+		// The board: a listing past its 24 hours leaves it even while a
+		// booking waits for the seller's answer in chat
+		LiveAt:    time.Now().UTC(),
 		SortBy:    c.Query("sort_by"),
 		SortOrder: c.Query("sort_order"),
 		Page:      1,

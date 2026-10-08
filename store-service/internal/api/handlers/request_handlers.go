@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"store-service/internal/models"
 	"store-service/internal/services"
@@ -48,6 +49,9 @@ func (h *RequestHandler) CreateRequest(c *gin.Context) {
 func (h *RequestHandler) GetRequests(c *gin.Context) {
 	filter := models.ItemRequestFilter{
 		Search:    c.Query("search"),
+		// The board: a request past its 24 hours leaves it even while a
+		// listing made for it waits
+		LiveAt:    time.Now().UTC(),
 		SortBy:    c.Query("sort_by"),
 		SortOrder: c.Query("sort_order"),
 		Page:      1,

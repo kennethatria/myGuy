@@ -80,6 +80,22 @@ func TestItemRequestRepository(t *testing.T) {
 		assert.Equal(t, "expired", got.Status)
 	})
 
+	t.Run("the board hides a request past its deadline", func(t *testing.T) {
+		// printer is still active (a listing answered it) but its 24 hours are up
+		board, _, err := repo.GetAll(models.ItemRequestFilter{LiveAt: time.Now()})
+		require.NoError(t, err)
+		for _, request := range board {
+			assert.NotEqual(t, printer.ID, request.ID)
+		}
+		all, _, err := repo.GetAll(models.ItemRequestFilter{})
+		require.NoError(t, err)
+		found := false
+		for _, request := range all {
+			found = found || request.ID == printer.ID
+		}
+		assert.True(t, found)
+	})
+
 	t.Run("mark fulfilled only once", func(t *testing.T) {
 		closed, err := repo.MarkFulfilled(printer.ID, 7)
 		require.NoError(t, err)

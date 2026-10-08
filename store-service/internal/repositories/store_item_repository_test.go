@@ -680,6 +680,7 @@ func TestStoreItemRepository_ExpireUnanswered(t *testing.T) {
 		"bid on":     {Title: "Bike", SellerID: 1, PriceType: "bidding", Deadline: &past, Status: "active"},
 		"booked":     {Title: "Desk", SellerID: 1, PriceType: "fixed", Deadline: &past, Status: "active"},
 		"released":   {Title: "Chair", SellerID: 1, PriceType: "fixed", Deadline: &past, Status: "active"},
+		"declined":   {Title: "Shelf", SellerID: 1, PriceType: "fixed", Deadline: &past, Status: "active"},
 		"still live": {Title: "Sofa", SellerID: 1, PriceType: "fixed", Deadline: &future, Status: "active"},
 		"sold":       {Title: "Fan", SellerID: 1, PriceType: "fixed", Deadline: &past, Status: "sold"},
 	}
@@ -690,12 +691,14 @@ func TestStoreItemRepository_ExpireUnanswered(t *testing.T) {
 	assert.NoError(t, db.Create(&models.BookingRequest{ItemID: items["booked"].ID, RequesterID: 2, Status: "pending"}).Error)
 	// A released booking no longer holds the item up
 	assert.NoError(t, db.Create(&models.BookingRequest{ItemID: items["released"].ID, RequesterID: 2, Status: "released"}).Error)
+	// Nor does a declined one
+	assert.NoError(t, db.Create(&models.BookingRequest{ItemID: items["declined"].ID, RequesterID: 3, Status: "rejected"}).Error)
 
 	n, err := repo.ExpireUnanswered(time.Now())
 
 	assert.NoError(t, err)
-	assert.Equal(t, int64(2), n)
-	want := map[string]string{"unanswered": "expired", "bid on": "active", "booked": "active", "released": "expired", "still live": "active", "sold": "sold"}
+	assert.Equal(t, int64(3), n)
+	want := map[string]string{"unanswered": "expired", "bid on": "active", "booked": "active", "released": "expired", "declined": "expired", "still live": "active", "sold": "sold"}
 	for name, item := range items {
 		var got models.StoreItem
 		assert.NoError(t, db.First(&got, item.ID).Error)
@@ -758,7 +761,7 @@ func TestStoreItemRepository_GetAll_BoardFilters(t *testing.T) {
 	}
 }
 
-func TestGetAllShowsReservedItemsOnTheBoard(t *testing.T) {
+func TestGetAllShowsOnlyItemsForSaleOnTheBoard(t *testing.T) {
 	db, err := setupTestDB()
 	if err != nil {
 		t.Fatal(err)
@@ -777,5 +780,33 @@ func TestGetAllShowsReservedItemsOnTheBoard(t *testing.T) {
 	for _, item := range items {
 		titles = append(titles, item.Title)
 	}
-	assert.ElementsMatch(t, []string{"active", "reserved"}, titles)
+	assert.ElementsMatch(t, []string{"active"}, titles)
+}
+
+func TestGetAllLiveAtHidesListingsPastTheirDeadline(t *testing.T) {
+	db, err := setupTestDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := NewStoreItemRepository(db)
+	now := time.Now()
+	past, future := now.Add(-time.Hour), now.Add(time.Hour)
+	// Past its deadline but kept active by a booking the seller hasn't answered
+	assert.NoError(t, db.Create(&models.StoreItem{Title: "Waiting", SellerID: 1, Status: "active", Deadline: &past}).Error)
+	assert.NoError(t, db.Create(&models.StoreItem{Title: "Live", SellerID: 1, Status: "active", Deadline: &future}).Error)
+
+	board, total, err := repo.GetAll(models.StoreItemFilter{LiveAt: now, Page: 1, PerPage: 10})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	if assert.Len(t, board, 1) {
+		assert.Equal(t, "Live", board[0].Title)
+	}
+	ids, err := repo.ListIDs(models.StoreItemFilter{LiveAt: now})
+	assert.NoError(t, err)
+	assert.Len(t, ids, 1)
+
+	// Without LiveAt (a request's own listings) both still show
+	all, _, err := repo.GetAll(models.StoreItemFilter{Page: 1, PerPage: 10})
+	assert.NoError(t, err)
+	assert.Len(t, all, 2)
 }

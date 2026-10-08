@@ -596,7 +596,10 @@ func TestGetItems(t *testing.T) {
 			{ID: 2, Title: "Item 2", SellerID: 2, Status: "active"},
 		}
 
-		mockService.On("GetItems", mock.AnythingOfType("models.StoreItemFilter")).Return(items, int64(2), nil)
+		// The board shows only listings within their 24 hours
+		mockService.On("GetItems", mock.MatchedBy(func(f models.StoreItemFilter) bool {
+			return time.Since(f.LiveAt) < time.Minute
+		})).Return(items, int64(2), nil)
 
 		w := httptest.NewRecorder()
 		httpReq, _ := http.NewRequest("GET", "/api/v1/items", nil)

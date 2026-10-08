@@ -129,3 +129,25 @@ func TestTaskListingSortsAndIgnoresUnknownFilters(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(3), n)
 }
+
+func TestTaskListingDeadlineAfterHidesGigsPastTheirDeadline(t *testing.T) {
+	db, err := setupTestDB()
+	assert.NoError(t, err)
+	repo := NewGormTaskRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	// Past its 24 hours but kept open by an application nobody answered
+	db.Create(&models.Task{Title: "waiting", CreatedBy: 1, Status: "open", Deadline: now.Add(-time.Hour)})
+	db.Create(&models.Task{Title: "live", CreatedBy: 1, Status: "open", Deadline: now.Add(time.Hour)})
+
+	filters := map[string]interface{}{"status": "open", "deadline_after": now, "page": 1, "per_page": 10}
+	tasks, err := repo.ListWithPagination(ctx, filters)
+	assert.NoError(t, err)
+	if assert.Len(t, tasks, 1) {
+		assert.Equal(t, "live", tasks[0].Title)
+	}
+	n, err := repo.Count(ctx, filters)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), n)
+}
