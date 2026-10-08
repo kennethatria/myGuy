@@ -2,7 +2,7 @@
   <div class="chat-widget-container">
     <!-- Widget Button -->
     <button
-      v-if="!chatStore.widgetOpen"
+      v-if="!chatStore.widgetOpen && !route.meta.hideChatButton"
       class="chat-widget-button"
       @click="toggleWidget"
       :aria-label="chatStore.totalUnreadCount > 0 ? `Open messages, ${chatStore.totalUnreadCount} unread` : 'Open messages'"
@@ -97,6 +97,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { useChatStore, conversationKey } from '@/stores/chat';
 import { useReviewsStore } from '@/stores/reviews';
 import { statusLabel, statusIcon, timeAgo } from '@/utils/conversationStatus';
@@ -106,6 +107,7 @@ import MessageThread from './MessageThread.vue';
 import DeletionWarningBanner from '@/components/shared/DeletionWarningBanner.vue';
 
 const chatStore = useChatStore();
+const route = useRoute();
 const reviewsStore = useReviewsStore();
 
 function isEnded(conversation: ConversationSummary): boolean {

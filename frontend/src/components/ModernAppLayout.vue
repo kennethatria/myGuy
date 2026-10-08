@@ -72,7 +72,7 @@
       </div>
     </aside>
 
-    <main class="main-content">
+    <main :class="['main-content', { 'has-chat-button': !route.meta.hideChatButton }]">
       <router-view />
     </main>
   </div>
@@ -140,9 +140,9 @@ const goBack = () => {
   else if (backTarget.value) router.push(backTarget.value)
 }
 
-// "+ Post" posts what the page is about; hidden while posting
+// "+ Post" posts what the page is about; hidden while posting or editing
 const postTarget = computed<RouteLocationRaw | null>(() => {
-  if (['create-task', 'create-listing', 'create-request'].includes(route.name as string)) return null
+  if (['create-task', 'create-listing', 'create-request', 'posted', 'edit-post'].includes(route.name as string)) return null
   if (route.name === 'store' || route.name === 'store-item') {
     return route.query.tab === 'wanted' ? { name: 'create-request' } : { name: 'create-listing' }
   }
@@ -459,7 +459,10 @@ onMounted(async () => {
   flex: 1;
   overflow-y: auto;
   background-color: var(--bg);
-  /* Room to scroll the last buttons above the floating chat button */
+}
+
+/* Room to scroll the last buttons above the floating chat button */
+.main-content.has-chat-button {
   padding-bottom: 5.5rem;
 }
 </style>

@@ -13,6 +13,8 @@ declare module 'vue-router' {
     back?: RouteLocationRaw
     // The page's title, shown in the header (pages without one keep their own)
     heading?: string
+    // Forms with a button pinned to the bottom, where the chat button would cover it
+    hideChatButton?: boolean
   }
 }
 
@@ -53,7 +55,21 @@ const router = createRouter({
       path: '/tasks/create',
       name: 'create-task',
       component: () => import('@/views/tasks/CreateTaskView.vue'),
-      meta: { title: 'Post a Gig', requiresAuth: true, back: { name: 'tasks' } }
+      meta: { title: 'Post a Gig', heading: 'New post', hideChatButton: true, requiresAuth: true, back: { name: 'tasks' } }
+    },
+    {
+      // Straight after posting: the note, with Edit and Remove
+      path: '/posted/:kind(task|item|request)/:id(\\d+)',
+      name: 'posted',
+      component: () => import('@/views/PostedView.vue'),
+      meta: { title: 'Posted', heading: 'Your post', hideChatButton: true, requiresAuth: true }
+    },
+    {
+      // Change a gig's or listing's headline and note (requests can't be edited)
+      path: '/edit/:kind(task|item)/:id(\\d+)',
+      name: 'edit-post',
+      component: () => import('@/views/EditPostView.vue'),
+      meta: { title: 'Edit post', heading: 'Edit post', hideChatButton: true, requiresAuth: true, back: { name: 'my-gigs', params: { tab: 'created' } } }
     },
     {
       path: '/tasks/:id',
@@ -113,13 +129,13 @@ const router = createRouter({
       path: '/store/new',
       name: 'create-listing',
       component: () => import('@/views/store/CreateListingView.vue'),
-      meta: { title: 'Post Item', requiresAuth: true, back: { name: 'store' } }
+      meta: { title: 'Post Item', heading: 'New post', hideChatButton: true, requiresAuth: true, back: { name: 'store' } }
     },
     {
       path: '/store/requests/new',
       name: 'create-request',
       component: () => import('@/views/store/CreateRequestView.vue'),
-      meta: { title: 'Post Request', requiresAuth: true, back: { name: 'store', query: { tab: 'wanted' } } }
+      meta: { title: 'Post Request', heading: 'New post', hideChatButton: true, requiresAuth: true, back: { name: 'store', query: { tab: 'wanted' } } }
     },
     {
       path: '/store/requests/:id',
