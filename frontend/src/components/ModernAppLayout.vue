@@ -1,81 +1,84 @@
 <template>
   <div class="app-layout">
-    <!-- Sidebar -->
-    <!-- Phones: the sidebar is a drawer over the page; tapping outside closes it -->
-    <div v-if="isMobileMenuOpen" class="sidebar-backdrop" @click="isMobileMenuOpen = false"></div>
+    <header class="top-bar">
+      <!-- Detail pages go back; every other page opens the menu -->
+      <button v-if="backTarget" class="bar-button" aria-label="Back" @click="goBack">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 5l-7 7 7 7" />
+        </svg>
+      </button>
+      <button
+        v-else
+        ref="menuButton"
+        class="bar-button"
+        aria-label="Menu"
+        aria-controls="app-drawer"
+        :aria-expanded="isDrawerOpen"
+        @click="openDrawer"
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      </button>
+      <span class="bar-spacer"></span>
+      <router-link v-if="postTarget" :to="postTarget" class="post-link">+ Post</router-link>
+    </header>
 
-    <aside class="sidebar" :class="{ 'collapsed': isSidebarCollapsed, 'mobile-open': isMobileMenuOpen }">
-      <div class="sidebar-header">
+    <!-- The menu slides over the page on every screen size -->
+    <div v-if="isDrawerOpen" class="drawer-backdrop" @click="closeDrawer"></div>
+    <aside
+      id="app-drawer"
+      class="drawer"
+      :class="{ open: isDrawerOpen }"
+      aria-label="Menu"
+      @keydown.esc="closeDrawer"
+    >
+      <div class="drawer-header">
         <router-link :to="{ name: 'dashboard' }" class="logo-link">
-          <img class="logo-icon" src="../assets/myguy-icon.svg" alt="MyGuy" />
-          <span v-if="!isSidebarCollapsed" class="logo-text">MyGuy</span>
+          <span class="logo-mark" aria-hidden="true">M</span>
+          <span class="logo-text">MyGuy</span>
         </router-link>
       </div>
-      
-      <nav class="sidebar-nav">
-        <ul class="nav-list">
-          <li v-for="item in mainNavigation" :key="item.key">
-            <hr v-if="item.divider" class="nav-divider" />
-            <button
-              v-else-if="item.action === 'sign-out'"
-              type="button"
-              class="nav-item nav-button"
-              :title="item.text"
-              @click="handleSignOut"
-            >
-              <span class="nav-icon" v-html="item.icon"></span>
-              <span v-if="!isSidebarCollapsed" class="nav-text">{{ item.text }}</span>
-            </button>
-            <router-link
-              v-else
-              :to="item.to!"
-              class="nav-item"
-              :class="{ 'active': isActiveRoute(item) }"
-              :title="item.text"
-            >
-              <span class="nav-icon" v-html="item.icon"></span>
-              <span v-if="!isSidebarCollapsed" class="nav-text">{{ item.text }}</span>
-              <span v-if="item.badge && !isSidebarCollapsed" class="nav-badge">{{ item.badge }}</span>
-            </router-link>
-          </li>
-        </ul>
+
+      <nav class="drawer-nav">
+        <section v-for="group in navigation" :key="group.title" class="nav-group">
+          <h2 class="nav-group-title">{{ group.title }}</h2>
+          <ul class="nav-list">
+            <li v-for="item in group.items" :key="item.key">
+              <router-link
+                :to="item.to"
+                class="nav-item"
+                :class="{ active: isActiveRoute(item) }"
+                :aria-current="isActiveRoute(item) ? 'page' : undefined"
+              >
+                <span class="nav-icon" aria-hidden="true" v-html="item.icon"></span>
+                <span class="nav-text">{{ item.text }}</span>
+              </router-link>
+            </li>
+          </ul>
+        </section>
       </nav>
 
-      <div class="sidebar-footer">
-        <router-link :to="{ name: 'profile' }" class="user-section" :title="user?.fullName || 'Profile'">
-          <div class="user-avatar">
-            <span>{{ userInitials }}</span>
-          </div>
-          <div v-if="!isSidebarCollapsed" class="user-info">
-            <div class="user-name">{{ user?.fullName || 'User' }}</div>
-          </div>
+      <div class="drawer-footer">
+        <router-link :to="{ name: 'profile' }" class="user-section">
+          <span class="user-avatar" aria-hidden="true">{{ userInitial }}</span>
+          <span class="user-info">
+            <span class="user-name">{{ displayName }}</span>
+            <span v-if="ratingLabel" class="user-rating">{{ ratingLabel }}</span>
+          </span>
         </router-link>
+        <button type="button" class="sign-out" @click="handleSignOut">Sign out</button>
       </div>
     </aside>
-    
-    <!-- Main Content -->
-    <div class="main-wrapper">
-      <!-- Top Bar -->
-      <header class="top-bar">
-        <button class="sidebar-toggle" aria-label="Toggle navigation" @click="toggleSidebar">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path d="M3 12H21M3 6H21M3 18H21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-        </button>
-        
-        
-      </header>
-      
-      <!-- Page Content -->
-      <main class="main-content has-chat-widget">
-        <router-view />
-      </main>
-    </div>
+
+    <main class="main-content">
+      <router-view />
+    </main>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute, type RouteLocationRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
@@ -83,16 +86,8 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 
-const isSidebarCollapsed = ref(false)
-const isMobileMenuOpen = ref(false)
-
-// Matches the stylesheet's mobile breakpoint
-const mobileQuery = window.matchMedia('(max-width: 768px)')
-const isMobile = ref(mobileQuery.matches)
-const onViewportChange = (e: MediaQueryListEvent) => {
-  isMobile.value = e.matches
-  if (!e.matches) isMobileMenuOpen.value = false
-}
+const isDrawerOpen = ref(false)
+const menuButton = ref<HTMLButtonElement | null>(null)
 
 const user = computed(() => authStore.user)
 
@@ -100,54 +95,75 @@ interface NavItem {
   key: string
   text: string
   icon: string
-  to?: RouteLocationRaw
-  // Highlighted when on this route (and, for My Gigs or the marketplace, this tab)
-  route?: string
+  to: RouteLocationRaw
+  // Highlighted when on this route (and, for My Gigs, this tab)
+  route: string
   tab?: string
-  badge?: number
-  action?: 'sign-out'
-  divider?: boolean
 }
 
-// One list: the pages, then your own gigs, then sign out. Messages open
-// from the floating chat button; your requests are under Marketplace.
-const mainNavigation = computed<NavItem[]>(() => [
-  { key: 'home', route: 'dashboard', to: { name: 'dashboard' }, text: 'Home', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 9L12 2L21 9V20C21 20.5304 20.7893 21.0391 20.4142 21.4142C20.0391 21.7893 19.5304 22 19 22H5C4.46957 22 3.96086 21.7893 3.58579 21.4142C3.21071 21.0391 3 20.5304 3 20V9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
-  { key: 'tasks', route: 'tasks', to: { name: 'tasks' }, text: 'Gigs', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' },
-  { key: 'store', route: 'store', to: { name: 'store' }, text: 'Marketplace', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 9V21H21V9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 9H21L19 3H5L3 9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 3V9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
-  { key: 'reviews', route: 'reviews', to: { name: 'reviews' }, text: 'Network', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><circle cx="4" cy="5" r="2" stroke="currentColor" stroke-width="2"/><circle cx="20" cy="6" r="2" stroke="currentColor" stroke-width="2"/><circle cx="19" cy="19" r="2" stroke="currentColor" stroke-width="2"/><path d="M5.6 6.3L9.7 10M18.3 7.1L14.6 10.4M17.6 17.6L14.2 14.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' },
-  { key: 'mine-divider', text: '', icon: '', divider: true },
-  { key: 'created', route: 'my-gigs', tab: 'created', to: { name: 'my-gigs', params: { tab: 'created' } }, text: 'Created Gigs', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 2V8H20M8 13H16M8 17H16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
-  { key: 'assigned', route: 'my-gigs', tab: 'assigned', to: { name: 'my-gigs', params: { tab: 'assigned' } }, text: 'Assignments', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M16 21V19C16 16.8 14.2 15 12 15H5C2.8 15 1 16.8 1 19V21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="8.5" cy="7" r="4" stroke="currentColor" stroke-width="2"/><path d="M17 11L19 13L23 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
-  { key: 'applications', route: 'my-gigs', tab: 'applications', to: { name: 'my-gigs', params: { tab: 'applications' } }, text: 'Applications', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
-  { key: 'sign-out-divider', text: '', icon: '', divider: true },
-  { key: 'sign-out', text: 'Sign out', action: 'sign-out', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M9 21H5C3.9 21 3 20.1 3 19V5C3 3.9 3.9 3 5 3H9M16 17L21 12L16 7M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' }
-])
+// Messages are not here: they open from the floating chat button. Your
+// requests and listings are under Marketplace → Yours.
+const navigation: { title: string; items: NavItem[] }[] = [
+  {
+    title: 'Browse',
+    items: [
+      { key: 'home', route: 'dashboard', to: { name: 'dashboard' }, text: 'Home', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 9L12 2L21 9V20C21 20.5304 20.7893 21.0391 20.4142 21.4142C20.0391 21.7893 19.5304 22 19 22H5C4.46957 22 3.96086 21.7893 3.58579 21.4142C3.21071 21.0391 3 20.5304 3 20V9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
+      { key: 'tasks', route: 'tasks', to: { name: 'tasks' }, text: 'Gigs', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' },
+      { key: 'store', route: 'store', to: { name: 'store' }, text: 'Marketplace', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 9V21H21V9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 9H21L19 3H5L3 9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 3V9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
+      { key: 'reviews', route: 'reviews', to: { name: 'reviews' }, text: 'Network', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><circle cx="4" cy="5" r="2" stroke="currentColor" stroke-width="2"/><circle cx="20" cy="6" r="2" stroke="currentColor" stroke-width="2"/><circle cx="19" cy="19" r="2" stroke="currentColor" stroke-width="2"/><path d="M5.6 6.3L9.7 10M18.3 7.1L14.6 10.4M17.6 17.6L14.2 14.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' }
+    ]
+  },
+  {
+    title: 'Mine',
+    items: [
+      { key: 'created', route: 'my-gigs', tab: 'created', to: { name: 'my-gigs', params: { tab: 'created' } }, text: 'My stuff', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 2V8H20M8 13H16M8 17H16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
+      { key: 'assigned', route: 'my-gigs', tab: 'assigned', to: { name: 'my-gigs', params: { tab: 'assigned' } }, text: 'Assignments', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M16 21V19C16 16.8 14.2 15 12 15H5C2.8 15 1 16.8 1 19V21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="8.5" cy="7" r="4" stroke="currentColor" stroke-width="2"/><path d="M17 11L19 13L23 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
+      { key: 'applications', route: 'my-gigs', tab: 'applications', to: { name: 'my-gigs', params: { tab: 'applications' } }, text: 'Applications', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' }
+    ]
+  }
+]
 
-const userInitials = computed(() => {
-  if (!user.value?.fullName) return '?'
-  return user.value.fullName
-    .split(' ')
-    .map(n => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2)
+const displayName = computed(() => user.value?.fullName || user.value?.username || 'You')
+const userInitial = computed(() => displayName.value.charAt(0).toUpperCase())
+const ratingLabel = computed(() => {
+  const rating = user.value?.averageRating
+  return rating ? `⭐ ${rating.toFixed(1)}` : ''
 })
 
-// Desktop: collapse to icons. Phones: open or close the drawer (never
-// collapsed there, so labels and the user menu stay visible).
-const toggleSidebar = () => {
-  if (isMobile.value) {
-    isSidebarCollapsed.value = false
-    isMobileMenuOpen.value = !isMobileMenuOpen.value
-  } else {
-    isSidebarCollapsed.value = !isSidebarCollapsed.value
+const backTarget = computed(() => route.meta.back)
+
+// Back to where the user came from; a shared link has nowhere to go back
+// to, so it goes to the page's parent list instead
+const goBack = () => {
+  if (window.history.state?.back) router.back()
+  else if (backTarget.value) router.push(backTarget.value)
+}
+
+// "+ Post" posts what the page is about; hidden while posting
+const postTarget = computed<RouteLocationRaw | null>(() => {
+  if (['create-task', 'create-listing', 'create-request'].includes(route.name as string)) return null
+  if (route.name === 'store' || route.name === 'store-item') {
+    return route.query.tab === 'wanted' ? { name: 'create-request' } : { name: 'create-listing' }
   }
+  if (route.name === 'store-request') return { name: 'create-request' }
+  return { name: 'create-task' }
+})
+
+const openDrawer = async () => {
+  isDrawerOpen.value = true
+  await nextTick()
+  document.querySelector<HTMLElement>('#app-drawer .nav-item')?.focus()
+}
+
+const closeDrawer = () => {
+  if (!isDrawerOpen.value) return
+  isDrawerOpen.value = false
+  menuButton.value?.focus()
 }
 
 // Close the drawer once the user has picked a page
 watch(() => route.fullPath, () => {
-  isMobileMenuOpen.value = false
+  isDrawerOpen.value = false
 })
 
 const handleSignOut = async () => {
@@ -159,17 +175,14 @@ const handleSignOut = async () => {
   }
 }
 
-// My Gigs keeps its tab in the path, the marketplace in the query; the
-// Marketplace item stays unhighlighted on the tab My Requests owns
+// My Gigs keeps its tab in the path; the Marketplace item stays
+// unhighlighted on the tab with your own listings
 const currentTab = computed(() => route.params.tab ?? route.query.tab)
 const isActiveRoute = (item: NavItem) =>
   route.name === item.route &&
   (item.tab ? currentTab.value === item.tab : !(item.key === 'store' && currentTab.value === 'mine'))
 
-onBeforeUnmount(() => mobileQuery.removeEventListener('change', onViewportChange))
-
 onMounted(async () => {
-  mobileQuery.addEventListener('change', onViewportChange)
   if (authStore.token) {
     await authStore.checkAuth()
   }
@@ -179,293 +192,261 @@ onMounted(async () => {
 <style scoped>
 .app-layout {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   height: 100dvh; /* phones: the visible height, excluding browser toolbars */
-  background-color: #f5f5f5;
+  background-color: var(--bg);
 }
 
-/* Sidebar */
-.sidebar {
-  width: 240px;
-  background-color: #ffffff;
-  border-right: 1px solid #e0e0e0;
+/* Header: menu or back, then "+ Post" */
+.top-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 56px;
+  padding: 0 8px;
+  background: var(--bg);
+}
+
+.bar-button {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: #374151;
+  cursor: pointer;
+}
+
+.bar-button:hover {
+  background: rgba(17, 24, 39, 0.05);
+}
+
+.bar-spacer {
+  flex: 1;
+}
+
+.post-link {
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 12px;
+  color: var(--accent-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.post-link:hover {
+  color: var(--color-primary-dark);
+}
+
+/* Drawer */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: rgba(17, 24, 39, 0.4);
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1000;
+  width: 300px;
+  max-width: 85vw;
   display: flex;
   flex-direction: column;
-  transition: width 0.3s ease;
-  position: relative;
+  background: var(--surface);
+  transform: translateX(-100%);
+  visibility: hidden; /* out of the tab order and screen readers when shut */
+  transition: transform 0.25s ease, visibility 0s linear 0.25s;
 }
 
-.sidebar.collapsed {
-  width: 64px;
+.drawer.open {
+  transform: translateX(0);
+  visibility: visible;
+  box-shadow: 0 0 24px rgba(17, 24, 39, 0.2);
+  transition: transform 0.25s ease;
 }
 
-.sidebar-header {
-  padding: 1.5rem 1rem;
-  border-bottom: 1px solid #e0e0e0;
+@media (prefers-reduced-motion: reduce) {
+  .drawer,
+  .drawer.open {
+    transition: none;
+  }
+}
+
+.drawer-header {
+  flex: none;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  border-bottom: 1px solid #EEF0F3;
 }
 
 .logo-link {
   display: flex;
   align-items: center;
-  text-decoration: none;
-  gap: 0.75rem;
+  gap: 10px;
+  color: var(--text);
 }
 
-.logo-icon {
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
+.logo-mark {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .logo-text {
-  font-size: 1.25rem;
+  font-size: 18px;
   font-weight: 700;
-  color: #212529;
-  transition: opacity 0.3s;
 }
 
-.sidebar.collapsed .logo-text {
-  opacity: 0;
-  visibility: hidden;
-}
-
-/* Navigation */
-.sidebar-nav {
+.drawer-nav {
   flex: 1;
-  padding: 1rem 0;
   overflow-y: auto;
+  padding: 12px 12px 0;
+}
+
+.nav-group + .nav-group .nav-group-title {
+  padding-top: 20px;
+}
+
+.nav-group-title {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9CA3AF;
 }
 
 .nav-list {
   list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.nav-divider {
-  margin: 0.5rem 1rem;
-  border: none;
-  border-top: 1px solid #e0e0e0;
-}
-
-.nav-button {
-  width: 100%;
-  border: none;
-  background: none;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .nav-item {
+  height: 44px;
   display: flex;
   align-items: center;
-  padding: 0.75rem 1rem;
-  margin: 0.25rem 0.5rem;
-  text-decoration: none;
-  color: #6c757d;
-  border-radius: 8px;
-  transition: all 0.2s;
-  position: relative;
-  gap: 0.75rem;
+  gap: 12px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: #374151;
+  font-size: 16px;
 }
 
 .nav-item:hover {
-  background-color: #f8f9fa;
-  color: #212529;
+  color: var(--text);
+  background: #F7F7F5;
 }
 
 .nav-item.active {
-  background-color: #eef2ff;
-  color: var(--color-primary);
+  background: #F5F6FF;
+  color: var(--accent-text);
+  font-weight: 600;
 }
 
 .nav-icon {
   display: flex;
+  color: var(--text-muted);
+}
+
+.nav-item.active .nav-icon {
+  color: var(--accent);
+}
+
+.drawer-footer {
+  flex: none;
+  display: flex;
   align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-}
-
-.nav-text {
-  font-size: 0.875rem;
-  font-weight: 500;
-  white-space: nowrap;
-  transition: opacity 0.3s;
-}
-
-.sidebar.collapsed .nav-text {
-  opacity: 0;
-  visibility: hidden;
-}
-
-.nav-badge {
-  margin-left: auto;
-  background-color: #dc3545;
-  color: white;
-  font-size: 0.75rem;
-  padding: 0.125rem 0.5rem;
-  border-radius: 12px;
-  font-weight: 600;
-}
-
-/* User Section */
-.sidebar-footer {
-  border-top: 1px solid #e0e0e0;
-  padding: 1rem;
-  position: relative;
+  gap: 12px;
+  padding: 16px 20px 24px;
+  border-top: 1px solid #EEF0F3;
 }
 
 .user-section {
-  text-decoration: none;
-  color: inherit;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.user-section:hover {
-  background-color: #f8f9fa;
+  gap: 12px;
+  color: var(--text);
 }
 
 .user-avatar {
-  width: 40px;
-  height: 40px;
-  background-color: var(--color-primary);
-  color: white;
-  border-radius: 50%;
+  flex: none;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 22px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 17px;
   font-weight: 600;
-  font-size: 0.875rem;
-  flex-shrink: 0;
 }
 
 .user-info {
-  overflow: hidden;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .user-name {
-  font-size: 0.875rem;
+  font-size: 16px;
   font-weight: 600;
-  color: #212529;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-
-.sidebar.collapsed .user-info {
-  display: none;
+.user-rating {
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
-/* Main Wrapper */
-.main-wrapper {
-  flex: 1;
-  min-width: 0; /* let wide content shrink instead of widening the page */
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* Top Bar */
-.top-bar {
-  height: 64px;
-  background: white;
-  border-bottom: 1px solid #e0e0e0;
-  display: flex;
-  align-items: center;
-  padding: 0 2rem;
-  gap: 2rem;
-}
-
-.sidebar-toggle {
-  background: none;
-  border: none;
-  padding: 0.5rem;
+.sign-out {
+  border: 0;
+  background: transparent;
+  padding: 10px 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
-  color: #6c757d;
-  border-radius: 4px;
-  transition: all 0.2s;
 }
 
-.sidebar-toggle:hover {
-  background-color: #f8f9fa;
-  color: #212529;
+.sign-out:hover {
+  color: var(--text);
 }
 
-
-
-
-
-.user-avatar-small {
-  width: 32px;
-  height: 32px;
-  background-color: var(--color-primary);
-  color: white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 0.75rem;
-  cursor: pointer;
-  transition: opacity 0.2s;
-}
-
-.user-avatar-small:hover {
-  opacity: 0.8;
-}
-
-/* Main Content */
+/* Page */
 .main-content {
   flex: 1;
   overflow-y: auto;
-  background-color: #f5f5f5;
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .sidebar {
-    position: fixed;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    z-index: 1000;
-    transform: translateX(-100%);
-    transition: transform 0.3s ease;
-  }
-  
-  .sidebar.mobile-open {
-    transform: translateX(0);
-    box-shadow: 0 0 24px rgba(0, 0, 0, 0.2);
-  }
-
-  .sidebar-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.4);
-    z-index: 999;
-  }
-  
-  .main-wrapper {
-    margin-left: 0;
-  }
-  
-  .top-bar {
-    padding: 0 1rem;
-  }
-
+  background-color: var(--bg);
   /* Room to scroll the last buttons above the floating chat button */
-  .main-content.has-chat-widget {
-    padding-bottom: 5.5rem;
-  }
+  padding-bottom: 5.5rem;
 }
 </style>

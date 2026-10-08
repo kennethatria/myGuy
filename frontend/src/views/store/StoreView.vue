@@ -465,7 +465,7 @@ onUnmounted(() => {
 }
 
 .board-tab:focus-visible {
-  outline: 3px solid var(--color-primary, #4f46e5);
+  outline: 3px solid var(--color-primary);
   outline-offset: 2px;
 }
 .note-board {

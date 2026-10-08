@@ -1,7 +1,18 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocationRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { setPageTitle } from '@/utils/pageTitle'
 import { reloadOnStaleBuild, clearStaleBuildReload } from '@/utils/staleBuild'
+
+declare module 'vue-router' {
+  interface RouteMeta {
+    title?: string
+    requiresAuth?: boolean
+    requiresGuest?: boolean
+    // Detail pages show a back arrow instead of the menu; this is where it
+    // goes when there's no page to go back to (a shared link)
+    back?: RouteLocationRaw
+  }
+}
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -40,13 +51,13 @@ const router = createRouter({
       path: '/tasks/create',
       name: 'create-task',
       component: () => import('@/views/tasks/CreateTaskView.vue'),
-      meta: { title: 'Post a Gig', requiresAuth: true }
+      meta: { title: 'Post a Gig', requiresAuth: true, back: { name: 'tasks' } }
     },
     {
       path: '/tasks/:id',
       name: 'task-detail',
       component: () => import('@/views/tasks/TaskDetailView.vue'),
-      meta: { title: 'Gig', requiresAuth: true }
+      meta: { title: 'Gig', requiresAuth: true, back: { name: 'tasks' } }
     },
     {
       path: '/profile',
@@ -58,14 +69,14 @@ const router = createRouter({
       path: '/profile/:id',
       name: 'user-profile',
       component: () => import('@/views/profile/UserProfileView.vue'),
-      meta: { title: 'Profile', requiresAuth: true }
+      meta: { title: 'Profile', requiresAuth: true, back: { name: 'dashboard' } }
     },
     {
       // Someone else's network, ratings only
       path: '/reviews/:userId(\\d+)',
       name: 'user-network',
       component: () => import('@/views/reviews/ReviewsView.vue'),
-      meta: { title: 'Network', requiresAuth: true }
+      meta: { title: 'Network', requiresAuth: true, back: { name: 'reviews' } }
     },
     {
       path: '/reviews',
@@ -100,25 +111,25 @@ const router = createRouter({
       path: '/store/new',
       name: 'create-listing',
       component: () => import('@/views/store/CreateListingView.vue'),
-      meta: { title: 'Post Item', requiresAuth: true }
+      meta: { title: 'Post Item', requiresAuth: true, back: { name: 'store' } }
     },
     {
       path: '/store/requests/new',
       name: 'create-request',
       component: () => import('@/views/store/CreateRequestView.vue'),
-      meta: { title: 'Post Request', requiresAuth: true }
+      meta: { title: 'Post Request', requiresAuth: true, back: { name: 'store', query: { tab: 'wanted' } } }
     },
     {
       path: '/store/requests/:id',
       name: 'store-request',
       component: () => import('@/views/store/RequestView.vue'),
-      meta: { title: 'Request', requiresAuth: true }
+      meta: { title: 'Request', requiresAuth: true, back: { name: 'store', query: { tab: 'wanted' } } }
     },
     {
       path: '/store/:id',
       name: 'store-item',
       component: () => import('@/views/store/StoreItemView.vue'),
-      meta: { title: 'Marketplace', requiresAuth: true }
+      meta: { title: 'Marketplace', requiresAuth: true, back: { name: 'store' } }
     },
     {
       // Anything unmatched (old or mistyped links)

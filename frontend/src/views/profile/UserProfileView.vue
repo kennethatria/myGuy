@@ -287,7 +287,7 @@ onMounted(() => {
 .see-network {
   display: inline-block;
   margin-top: 0.75rem;
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-primary);
   font-weight: 600;
   font-size: 0.875rem;
 }

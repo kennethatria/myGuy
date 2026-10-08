@@ -5,13 +5,13 @@
       v-if="!chatStore.widgetOpen"
       class="chat-widget-button"
       @click="toggleWidget"
-      :class="{ 'has-unread': chatStore.totalUnreadCount > 0 }"
-      aria-label="Open messages"
+      :aria-label="chatStore.totalUnreadCount > 0 ? `Open messages, ${chatStore.totalUnreadCount} unread` : 'Open messages'"
     >
-      <i class="fas fa-comments"></i>
-      <span v-if="chatStore.totalUnreadCount > 0" class="unread-badge">
-        {{ chatStore.totalUnreadCount }}
-      </span>
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M3 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H9l-4 3.5V14a2 2 0 0 1-2-2z" />
+        <path d="M19 8h0a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2v2.5L15.5 19H11a2 2 0 0 1-1.7-1h5.7a3 3 0 0 0 3-3z" opacity="0.7" />
+      </svg>
+      <span v-if="chatStore.totalUnreadCount > 0" class="unread-dot"></span>
     </button>
 
     <!-- Expanded Widget -->
@@ -152,65 +152,52 @@ function sendMessage(content: string) {
 <style scoped>
 .chat-widget-container {
   position: fixed;
-  bottom: 2rem;
-  right: 2rem;
-  z-index: 900; /* below modals and the mobile nav drawer */
+  bottom: 20px;
+  right: 16px;
+  z-index: 900; /* below modals and the menu drawer */
 }
 
-/* Widget Button */
+/* Floating chat button */
 .chat-widget-button {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  background: #4F46E5;
-  color: white;
+  width: 56px;
+  height: 56px;
+  border-radius: 28px;
+  background: var(--accent);
+  color: var(--on-accent);
   border: none;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 12px rgba(245, 138, 122, 0.4);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  transition: all 0.2s;
+  transition: transform 0.15s;
 }
 
 .chat-widget-button:hover {
-  background: #4338ca;
   transform: scale(1.05);
 }
 
-.chat-widget-button.has-unread {
-  animation: pulse 2s infinite;
+.chat-widget-button:focus-visible {
+  outline: 3px solid var(--accent-text);
+  outline-offset: 3px;
 }
 
-@keyframes pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.7);
-  }
-  70% {
-    box-shadow: 0 0 0 10px rgba(79, 70, 229, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(79, 70, 229, 0);
+@media (prefers-reduced-motion: reduce) {
+  .chat-widget-button {
+    transition: none;
   }
 }
 
-.chat-widget-button i {
-  font-size: 1.5rem;
-}
-
-.unread-badge {
+.unread-dot {
   position: absolute;
-  top: -5px;
-  right: -5px;
-  background: #ef4444;
-  color: white;
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 0.125rem 0.375rem;
-  border-radius: 9999px;
-  min-width: 1.25rem;
-  text-align: center;
+  top: 2px;
+  right: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--badge-red);
+  border: 2px solid var(--bg);
 }
 
 /* Expanded Widget */
@@ -228,7 +215,7 @@ function sendMessage(content: string) {
 /* Widget Header */
 .widget-header {
   padding: 1rem;
-  background: #4F46E5;
+  background: var(--color-primary);
   color: white;
   display: flex;
   justify-content: space-between;
@@ -324,7 +311,7 @@ function sendMessage(content: string) {
 .status-chip {
   padding: 0 0.4rem;
   border-radius: 999px;
-  background: #eef2ff;
+  background: var(--accent-tint);
   color: #3730a3;
   font-weight: 600;
 }
@@ -374,7 +361,7 @@ function sendMessage(content: string) {
 }
 
 .unread-count {
-  background: #4F46E5;
+  background: var(--color-primary);
   color: white;
   font-size: 0.75rem;
   font-weight: 500;
@@ -428,11 +415,6 @@ function sendMessage(content: string) {
 
 /* Mobile Responsive */
 @media (max-width: 768px) {
-  .chat-widget-container {
-    bottom: 1rem;
-    right: 1rem;
-  }
-  
   .chat-widget-expanded {
     width: calc(100vw - 2rem);
     height: calc(100vh - 8rem);

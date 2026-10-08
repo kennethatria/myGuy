@@ -7,12 +7,6 @@
     </div>
     
     <div v-else-if="item" class="item-details">
-      <div class="item-header">
-        <router-link to="/store" class="back-link">
-          <i class="fas fa-arrow-left"></i> Back to Store
-        </router-link>
-      </div>
-      
       <div class="item-content">
         <div class="item-image-section">
           <div v-if="item.images && item.images.length > 0" class="image-gallery">
@@ -658,23 +652,6 @@ onMounted(() => {
   color: #ef4444;
 }
 
-.item-header {
-  margin-bottom: 2rem;
-}
-
-.back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: #4F46E5;
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.back-link:hover {
-  color: #4338CA;
-}
-
 .item-content {
   background: white;
   border-radius: 0.5rem;
@@ -743,7 +720,7 @@ onMounted(() => {
 }
 
 .thumbnail.active {
-  border-color: #4F46E5;
+  border-color: var(--color-primary);
 }
 
 .thumbnail img {
@@ -788,7 +765,7 @@ onMounted(() => {
   align-items: center;
   min-height: 44px;
   margin: -1rem 0 1.5rem;
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-primary);
   font-weight: 500;
   text-decoration: none;
 }
@@ -866,7 +843,7 @@ onMounted(() => {
 .fixed-price .price {
   font-size: 2rem;
   font-weight: 600;
-  color: #4F46E5;
+  color: var(--color-primary);
   margin-bottom: 1rem;
 }
 
@@ -883,12 +860,12 @@ onMounted(() => {
 }
 
 .btn-primary {
-  background: #4F46E5;
+  background: var(--color-primary);
   color: white;
 }
 
 .btn-primary:hover {
-  background: #4338CA;
+  background: var(--color-primary-dark);
 }
 
 .btn-large {
@@ -963,10 +940,6 @@ onMounted(() => {
 
 /* Phones: thumb-sized targets */
 @media (max-width: 768px) {
-  .back-link {
-    min-height: 44px;
-  }
-
   .message-btn,
   .owner-actions .btn,
   .bid-form input,

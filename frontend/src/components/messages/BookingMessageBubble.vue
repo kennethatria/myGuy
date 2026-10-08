@@ -122,7 +122,7 @@ onUnmounted(resetProcessing);
 /* The buyer's own note on the booking */
 .event-quote {
   margin: 0.25rem 0 0;
-  color: #4338ca;
+  color: var(--color-primary-dark);
   font-style: italic;
   overflow-wrap: anywhere;
 }
@@ -132,7 +132,7 @@ onUnmounted(resetProcessing);
   margin-top: 0.375rem;
   padding: 0 0.5rem;
   border-radius: 999px;
-  background: #e0e7ff;
+  background: var(--accent-tint);
   font-size: 0.75rem;
   font-weight: 600;
 }

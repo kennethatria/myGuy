@@ -64,7 +64,7 @@ defineEmits<{ request: []; clear: [] }>()
   padding: 0 0.5rem;
   border: none;
   background: none;
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-primary);
   font-weight: 500;
   text-decoration: underline;
   cursor: pointer;

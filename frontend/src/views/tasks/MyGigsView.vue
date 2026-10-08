@@ -402,7 +402,7 @@ onMounted(async () => {
 }
 
 .badge-completed {
-  background: #eef2ff;
+  background: var(--accent-tint);
   color: var(--color-primary);
 }
 

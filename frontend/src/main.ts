@@ -1,3 +1,7 @@
+import '@fontsource/dm-sans/400.css'
+import '@fontsource/dm-sans/500.css'
+import '@fontsource/dm-sans/600.css'
+import '@fontsource/dm-sans/700.css'
 import './assets/base.css'
 import './assets/custom.css'
 import '@fortawesome/fontawesome-free/css/all.min.css'
