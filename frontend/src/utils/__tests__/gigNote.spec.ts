@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { countWords, headlineFits, bodyFits, noteColor, noteTilt, expiryLabel, timeLeft } from '../gigNote'
+import { countWords, headlineFits, bodyFits, noteColor, noteTilt, expiryLabel, timeLeft, noteMeta } from '../gigNote'
 
 describe('gigNote', () => {
   it('counts words like the backend', () => {
@@ -38,5 +38,14 @@ describe('gigNote', () => {
     expect(timeLeft('2026-10-05T10:20:00Z', now)).toBe('20m')
     expect(timeLeft('2026-10-05T09:59:00Z', now)).toBe('')
     expect(timeLeft('not a date', now)).toBe('')
+  })
+
+  it('writes a note footer from what is known', () => {
+    const now = new Date('2026-10-05T10:00:00Z')
+    const deadline = '2026-10-06T09:30:00Z'
+    expect(noteMeta({ distance: '~2 km', deadline }, 'ann', true, now)).toBe('~2 km · @ann · 23h')
+    expect(noteMeta({ deadline }, 'ann', true, now)).toBe('No location · @ann · 23h')
+    expect(noteMeta({ deadline }, 'ann', false, now)).toBe('@ann · 23h')
+    expect(noteMeta({ distance: '<1 km', deadline: '2026-10-05T09:00:00Z' }, '', false, now)).toBe('<1 km')
   })
 })

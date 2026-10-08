@@ -51,3 +51,19 @@ export function timeLeft(deadline: string, now: Date = new Date()): string {
   const minutes = Math.ceil(ms / 60000)
   return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h`
 }
+
+/**
+ * A note's footer line: "~2 km · @ann · 23h". The distance shows as
+ * "No location" only where distances are in play (see hasDistances), and
+ * the time only while the note is live.
+ */
+export function noteMeta(
+  note: { distance?: string; deadline?: string },
+  who: string,
+  showUnknown: boolean,
+  now: Date = new Date()
+): string {
+  const distance = note.distance || (showUnknown ? 'No location' : '')
+  const left = note.deadline ? timeLeft(note.deadline, now) : ''
+  return [distance, who && `@${who}`, left].filter(Boolean).join(' · ')
+}

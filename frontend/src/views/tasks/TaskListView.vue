@@ -1,87 +1,75 @@
 <template>
-  <div class="container py-4">
-    <div class="board-header">
-      <div>
-        <h1 class="text-2xl font-semibold">Gig Board</h1>
-        <p class="text-muted mt-1">Short notes from people who need a hand. Each stays up for 24 hours.</p>
+  <div class="board">
+    <div class="board-content">
+      <NearbyBanner :state="viewer.state.value" @request="viewer.request" />
+
+      <p v-if="loading" class="board-status" role="status">Loading...</p>
+
+      <div v-else-if="error" class="alert-danger" role="alert">
+        {{ error }}
+        <button @click="fetchTasks" class="btn btn-sm btn-outline">Retry</button>
       </div>
-      <router-link :to="{ name: 'create-task' }" class="btn btn-primary">
-        Post a Gig
-      </router-link>
-    </div>
 
-    <NearbyBanner :state="viewer.state.value" @request="viewer.request" />
+      <template v-else-if="paginatedResult">
+        <ul v-if="paginatedResult.tasks.length > 0" class="note-board" aria-label="Open gigs">
+          <li v-for="task in paginatedResult.tasks" :key="task.id">
+            <StickyNote
+              tone="gig"
+              tape
+              :seed="task.id"
+              :to="{ name: 'task-detail', params: { id: task.id } }"
+            >
+              <template #header>
+                <h3 class="note-headline">{{ task.title }}</h3>
+                <p class="note-text">{{ task.description }}</p>
+              </template>
+              <template #footer>
+                <span class="note-meta">{{ noteMeta(task, task.creator?.username || 'someone', showUnknownDistance, now) }}</span>
+              </template>
+            </StickyNote>
+          </li>
+        </ul>
 
-    <div v-if="loading" class="text-center py-5">
-      <div class="spinner-border" role="status">
-        <span class="visually-hidden">Loading...</span>
-      </div>
-    </div>
+        <div v-else class="empty-board">
+          <h2>No gigs on the board</h2>
+          <p>Be the first to ask for a hand.</p>
+          <router-link :to="{ name: 'create-task' }" class="btn btn-primary">Post a gig</router-link>
+        </div>
+      </template>
 
-    <div v-else-if="error" class="alert alert-danger" role="alert">
-      {{ error }}
-      <button @click="fetchTasks" class="btn btn-sm btn-outline ms-3">Retry</button>
-    </div>
-
-    <template v-else-if="paginatedResult">
-      <ul v-if="paginatedResult.tasks.length > 0" class="note-board" aria-label="Open gigs">
-        <li v-for="task in paginatedResult.tasks" :key="task.id">
-          <StickyNote
-            :title="task.title"
-            :body="task.description"
-            :seed="task.id"
-            :to="{ name: 'task-detail', params: { id: task.id } }"
+      <nav v-if="paginatedResult && paginatedResult.total_pages > 1" aria-label="Board pages">
+        <ul class="pagination">
+          <li class="page-item" :class="{ disabled: currentPage === 1 }">
+            <button class="page-link" @click="goToPage(currentPage - 1)" :disabled="currentPage === 1">
+              Previous
+            </button>
+          </li>
+          <li
+            v-for="page in visiblePages"
+            :key="page"
+            class="page-item"
+            :class="{ active: page === currentPage }"
           >
-            <template #footer>
-              <DistanceTag :distance="task.distance" :show-unknown="showUnknownDistance" />
-              <span>@{{ task.creator?.username || 'someone' }}</span>
-              <span v-if="expiryLabel(task.deadline, now)">{{ expiryLabel(task.deadline, now) }}</span>
-            </template>
-          </StickyNote>
-        </li>
-      </ul>
-
-      <div v-else class="empty-board">
-        <h2 class="h5">No notes on the board</h2>
-        <p class="text-muted">
-          Be the first to ask for a hand.
-        </p>
-        <router-link :to="{ name: 'create-task' }" class="btn btn-primary mt-2">Post a Gig</router-link>
-      </div>
-    </template>
-
-    <nav v-if="paginatedResult && paginatedResult.total_pages > 1" class="mt-4" aria-label="Board pages">
-      <ul class="pagination justify-content-center">
-        <li class="page-item" :class="{ disabled: currentPage === 1 }">
-          <button class="page-link" @click="goToPage(currentPage - 1)" :disabled="currentPage === 1">
-            Previous
-          </button>
-        </li>
-        <li
-          v-for="page in visiblePages"
-          :key="page"
-          class="page-item"
-          :class="{ active: page === currentPage }"
-        >
-          <button
-            class="page-link"
-            :aria-current="page === currentPage ? 'page' : undefined"
-            @click="typeof page === 'number' && goToPage(page)"
-          >
-            {{ page }}
-          </button>
-        </li>
-        <li class="page-item" :class="{ disabled: currentPage === paginatedResult.total_pages }">
-          <button
-            class="page-link"
-            @click="goToPage(currentPage + 1)"
-            :disabled="currentPage === paginatedResult.total_pages"
-          >
-            Next
-          </button>
-        </li>
-      </ul>
-    </nav>
+            <button
+              class="page-link"
+              :aria-current="page === currentPage ? 'page' : undefined"
+              @click="typeof page === 'number' && goToPage(page)"
+            >
+              {{ page }}
+            </button>
+          </li>
+          <li class="page-item" :class="{ disabled: currentPage === paginatedResult.total_pages }">
+            <button
+              class="page-link"
+              @click="goToPage(currentPage + 1)"
+              :disabled="currentPage === paginatedResult.total_pages"
+            >
+              Next
+            </button>
+          </li>
+        </ul>
+      </nav>
+    </div>
   </div>
 </template>
 
@@ -91,10 +79,9 @@ import { useAuthStore } from '@/stores/auth'
 import config from '@/config'
 import StickyNote from '@/components/StickyNote.vue'
 import NearbyBanner from '@/components/NearbyBanner.vue'
-import DistanceTag from '@/components/DistanceTag.vue'
 import { hasDistances } from '@/utils/distance'
 import { useViewerLocation, nearParam } from '@/composables/useViewerLocation'
-import { expiryLabel } from '@/utils/gigNote'
+import { noteMeta } from '@/utils/gigNote'
 
 interface Task {
   id: number
@@ -232,89 +219,4 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.board-header {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1.25rem;
-}
-.note-board {
-  list-style: none;
-  margin: 0;
-  padding: 0.5rem 0.25rem;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 1.75rem;
-}
-
-.empty-board {
-  text-align: center;
-  padding: 3rem 1rem;
-  border: 2px dashed var(--color-border, #e5e7eb);
-  border-radius: 8px;
-}
-
-.alert {
-  padding: 0.75rem 1.25rem;
-  border-radius: 0.25rem;
-}
-
-.alert-danger {
-  color: #842029;
-  background-color: #f8d7da;
-  border: 1px solid #f5c2c7;
-}
-
-.text-muted {
-  color: var(--color-text-light, #6b7280);
-}
-
-.pagination {
-  display: flex;
-  justify-content: center;
-  padding-left: 0;
-  list-style: none;
-}
-
-.page-item:not(:first-child) .page-link {
-  margin-left: -1px;
-}
-
-.page-link {
-  display: block;
-  padding: 0.375rem 0.75rem;
-  color: var(--color-primary);
-  background-color: #fff;
-  border: 1px solid #dee2e6;
-}
-
-.page-link:hover {
-  color: var(--color-primary-dark);
-  background-color: #e9ecef;
-}
-
-.page-item.active .page-link {
-  color: #fff;
-  background-color: var(--color-primary);
-  border-color: var(--color-primary);
-}
-
-.page-item.disabled .page-link {
-  color: #6c757d;
-  pointer-events: none;
-}
-
-@media (max-width: 480px) {
-  .note-board {
-    grid-template-columns: 1fr;
-  }
-}
-</style>
+<style scoped src="@/assets/board.css"></style>
