@@ -356,12 +356,13 @@ Both Prometheus (`:9090`) and Grafana (`:3000`) are only reachable from within t
 ssh -N \
   -L 3000:10.0.0.3:3000 \
   -L 9090:10.0.0.3:9090 \
+  -L 3200:10.0.0.3:3200 \
   -L 3100:10.0.0.3:3100 \
   -L 3001:10.0.0.3:3001 \
   ops@<app_public_ip>
 ```
 
-Then open `http://localhost:3000` for Grafana (sign in as `admin` with the `GRAFANA_ADMIN_PASSWORD` secret; traces under **Explore → Tempo**) and `http://localhost:3001` for Umami.
+Then open `http://localhost:3000` for Grafana (sign in as `admin` with the `GRAFANA_ADMIN_PASSWORD` secret; traces under **Explore → Tempo**), `http://localhost:3200` for Tempo's API and `http://localhost:3001` for Umami.
 
 ### Visitor Analytics
 
