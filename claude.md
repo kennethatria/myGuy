@@ -54,6 +54,7 @@ Each service has a `.env.example` to copy. Constraints not visible from any sing
 
 - **`JWT_SECRET`** must be identical across backend, store-service, and chat-websocket-service, or cross-service auth breaks.
 - **`PROXIMITY_REDIS_PASSWORD`** (repository secret) protects the proximity service's own Redis; the deploy refuses to run without it. Locally, `docker-compose.override.yml` sets a dev password.
+- **`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`** (repository secrets) are where Grafana's alerts go; `monitoring.yml` warns, not fails, without them. The contact point reads them from `grafana.env` as `${...}`, so the provisioning file holds no secret.
 - **`GRAFANA_ADMIN_PASSWORD`** (repository secret) is Grafana's admin password; `monitoring.yml` refuses to run without it and resets Grafana to it each full run (Grafana's data is on a volume).
 - **`INTERNAL_API_KEY`** must match between store-service and chat-websocket-service — it's what lets store-service notify chat of new bookings (`POST /internal/booking-created`). Without it, booking requests never appear in Messages.
 - **`SMTP_*`** (backend) sends sign-in codes. If `SMTP_HOST` is unset the backend *logs* codes instead — fine locally, but in production nobody could log in.

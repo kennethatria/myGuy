@@ -49,8 +49,9 @@
         env:
           GF_AUTH_ANONYMOUS_ENABLED: "false"
           GF_SERVER_HTTP_ADDR: "0.0.0.0"
-        # GF_SECURITY_ADMIN_PASSWORD (GRAFANA_ADMIN_PASSWORD secret)
-        env_file: /etc/grafana/admin.env
+        # Admin password and Telegram secrets (repository secrets); the
+        # alerting provisioning reads the Telegram ones as ${...}.
+        env_file: /etc/grafana/grafana.env
       - name: loki
         memory: 320m
         image: docker.io/grafana/loki:2.9.10
@@ -70,6 +71,15 @@
         volumes:
           - umami-db-data:/var/lib/postgresql/data
         env_file: /etc/umami/umami.env
+      # Probes the public site from outside the app server (HTTPS answer,
+      # certificate expiry) for the Site down / certificate alerts.
+      - name: blackbox
+        memory: 64m
+        image: docker.io/prom/blackbox-exporter:v0.25.0
+        ports: ["9115:9115"]
+        volumes:
+          - /etc/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+        exec: --config.file=/etc/blackbox/blackbox.yml
       - name: umami
         memory: 300m
         image: ghcr.io/umami-software/umami:postgresql-latest
@@ -92,6 +102,14 @@
       environment:
         XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
       changed_when: false
+
+    - name: restart blackbox
+      ansible.builtin.command:
+        cmd: podman restart blackbox
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+      changed_when: false
+      failed_when: false   # first run: the container starts later in the play
 
     - name: restart tempo
       ansible.builtin.command:
@@ -250,9 +268,40 @@
                     service: store-service
 
             # Tempo's own counters: spans received shows tracing works.
+            # The public site, probed through blackbox (role: what users see).
+            - job_name: site
+              metrics_path: /probe
+              params:
+                module: [https_ok]
+              static_configs:
+                - targets:
+                    - https://{{ domain }}/
+                    - https://{{ domain }}/health
+              relabel_configs: &blackbox_relabel
+                - source_labels: [__address__]
+                  target_label: __param_target
+                - source_labels: [__param_target]
+                  target_label: instance
+                - target_label: __address__
+                  replacement: host.containers.internal:9115
+
+            # Old domains: answer with a redirect, over a valid certificate.
+            - job_name: redirects
+              metrics_path: /probe
+              params:
+                module: [https_redirect]
+              static_configs:
+                - targets: {{ (hostvars[groups['app'][0]].redirect_domains | default([])) | map('regex_replace', '^(.*)$', 'https://\\1/') | list | to_json }}
+              relabel_configs: *blackbox_relabel
+
             - job_name: tempo
               static_configs:
                 - targets: ['host.containers.internal:3200']
+
+            # Loki's own health, so "Monitoring target down" covers it too.
+            - job_name: loki
+              static_configs:
+                - targets: ['host.containers.internal:3100']
       become: yes
 
     # --- Grafana provisioning files ---
@@ -268,15 +317,24 @@
         - /etc/grafana/dashboards
       become: yes
 
-    - name: Write Grafana admin password
+    - name: Write Grafana secrets
       ansible.builtin.copy:
-        dest: /etc/grafana/admin.env
-        content: "GF_SECURITY_ADMIN_PASSWORD={{ grafana_admin_password }}\n"
+        dest: /etc/grafana/grafana.env
+        content: |
+          GF_SECURITY_ADMIN_PASSWORD={{ grafana_admin_password }}
+          TELEGRAM_BOT_TOKEN={{ telegram_bot_token | default('') }}
+          TELEGRAM_CHAT_ID={{ telegram_chat_id | default('') }}
         owner: myguy
         group: myguy
         mode: "0600"
       no_log: true
       notify: restart grafana
+      become: yes
+
+    - name: Remove the old Grafana admin env file
+      ansible.builtin.file:
+        path: /etc/grafana/admin.env
+        state: absent
       become: yes
 
     - name: Write Grafana Prometheus datasource
@@ -288,6 +346,7 @@
           datasources:
             - name: Prometheus
               type: prometheus
+              uid: prometheus
               access: proxy
               url: http://host.containers.internal:9090
               isDefault: true
@@ -324,6 +383,443 @@
               url: http://host.containers.internal:3200
               isDefault: false
       notify: restart grafana
+      become: yes
+
+    # --- Alerts (sent to Telegram) ---
+
+    - name: Create Grafana alerting provisioning directory
+      ansible.builtin.file:
+        path: /etc/grafana/provisioning/alerting
+        state: directory
+        mode: "0755"
+      become: yes
+
+    - name: Write Grafana alert rules and Telegram contact point
+      # The bot token and chat id come from grafana.env (${...} below), so
+      # no secret is in this file.  Without them the rules still show in
+      # Grafana > Alerting, but nothing reaches Telegram.
+      ansible.builtin.copy:
+        dest: /etc/grafana/provisioning/alerting/alerts.yml
+        mode: "0644"
+        content: !unsafe |
+          {
+            "apiVersion": 1,
+            "contactPoints": [
+              {
+                "orgId": 1,
+                "name": "telegram",
+                "receivers": [
+                  {
+                    "uid": "telegram",
+                    "type": "telegram",
+                    "settings": {
+                      "bottoken": "${TELEGRAM_BOT_TOKEN}",
+                      "chatid": "${TELEGRAM_CHAT_ID}",
+                      "disable_web_page_preview": true
+                    }
+                  }
+                ]
+              }
+            ],
+            "policies": [
+              {
+                "orgId": 1,
+                "receiver": "telegram",
+                "group_by": [
+                  "alertname"
+                ],
+                "group_wait": "30s",
+                "group_interval": "5m",
+                "repeat_interval": "12h"
+              }
+            ],
+            "groups": [
+              {
+                "orgId": 1,
+                "name": "akalimu",
+                "folder": "Alerts",
+                "interval": "1m",
+                "rules": [
+                  {
+                    "uid": "site-down",
+                    "title": "Site down",
+                    "condition": "C",
+                    "for": "3m",
+                    "data": [
+                      {
+                        "refId": "A",
+                        "relativeTimeRange": {
+                          "from": 600,
+                          "to": 0
+                        },
+                        "datasourceUid": "prometheus",
+                        "model": {
+                          "refId": "A",
+                          "expr": "min by (instance) (probe_success{job=~\"site|redirects\"})",
+                          "instant": true
+                        }
+                      },
+                      {
+                        "refId": "C",
+                        "datasourceUid": "__expr__",
+                        "model": {
+                          "refId": "C",
+                          "type": "threshold",
+                          "expression": "A",
+                          "conditions": [
+                            {
+                              "evaluator": {
+                                "type": "lt",
+                                "params": [
+                                  1
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "noDataState": "Alerting",
+                    "execErrState": "Error",
+                    "annotations": {
+                      "summary": "{{ $labels.instance }} is not answering correctly (checked from the monitoring server)."
+                    },
+                    "labels": {
+                      "severity": "critical"
+                    }
+                  },
+                  {
+                    "uid": "cert-expiry",
+                    "title": "Certificate expires soon",
+                    "condition": "C",
+                    "for": "1h",
+                    "data": [
+                      {
+                        "refId": "A",
+                        "relativeTimeRange": {
+                          "from": 600,
+                          "to": 0
+                        },
+                        "datasourceUid": "prometheus",
+                        "model": {
+                          "refId": "A",
+                          "expr": "min by (instance) ((probe_ssl_earliest_cert_expiry{job=~\"site|redirects\"} - time()) / 86400)",
+                          "instant": true
+                        }
+                      },
+                      {
+                        "refId": "C",
+                        "datasourceUid": "__expr__",
+                        "model": {
+                          "refId": "C",
+                          "type": "threshold",
+                          "expression": "A",
+                          "conditions": [
+                            {
+                              "evaluator": {
+                                "type": "lt",
+                                "params": [
+                                  14
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "noDataState": "OK",
+                    "execErrState": "Error",
+                    "annotations": {
+                      "summary": "The certificate for {{ $labels.instance }} expires in {{ humanize $values.A.Value }} days; renewal is failing."
+                    },
+                    "labels": {
+                      "severity": "warning"
+                    }
+                  },
+                  {
+                    "uid": "server-errors",
+                    "title": "Server errors",
+                    "condition": "C",
+                    "for": "0m",
+                    "data": [
+                      {
+                        "refId": "A",
+                        "relativeTimeRange": {
+                          "from": 600,
+                          "to": 0
+                        },
+                        "datasourceUid": "loki",
+                        "model": {
+                          "refId": "A",
+                          "expr": "sum(count_over_time({job=\"nginx_access\"} | json | status >= 500 [10m]))",
+                          "queryType": "instant"
+                        }
+                      },
+                      {
+                        "refId": "C",
+                        "datasourceUid": "__expr__",
+                        "model": {
+                          "refId": "C",
+                          "type": "threshold",
+                          "expression": "A",
+                          "conditions": [
+                            {
+                              "evaluator": {
+                                "type": "gt",
+                                "params": [
+                                  10
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "noDataState": "OK",
+                    "execErrState": "OK",
+                    "annotations": {
+                      "summary": "{{ humanize $values.A.Value }} requests failed with a 5xx in the last 10 minutes. See Service Logs."
+                    },
+                    "labels": {
+                      "severity": "warning"
+                    }
+                  },
+                  {
+                    "uid": "disk-full",
+                    "title": "Disk almost full",
+                    "condition": "C",
+                    "for": "15m",
+                    "data": [
+                      {
+                        "refId": "A",
+                        "relativeTimeRange": {
+                          "from": 600,
+                          "to": 0
+                        },
+                        "datasourceUid": "prometheus",
+                        "model": {
+                          "refId": "A",
+                          "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"})",
+                          "instant": true
+                        }
+                      },
+                      {
+                        "refId": "C",
+                        "datasourceUid": "__expr__",
+                        "model": {
+                          "refId": "C",
+                          "type": "threshold",
+                          "expression": "A",
+                          "conditions": [
+                            {
+                              "evaluator": {
+                                "type": "gt",
+                                "params": [
+                                  85
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "noDataState": "OK",
+                    "execErrState": "Error",
+                    "annotations": {
+                      "summary": "The {{ $labels.instance }} server's disk is {{ humanize $values.A.Value }}% full."
+                    },
+                    "labels": {
+                      "severity": "warning"
+                    }
+                  },
+                  {
+                    "uid": "memory-high",
+                    "title": "Memory almost full",
+                    "condition": "C",
+                    "for": "10m",
+                    "data": [
+                      {
+                        "refId": "A",
+                        "relativeTimeRange": {
+                          "from": 600,
+                          "to": 0
+                        },
+                        "datasourceUid": "prometheus",
+                        "model": {
+                          "refId": "A",
+                          "expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)",
+                          "instant": true
+                        }
+                      },
+                      {
+                        "refId": "C",
+                        "datasourceUid": "__expr__",
+                        "model": {
+                          "refId": "C",
+                          "type": "threshold",
+                          "expression": "A",
+                          "conditions": [
+                            {
+                              "evaluator": {
+                                "type": "gt",
+                                "params": [
+                                  90
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "noDataState": "OK",
+                    "execErrState": "Error",
+                    "annotations": {
+                      "summary": "The {{ $labels.instance }} server's memory is {{ humanize $values.A.Value }}% used; containers may be killed."
+                    },
+                    "labels": {
+                      "severity": "warning"
+                    }
+                  },
+                  {
+                    "uid": "target-down",
+                    "title": "Monitoring target down",
+                    "condition": "C",
+                    "for": "5m",
+                    "data": [
+                      {
+                        "refId": "A",
+                        "relativeTimeRange": {
+                          "from": 600,
+                          "to": 0
+                        },
+                        "datasourceUid": "prometheus",
+                        "model": {
+                          "refId": "A",
+                          "expr": "up",
+                          "instant": true
+                        }
+                      },
+                      {
+                        "refId": "C",
+                        "datasourceUid": "__expr__",
+                        "model": {
+                          "refId": "C",
+                          "type": "threshold",
+                          "expression": "A",
+                          "conditions": [
+                            {
+                              "evaluator": {
+                                "type": "lt",
+                                "params": [
+                                  1
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "noDataState": "OK",
+                    "execErrState": "Error",
+                    "annotations": {
+                      "summary": "Prometheus can't reach {{ $labels.job }} ({{ $labels.instance }}): its dashboard panels are empty."
+                    },
+                    "labels": {
+                      "severity": "warning"
+                    }
+                  },
+                  {
+                    "uid": "falco",
+                    "title": "Falco security alert",
+                    "condition": "C",
+                    "for": "0m",
+                    "data": [
+                      {
+                        "refId": "A",
+                        "relativeTimeRange": {
+                          "from": 600,
+                          "to": 0
+                        },
+                        "datasourceUid": "prometheus",
+                        "model": {
+                          "refId": "A",
+                          "expr": "sum by (rule_name, priority) (increase(falcosecurity_falco_rules_matches_total[10m]))",
+                          "instant": true
+                        }
+                      },
+                      {
+                        "refId": "C",
+                        "datasourceUid": "__expr__",
+                        "model": {
+                          "refId": "C",
+                          "type": "threshold",
+                          "expression": "A",
+                          "conditions": [
+                            {
+                              "evaluator": {
+                                "type": "gt",
+                                "params": [
+                                  0
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "noDataState": "OK",
+                    "execErrState": "Error",
+                    "annotations": {
+                      "summary": "Falco rule '{{ $labels.rule_name }}' ({{ $labels.priority }}) fired on the app server."
+                    },
+                    "labels": {
+                      "severity": "critical"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+      notify: restart grafana
+      become: yes
+
+    - name: Warn when Telegram is not configured
+      ansible.builtin.debug:
+        msg: "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID secrets are not set: alerts will not reach Telegram."
+      when: (telegram_bot_token | default('')) == '' or (telegram_chat_id | default('')) == ''
+
+    # --- Blackbox prober ---
+
+    - name: Create blackbox config directory
+      ansible.builtin.file:
+        path: /etc/blackbox
+        state: directory
+        mode: "0755"
+      become: yes
+
+    - name: Write blackbox config
+      ansible.builtin.copy:
+        dest: /etc/blackbox/blackbox.yml
+        mode: "0644"
+        content: |
+          modules:
+            # The page answers 2xx over a valid certificate (redirects followed).
+            https_ok:
+              prober: http
+              timeout: 10s
+              http:
+                preferred_ip_protocol: ip4
+                fail_if_not_ssl: true
+            # An old domain answers 301 over its own valid certificate.
+            https_redirect:
+              prober: http
+              timeout: 10s
+              http:
+                preferred_ip_protocol: ip4
+                follow_redirects: false
+                valid_status_codes: [301]
+                fail_if_not_ssl: true
+      notify: restart blackbox
       become: yes
 
     - name: Write Grafana dashboard provisioning config

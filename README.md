@@ -341,6 +341,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
 
 **On the monitoring instance:**
 - Prometheus scrapes `node_exporter` (`:9100`) on both servers (the app's via VPC, its own via `host.containers.internal`) and Falco metrics (`:8765`) on the app instance every 15 seconds
+- Grafana sends **alerts to Telegram** (provisioned in `monitoring.yml`, folder *Alerts*): site down (a blackbox prober on the monitoring server loads `https://<DOMAIN>/` and `/health`, and checks that old domains answer 301), certificate expiring within 14 days, more than 10 server errors in 10 minutes, disk above 85 %, memory above 90 %, a scrape target down (Loki and Tempo included), and any Falco rule match. Repeats every 12 hours while firing.
 - Grafana is pre-provisioned with these dashboards:
   - **App Instance Metrics** / **Monitoring Instance Metrics** — CPU, memory and disk use now (green / amber / red) and over time, one dashboard per server
   - **Traces** — whether Tempo is running and receiving spans, then failed, slow (over 500 ms) and recent requests; a trace ID opens the full request timeline
@@ -410,6 +411,7 @@ Image tags: CI tags images with the latest GitHub release (or `latest` if none);
 | :--- | :--- | :--- |
 | `SSH_PRIVATE_KEY` | Secret | CI deploy key (ed25519). Its public half must be the Terraform `authorized_keys` variable. |
 | `OPS_SSH_PUBLIC_KEY` | Secret | Public key for the `ops` troubleshooting user. |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Secret | Grafana alerts go to this Telegram bot and chat (a private channel's id starts with `-100`). Unset, the rules still show in Grafana → Alerting but nothing is sent. |
 | `GRAFANA_ADMIN_PASSWORD` | Secret | Grafana's `admin` password (12+ characters). `monitoring.yml` refuses to run without it and resets Grafana to it on every full run. |
 | `JWT_SECRET`, `POSTGRES_PASSWORD`, `INTERNAL_API_KEY` | Secret | Application secrets written to the server `.env`. |
 | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | Secret | Image push and pull (tokens expire — renew on Docker Hub). |
