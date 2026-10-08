@@ -1,6 +1,15 @@
+{#
+  domain serves the app; redirect_domains (group_vars/app.yml) send their
+  visitors to it.  tls_domains (deploy.yml) are the names that already have
+  a certificate: until domain has one, the app keeps serving on the redirect
+  domain that does, so changing DOMAIN never takes HTTPS down.
+#}
+{% set app_cert = domain if domain in tls_domains else (redirect_domains | select('in', tls_domains) | first) %}
+{% set app_names = [domain] + ([app_cert] if app_cert != domain else []) %}
 server {
     listen 80;
-    server_name {{ domain }} www.{{ domain }};
+    # Every name, so certbot's nginx plugin finds each one for its challenge.
+    server_name{% for name in ([domain] + redirect_domains) | unique %} {{ name }} www.{{ name }}{% endfor %};
     real_ip_header X-Forwarded-For;
 
     # The NodeBalancer's port-80 health check (infra/main.tf, check_body
@@ -15,14 +24,34 @@ server {
     }
 }
 
+{% for old in redirect_domains if old in tls_domains and old not in [domain, app_cert] %}
+# Old name: everything moves to {{ domain }}.
+server {
+    listen 443 ssl proxy_protocol;
+    server_name {{ old }} www.{{ old }};
+    real_ip_header proxy_protocol;
+
+    ssl_certificate /etc/letsencrypt/live/{{ old }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ old }}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    include /etc/nginx/snippets/myguy-security-headers.conf;
+
+    location / {
+        return 301 https://{{ domain }}$request_uri;
+    }
+}
+
+{% endfor %}
 server {
     # The NodeBalancer prepends a PROXY protocol header (infra/main.tf).
     listen 443 ssl proxy_protocol;
-    server_name {{ domain }} www.{{ domain }};
+    server_name{% for name in app_names %} {{ name }} www.{{ name }}{% endfor %};
     real_ip_header proxy_protocol;
 
-    ssl_certificate /etc/letsencrypt/live/{{ domain }}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/{{ domain }}/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/{{ app_cert }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ app_cert }}/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
 
