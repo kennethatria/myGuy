@@ -379,7 +379,7 @@ onMounted(async () => {
 }
 
 .nav-item.active {
-  background: #F5F6FF;
+  background: #EAF1FF;
   color: var(--accent-text);
   font-weight: 600;
 }

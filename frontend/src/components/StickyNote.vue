@@ -6,6 +6,7 @@
     :style="{ '--tilt': `${tilt}deg` }"
   >
     <span v-if="tape" class="note-tape" aria-hidden="true"></span>
+    <span v-if="pin" class="note-pin" aria-hidden="true"></span>
     <figure v-if="photo" class="note-photo">
       <img :src="photo" :alt="photoAlt" loading="lazy" />
     </figure>
@@ -39,8 +40,10 @@ const props = withDefaults(defineProps<{
   // A photo taped to the top of the note (marketplace listings)
   photo?: string
   photoAlt?: string
-  // A strip of tape across the top edge, and a folded bottom-right corner
+  // A strip of tape across the top edge, a pin near it (Home's rows), and
+  // a folded bottom-right corner
   tape?: boolean
+  pin?: boolean
   fold?: boolean
 }>(), {
   title: '',
@@ -51,6 +54,7 @@ const props = withDefaults(defineProps<{
   photo: '',
   photoAlt: '',
   tape: false,
+  pin: false,
   fold: false
 })
 
@@ -141,6 +145,18 @@ const tilt = computed(() => (props.flat ? 0 : noteTilt(props.seed)))
   margin-left: -24px;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.6);
+}
+
+.note-pin {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 4px;
+  background: radial-gradient(circle at 35% 30%, #E5E7EB, #9CA3AF);
+  box-shadow: 0 1px 1px rgba(17, 24, 39, 0.25);
 }
 
 /* Photo notes take a wider strip */

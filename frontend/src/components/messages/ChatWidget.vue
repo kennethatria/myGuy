@@ -206,7 +206,7 @@ function sendMessage(content: string) {
   background: var(--accent);
   color: var(--on-accent);
   border: none;
-  box-shadow: 0 4px 12px rgba(245, 138, 122, 0.4);
+  box-shadow: 0 4px 12px rgba(91, 148, 245, 0.4);
   cursor: pointer;
   display: flex;
   align-items: center;

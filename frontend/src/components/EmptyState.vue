@@ -47,9 +47,9 @@ withDefaults(defineProps<{
   align-items: center;
   justify-content: center;
   margin-bottom: 8px;
-  border: 1px dashed #A5ACFF;
+  border: 1px dashed #B9CFFA;
   border-radius: 24px;
-  background: #F5F6FF;
+  background: #EAF1FF;
   font-size: 52px;
 }
 

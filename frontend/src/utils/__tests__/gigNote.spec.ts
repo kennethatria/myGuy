@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { countWords, headlineFits, bodyFits, noteColor, noteTilt, expiryLabel, timeLeft, noteMeta, postedMeta } from '../gigNote'
+import { countWords, headlineFits, bodyFits, noteColor, noteTilt, expiryLabel, timeLeft, noteMeta, postedMeta, noteFreshness } from '../gigNote'
 
 describe('gigNote', () => {
   it('counts words like the backend', () => {
@@ -54,5 +54,16 @@ describe('gigNote', () => {
     expect(postedMeta('2026-10-05T08:00:00Z', '2026-10-06T08:00:00Z', true, now)).toBe('Posted 2 h ago · Expires in 22h')
     expect(postedMeta('2026-10-05T10:00:00Z', '2026-10-06T10:00:00Z', false, now)).toBe('Posted just now')
     expect(postedMeta('2026-10-05T08:00:00Z', undefined, true, now)).toBe('Posted 2 h ago')
+  })
+
+  it('fades a note as it nears expiry, never below 0.82', () => {
+    const now = new Date('2026-10-05T10:00:00Z')
+    const inHours = (h: number) => new Date(now.getTime() + h * 3_600_000).toISOString()
+    expect(noteFreshness(inHours(24), now)).toBe(1)
+    expect(noteFreshness(inHours(23), now)).toBe(1)
+    expect(noteFreshness(inHours(13), now)).toBe(0.91)
+    expect(noteFreshness(inHours(3), now)).toBe(0.82)
+    expect(noteFreshness(inHours(-1), now)).toBe(0.82)
+    expect(noteFreshness('not a date', now)).toBe(1)
   })
 })

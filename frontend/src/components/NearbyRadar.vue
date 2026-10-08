@@ -104,20 +104,28 @@
         <h2 class="visually-hidden">Notes near you</h2>
         <ul class="note-list">
           <li v-for="post in shown" :key="`list-${post.kind}-${post.id}`">
-            <StickyNote size="row" :tone="TONE[post.kind]" :seed="post.id" :to="routeFor(post)" :tape="post.kind !== 'item'" fold>
+            <StickyNote
+              size="row"
+              :tone="TONE[post.kind]"
+              :seed="post.id"
+              :to="routeFor(post)"
+              pin
+              class="home-row"
+              :style="paperFor(post)"
+            >
               <template #header>
-                <span v-if="post.kind === 'item'" class="row-thumb" :class="{ 'tilt-left': post.id % 2 === 0 }">
+                <span v-if="post.kind === 'item'" class="row-thumb">
                   <img v-if="post.photo" :src="post.photo" alt="" loading="lazy" />
                   <span v-else aria-hidden="true">📦</span>
                 </span>
                 <span class="row-main">
                   <span class="row-title">{{ post.title }}</span>
-                  <span v-if="post.kind === 'item'" class="row-meta">{{ [distanceText(post), timeLeft(post.deadline)].filter(Boolean).join(' · ') }}</span>
+                  <span v-if="post.kind === 'item'" class="row-meta">{{ distanceText(post) }}</span>
                   <span v-else class="row-body">{{ post.description }}</span>
                 </span>
-                <span v-if="post.kind !== 'item'" class="row-side">
-                  <span>{{ distanceText(post) }}</span>
-                  <span>{{ timeLeft(post.deadline) }}</span>
+                <span class="row-side">
+                  <span v-if="post.kind !== 'item'" class="row-meta">{{ distanceText(post) }}</span>
+                  <span v-if="timeLeft(post.deadline)" class="row-stamp">{{ timeLeft(post.deadline) }} left</span>
                 </span>
               </template>
             </StickyNote>
@@ -134,7 +142,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import NearbyBanner from '@/components/NearbyBanner.vue'
 import StickyNote from '@/components/StickyNote.vue'
-import { timeLeft } from '@/utils/gigNote'
+import { timeLeft, noteFreshness } from '@/utils/gigNote'
 import { TONE, postRoute } from '@/utils/postApi'
 import { useViewerLocation } from '@/composables/useViewerLocation'
 import { useNearbyPosts, type NearbyPost } from '@/composables/useNearbyPosts'
@@ -183,6 +191,11 @@ const hiddenSentence = computed(() =>
     .join(', ')
 )
 const distanceText = (post: NearbyPost) => post.distance || 'No location'
+// Notes fade as they near expiry: only the paper, so the words stay readable
+const paperFor = (post: NearbyPost) => {
+  const percent = Math.round(noteFreshness(post.deadline) * 100)
+  return percent < 100 ? { '--note-bg': `color-mix(in srgb, var(--note-${TONE[post.kind]}) ${percent}%, var(--bg))` } : undefined
+}
 
 const routeFor = (post: NearbyPost) => postRoute(post.kind, post.id)
 const open = (post: NearbyPost) => router.push(routeFor(post))
@@ -209,15 +222,15 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   stroke-width: 0.7;
 }
 
-.band-0 { fill: #FFD0C4; }
-.band-1 { fill: #FFDDD3; }
-.band-2 { fill: #FFE7E0; }
-.band-3 { fill: #FFF1EC; }
-.band-4 { fill: #FFF8F5; }
+.band-0 { fill: #C9DBFF; }
+.band-1 { fill: #D6E4FF; }
+.band-2 { fill: #E2ECFF; }
+.band-3 { fill: #EDF3FF; }
+.band-4 { fill: #F5F9FF; }
 
 .ring.unknown {
   fill: none;
-  stroke: #E8D6D0;
+  stroke: #D6DCE8;
   stroke-width: 0.5;
   stroke-dasharray: 1.3 1.3;
 }
@@ -229,7 +242,7 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
 .ring-label {
   font-size: 3px;
   font-weight: 600;
-  fill: #A5503F;
+  fill: #4A6AA8;
 }
 
 .you-dot {
@@ -242,7 +255,7 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   font-size: 4px;
   font-weight: 700;
   fill: var(--accent-text);
-  stroke: #FFD0C4;
+  stroke: #C9DBFF;
   stroke-width: 0.8px;
   paint-order: stroke;
 }
@@ -263,7 +276,7 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
 }
 
 .dot:focus-visible .dot-hit {
-  fill: rgba(245, 138, 122, 0.15);
+  fill: rgba(91, 148, 245, 0.15);
   stroke: var(--accent-text);
   stroke-width: 0.5;
 }
@@ -326,9 +339,14 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   margin: 0;
-  padding: 18px 22px 0;
+  padding: 20px 22px 0;
+}
+
+/* Doubled to win over StickyNote's row padding: room under the pin */
+.home-row.home-row {
+  padding: 16px 16px 14px;
 }
 
 .row-thumb {
@@ -339,14 +357,10 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   align-items: center;
   justify-content: center;
   padding: 3px;
-  border-radius: 4px;
+  border-radius: 3px;
   background: #fff;
   box-shadow: 0 1px 2px rgba(17, 24, 39, 0.15);
   font-size: 22px;
-  transform: rotate(2.5deg);
-}
-
-.row-thumb.tilt-left {
   transform: rotate(-3deg);
 }
 
@@ -362,13 +376,13 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
 .row-title {
-  font-size: 16px;
+  font-family: var(--font-hand);
+  font-size: 21px;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.1;
 }
 
 .row-body {
@@ -379,10 +393,18 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   white-space: nowrap;
 }
 
-.row-meta,
-.row-side {
+.row-meta {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.row-stamp {
+  display: inline-block;
+  font-family: var(--font-hand);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--stamp);
+  transform: rotate(-2deg);
 }
 
 .row-side {
@@ -390,7 +412,6 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 2px;
 }
 
 </style>

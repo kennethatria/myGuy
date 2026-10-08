@@ -75,3 +75,15 @@ export function postedMeta(createdAt: string, deadline: string | undefined, live
   const expires = live && deadline ? expiryLabel(deadline, now) : ''
   return [`Posted ${timeAgo(createdAt, now)}`, expires].filter(Boolean).join(' · ')
 }
+
+/**
+ * How fresh a note looks as it nears expiry: 1 with 23 hours or more left,
+ * fading evenly to 0.82 at 3 hours or less. Home applies it to the note's
+ * paper only, so the words stay as readable as on a fresh note.
+ */
+export function noteFreshness(deadline: string, now: Date = new Date()): number {
+  const hours = (new Date(deadline).getTime() - now.getTime()) / 3_600_000
+  if (Number.isNaN(hours)) return 1
+  const t = Math.min(1, Math.max(0, (hours - 3) / 20))
+  return Math.round((0.82 + 0.18 * t) * 100) / 100
+}

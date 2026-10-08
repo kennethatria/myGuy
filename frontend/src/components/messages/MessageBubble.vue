@@ -149,7 +149,7 @@ function deleteMessage() {
   justify-content: flex-end;
 }
 
-/* Theirs: white on the page; yours: coral */
+/* Theirs: white on the page; yours: blue */
 .message-content {
   max-width: 78%;
   padding: 10px 14px;
