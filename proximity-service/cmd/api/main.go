@@ -10,9 +10,11 @@ import (
 	"proximity-service/internal/middleware"
 	"proximity-service/internal/repositories"
 	"proximity-service/internal/services"
+	"proximity-service/internal/tracing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
 func main() {
@@ -20,6 +22,13 @@ func main() {
 	if apiKey == "" {
 		log.Fatal("INTERNAL_API_KEY environment variable is required")
 	}
+
+	// Initialize OpenTelemetry tracing
+	shutdown, err := tracing.InitTracer(context.Background(), "myguy-proximity-service")
+	if err != nil {
+		log.Fatal("Failed to initialize tracer:", err)
+	}
+	defer shutdown(context.Background())
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     getenv("REDIS_ADDR", "localhost:6379"),
@@ -29,7 +38,7 @@ func main() {
 	go cleanupDaily(service)
 
 	router := gin.New()
-	router.Use(gin.Logger(), gin.Recovery())
+	router.Use(gin.Logger(), gin.Recovery(), otelgin.Middleware("myguy-proximity-service"))
 	handlers.NewHandler(service).Register(router, middleware.InternalKey(apiKey))
 
 	port := getenv("PORT", "8083")
