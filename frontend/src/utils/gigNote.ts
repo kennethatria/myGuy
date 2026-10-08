@@ -2,6 +2,8 @@
 // (internal/services/task_service.go) and store-service (store_service.go).
 // The backend is the authority; these only drive counters and the look.
 
+import { timeAgo } from '@/utils/conversationStatus'
+
 export const HEADLINE_MAX_WORDS = 5
 export const BODY_MAX_WORDS = 20
 export const HEADLINE_MAX_CHARS = 60
@@ -66,4 +68,10 @@ export function noteMeta(
   const distance = note.distance || (showUnknown ? 'No location' : '')
   const left = note.deadline ? timeLeft(note.deadline, now) : ''
   return [distance, who && `@${who}`, left].filter(Boolean).join(' · ')
+}
+
+/** A post page's time line: "Posted 2 h ago · Expires in 23h" (expiry only while live). */
+export function postedMeta(createdAt: string, deadline: string | undefined, live: boolean, now: Date = new Date()): string {
+  const expires = live && deadline ? expiryLabel(deadline, now) : ''
+  return [`Posted ${timeAgo(createdAt, now)}`, expires].filter(Boolean).join(' · ')
 }

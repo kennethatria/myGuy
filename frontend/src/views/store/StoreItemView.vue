@@ -1,186 +1,143 @@
 <template>
-  <div class="store-item-container">
-    <div v-if="loading" class="loading">Loading...</div>
-    
-    <div v-else-if="error" class="error">
-      {{ error }}
-    </div>
-    
-    <div v-else-if="item" class="item-details">
-      <div class="item-content">
-        <div class="item-image-section">
-          <div v-if="item.images && item.images.length > 0" class="image-gallery">
-            <div class="main-image">
-              <img :src="config.STORE_API_BASE_URL + (selectedImage || item.images[0].url)" :alt="item.title" />
-            </div>
-            <div v-if="item.images.length > 1" class="image-thumbnails">
-              <div 
-                v-for="(image, index) in item.images" 
-                :key="image.id || index"
-                class="thumbnail"
-                :class="{ active: selectedImage === image.url || (!selectedImage && index === 0) }"
-                @click="selectedImage = image.url"
-              >
-                <img :src="config.STORE_API_BASE_URL + image.url" :alt="`${item.title} ${index + 1}`" />
-              </div>
-            </div>
-          </div>
-          <NoPhoto v-else />
+  <div class="detail-page">
+    <p v-if="loading" class="detail-status-text" role="status">Loading...</p>
+
+    <div v-else-if="error" class="detail-error" role="alert">{{ error }}</div>
+
+    <template v-else-if="item">
+      <div v-if="item.images && item.images.length > 0" class="gallery">
+        <div class="gallery-main">
+          <img :src="config.STORE_API_BASE_URL + currentImage" :alt="item.title" />
+          <span v-if="item.images.length > 1" class="gallery-count">{{ currentIndex + 1 }} / {{ item.images.length }}</span>
         </div>
-        
-        <div class="item-info-section">
-          <StickyNote :seed="item.id" size="large" class="item-note">
-            <template #header>
-              <span v-if="noteStatus" class="note-status">{{ noteStatus }}</span>
-              <h1 class="note-detail-headline">{{ item.title }}</h1>
-              <p class="note-detail-body">{{ item.description }}</p>
-            </template>
-            <template #footer>
-              <router-link :to="{ name: 'user-profile', params: { id: String(item.seller.id) } }" class="note-seller">
-                @{{ item.seller.username }}
-              </router-link>
-              <span>Posted {{ formatDate(item.created_at) }}</span>
-              <span v-if="item.status === 'active' && item.deadline && expiryLabel(item.deadline)">
-                {{ expiryLabel(item.deadline) }}
-              </span>
-            </template>
-          </StickyNote>
-
-          <router-link
-            v-if="item.request"
-            :to="{ name: 'store-request', params: { id: item.request.id } }"
-            class="answers-request"
-          >
-            Listed for the request "{{ item.request.title }}"
-          </router-link>
-          
-          <!-- Once you've booked, your conversation with the seller (it opens
-               for typing when they approve), as "Message …" on a gig -->
+        <div v-if="item.images.length > 1" class="gallery-thumbs" role="group" aria-label="Photos">
           <button
-            v-if="item.seller.id !== userId && hasBookingRequest"
-            @click="openStoreChat"
-            class="btn btn-outline message-btn"
+            v-for="(image, index) in item.images"
+            :key="image.id || index"
+            type="button"
+            :class="['gallery-thumb', { active: index === currentIndex }]"
+            :aria-label="`Photo ${index + 1}`"
+            :aria-pressed="index === currentIndex"
+            @click="selectedImage = image.url"
           >
-            Message {{ item.seller.username }}
+            <img :src="config.STORE_API_BASE_URL + image.url" alt="" />
           </button>
-
-          <div class="price-section">
-            <div v-if="item.is_auction" class="auction-info">
-              <h3>Auction Details</h3>
-              <p class="current-bid">Current Bid: UGX {{ formatCurrency(item.current_bid || item.starting_bid) }}</p>
-              <p class="bid-increment">Minimum Increment: UGX {{ formatCurrency(item.min_bid_increment) }}</p>
-              <p class="bid-count">{{ item.bid_count || 0 }} bids</p>
-              <p v-if="biddingClosed" class="bid-closed">Bidding has closed.</p>
-
-              <div v-if="item.seller.id !== userId && item.status === 'active' && !biddingClosed" class="bid-form">
-                <input 
-                  v-model="bidAmount" 
-                  type="number" 
-                  :min="minBidAmount" 
-                  :step="item.min_bid_increment"
-                  placeholder="Enter bid amount"
-                />
-                <button @click="placeBid" class="btn btn-primary">Place Bid</button>
-              </div>
-            </div>
-            
-            <div v-else class="fixed-price">
-              <template v-if="listingPriceLabel(item)">
-                <h3>Price</h3>
-                <p class="price">{{ listingPriceLabel(item) }}</p>
-              </template>
-              
-              <!-- Book while it's for sale; afterwards the note shows where your
-                   booking stands and the chat takes it from there -->
-              <div
-                v-if="item.seller.id !== userId && item.status === 'active' && !hasBookingRequest"
-                class="booking-section"
-              >
-                <div class="booking-request">
-                  <button
-                    @click="sendBookingRequest"
-                    :disabled="loadingBookingRequest"
-                    class="btn btn-primary btn-large"
-                    data-testid="booking-request-btn"
-                  >
-                    {{ loadingBookingRequest ? 'Sending Request...' : 'Book Now' }}
-                  </button>
-                  <p v-if="bookingError" class="owner-error" role="alert">{{ bookingError }}</p>
-                  <p class="booking-info">Ask to book it, then agree the price and pickup in chat</p>
-                </div>
-                
-              </div>
-            </div>
-          </div>
-          
-          <div v-if="item.seller.id === userId" class="owner-section">
-            <!-- The seller's own listing: repost or remove it, as with gigs and requests -->
-            <p v-if="item.status === 'expired'" class="owner-note">
-              Nobody asked to book it within 24 hours. Repost it for another 24 hours, or remove it.
-            </p>
-            <p v-else-if="item.status === 'reserved'" class="owner-note">
-              Reserved for a buyer. To sell it to someone else, release the reservation in your conversation with them.
-            </p>
-            <!-- Bookings are answered in each buyer's conversation, as on gigs -->
-            <p v-if="pendingBookings" class="owner-note">
-              {{ pendingBookings }} {{ pendingBookings === 1 ? 'person has' : 'people have' }} asked to book it.
-              Approve or decline in Messages.
-            </p>
-            <div v-if="pendingBookings || reservedFor || messageCount > 0" class="owner-actions">
-              <button v-if="pendingBookings" @click="openGeneralStoreChat" class="btn btn-primary btn-sm">
-                Answer in Messages
-              </button>
-              <button
-                v-else-if="reservedFor"
-                @click="openStoreChatWithUser(reservedFor.id)"
-                class="btn btn-primary btn-sm message-approved-btn"
-              >
-                Message {{ reservedFor.username }}
-              </button>
-              <button v-else @click="openGeneralStoreChat" class="btn btn-outline btn-sm">
-                View messages
-              </button>
-            </div>
-            <p v-if="confirmingRemove" class="owner-note">
-              Remove "{{ item.title }}" for good? Anyone waiting on a booking will be told.
-            </p>
-            <p v-if="ownerError" class="owner-error" role="alert">{{ ownerError }}</p>
-            <div v-if="canRemove" class="owner-actions">
-              <template v-if="confirmingRemove">
-                <button class="btn btn-danger btn-sm" :disabled="ownerBusy" @click="removeItem">
-                  {{ ownerBusy ? 'Removing...' : 'Yes, remove' }}
-                </button>
-                <button class="btn btn-outline btn-sm" :disabled="ownerBusy" @click="confirmingRemove = false">Keep it</button>
-              </template>
-              <template v-else>
-                <button v-if="item.status === 'expired'" class="btn btn-primary btn-sm" :disabled="ownerBusy" @click="repostItem">
-                  {{ ownerBusy ? 'Reposting...' : 'Repost for 24 hours' }}
-                </button>
-                <button class="btn btn-outline-danger btn-sm" :disabled="ownerBusy" @click="confirmingRemove = true">
-                  Remove listing
-                </button>
-              </template>
-            </div>
-            
-
-          </div>
-          
         </div>
       </div>
-      
-      <!-- Bid History -->
-      <div v-if="item.is_auction && bids.length > 0" class="bid-history">
-        <h3>Bid History</h3>
-        <div class="bid-list">
-          <div v-for="bid in bids" :key="bid.id" class="bid-item">
-            <span class="bidder">{{ bid.bidder?.name || bid.bidder?.full_name || bid.bidder?.username || 'Unknown Bidder' }}</span>
+      <NoPhoto v-else />
+
+      <DetailNote
+        tone="sell"
+        :seed="item.id"
+        :status="noteStatus"
+        :title="item.title"
+        :body="item.description"
+        :price="item.is_auction ? '' : listingPriceLabel(item)"
+        :person="item.seller"
+        :meta="postedMeta(item.created_at, item.deadline, item.status === 'active')"
+      />
+
+      <router-link
+        v-if="item.request"
+        :to="{ name: 'store-request', params: { id: item.request.id } }"
+        class="detail-line answers-request"
+      >
+        Listed for the request "{{ item.request.title }}"
+      </router-link>
+
+      <!-- Older auctions still work: bid here, the bar is for booking -->
+      <section v-if="item.is_auction" class="auction" aria-labelledby="auction-title">
+        <h2 id="auction-title" class="detail-section-title">Auction</h2>
+        <p class="detail-line">Current bid: <strong>UGX {{ formatCurrency(item.current_bid || item.starting_bid) }}</strong></p>
+        <p class="detail-line">Minimum increment: UGX {{ formatCurrency(item.min_bid_increment) }} · {{ item.bid_count || 0 }} bids</p>
+        <p v-if="biddingClosed" class="detail-line">Bidding has closed.</p>
+        <div v-if="item.seller.id !== userId && item.status === 'active' && !biddingClosed" class="bid-form">
+          <input
+            v-model="bidAmount"
+            type="number"
+            :min="minBidAmount"
+            :step="item.min_bid_increment"
+            placeholder="Enter bid amount"
+            aria-label="Your bid in UGX"
+          />
+          <button @click="placeBid" class="btn btn-primary">Place bid</button>
+        </div>
+        <ul v-if="bids.length > 0" class="bid-list" aria-label="Bid history">
+          <li v-for="bid in bids" :key="bid.id" class="bid-item">
+            <span class="bidder">{{ bid.bidder?.name || bid.bidder?.full_name || bid.bidder?.username || 'Unknown bidder' }}</span>
             <span class="bid-amount">UGX {{ formatCurrency(bid.amount) }}</span>
             <span class="bid-time">{{ formatDate(bid.created_at) }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
+          </li>
+        </ul>
+      </section>
 
+      <!-- The seller's own listing: where it stands -->
+      <template v-if="item.seller.id === userId">
+        <p v-if="item.status === 'expired'" class="detail-line">
+          Nobody asked to book it within 24 hours. Repost it for another 24 hours, or remove it.
+        </p>
+        <p v-else-if="item.status === 'reserved'" class="detail-line">
+          Reserved for a buyer. To sell it to someone else, release the reservation in your conversation with them.
+        </p>
+        <!-- Bookings are answered in each buyer's conversation, as on gigs -->
+        <p v-if="pendingBookings" class="detail-line">
+          {{ pendingBookings }} {{ pendingBookings === 1 ? 'person has' : 'people have' }} asked to book it.
+          Approve or decline in Messages.
+        </p>
+      </template>
+
+      <ActionBar v-if="showBar">
+        <!-- Someone else's listing: book it, then the chat takes it from there -->
+        <template v-if="item.seller.id !== userId">
+          <button v-if="hasBookingRequest" @click="openStoreChat" class="btn btn-outline">
+            Message {{ item.seller.username }}
+          </button>
+          <template v-else>
+            <p v-if="bookingError" class="bar-error" role="alert">{{ bookingError }}</p>
+            <button
+              @click="sendBookingRequest"
+              :disabled="loadingBookingRequest"
+              class="btn btn-primary"
+              data-testid="booking-request-btn"
+            >
+              {{ loadingBookingRequest ? 'Sending...' : 'Book' }}
+            </button>
+            <p class="bar-caption">Ask to book it, then agree the price and pickup in chat</p>
+          </template>
+        </template>
+
+        <!-- Your own listing: answer bookings, repost or remove it -->
+        <template v-else>
+          <p v-if="confirmingRemove" class="bar-message">
+            Remove "{{ item.title }}" for good? Anyone waiting on a booking will be told.
+          </p>
+          <p v-if="ownerError" class="bar-error" role="alert">{{ ownerError }}</p>
+          <div v-if="confirmingRemove" class="bar-row">
+            <button class="btn btn-danger" :disabled="ownerBusy" @click="removeItem">
+              {{ ownerBusy ? 'Removing...' : 'Yes, remove' }}
+            </button>
+            <button class="btn btn-outline" :disabled="ownerBusy" @click="confirmingRemove = false">Keep it</button>
+          </div>
+          <template v-else>
+            <button v-if="pendingBookings" @click="openGeneralStoreChat" class="btn btn-primary">
+              Answer in Messages
+            </button>
+            <button v-else-if="reservedFor" @click="openStoreChatWithUser(reservedFor.id)" class="btn btn-primary message-approved-btn">
+              Message {{ reservedFor.username }}
+            </button>
+            <button v-else-if="messageCount > 0" @click="openGeneralStoreChat" class="btn btn-outline">
+              View messages
+            </button>
+            <button v-if="item.status === 'expired'" class="btn btn-primary" :disabled="ownerBusy" @click="repostItem">
+              {{ ownerBusy ? 'Reposting...' : 'Repost for 24 hours' }}
+            </button>
+            <button v-if="canRemove" class="btn btn-outline-danger" :disabled="ownerBusy" @click="confirmingRemove = true">
+              Remove listing
+            </button>
+          </template>
+        </template>
+      </ActionBar>
+    </template>
   </div>
 </template>
 
@@ -191,8 +148,9 @@ import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useChatStore } from '@/stores/chat';
 import NoPhoto from '@/components/NoPhoto.vue';
-import StickyNote from '@/components/StickyNote.vue';
-import { expiryLabel } from '@/utils/gigNote';
+import DetailNote from '@/components/DetailNote.vue';
+import ActionBar from '@/components/ActionBar.vue';
+import { postedMeta } from '@/utils/gigNote';
 import { listingPriceLabel } from '@/utils/listingNote';
 import config from '@/config';
 
@@ -321,6 +279,24 @@ const noteStatus = computed(() => {
   if (!item.value) return '';
   if (item.value.seller.id !== userId.value && bookingStatus.value) return BOOKING_LABELS[bookingStatus.value] ?? '';
   return item.value.status === 'active' ? '' : statusLabel.value;
+});
+
+// The photo shown large: the one tapped, else the first
+const currentIndex = computed(() => {
+  const index = item.value?.images?.findIndex((image) => image.url === selectedImage.value) ?? -1;
+  return index < 0 ? 0 : index;
+});
+const currentImage = computed(() => item.value?.images?.[currentIndex.value]?.url ?? '');
+
+// The bar shows your next step: book or message the seller, or (yours)
+// answer bookings, repost or remove
+const showBar = computed(() => {
+  if (!item.value) return false;
+  if (item.value.seller.id !== userId.value) {
+    return hasBookingRequest.value || (item.value.status === 'active' && !item.value.is_auction);
+  }
+  return !!(pendingBookings.value || reservedFor.value || messageCount.value > 0 || canRemove.value ||
+    item.value.status === 'expired' || ownerError.value);
 });
 
 const statusLabel = computed(() => {
@@ -634,424 +610,125 @@ onMounted(() => {
 });
 </script>
 
+<style scoped src="@/assets/detail.css"></style>
+
 <style scoped>
-.store-item-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem;
-}
-
-.loading, .error {
-  text-align: center;
-  padding: 4rem;
-  font-size: 1.125rem;
-  color: #6b7280;
-}
-
-.error {
-  color: #ef4444;
-}
-
-.item-content {
-  background: white;
-  border-radius: 0.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2rem;
-}
-
-.item-image-section {
-  background: #f3f4f6;
-  min-height: 400px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-}
-
-.item-image-section > img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.image-gallery {
-  width: 100%;
-  height: 100%;
+.gallery {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 12px;
 }
 
-.main-image {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 300px;
-}
-
-.main-image img {
-  max-width: 100%;
-  max-height: 400px;
-  object-fit: contain;
-}
-
-.image-thumbnails {
-  display: flex;
-  gap: 0.5rem;
-  justify-content: center;
-}
-
-.thumbnail {
-  width: 80px;
-  height: 80px;
-  border: 2px solid transparent;
-  border-radius: 0.375rem;
+.gallery-main {
+  position: relative;
+  height: 210px;
+  border-radius: 12px;
   overflow: hidden;
-  cursor: pointer;
-  transition: all 0.2s;
+  background: #F3F4F6;
 }
 
-.thumbnail:hover {
-  border-color: #e5e7eb;
-}
-
-.thumbnail.active {
-  border-color: var(--color-primary);
-}
-
-.thumbnail img {
+.gallery-main img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.item-info-section {
-  padding: 2rem;
-}
-
-.item-note {
-  margin-bottom: 2rem;
-}
-
-.note-status {
-  align-self: flex-start;
-  padding: 0.15rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
+.gallery-count {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: rgba(17, 24, 39, 0.55);
+  color: #fff;
+  font-size: 12px;
   font-weight: 600;
-  background: rgba(31, 41, 55, 0.12);
 }
 
-.note-detail-headline {
-  margin: 0;
-  font-size: 1.75rem;
-  font-weight: 700;
-  line-height: 1.2;
+.gallery-thumbs {
+  display: flex;
+  gap: 8px;
 }
 
-.note-detail-body {
-  margin: 0;
-  font-size: 1.15rem;
-  line-height: 1.5;
-  flex: 1;
+.gallery-thumb {
+  width: 64px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.gallery-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gallery-thumb.active {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.gallery-thumb:focus-visible {
+  outline: 3px solid var(--accent-text);
+  outline-offset: 2px;
 }
 
 .answers-request {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  margin: -1rem 0 1.5rem;
-  color: var(--color-primary);
-  font-weight: 500;
-  text-decoration: none;
+  color: var(--accent-text);
+  font-weight: 600;
 }
 
-.answers-request:hover,
-.answers-request:focus-visible {
-  text-decoration: underline;
-}
-
-.owner-actions {
+.auction {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-}
-
-.bid-closed {
-  font-weight: 600;
-  color: #6b7280;
-}
-
-.price-section h3 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-  color: #111827;
-}
-
-/* An outline button, as "Message …" on the gig page */
-.message-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.message-btn i {
-  font-size: 0.875rem;
-}
-
-.price-section {
-  margin-bottom: 2rem;
-}
-
-.auction-info p {
-  margin-bottom: 0.5rem;
-  color: #374151;
-}
-
-.current-bid {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #059669;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .bid-form {
   display: flex;
-  gap: 1rem;
-  margin-top: 1rem;
+  gap: 8px;
 }
 
 .bid-form input {
   flex: 1;
-  padding: 0.75rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.375rem;
-  font-size: 1rem;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #D9D9D4;
+  border-radius: 12px;
+  font-size: 15px;
 }
 
-.fixed-price .price {
-  font-size: 2rem;
-  font-weight: 600;
-  color: var(--color-primary);
-  margin-bottom: 1rem;
-}
-
-.btn {
-  padding: 0.75rem 1.5rem;
-  border-radius: 0.375rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  /* Width and style only: the shared .btn and .btn-outline* give the colour */
-  border-width: 1px;
-  border-style: solid;
-  font-size: 1rem;
-}
-
-.btn-primary {
-  background: var(--color-primary);
-  color: white;
-}
-
-.btn-primary:hover {
-  background: var(--color-primary-dark);
-}
-
-.btn-large {
-  padding: 1rem 2rem;
-  font-size: 1.125rem;
-}
-
-.owner-note {
-  margin: 0 0 0.75rem;
-  color: #4b5563;
-  font-size: 0.9rem;
-}
-
-.owner-error {
-  margin: 0 0 0.75rem;
-  color: #dc2626;
-  font-size: 0.9rem;
-}
-
-/* The remove question sits apart from the buttons above it */
-.owner-actions + .owner-note {
-  margin-top: 0.75rem;
-}
-
-.bid-history {
-  margin-top: 2rem;
-  background: white;
-  border-radius: 0.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  padding: 2rem;
-}
-
-.bid-history h3 {
-  margin-bottom: 1rem;
+.bid-form .btn {
+  min-height: 44px;
+  border-radius: 12px;
 }
 
 .bid-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
 }
 
 .bid-item {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.75rem;
-  background: #f9fafb;
-  border-radius: 0.375rem;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
 }
 
 .bidder {
-  font-weight: 500;
-  color: #374151;
+  flex: 1;
 }
 
 .bid-amount {
   font-weight: 600;
-  color: #059669;
 }
 
 .bid-time {
-  font-size: 0.875rem;
-  color: #6b7280;
-}
-
-.btn-sm {
-  padding: 0.5rem 1rem;
-  font-size: 0.875rem;
-}
-
-
-/* Phones: thumb-sized targets */
-@media (max-width: 768px) {
-  .message-btn,
-  .owner-actions .btn,
-  .bid-form input,
-  .bid-form button {
-    min-height: 44px;
-  }
-
-  .owner-actions .btn {
-    flex: 1;
-  }
-}
-
-@media (max-width: 768px) {
-  .item-content {
-    grid-template-columns: 1fr;
-  }
-
-  .store-item-container {
-    padding: 1rem;
-  }
-
-  /* The photo shouldn't push the details off the first screen */
-  .item-image-section {
-    min-height: 0;
-    padding: 1rem;
-  }
-
-  .main-image {
-    min-height: 200px;
-  }
-
-  .item-info-section {
-    padding: 1.25rem;
-  }
-
-  .note-detail-headline {
-    font-size: 1.4rem;
-  }
-  
-  .bid-form {
-    flex-direction: column;
-  }
-
-  .message-btn {
-    text-align: center;
-    justify-content: center;
-  }
-}
-
-/* Booking Functionality Styles */
-.booking-section {
-  margin-top: 1rem;
-}
-
-.booking-request {
-  text-align: center;
-}
-
-.booking-info {
-  text-align: center;
-  font-size: 0.875rem;
-  color: #6b7280;
-  margin-top: 0.5rem;
-}
-
-.owner-section {
-  background: #e0f2fe;
-  padding: 1rem;
-  border-radius: 0.375rem;
-  border: 1px solid #b3e5fc;
-}
-
-.message-approved-btn {
-  margin-top: 0.5rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.btn-danger {
-  background: #ef4444;
-  color: white;
-  border: none;
-}
-
-.btn-danger:hover {
-  background: #dc2626;
-}
-
-@media (max-width: 768px) {
-  .booking-request-card {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.75rem;
-  }
-}
-
-/* The seller, on the note: their profile is one tap away */
-.note-seller {
-  color: inherit;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.note-seller:hover,
-.note-seller:focus-visible {
-  text-decoration: underline;
-}
-
-.message-btn {
-  width: 100%;
-  margin-top: 1rem;
-  min-height: 44px;
+  color: var(--text-muted);
 }
 </style>
