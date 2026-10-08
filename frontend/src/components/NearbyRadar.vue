@@ -104,7 +104,7 @@
         <h2 class="visually-hidden">Notes near you</h2>
         <ul class="note-list">
           <li v-for="post in shown" :key="`list-${post.kind}-${post.id}`">
-            <StickyNote size="row" :tone="TONES[post.kind]" :seed="post.id" :to="routeFor(post)" :tape="post.kind !== 'item'" fold>
+            <StickyNote size="row" :tone="TONE[post.kind]" :seed="post.id" :to="routeFor(post)" :tape="post.kind !== 'item'" fold>
               <template #header>
                 <span v-if="post.kind === 'item'" class="row-thumb" :class="{ 'tilt-left': post.id % 2 === 0 }">
                   <img v-if="post.photo" :src="post.photo" alt="" loading="lazy" />
@@ -136,13 +136,13 @@ import { useRouter } from 'vue-router'
 import NearbyBanner from '@/components/NearbyBanner.vue'
 import StickyNote from '@/components/StickyNote.vue'
 import { timeLeft } from '@/utils/gigNote'
+import { TONE, postRoute } from '@/utils/postApi'
 import { useViewerLocation } from '@/composables/useViewerLocation'
 import { useNearbyPosts, type NearbyPost } from '@/composables/useNearbyPosts'
 import { CENTRE, KIND_STYLE, RING_LABELS, UNKNOWN_RING, countsSentence, labelPoint, layoutDots, ringRadius, type PostKind } from '@/utils/radar'
 
 const KINDS: PostKind[] = ['task', 'item', 'request']
 const LABELS: Record<PostKind, string> = { task: 'Gigs', item: 'For sale', request: 'Wanted' }
-const TONES = { task: 'gig', item: 'sell', request: 'want' } as const
 
 const router = useRouter()
 const viewer = useViewerLocation()
@@ -185,11 +185,7 @@ const hiddenSentence = computed(() =>
 )
 const distanceText = (post: NearbyPost) => post.distance || 'No location'
 
-const routeFor = (post: NearbyPost) => {
-  if (post.kind === 'task') return { name: 'task-detail', params: { id: post.id } }
-  if (post.kind === 'item') return { name: 'store-item', params: { id: post.id } }
-  return { name: 'store-request', params: { id: post.id } }
-}
+const routeFor = (post: NearbyPost) => postRoute(post.kind, post.id)
 const open = (post: NearbyPost) => router.push(routeFor(post))
 </script>
 
