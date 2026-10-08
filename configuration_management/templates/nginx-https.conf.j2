@@ -107,7 +107,8 @@ server {
 
     # Only GET of one website's recorder settings, never the rest of
     # /api/websites/ (the dashboard API).
-    location ~ ^/umami/api/websites/([0-9a-f-]{36})/recorder$ {
+    # Quoted: an unquoted "{" in a regex would start an nginx block.
+    location ~ "^/umami/api/websites/([0-9a-f-]{36})/recorder$" {
         limit_except GET { deny all; }
         proxy_pass http://{{ monitoring_vpc_ip }}:3001/api/websites/$1/recorder;
     }
