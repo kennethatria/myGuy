@@ -122,6 +122,16 @@ resource "linode_firewall" "my_firewall" {
     ipv4     = ["10.0.0.0/24"]
   }
 
+  # Account and marketplace counts (backend :9464, store-service :9465),
+  # scraped by Prometheus on the monitoring server only.
+  inbound {
+    label    = "allow-app-counts-from-monitoring"
+    action   = "ACCEPT"
+    protocol = "TCP"
+    ports    = "9464-9465"
+    ipv4     = ["${local.zipkin_vpc_ip}/32"]
+  }
+
   inbound_policy  = "DROP"
   outbound_policy = "ACCEPT"
 

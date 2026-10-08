@@ -8,6 +8,7 @@ import (
 
 	"store-service/internal/api/handlers"
 	"store-service/internal/media"
+	"store-service/internal/metrics"
 	"store-service/internal/middleware"
 	"store-service/internal/models"
 	"store-service/internal/proximity"
@@ -94,7 +95,11 @@ func main() {
 	}
 	jwtMiddleware := middleware.NewJWTAuthMiddleware(jwtSecret, userRepo)
 
+	// Marketplace counts for Prometheus, on a port of their own
+	metrics.Serve(":9465", db)
+
 	// Setup routes
+
 	router := gin.Default()
 	router.Use(otelgin.Middleware("myguy-store-service"))
 	

@@ -194,10 +194,13 @@ jobs:
 
       - name: Configure monitoring instance
         if: inputs.scope != 'app'
+        env:
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
         run: |
           ansible-playbook \
             -i configuration_management/inventory.ini \
-            configuration_management/monitoring.yml
+            configuration_management/monitoring.yml \
+            -e "$(jq -n --arg grafana_admin_password "$GRAFANA_ADMIN_PASSWORD" '$ARGS.named')"
 
       - name: Configure app instance base
         if: inputs.scope != 'app'

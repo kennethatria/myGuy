@@ -35,9 +35,13 @@
         volumes:
           - /etc/grafana/provisioning:/etc/grafana/provisioning:ro
           - /etc/grafana/dashboards:/etc/grafana/dashboards:ro
+          # Users, passwords and preferences survive container replacement
+          - grafana-data:/var/lib/grafana
         env:
           GF_AUTH_ANONYMOUS_ENABLED: "false"
           GF_SERVER_HTTP_ADDR: "0.0.0.0"
+        # GF_SECURITY_ADMIN_PASSWORD (GRAFANA_ADMIN_PASSWORD secret)
+        env_file: /etc/grafana/admin.env
       - name: loki
         image: docker.io/grafana/loki:2.9.10
         ports: ["3100:3100"]
@@ -85,6 +89,13 @@
       changed_when: false
 
   pre_tasks:
+    # Grafana would otherwise start with admin / admin
+    - name: Require the Grafana admin password
+      ansible.builtin.assert:
+        that: grafana_admin_password | default('') | length >= 12
+        fail_msg: "Set the GRAFANA_ADMIN_PASSWORD repository secret (12+ characters) before running monitoring.yml."
+        quiet: true
+
     - name: Get myguy user ID for XDG_RUNTIME_DIR
       ansible.builtin.command:
         cmd: id -u myguy
@@ -214,6 +225,22 @@
                 - targets: ['{{ instance_vpc_ip }}:{{ falco_metrics_port }}']
                   labels:
                     instance: app
+
+            # Account and marketplace counts (internal/metrics in each service).
+            - job_name: app_counts
+              scrape_interval: 60s
+              static_configs:
+                - targets: ['{{ instance_vpc_ip }}:9464']
+                  labels:
+                    service: backend
+                - targets: ['{{ instance_vpc_ip }}:9465']
+                  labels:
+                    service: store-service
+
+            # Tempo's own counters: spans received shows tracing works.
+            - job_name: tempo
+              static_configs:
+                - targets: ['host.containers.internal:3200']
       become: yes
 
     # --- Grafana provisioning files ---
@@ -227,6 +254,17 @@
         - /etc/grafana/provisioning/datasources
         - /etc/grafana/provisioning/dashboards
         - /etc/grafana/dashboards
+      become: yes
+
+    - name: Write Grafana admin password
+      ansible.builtin.copy:
+        dest: /etc/grafana/admin.env
+        content: "GF_SECURITY_ADMIN_PASSWORD={{ grafana_admin_password }}\n"
+        owner: myguy
+        group: myguy
+        mode: "0600"
+      no_log: true
+      notify: restart grafana
       become: yes
 
     - name: Write Grafana Prometheus datasource
@@ -999,6 +1037,500 @@
           }
       become: yes
 
+    - name: Write Accounts dashboard
+      # Counts published by the backend (:9464) and store-service (:9465),
+      # scraped as job app_counts.  No names or emails leave the app server.
+      ansible.builtin.copy:
+        dest: /etc/grafana/dashboards/accounts.json
+        mode: "0644"
+        content: !unsafe |
+          {
+            "title": "Accounts",
+            "uid": "accounts",
+            "schemaVersion": 36,
+            "panels": [
+              {
+                "type": "stat",
+                "title": "Accounts",
+                "description": "Accounts that exist. Counted from the databases every minute; history starts when this dashboard was deployed.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 6,
+                  "h": 5
+                },
+                "datasource": {
+                  "type": "prometheus"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "max(myguy_accounts)",
+                    "instant": true
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "New accounts",
+                "description": "Accounts created in the selected time range.",
+                "gridPos": {
+                  "x": 6,
+                  "y": 0,
+                  "w": 6,
+                  "h": 5
+                },
+                "datasource": {
+                  "type": "prometheus"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "max(myguy_accounts) - min(min_over_time(myguy_accounts[$__range]))",
+                    "instant": true
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Active in gigs (7 days)",
+                "description": "Accounts that posted or applied for a gig in the last 7 days.",
+                "gridPos": {
+                  "x": 12,
+                  "y": 0,
+                  "w": 6,
+                  "h": 5
+                },
+                "datasource": {
+                  "type": "prometheus"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "max(myguy_gig_active_accounts_7d)",
+                    "instant": true
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Active in marketplace (7 days)",
+                "description": "Accounts that posted a listing or request, or booked an item, in the last 7 days. Someone active in both counts in both.",
+                "gridPos": {
+                  "x": 18,
+                  "y": 0,
+                  "w": 6,
+                  "h": 5
+                },
+                "datasource": {
+                  "type": "prometheus"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "max(myguy_store_active_accounts_7d)",
+                    "instant": true
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Accounts over time",
+                "gridPos": {
+                  "x": 0,
+                  "y": 5,
+                  "w": 12,
+                  "h": 8
+                },
+                "datasource": {
+                  "type": "prometheus"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "min": 0,
+                    "custom": {
+                      "lineWidth": 2,
+                      "fillOpacity": 10
+                    }
+                  }
+                },
+                "options": {
+                  "legend": {
+                    "showLegend": false
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "max(myguy_accounts)",
+                    "legendFormat": "accounts"
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Sign-ups per day",
+                "gridPos": {
+                  "x": 12,
+                  "y": 5,
+                  "w": 12,
+                  "h": 8
+                },
+                "interval": "1d",
+                "datasource": {
+                  "type": "prometheus"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "min": 0,
+                    "custom": {
+                      "drawStyle": "bars",
+                      "fillOpacity": 60
+                    }
+                  }
+                },
+                "options": {
+                  "legend": {
+                    "showLegend": false
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "clamp_min(max(myguy_accounts) - max(myguy_accounts offset 1d), 0)",
+                    "legendFormat": "sign-ups"
+                  }
+                ]
+              },
+              {
+                "type": "bargauge",
+                "title": "Gigs by status",
+                "description": "Every gig there is, by where it stands.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 13,
+                  "w": 6,
+                  "h": 8
+                },
+                "datasource": {
+                  "type": "prometheus"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "min": 0,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                },
+                "options": {
+                  "orientation": "horizontal",
+                  "displayMode": "basic",
+                  "namePlacement": "left",
+                  "showUnfilled": true,
+                  "valueMode": "text",
+                  "reduceOptions": {
+                    "values": false,
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "sort_desc(sum by (status) (myguy_gigs))",
+                    "legendFormat": "{{status}}",
+                    "instant": true
+                  }
+                ]
+              },
+              {
+                "type": "bargauge",
+                "title": "Listings by status",
+                "description": "Marketplace listings (removed ones left out).",
+                "gridPos": {
+                  "x": 6,
+                  "y": 13,
+                  "w": 6,
+                  "h": 8
+                },
+                "datasource": {
+                  "type": "prometheus"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "min": 0,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                },
+                "options": {
+                  "orientation": "horizontal",
+                  "displayMode": "basic",
+                  "namePlacement": "left",
+                  "showUnfilled": true,
+                  "valueMode": "text",
+                  "reduceOptions": {
+                    "values": false,
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "sort_desc(sum by (status) (myguy_listings))",
+                    "legendFormat": "{{status}}",
+                    "instant": true
+                  }
+                ]
+              },
+              {
+                "type": "bargauge",
+                "title": "Requests by status",
+                "description": "Wanted requests (removed ones left out).",
+                "gridPos": {
+                  "x": 12,
+                  "y": 13,
+                  "w": 6,
+                  "h": 8
+                },
+                "datasource": {
+                  "type": "prometheus"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "min": 0,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                },
+                "options": {
+                  "orientation": "horizontal",
+                  "displayMode": "basic",
+                  "namePlacement": "left",
+                  "showUnfilled": true,
+                  "valueMode": "text",
+                  "reduceOptions": {
+                    "values": false,
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "sort_desc(sum by (status) (myguy_requests))",
+                    "legendFormat": "{{status}}",
+                    "instant": true
+                  }
+                ]
+              },
+              {
+                "type": "bargauge",
+                "title": "Bookings by status",
+                "description": "Item bookings and where they stand.",
+                "gridPos": {
+                  "x": 18,
+                  "y": 13,
+                  "w": 6,
+                  "h": 8
+                },
+                "datasource": {
+                  "type": "prometheus"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "min": 0,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                },
+                "options": {
+                  "orientation": "horizontal",
+                  "displayMode": "basic",
+                  "namePlacement": "left",
+                  "showUnfilled": true,
+                  "valueMode": "text",
+                  "reduceOptions": {
+                    "values": false,
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "sort_desc(sum by (status) (myguy_bookings))",
+                    "legendFormat": "{{status}}",
+                    "instant": true
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Gigs over time",
+                "description": "Gigs by status, stacked.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 21,
+                  "w": 12,
+                  "h": 8
+                },
+                "datasource": {
+                  "type": "prometheus"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "min": 0,
+                    "custom": {
+                      "fillOpacity": 40,
+                      "stacking": {
+                        "mode": "normal"
+                      }
+                    }
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "sum by (status) (myguy_gigs)",
+                    "legendFormat": "{{status}}"
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Listings over time",
+                "description": "Listings by status, stacked.",
+                "gridPos": {
+                  "x": 12,
+                  "y": 21,
+                  "w": 12,
+                  "h": 8
+                },
+                "datasource": {
+                  "type": "prometheus"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "min": 0,
+                    "custom": {
+                      "fillOpacity": 40,
+                      "stacking": {
+                        "mode": "normal"
+                      }
+                    }
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "sum by (status) (myguy_listings)",
+                    "legendFormat": "{{status}}"
+                  }
+                ]
+              }
+            ],
+            "time": {
+              "from": "now-30d",
+              "to": "now"
+            },
+            "refresh": "5m"
+          }
+      become: yes
+
     - name: Write Traces dashboard
       # Tempo search (TraceQL) tables; a trace ID opens the trace view.
       ansible.builtin.copy:
@@ -1011,12 +1543,112 @@
             "schemaVersion": 36,
             "panels": [
               {
+                "type": "stat",
+                "title": "Tempo running",
+                "description": "Whether Prometheus can reach Tempo. If this is Down, empty trace lists mean nothing.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 8,
+                  "h": 5
+                },
+                "datasource": {
+                  "type": "prometheus"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "mappings": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "0": {
+                            "text": "Down",
+                            "color": "red"
+                          },
+                          "1": {
+                            "text": "Running",
+                            "color": "green"
+                          }
+                        }
+                      }
+                    ],
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "red",
+                          "value": null
+                        },
+                        {
+                          "color": "green",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "background",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "max(up{job=\"tempo\"}) or vector(0)",
+                    "instant": true
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Spans received (last hour)",
+                "description": "Steps of requests the services sent to Tempo in the last hour. 0 while people use the site means tracing is broken.",
+                "gridPos": {
+                  "x": 8,
+                  "y": 0,
+                  "w": 16,
+                  "h": 5
+                },
+                "datasource": {
+                  "type": "prometheus"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "area",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "sum(increase(tempo_distributor_spans_received_total[1h])) or vector(0)"
+                  }
+                ]
+              },
+              {
                 "type": "table",
                 "title": "Failed requests",
                 "description": "Requests that ended in an error, newest first. Click a trace ID to see every step and where it failed.",
                 "gridPos": {
                   "x": 0,
-                  "y": 0,
+                  "y": 5,
                   "w": 24,
                   "h": 9
                 },
@@ -1044,7 +1676,7 @@
                 "description": "Requests that took longer than half a second. Click a trace ID to see which step was slow.",
                 "gridPos": {
                   "x": 0,
-                  "y": 9,
+                  "y": 14,
                   "w": 24,
                   "h": 9
                 },
@@ -1072,7 +1704,7 @@
                 "description": "The latest requests handled by the backend, store and chat services.",
                 "gridPos": {
                   "x": 0,
-                  "y": 18,
+                  "y": 23,
                   "w": 24,
                   "h": 9
                 },
@@ -2000,6 +2632,23 @@
       environment:
         XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
         DBUS_SESSION_BUS_ADDRESS: "unix:path={{ xdg_runtime_dir }}/bus"
+
+    # GF_SECURITY_ADMIN_PASSWORD only applies when Grafana creates its
+    # database; resetting keeps the secret authoritative after that too.
+    - name: Set the Grafana admin password from the secret
+      ansible.builtin.command:
+        cmd: podman exec -i grafana grafana cli admin reset-admin-password --password-from-stdin
+        stdin: "{{ grafana_admin_password }}"
+      register: grafana_password_reset
+      until: grafana_password_reset.rc == 0
+      retries: 10
+      delay: 3
+      changed_when: false
+      no_log: true
+      become: yes
+      become_user: myguy
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
 
     - name: Reload Prometheus config
       ansible.builtin.command:

@@ -16,6 +16,7 @@ import (
 	"myguy/internal/chatnotify"
 	"myguy/internal/proximity"
 	"myguy/internal/mailer"
+	"myguy/internal/metrics"
 	"myguy/internal/middleware"
 	"myguy/internal/models"
 	"myguy/internal/repositories"
@@ -83,6 +84,9 @@ func main() {
 	jwtMiddleware := middleware.NewJWTAuthMiddleware(os.Getenv("JWT_SECRET"))
 	// Initialize handlers
 	handler := api.NewHandler(authService, userService, taskService, reviewService, jwtMiddleware)
+
+	// Account and gig counts for Prometheus, on a port of their own
+	metrics.Serve(":9464", db)
 
 	// Setup router
 	r := gin.Default()
