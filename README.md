@@ -340,12 +340,13 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
 - `promtail` ships ModSecurity audit logs, the nginx JSON access log (`/var/log/nginx/access.json.log`) and every app container's output to Loki on the monitoring instance. Containers log to the systemd journal (`log_driver = "journald"`, set by `deploy.yml`), so logs survive container replacement; lines carrying sign-in codes are dropped before shipping
 
 **On the monitoring instance:**
-- Prometheus scrapes `node_exporter` (`:9100`) and Falco metrics (`:8765`) on the app instance via VPC every 15 seconds
-- Grafana is pre-provisioned with five dashboards:
-  - **App Instance Metrics** — CPU, memory and disk use now (green / amber / red) and over time
+- Prometheus scrapes `node_exporter` (`:9100`) on both servers (the app's via VPC, its own via `host.containers.internal`) and Falco metrics (`:8765`) on the app instance every 15 seconds
+- Grafana is pre-provisioned with these dashboards:
+  - **App Instance Metrics** / **Monitoring Instance Metrics** — CPU, memory and disk use now (green / amber / red) and over time, one dashboard per server
+  - **Traces** — failed, slow (over 500 ms) and recent requests from Tempo; a trace ID opens the full request timeline
   - **Falco Security Alerts** — whether Falco is reachable, alert count, and alerts by rule
   - **WAF — ModSecurity Detections** — ModSecurity rule triggers visualised from Loki
-  - **Visitors** — visitors whose browser ran the app, signed-in users, app requests, server errors, pages opened directly, referrers and response codes, from the nginx access log
+  - **Visitors** — IPs whose browser ran the app, signed-in IPs, app requests, server errors, pages opened directly, referrers and response codes, from the nginx access log (IP-based: one phone on mobile data counts many times)
   - **Service Logs** — every service's output in one place: lines and errors per service, and a searchable log view (90-day retention)
 
 Both Prometheus (`:9090`) and Grafana (`:3000`) are only reachable from within the VPC. To access them locally, SSH tunnel through the app instance as the `ops` user:

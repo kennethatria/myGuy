@@ -1,0 +1,56 @@
+# node_exporter (CPU, memory and disk metrics for Prometheus) as a systemd
+# service.  Included by observability.yml (app) and monitoring.yml; the
+# node_exporter user comes from users.yml.  Needs become.
+
+- name: Download node_exporter
+  ansible.builtin.get_url:
+    url: https://github.com/prometheus/node_exporter/releases/download/v1.8.2/node_exporter-1.8.2.linux-amd64.tar.gz
+    dest: /tmp/node_exporter.tar.gz
+    mode: "0644"
+
+- name: Extract node_exporter
+  ansible.builtin.unarchive:
+    src: /tmp/node_exporter.tar.gz
+    dest: /tmp
+    remote_src: yes
+
+- name: Install node_exporter binary
+  ansible.builtin.copy:
+    src: /tmp/node_exporter-1.8.2.linux-amd64/node_exporter
+    dest: /usr/local/bin/node_exporter
+    mode: "0755"
+    remote_src: yes
+
+- name: Create node_exporter systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/node_exporter.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Prometheus node_exporter
+      After=network.target
+
+      [Service]
+      User=node_exporter
+      Group=node_exporter
+      ExecStart=/usr/local/bin/node_exporter \
+        --collector.disable-defaults \
+        --collector.cpu \
+        --collector.meminfo \
+        --collector.filesystem
+      Restart=always
+      NoNewPrivileges=yes
+      ProtectSystem=strict
+      ProtectHome=yes
+      PrivateTmp=yes
+
+      [Install]
+      WantedBy=multi-user.target
+  register: node_exporter_unit
+
+- name: Enable and start node_exporter (restart when the unit changed)
+  ansible.builtin.systemd:
+    name: node_exporter
+    enabled: yes
+    state: "{{ 'restarted' if node_exporter_unit.changed else 'started' }}"
+    daemon_reload: yes
