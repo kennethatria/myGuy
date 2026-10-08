@@ -81,7 +81,7 @@ describe('Store Booking Flow', () => {
   })
 
   describe('Booking Request Button', () => {
-    it('should show "Book Now" button for non-owner users on active fixed-price items', async () => {
+    it('should show "Book" button for non-owner users on active fixed-price items', async () => {
       // Mock item fetch (non-owner: seller.id=2, user.id=1)
       global.fetch
         .mockResolvedValueOnce({ ok: true, json: async () => mockItem })
@@ -94,7 +94,7 @@ describe('Store Booking Flow', () => {
 
       const bookingButton = wrapper.find('[data-testid="booking-request-btn"]')
       expect(bookingButton.exists()).toBe(true)
-      expect(bookingButton.text()).toContain('Book Now')
+      expect(bookingButton.text()).toBe('Book')
       expect(bookingButton.attributes('disabled')).toBeUndefined()
     })
 

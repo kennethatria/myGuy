@@ -1,105 +1,91 @@
 <template>
-  <div class="container py-4 request-page">
-    <div v-if="loading" class="text-center py-5">
-      <div class="spinner-border" role="status">
-        <span class="visually-hidden">Loading...</span>
-      </div>
-    </div>
+  <div class="detail-page">
+    <p v-if="loading" class="detail-status-text" role="status">Loading the request...</p>
 
-    <div v-else-if="error" class="alert alert-danger" role="alert">{{ error }}</div>
+    <div v-else-if="error" class="detail-error" role="alert">{{ error }}</div>
 
     <template v-else-if="request">
-      <StickyNote :seed="request.id" size="large" class="request-note">
-        <template #header>
-          <span v-if="request.status !== 'active'" class="note-status">{{ statusLabel }}</span>
-          <span class="note-kicker">Wanted</span>
-          <h1 class="note-detail-headline">{{ request.title }}</h1>
-          <p class="note-detail-body">{{ request.description }}</p>
-        </template>
-        <template #footer>
-          <span>@{{ request.requester?.username || 'someone' }}</span>
-          <span v-if="request.status === 'active' && request.deadline && expiryLabel(request.deadline, now)">
-            {{ expiryLabel(request.deadline, now) }}
-          </span>
-        </template>
-      </StickyNote>
+      <DetailNote
+        tone="want"
+        :seed="request.id"
+        :status="request.status !== 'active' ? statusLabel : ''"
+        :title="request.title"
+        :body="request.description"
+        :person="request.requester ?? null"
+        :meta="postedMeta(request.created_at, request.deadline, request.status === 'active', now)"
+      />
 
-      <div v-if="isOwner" class="request-actions">
-        <p v-if="request.status === 'expired'" class="text-muted">
+      <template v-if="isOwner">
+        <p v-if="request.status === 'expired'" class="detail-line">
           No seller listed anything within 24 hours. Repost it for another 24 hours, or remove it.
         </p>
-        <p v-else-if="request.status === 'fulfilled'" class="text-muted">
+        <p v-else-if="request.status === 'fulfilled'" class="detail-line">
           You booked one of the listings below, so this request is closed.
         </p>
-        <p v-else class="text-muted">
+        <p v-else class="detail-line">
           Sellers see this on the Wanted tab. When one lists something for it, you get a message.
         </p>
-        <p v-if="confirmingRemove" class="text-muted">
-          Remove "{{ request.title }}" for good?
-        </p>
-        <p v-if="actionError" class="action-error" role="alert">{{ actionError }}</p>
-        <div v-if="request.status !== 'fulfilled'" class="action-row">
-          <template v-if="confirmingRemove">
+      </template>
+      <p v-else-if="request.status !== 'active'" class="detail-line">This request is closed.</p>
+
+      <section aria-labelledby="offers-title">
+        <h2 id="offers-title" class="detail-section-title">
+          Listed for this request<span v-if="listings.length"> ({{ listings.length }})</span>
+        </h2>
+        <ul v-if="listings.length" class="note-board">
+          <li v-for="item in listings" :key="item.id">
+            <StickyNote
+              tone="sell"
+              :seed="item.id"
+              :tape="!!photoUrl(item)"
+              :photo="photoUrl(item)"
+              :photo-alt="item.title"
+              :to="{ name: 'store-item', params: { id: item.id } }"
+            >
+              <template #header>
+                <span class="note-top">
+                  <h3 class="note-headline">{{ item.title }}</h3>
+                  <span v-if="listingPriceLabel(item)" class="note-price">{{ listingPriceLabel(item) }}</span>
+                </span>
+                <p class="note-text">{{ item.description }}</p>
+              </template>
+              <template #footer>
+                <span class="note-meta">{{ noteMeta(item, item.seller?.username || 'someone', showUnknownListings, now) }}</span>
+              </template>
+            </StickyNote>
+          </li>
+        </ul>
+        <p v-else class="detail-line">Nothing listed yet.</p>
+      </section>
+
+      <ActionBar v-if="isOwner ? request.status !== 'fulfilled' : request.status === 'active'">
+        <template v-if="isOwner">
+          <p v-if="confirmingRemove" class="bar-message">Remove "{{ request.title }}" for good?</p>
+          <p v-if="actionError" class="bar-error" role="alert">{{ actionError }}</p>
+          <div v-if="confirmingRemove" class="bar-row">
             <button class="btn btn-danger" :disabled="busy" @click="remove">
               {{ busy ? 'Removing...' : 'Yes, remove' }}
             </button>
             <button class="btn btn-outline" :disabled="busy" @click="confirmingRemove = false">Keep it</button>
-          </template>
+          </div>
           <template v-else>
-            <button
-              v-if="request.status === 'expired'"
-              class="btn btn-primary"
-              :disabled="busy"
-              @click="repost"
-            >
+            <button v-if="request.status === 'expired'" class="btn btn-primary" :disabled="busy" @click="repost">
               {{ busy ? 'Reposting...' : 'Repost for 24 hours' }}
             </button>
             <button class="btn btn-outline-danger" :disabled="busy" @click="confirmingRemove = true">
               Remove request
             </button>
           </template>
-        </div>
-      </div>
-
-      <div v-else-if="request.status === 'active'" class="request-actions">
-        <router-link
-          :to="{ name: 'create-listing', query: { request: request.id } }"
-          class="btn btn-primary btn-wide"
-        >
-          I have this: list it
-        </router-link>
-        <p class="text-muted">
-          Your listing goes on the marketplace as usual, and @{{ request.requester?.username || 'the requester' }} gets a message about it.
-        </p>
-      </div>
-
-      <p v-else class="text-muted request-actions">This request is closed.</p>
-
-      <section class="offers" aria-labelledby="offers-title">
-        <h2 id="offers-title" class="section-title">
-          Listed for this request<span v-if="listings.length"> ({{ listings.length }})</span>
-        </h2>
-        <ul v-if="listings.length" class="note-board">
-          <li v-for="item in listings" :key="item.id">
-            <StickyNote
-              :title="item.title"
-              :body="item.description"
-              :seed="item.id"
-              :photo="photoUrl(item)"
-              :photo-alt="item.title"
-              :to="{ name: 'store-item', params: { id: item.id } }"
-            >
-              <template #footer>
-                <DistanceTag :distance="item.distance" :show-unknown="showUnknownListings" />
-                <span>@{{ item.seller?.username || 'someone' }}</span>
-                <span v-if="listingPriceLabel(item)">{{ listingPriceLabel(item) }}</span>
-                <span v-if="item.deadline && expiryLabel(item.deadline, now)">{{ expiryLabel(item.deadline, now) }}</span>
-              </template>
-            </StickyNote>
-          </li>
-        </ul>
-        <p v-else class="text-muted">Nothing listed yet.</p>
-      </section>
+        </template>
+        <template v-else>
+          <router-link :to="{ name: 'create-listing', query: { request: request.id } }" class="btn btn-primary">
+            I have this: list it
+          </router-link>
+          <p class="bar-caption">
+            Your listing goes on the marketplace as usual, and @{{ request.requester?.username || 'the requester' }} gets a message about it.
+          </p>
+        </template>
+      </ActionBar>
     </template>
   </div>
 </template>
@@ -110,9 +96,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import config from '@/config'
 import StickyNote from '@/components/StickyNote.vue'
-import DistanceTag from '@/components/DistanceTag.vue'
+import DetailNote from '@/components/DetailNote.vue'
+import ActionBar from '@/components/ActionBar.vue'
 import { hasDistances } from '@/utils/distance'
-import { expiryLabel } from '@/utils/gigNote'
+import { noteMeta, postedMeta } from '@/utils/gigNote'
 import { listingPriceLabel } from '@/utils/listingNote'
 import { setPageTitle } from '@/utils/pageTitle'
 
@@ -122,6 +109,7 @@ interface ItemRequest {
   description: string
   status: string
   deadline?: string
+  created_at: string
   requester_id: number
   requester?: { id: number; username: string }
 }
@@ -238,115 +226,5 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
-.request-page {
-  max-width: 720px;
-  margin: 0 auto;
-}
-
-
-.request-note {
-  margin-bottom: 1.25rem;
-}
-
-.note-status {
-  align-self: flex-start;
-  padding: 0.15rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  background: rgba(31, 41, 55, 0.12);
-}
-
-.note-kicker {
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--note-muted);
-}
-
-.note-detail-headline {
-  margin: 0;
-  font-size: 1.75rem;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.note-detail-body {
-  margin: 0;
-  font-size: 1.15rem;
-  line-height: 1.5;
-  flex: 1;
-}
-
-.request-actions {
-  margin-bottom: 2rem;
-}
-
-.request-actions p {
-  margin: 0.5rem 0;
-}
-
-.action-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-}
-
-.action-row .btn,
-.btn-wide {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.section-title {
-  margin: 0 0 1rem;
-  font-size: 1.15rem;
-  font-weight: 600;
-}
-
-.note-board {
-  list-style: none;
-  margin: 0;
-  padding: 0.5rem 0.25rem;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 1.75rem;
-}
-
-.text-muted {
-  color: var(--color-text-light, #6b7280);
-}
-
-.alert-danger {
-  padding: 0.75rem 1.25rem;
-  border-radius: 0.25rem;
-  color: #842029;
-  background-color: #f8d7da;
-  border: 1px solid #f5c2c7;
-}
-
-@media (max-width: 480px) {
-  .note-detail-headline {
-    font-size: 1.4rem;
-  }
-
-  .btn-wide,
-  .action-row .btn {
-    width: 100%;
-  }
-
-  .note-board {
-    grid-template-columns: 1fr;
-  }
-}
-
-.action-error {
-  color: #dc2626;
-}
-
-</style>
+<style scoped src="@/assets/board.css"></style>
+<style scoped src="@/assets/detail.css"></style>

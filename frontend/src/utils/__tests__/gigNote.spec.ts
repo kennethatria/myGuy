@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { countWords, headlineFits, bodyFits, noteColor, noteTilt, expiryLabel, timeLeft, noteMeta } from '../gigNote'
+import { countWords, headlineFits, bodyFits, noteColor, noteTilt, expiryLabel, timeLeft, noteMeta, postedMeta } from '../gigNote'
 
 describe('gigNote', () => {
   it('counts words like the backend', () => {
@@ -47,5 +47,12 @@ describe('gigNote', () => {
     expect(noteMeta({ deadline }, 'ann', true, now)).toBe('No location · @ann · 23h')
     expect(noteMeta({ deadline }, 'ann', false, now)).toBe('@ann · 23h')
     expect(noteMeta({ distance: '<1 km', deadline: '2026-10-05T09:00:00Z' }, '', false, now)).toBe('<1 km')
+  })
+
+  it('writes when a post went up and, while live, when it comes down', () => {
+    const now = new Date('2026-10-05T10:00:00Z')
+    expect(postedMeta('2026-10-05T08:00:00Z', '2026-10-06T08:00:00Z', true, now)).toBe('Posted 2 h ago · Expires in 22h')
+    expect(postedMeta('2026-10-05T10:00:00Z', '2026-10-06T10:00:00Z', false, now)).toBe('Posted just now')
+    expect(postedMeta('2026-10-05T08:00:00Z', undefined, true, now)).toBe('Posted 2 h ago')
   })
 })

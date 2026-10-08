@@ -1,5 +1,5 @@
 <template>
-  <div class="chat-widget-container">
+  <div class="chat-widget-container" :style="actionBarHeight ? { bottom: `${actionBarHeight + 16}px` } : undefined">
     <!-- Widget Button -->
     <button
       v-if="!chatStore.widgetOpen && !route.meta.hideChatButton"
@@ -98,6 +98,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import { actionBarHeight } from '@/composables/useActionBar';
 import { useChatStore, conversationKey } from '@/stores/chat';
 import { useReviewsStore } from '@/stores/reviews';
 import { statusLabel, statusIcon, timeAgo } from '@/utils/conversationStatus';

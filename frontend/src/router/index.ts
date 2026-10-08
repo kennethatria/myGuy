@@ -75,7 +75,7 @@ const router = createRouter({
       path: '/tasks/:id',
       name: 'task-detail',
       component: () => import('@/views/tasks/TaskDetailView.vue'),
-      meta: { title: 'Gig', requiresAuth: true, back: { name: 'tasks' } }
+      meta: { title: 'Gig', heading: 'Gig', requiresAuth: true, back: { name: 'tasks' } }
     },
     {
       path: '/profile',
@@ -141,13 +141,13 @@ const router = createRouter({
       path: '/store/requests/:id',
       name: 'store-request',
       component: () => import('@/views/store/RequestView.vue'),
-      meta: { title: 'Request', requiresAuth: true, back: { name: 'store', query: { tab: 'wanted' } } }
+      meta: { title: 'Request', heading: 'Wanted', requiresAuth: true, back: { name: 'store', query: { tab: 'wanted' } } }
     },
     {
       path: '/store/:id',
       name: 'store-item',
       component: () => import('@/views/store/StoreItemView.vue'),
-      meta: { title: 'Marketplace', requiresAuth: true, back: { name: 'store' } }
+      meta: { title: 'Marketplace', heading: 'For sale', requiresAuth: true, back: { name: 'store' } }
     },
     {
       // Anything unmatched (old or mistyped links)
