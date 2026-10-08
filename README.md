@@ -167,7 +167,7 @@ graph TB
 | **Tempo** | `4318` | Distributed tracing — receives OTLP spans from all backend services (14-day retention); browse them in Grafana. |
 | **Prometheus** | `9090` | Metrics collection — scrapes CPU/memory and Falco security alerts. |
 | **Grafana** | `3000` | Visualization — dashboards for app metrics, security alerts, WAF detections, and visitors. |
-| **Loki** | `3100` | Log aggregation — receives ModSecurity audit logs, the nginx JSON access log and app container logs from Promtail (90-day retention). |
+| **Loki** | `3100` | Log aggregation — receives ModSecurity audit logs, the nginx JSON access log and app container logs from Promtail (8-day retention). |
 | **Umami** | `3001` | Privacy-friendly web analytics (self-hosted, with its own PostgreSQL). Only its tracker endpoints are public, via nginx. |
 
 All monitoring containers run as rootless Podman **Quadlet** units under `myguy`, so systemd starts, restarts, and boots them.
@@ -348,7 +348,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
   - **Falco Security Alerts** — whether Falco is reachable, alert count, and alerts by rule
   - **WAF — ModSecurity Detections** — ModSecurity rule triggers visualised from Loki
   - **Visitors** — IPs whose browser ran the app, signed-in IPs, app requests, server errors, pages opened directly, referrers and response codes, from the nginx access log (IP-based: one phone on mobile data counts many times)
-  - **Service Logs** — every service's output in one place: lines and errors per service, and a searchable log view (90-day retention)
+  - **Service Logs** — every service's output in one place: lines and errors per service, and a searchable log view (8-day retention)
 
 Both Prometheus (`:9090`) and Grafana (`:3000`) are only reachable from within the VPC. To access them locally, SSH tunnel through the app instance as the `ops` user:
 
