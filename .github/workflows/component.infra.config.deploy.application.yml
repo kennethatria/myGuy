@@ -196,11 +196,19 @@ jobs:
         if: inputs.scope != 'app'
         env:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DOMAIN: ${{ vars.DOMAIN }}
         run: |
           ansible-playbook \
             -i configuration_management/inventory.ini \
             configuration_management/monitoring.yml \
-            -e "$(jq -n --arg grafana_admin_password "$GRAFANA_ADMIN_PASSWORD" '$ARGS.named')"
+            -e "$(jq -n \
+                  --arg grafana_admin_password "$GRAFANA_ADMIN_PASSWORD" \
+                  --arg telegram_bot_token "$TELEGRAM_BOT_TOKEN" \
+                  --arg telegram_chat_id "$TELEGRAM_CHAT_ID" \
+                  --arg domain "$DOMAIN" \
+                  '$ARGS.named')"
 
       - name: Configure app instance base
         if: inputs.scope != 'app'
