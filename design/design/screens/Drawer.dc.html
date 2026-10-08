@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Menu</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>body{margin:0}button{font-family:inherit}</style>
+</helmet>
+<div style="width:390px;height:844px;background:#9CA3AF;display:flex;position:relative;overflow:hidden;font-family:'DM Sans',system-ui,sans-serif;color:#111827;box-sizing:border-box">
+<div style="width:300px;height:844px;background:#FFFFFF;display:flex;flex-direction:column;box-sizing:border-box;flex:none">
+<div style="height:56px;padding:0 20px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #EEF0F3;flex:none">
+<div style="width:28px;height:28px;border-radius:8px;background:#F58A7A;color:#7A1F12;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center">M</div>
+<span style="font-size:18px;font-weight:700">MyGuy</span>
+</div>
+<div style="flex:1;padding:12px 12px 0 12px;display:flex;flex-direction:column;gap:2px;overflow:hidden">
+<div style="font-size:12px;font-weight:600;color:#9CA3AF;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px">Browse</div>
+<div style="height:44px;border-radius:10px;background:#F5F6FF;display:flex;align-items:center;gap:12px;padding:0 12px;color:#B4402F;font-weight:600;font-size:16px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F58A7A" stroke-width="2" stroke-linejoin="round"><path d="M3 11l9-8 9 8v10h-6v-6H9v6H3z"/></svg>Home</div>
+<div style="height:44px;border-radius:10px;display:flex;align-items:center;gap:12px;padding:0 12px;color:#374151;font-size:16px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Gigs</div>
+<div style="height:44px;border-radius:10px;display:flex;align-items:center;gap:12px;padding:0 12px;color:#374151;font-size:16px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linejoin="round"><path d="M4 8l2-4h12l2 4v12H4zM4 8h16"/></svg>Marketplace</div>
+<div style="height:44px;border-radius:10px;display:flex;align-items:center;gap:12px;padding:0 12px;color:#374151;font-size:16px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.3 11l7.4-3.6M8.3 13l7.4 3.6"/></svg>Network</div>
+<div style="font-size:12px;font-weight:600;color:#9CA3AF;letter-spacing:0.06em;text-transform:uppercase;padding:20px 12px 8px 12px">Mine</div>
+<div style="height:44px;border-radius:10px;display:flex;align-items:center;gap:12px;padding:0 12px;color:#374151;font-size:16px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6zM9 12h7M9 16h7"/></svg>My stuff</div>
+<div style="height:44px;border-radius:10px;display:flex;align-items:center;gap:12px;padding:0 12px;color:#374151;font-size:16px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4 10-10"/></svg>Assignments</div>
+<div style="height:44px;border-radius:10px;display:flex;align-items:center;gap:12px;padding:0 12px;color:#374151;font-size:16px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linejoin="round"><path d="M3 11l18-8-8 18-2-8z"/></svg>Applications</div>
+</div>
+<div style="flex:none;padding:16px 20px 24px 20px;border-top:1px solid #EEF0F3;display:flex;align-items:center;gap:12px">
+<div style="width:44px;height:44px;border-radius:22px;background:#F58A7A;color:#7A1F12;font-size:17px;font-weight:600;display:flex;align-items:center;justify-content:center">S</div>
+<div style="flex:1;display:flex;flex-direction:column"><span style="font-size:16px;font-weight:600">Silver</span><span style="font-size:13px;color:#6B7280">⭐ 4.7</span></div>
+<button style="border:0;background:transparent;color:#6B7280;font-size:14px;font-weight:500;padding:10px 0">Sign out</button>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

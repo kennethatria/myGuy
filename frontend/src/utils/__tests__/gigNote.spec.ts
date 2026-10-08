@@ -20,7 +20,7 @@ describe('gigNote', () => {
     expect(noteColor(7)).toBe(noteColor(7))
     expect(noteColor(1)).not.toBe(noteColor(2))
     for (let id = 0; id < 20; id++) {
-      expect(Math.abs(noteTilt(id))).toBeLessThanOrEqual(2)
+      expect(Math.abs(noteTilt(id))).toBeLessThanOrEqual(0.6 + 1e-9)
     }
   })
 

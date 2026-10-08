@@ -328,7 +328,7 @@ watch(() => props.messages.length, () => {
   align-items: center;
   min-height: 44px;
   padding: 0 0.25rem;
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-primary);
   font-weight: 500;
   white-space: nowrap;
   text-decoration: none;
@@ -407,7 +407,7 @@ watch(() => props.messages.length, () => {
 }
 
 .other-user {
-  color: #4F46E5;
+  color: var(--color-primary);
   font-weight: 500;
 }
 
@@ -517,12 +517,12 @@ watch(() => props.messages.length, () => {
 
 .message-input:focus {
   outline: none;
-  border-color: #4F46E5;
+  border-color: var(--color-primary);
 }
 
 .send-button {
   padding: 0.75rem 1.25rem;
-  background: #4F46E5;
+  background: var(--color-primary);
   color: white;
   border: none;
   border-radius: 0.5rem;
@@ -531,7 +531,7 @@ watch(() => props.messages.length, () => {
 }
 
 .send-button:hover:not(:disabled) {
-  background: #4338ca;
+  background: var(--color-primary-dark);
 }
 
 .send-button:disabled {
@@ -560,8 +560,8 @@ watch(() => props.messages.length, () => {
   max-width: 90%;
   margin: 0.5rem auto;
   padding: 0.625rem 0.875rem;
-  background: #eef2ff;
-  border: 1px solid #c7d2fe;
+  background: var(--accent-tint);
+  border: 1px solid #FFD0C4;
   border-radius: 0.5rem;
   color: #3730a3;
   font-size: 0.875rem;
@@ -573,7 +573,7 @@ watch(() => props.messages.length, () => {
   display: block;
   margin-top: 0.25rem;
   font-size: 0.75rem;
-  color: #6366f1;
+  color: var(--accent-text);
 }
 
 .message-locked {

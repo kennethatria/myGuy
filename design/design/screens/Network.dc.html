@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Network</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>body{margin:0}button{font-family:inherit}</style>
+</helmet>
+<div style="width:390px;height:844px;background:#FAFAF8;display:flex;flex-direction:column;position:relative;overflow:hidden;font-family:'DM Sans',system-ui,sans-serif;color:#111827;box-sizing:border-box">
+<div style="display:flex;align-items:center;gap:4px;height:56px;padding:0 8px;box-sizing:border-box;flex:none">
+<button aria-label="Menu" style="width:44px;height:44px;border:0;background:transparent;display:flex;align-items:center;justify-content:center;padding:0"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+<span style="font-size:17px;font-weight:600;flex:1">Network</span>
+<span style="font-size:13px;color:#6B7280;padding-right:12px">2 people</span>
+</div>
+<div style="padding:6px 22px 0 22px">
+<div style="position:relative;background:#FBF1CE;border-radius:4px;padding:16px 18px;box-shadow:0 2px 5px rgba(17,24,39,0.12), 0 1px 1px rgba(17,24,39,0.06);transform:rotate(-0.5deg);font-size:14px;line-height:1.4;color:#4B5563">
+<div style="position:absolute;top:-7px;left:50%;margin-left:-24px;width:48px;height:14px;background:rgba(255,255,255,0.6);border-radius:2px"></div>
+Everyone you've done a gig or a sale with, and the rating you gave each other. <span style="font-weight:600;color:#111827">Tap someone</span> to see what others say.
+<div style="position:absolute;right:0;bottom:0;width:14px;height:14px;background:linear-gradient(135deg, #FAFAF8 50%, rgba(17,24,39,0.14) 50%);border-radius:0 0 4px 0"></div>
+</div>
+</div>
+<div style="display:flex;flex-direction:column;align-items:center;padding-top:14px">
+<svg width="340" height="440" viewBox="0 0 340 440" role="img" aria-label="Your rating network">
+<circle cx="170" cy="270" r="168" fill="#FFF8F5"/>
+<circle cx="170" cy="270" r="140" fill="#FFF1EC" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="170" cy="270" r="82" fill="#FFE7E0" stroke="#FFFFFF" stroke-width="2"/>
+<line x1="170" y1="270" x2="170" y2="170" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+<line x1="170" y1="170" x2="248" y2="122" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+<line x1="170" y1="270" x2="170" y2="170" stroke="#B07A2C" stroke-width="2" stroke-linecap="round"/>
+<line x1="170" y1="170" x2="248" y2="122" stroke="#3E7F46" stroke-width="2" stroke-linecap="round"/>
+<rect x="152" y="212" width="36" height="16" rx="8" fill="#FFF4D6" stroke="#B07A2C" stroke-width="1.5"/>
+<text x="170" y="223.5" text-anchor="middle" font-size="10" font-weight="700" fill="#713F12" font-family="DM Sans, system-ui, sans-serif">★ 3.5</text>
+<rect x="191" y="138" width="36" height="16" rx="8" fill="#E8F6EA" stroke="#3E7F46" stroke-width="1.5"/>
+<text x="209" y="149.5" text-anchor="middle" font-size="10" font-weight="700" fill="#2B5E32" font-family="DM Sans, system-ui, sans-serif">★ 4.7</text>
+<circle cx="170" cy="270" r="26" fill="#F58A7A" stroke="#FFFFFF" stroke-width="3"/>
+<text x="170" y="275" text-anchor="middle" font-size="14" font-weight="700" fill="#7A1F12" font-family="DM Sans, system-ui, sans-serif">You</text>
+<circle cx="170" cy="170" r="17" fill="#4B5563" stroke="#B07A2C" stroke-width="4"/>
+<text x="170" y="176" text-anchor="middle" font-size="15" font-weight="700" fill="#FFFFFF" font-family="DM Sans, system-ui, sans-serif">O</text>
+<circle cx="248" cy="122" r="17" fill="#6B7280" stroke="#3E7F46" stroke-width="4"/>
+<text x="248" y="128" text-anchor="middle" font-size="15" font-weight="700" fill="#FFFFFF" font-family="DM Sans, system-ui, sans-serif">U</text>
+</svg>
+<div style="display:flex;gap:18px;font-size:13px;color:#374151;margin-top:2px">
+<span style="display:flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:5px;background:#3E7F46;display:inline-block"></span>Strong 4.5+</span>
+<span style="display:flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:5px;background:#B07A2C;display:inline-block"></span>Fair 3–4.4</span>
+<span style="display:flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:5px;background:#B9402F;display:inline-block"></span>Weak &lt;3</span>
+</div>
+<div style="padding:12px 36px 0 36px;font-size:12px;line-height:1.4;color:#6B7280;text-align:center">Line colour = average rating between two people. Outer rings show who each connection has worked with.</div>
+</div>
+<div style="position:absolute;right:16px;bottom:20px;width:56px;height:56px;border-radius:28px;background:#F58A7A;box-shadow:0 4px 12px rgba(245,138,122,0.40);display:flex;align-items:center;justify-content:center">
+<svg width="26" height="26" viewBox="0 0 24 24" fill="#7A1F12"><path d="M3 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H9l-4 3.5V14a2 2 0 0 1-2-2z"/><path d="M19 8h0a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2v2.5L15.5 19H11a2 2 0 0 1-1.7-1h5.7a3 3 0 0 0 3-3z" opacity="0.7"/></svg>
+<div style="position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:7px;background:#EF4444;border:2px solid #FAFAF8"></div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

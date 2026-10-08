@@ -349,7 +349,7 @@ const handleSubmit = async () => {
 }
 
 .photo-add:focus-within {
-  outline: 3px solid var(--color-primary, #4f46e5);
+  outline: 3px solid var(--color-primary);
   outline-offset: 2px;
 }
 
@@ -359,7 +359,7 @@ const handleSubmit = async () => {
   gap: 0.15rem;
   margin-bottom: 1.25rem;
   padding: 0.75rem 1rem;
-  border-left: 4px solid var(--color-primary, #4f46e5);
+  border-left: 4px solid var(--color-primary);
   background: #fff;
   border-radius: 0 0.375rem 0.375rem 0;
 }

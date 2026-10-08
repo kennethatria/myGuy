@@ -233,11 +233,11 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   stroke-width: 0.6;
 }
 
-.band-0 { fill: #c7d2fe; }
-.band-1 { fill: #d5ddfe; }
-.band-2 { fill: #e2e8ff; }
-.band-3 { fill: #ebeffe; }
-.band-4 { fill: #f3f5ff; }
+.band-0 { fill: #FFD0C4; }
+.band-1 { fill: #FFDDD3; }
+.band-2 { fill: #FFE7E0; }
+.band-3 { fill: #FFF1EC; }
+.band-4 { fill: #FFF8F5; }
 
 .ring.unknown {
   fill: none;
@@ -261,7 +261,7 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
 }
 
 .you-dot {
-  fill: var(--color-primary, #4f46e5);
+  fill: var(--color-primary);
   stroke: #fff;
   stroke-width: 0.8;
 }
@@ -270,7 +270,7 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   font-size: 3px;
   font-weight: 700;
   fill: #312e81;
-  stroke: #c7d2fe;
+  stroke: #FFD0C4;
   stroke-width: 0.8px;
   paint-order: stroke;
 }
@@ -291,8 +291,8 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
 }
 
 .dot:focus-visible .dot-hit {
-  fill: rgba(79, 70, 229, 0.15);
-  stroke: var(--color-primary, #4f46e5);
+  fill: rgba(245, 138, 122, 0.15);
+  stroke: var(--color-primary);
   stroke-width: 0.5;
 }
 
@@ -340,7 +340,7 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
   padding: 0 0.25rem;
   border: none;
   background: none;
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-primary);
   text-decoration: underline;
   cursor: pointer;
 }

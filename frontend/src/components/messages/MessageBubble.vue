@@ -172,11 +172,11 @@ function deleteMessage() {
 
 .sender-name {
   font-weight: 600;
-  color: #4F46E5;
+  color: var(--color-primary);
 }
 
 .own-message .sender-name {
-  color: #4338ca;
+  color: var(--color-primary-dark);
 }
 
 .message-time {
@@ -212,7 +212,7 @@ function deleteMessage() {
 
 .edit-input:focus {
   outline: none;
-  border-color: #4F46E5;
+  border-color: var(--color-primary);
 }
 
 .edit-actions {
@@ -231,12 +231,12 @@ function deleteMessage() {
 }
 
 .save-btn {
-  background: #4F46E5;
+  background: var(--color-primary);
   color: white;
 }
 
 .save-btn:hover {
-  background: #4338ca;
+  background: var(--color-primary-dark);
 }
 
 .cancel-btn {

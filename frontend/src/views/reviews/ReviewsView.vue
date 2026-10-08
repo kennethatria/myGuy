@@ -360,7 +360,7 @@ onBeforeUnmount(() => {
 .back-to-mine {
   display: inline-block;
   margin-top: 0.25rem;
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-primary);
   font-weight: 600;
   font-size: 0.875rem;
 }
@@ -421,7 +421,7 @@ onBeforeUnmount(() => {
 }
 
 .you-dot {
-  fill: var(--color-primary, #4f46e5);
+  fill: var(--color-primary);
 }
 
 .you-label {
@@ -493,7 +493,7 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-primary);
 }
 
 .popup-close {
@@ -567,7 +567,7 @@ onBeforeUnmount(() => {
   border: none;
   background: none;
   padding: 0;
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-primary);
   text-decoration: underline;
   cursor: pointer;
 }

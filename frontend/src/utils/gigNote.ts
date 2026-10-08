@@ -29,9 +29,9 @@ export function noteColor(id: number): NoteColor {
   return NOTE_COLORS[Math.abs(id) % NOTE_COLORS.length]
 }
 
-/** A small stable tilt (−2° to 2°) so the board looks hand-pinned. */
+/** A slight stable tilt (−0.6° to 0.6°) so the board looks hand-pinned. */
 export function noteTilt(id: number): number {
-  return ((Math.abs(id) * 7) % 5) - 2
+  return (((Math.abs(id) * 7) % 5) - 2) * 0.3
 }
 
 /**

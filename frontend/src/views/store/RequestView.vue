@@ -1,9 +1,5 @@
 <template>
   <div class="container py-4 request-page">
-    <router-link :to="{ name: 'store', query: { tab: 'wanted' } }" class="back-link">
-      <span aria-hidden="true">←</span> Back to Wanted
-    </router-link>
-
     <div v-if="loading" class="text-center py-5">
       <div class="spinner-border" role="status">
         <span class="visually-hidden">Loading...</span>
@@ -248,16 +244,6 @@ onUnmounted(() => {
   margin: 0 auto;
 }
 
-.back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 44px;
-  margin-bottom: 1rem;
-  color: var(--color-primary, #4f46e5);
-  text-decoration: none;
-  font-weight: 500;
-}
 
 .request-note {
   margin-bottom: 1.25rem;

@@ -5,6 +5,7 @@
     :class="['sticky-note', `note-${color}`, `note-${size}`, { 'is-link': to, 'has-photo': photo }]"
     :style="{ '--tilt': `${tilt}deg` }"
   >
+    <span v-if="tape" class="note-tape" aria-hidden="true"></span>
     <figure v-if="photo" class="note-photo">
       <img :src="photo" :alt="photoAlt" loading="lazy" />
     </figure>
@@ -15,6 +16,7 @@
     <footer v-if="$slots.footer" class="note-footer">
       <slot name="footer" />
     </footer>
+    <span v-if="fold" class="note-fold" aria-hidden="true"></span>
   </component>
 </template>
 
@@ -34,6 +36,9 @@ const props = withDefaults(defineProps<{
   // A photo taped to the top of the note (marketplace listings)
   photo?: string
   photoAlt?: string
+  // A strip of tape across the top edge, and a folded bottom-right corner
+  tape?: boolean
+  fold?: boolean
 }>(), {
   title: '',
   body: '',
@@ -41,7 +46,9 @@ const props = withDefaults(defineProps<{
   size: 'small',
   flat: false,
   photo: '',
-  photoAlt: ''
+  photoAlt: '',
+  tape: false,
+  fold: false
 })
 
 const color = computed(() => noteColor(props.seed))
@@ -57,9 +64,10 @@ const tilt = computed(() => (props.flat ? 0 : noteTilt(props.seed)))
   gap: 0.5rem;
   color: var(--note-ink);
   text-decoration: none;
+  position: relative;
   background: var(--note-bg);
-  border-radius: 2px 2px 6px 6px;
-  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08), 0 6px 14px -6px rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+  box-shadow: var(--note-shadow);
   transform: rotate(var(--tilt));
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   overflow-wrap: anywhere;
@@ -113,6 +121,27 @@ const tilt = computed(() => (props.flat ? 0 : noteTilt(props.seed)))
   aspect-ratio: 16 / 10;
 }
 
+.note-tape {
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  width: 48px;
+  height: 14px;
+  margin-left: -24px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.note-fold {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 0 0 4px 0;
+  background: linear-gradient(135deg, var(--bg) 50%, rgba(17, 24, 39, 0.14) 50%);
+}
+
 .note-yellow { --note-bg: #fef3a3; }
 .note-pink { --note-bg: #fbcfe8; }
 .note-blue { --note-bg: #bfdbfe; }
@@ -122,11 +151,11 @@ const tilt = computed(() => (props.flat ? 0 : noteTilt(props.seed)))
 .is-link:hover,
 .is-link:focus-visible {
   transform: rotate(0deg) translateY(-2px);
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.08), 0 12px 20px -8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 10px rgba(17, 24, 39, 0.16), 0 1px 2px rgba(17, 24, 39, 0.08);
 }
 
 .is-link:focus-visible {
-  outline: 3px solid var(--color-primary, #4f46e5);
+  outline: 3px solid var(--color-primary);
   outline-offset: 3px;
 }
 
@@ -190,7 +219,7 @@ const tilt = computed(() => (props.flat ? 0 : noteTilt(props.seed)))
   gap: 0.25rem 0.75rem;
   font-size: 0.8rem;
   color: var(--note-muted);
-  border-top: 1px dashed rgba(31, 41, 55, 0.2);
+  border-top: 1px dashed rgba(17, 24, 39, 0.22);
   padding-top: 0.5rem;
 }
 </style>
