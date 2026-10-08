@@ -133,10 +133,10 @@ resource "linode_firewall" "zipkin_firewall" {
   label = "${var.infra_name}-${var.environment}-monitoring-firewall"
 
   inbound {
-    label    = "allow-zipkin-from-vpc"
+    label    = "allow-tempo-otlp-from-vpc"
     action   = "ACCEPT"
     protocol = "TCP"
-    ports    = "9411"
+    ports    = "4318"
     ipv4     = ["10.0.0.0/24"]
   }
 

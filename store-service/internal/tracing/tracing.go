@@ -2,18 +2,28 @@ package tracing
 
 import (
 	"context"
+	"os"
 
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/zipkin"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 )
 
-// InitTracer sets up the OpenTelemetry tracer provider with a Zipkin exporter.
+// localTempo is where traces go when OTEL_EXPORTER_OTLP_ENDPOINT is unset:
+// a Tempo on this machine (docker-compose.override.yml).
+const localTempo = "http://localhost:4318/v1/traces"
+
+// InitTracer sets up the OpenTelemetry tracer provider with an OTLP/HTTP
+// exporter that sends to OTEL_EXPORTER_OTLP_ENDPOINT (Tempo).
 // Returns a shutdown function that should be deferred in main.
-func InitTracer(serviceName, zipkinURL string) (func(context.Context) error, error) {
-	exporter, err := zipkin.New(zipkinURL)
+func InitTracer(ctx context.Context, serviceName string) (func(context.Context) error, error) {
+	var opts []otlptracehttp.Option
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" && os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") == "" {
+		opts = append(opts, otlptracehttp.WithEndpointURL(localTempo))
+	}
+	exporter, err := otlptracehttp.New(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}

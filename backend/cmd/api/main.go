@@ -28,11 +28,7 @@ func main() {
 	godotenv.Load() // Ignore error if .env doesn't exist
 
 	// Initialize OpenTelemetry tracing
-	zipkinURL := os.Getenv("ZIPKIN_URL")
-	if zipkinURL == "" {
-		zipkinURL = "http://localhost:9411/api/v2/spans"
-	}
-	shutdown, err := tracing.InitTracer("myguy-backend", zipkinURL)
+	shutdown, err := tracing.InitTracer(context.Background(), "myguy-backend")
 	if err != nil {
 		log.Fatal("Failed to initialize tracer:", err)
 	}

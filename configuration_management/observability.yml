@@ -1,9 +1,22 @@
-# observability.yml - node_exporter (CPU/memory metrics for Prometheus)
+# observability.yml - node_exporter (CPU/memory/disk metrics for Prometheus)
 
 ---
 - name: Configure app instance observability
   hosts: "{{ target | default('app') }}"
   become: yes
+
+  handlers:
+    - name: restart node_exporter
+      ansible.builtin.systemd:
+        name: node_exporter
+        state: restarted
+        daemon_reload: yes
+
+    - name: restart promtail
+      ansible.builtin.systemd:
+        name: promtail
+        state: restarted
+        daemon_reload: yes
 
   tasks:
     - name: Download node_exporter
@@ -40,7 +53,8 @@
           ExecStart=/usr/local/bin/node_exporter \
             --collector.disable-defaults \
             --collector.cpu \
-            --collector.meminfo
+            --collector.meminfo \
+            --collector.filesystem
           Restart=always
           NoNewPrivileges=yes
           ProtectSystem=strict
@@ -49,6 +63,7 @@
 
           [Install]
           WantedBy=multi-user.target
+      notify: restart node_exporter
 
     - name: Enable and start node_exporter
       ansible.builtin.systemd:
@@ -57,7 +72,7 @@
         state: started
         daemon_reload: yes
 
-    # --- Promtail (ships ModSecurity audit log to Loki) ---
+    # --- Promtail (ships ModSecurity, nginx access and container logs to Loki) ---
 
     - name: Install unzip
       ansible.builtin.apt:
@@ -132,6 +147,37 @@
                   labels:
                     job: nginx_access
                     __path__: /var/log/nginx/access.json.log
+
+            # App container output (podman log_driver journald, set in
+            # deploy.yml).  Labels stay low-cardinality: service and stream.
+            - job_name: containers
+              journal:
+                path: /var/log/journal
+                max_age: 12h
+                labels:
+                  job: containers
+              relabel_configs:
+                - source_labels: ['__journal_container_name']
+                  regex: '.+'
+                  action: keep
+                # myguy_api_1 -> api
+                - source_labels: ['__journal_container_name']
+                  regex: '(?:myguy_)?(.+?)(?:_[0-9]+)?'
+                  target_label: service
+                - source_labels: ['__journal_priority_keyword']
+                  regex: 'err'
+                  replacement: stderr
+                  target_label: stream
+                - source_labels: ['__journal_priority_keyword']
+                  regex: 'info'
+                  replacement: stdout
+                  target_label: stream
+              pipeline_stages:
+                # The backend logs sign-in codes when SMTP is unset; they must
+                # never leave the server.
+                - drop:
+                    expression: 'login code for'
+      notify: restart promtail
 
     - name: Create Promtail systemd service
       ansible.builtin.copy:

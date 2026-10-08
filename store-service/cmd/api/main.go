@@ -29,11 +29,7 @@ func main() {
 	}
 
 	// Initialize OpenTelemetry tracing
-	zipkinURL := os.Getenv("ZIPKIN_URL")
-	if zipkinURL == "" {
-		zipkinURL = "http://localhost:9411/api/v2/spans"
-	}
-	shutdown, err := tracing.InitTracer("myguy-store-service", zipkinURL)
+	shutdown, err := tracing.InitTracer(context.Background(), "myguy-store-service")
 	if err != nil {
 		log.Fatal("Failed to initialize tracer:", err)
 	}

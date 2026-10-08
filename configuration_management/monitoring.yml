@@ -1,4 +1,4 @@
-# monitoring.yml - Install Zipkin, Prometheus, Grafana, and Loki on the monitoring instance
+# monitoring.yml - Install Tempo, Prometheus, Grafana, and Loki on the monitoring instance
 #
 # Runs as myguy (inventory ansible_user).  System tasks (apt, file writes under
 # /etc/) carry explicit become: yes.  Podman containers run rootlessly as myguy
@@ -13,9 +13,17 @@
     # Run as rootless Podman Quadlet units owned by myguy: systemd starts,
     # restarts and boots each container (linger is enabled in users.yml).
     monitoring_containers:
-      - name: zipkin
-        image: docker.io/openzipkin/zipkin
-        ports: ["9411:9411"]
+      # Traces: the services send OTLP/HTTP to 4318; Grafana reads 3200.
+      # Runs as container root (still the unprivileged myguy on the host)
+      # because the image's user can't write a fresh named volume.
+      - name: tempo
+        image: docker.io/grafana/tempo:2.6.1
+        ports: ["4318:4318", "3200:3200"]
+        user: "0"
+        volumes:
+          - /etc/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+          - tempo-data:/var/tempo
+        exec: -config.file=/etc/tempo/tempo.yml
       - name: prometheus
         image: docker.io/prom/prometheus:latest
         ports: ["9090:9090"]
@@ -65,6 +73,13 @@
     - name: restart loki
       ansible.builtin.command:
         cmd: podman restart loki
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+      changed_when: false
+
+    - name: restart tempo
+      ansible.builtin.command:
+        cmd: podman restart tempo
       environment:
         XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
       changed_when: false
@@ -154,9 +169,9 @@
         mode: "0755"
       become: yes
 
-    - name: Set zipkin_url fact for use by other plays
+    - name: Set otel_endpoint fact for use by other plays
       ansible.builtin.set_fact:
-        zipkin_url: "http://{{ ansible_host }}:9411/api/v2/spans"
+        otel_endpoint: "http://{{ ansible_host }}:4318"
 
     # --- Prometheus ---
 
@@ -233,6 +248,22 @@
       notify: restart grafana
       become: yes
 
+    - name: Write Grafana Tempo datasource
+      ansible.builtin.copy:
+        dest: /etc/grafana/provisioning/datasources/tempo.yml
+        mode: "0644"
+        content: |
+          apiVersion: 1
+          datasources:
+            - name: Tempo
+              type: tempo
+              uid: tempo
+              access: proxy
+              url: http://host.containers.internal:3200
+              isDefault: false
+      notify: restart grafana
+      become: yes
+
     - name: Write Grafana dashboard provisioning config
       ansible.builtin.copy:
         dest: /etc/grafana/provisioning/dashboards/default.yml
@@ -247,6 +278,9 @@
       become: yes
 
     - name: Write node exporter dashboard
+      # Plain-language health board: a "now" number per resource coloured
+      # green / amber / red, then the same resource over time on a fixed
+      # 0-100 % scale so a flat line reads as calm, not as a scary zoom.
       ansible.builtin.copy:
         dest: /etc/grafana/dashboards/node-exporter.json
         mode: "0644"
@@ -257,34 +291,84 @@
             "schemaVersion": 36,
             "panels": [
               {
-                "type": "timeseries",
-                "title": "CPU Usage (%)",
-                "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
-                "targets": [
-                  {
-                    "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[2m])) * 100)",
-                    "legendFormat": "{{instance}}"
-                  }
-                ]
+                "type": "stat",
+                "title": "CPU busy now",
+                "description": "How hard the app server's processors are working. Under 70% is healthy; sustained over 90% means requests will slow down.",
+                "gridPos": { "x": 0, "y": 0, "w": 8, "h": 5 },
+                "fieldConfig": { "defaults": { "unit": "percent", "decimals": 0, "min": 0, "max": 100,
+                  "thresholds": { "mode": "absolute", "steps": [
+                    { "color": "green", "value": null }, { "color": "orange", "value": 70 }, { "color": "red", "value": 90 } ] } } },
+                "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+                "targets": [ { "refId": "A", "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])))" } ]
+              },
+              {
+                "type": "stat",
+                "title": "Memory used now",
+                "description": "Share of RAM in use (page cache the kernel can free is not counted). Under 80% is healthy; near 100% the kernel starts killing containers.",
+                "gridPos": { "x": 8, "y": 0, "w": 8, "h": 5 },
+                "fieldConfig": { "defaults": { "unit": "percent", "decimals": 0, "min": 0, "max": 100,
+                  "thresholds": { "mode": "absolute", "steps": [
+                    { "color": "green", "value": null }, { "color": "orange", "value": 80 }, { "color": "red", "value": 90 } ] } } },
+                "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+                "targets": [ { "refId": "A", "expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)" } ]
+              },
+              {
+                "type": "stat",
+                "title": "Disk used now",
+                "description": "Share of the main disk in use. Uploads, Postgres and container images all live here. Act before 85%: a full disk stops the database.",
+                "gridPos": { "x": 16, "y": 0, "w": 8, "h": 5 },
+                "fieldConfig": { "defaults": { "unit": "percent", "decimals": 0, "min": 0, "max": 100,
+                  "thresholds": { "mode": "absolute", "steps": [
+                    { "color": "green", "value": null }, { "color": "orange", "value": 75 }, { "color": "red", "value": 85 } ] } } },
+                "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+                "targets": [ { "refId": "A", "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"})" } ]
               },
               {
                 "type": "timeseries",
-                "title": "Memory Usage (%)",
-                "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
-                "targets": [
-                  {
-                    "expr": "100 - ((node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100)",
-                    "legendFormat": "{{instance}}"
-                  }
-                ]
+                "title": "CPU busy over time",
+                "description": "Shaded bands: green is healthy, amber is busy, red is overloaded.",
+                "gridPos": { "x": 0, "y": 5, "w": 8, "h": 9 },
+                "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "color": { "mode": "fixed", "fixedColor": "text" },
+                  "thresholds": { "mode": "absolute", "steps": [
+                    { "color": "green", "value": null }, { "color": "orange", "value": 70 }, { "color": "red", "value": 90 } ] },
+                  "custom": { "lineWidth": 2, "fillOpacity": 0, "thresholdsStyle": { "mode": "area" } } } },
+                "options": { "legend": { "showLegend": false }, "tooltip": { "mode": "single" } },
+                "targets": [ { "refId": "A", "legendFormat": "CPU", "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])))" } ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Memory used over time",
+                "description": "Shaded bands: green is healthy, amber is tight, red is close to running out.",
+                "gridPos": { "x": 8, "y": 5, "w": 8, "h": 9 },
+                "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "color": { "mode": "fixed", "fixedColor": "text" },
+                  "thresholds": { "mode": "absolute", "steps": [
+                    { "color": "green", "value": null }, { "color": "orange", "value": 80 }, { "color": "red", "value": 90 } ] },
+                  "custom": { "lineWidth": 2, "fillOpacity": 0, "thresholdsStyle": { "mode": "area" } } } },
+                "options": { "legend": { "showLegend": false }, "tooltip": { "mode": "single" } },
+                "targets": [ { "refId": "A", "legendFormat": "Memory", "expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)" } ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Disk used over time",
+                "description": "A steady climb means something is filling the disk (uploads, logs, old images).",
+                "gridPos": { "x": 16, "y": 5, "w": 8, "h": 9 },
+                "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "color": { "mode": "fixed", "fixedColor": "text" },
+                  "thresholds": { "mode": "absolute", "steps": [
+                    { "color": "green", "value": null }, { "color": "orange", "value": 75 }, { "color": "red", "value": 85 } ] },
+                  "custom": { "lineWidth": 2, "fillOpacity": 0, "thresholdsStyle": { "mode": "area" } } } },
+                "options": { "legend": { "showLegend": false }, "tooltip": { "mode": "single" } },
+                "targets": [ { "refId": "A", "legendFormat": "Disk", "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"})" } ]
               }
             ],
-            "time": { "from": "now-1h", "to": "now" },
-            "refresh": "30s"
+            "time": { "from": "now-24h", "to": "now" },
+            "refresh": "1m"
           }
       become: yes
 
     - name: Write Falco security alerts dashboard
+      # Falco (0.38+) exports rule hits as falcosecurity_falco_rules_matches_total,
+      # a series that only appears once a rule first fires, so the stat falls
+      # back to 0 and "Falco running" shows the 0 is real, not a dead scrape.
       ansible.builtin.copy:
         dest: /etc/grafana/dashboards/falco.json
         mode: "0644"
@@ -295,29 +379,42 @@
             "schemaVersion": 36,
             "panels": [
               {
-                "type": "timeseries",
-                "title": "Security Alerts by Priority",
-                "gridPos": { "x": 0, "y": 0, "w": 24, "h": 8 },
-                "targets": [
-                  {
-                    "expr": "rate(falco_events_total[5m])",
-                    "legendFormat": "{{priority}} - {{rule}}"
-                  }
-                ]
+                "type": "stat",
+                "title": "Falco running",
+                "description": "Whether Prometheus can reach Falco on the app server. If this is Down, an alert count of 0 means nothing.",
+                "gridPos": { "x": 0, "y": 0, "w": 8, "h": 5 },
+                "fieldConfig": { "defaults": {
+                  "mappings": [ { "type": "value", "options": {
+                    "0": { "text": "Down", "color": "red" }, "1": { "text": "Running", "color": "green" } } } ],
+                  "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] } } },
+                "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+                "targets": [ { "refId": "A", "expr": "max(up{job=\"falco\"}) or vector(0)" } ]
               },
               {
                 "type": "stat",
-                "title": "Total Alerts (last 1h)",
-                "gridPos": { "x": 0, "y": 8, "w": 8, "h": 4 },
-                "targets": [
-                  {
-                    "expr": "increase(falco_events_total[1h])"
-                  }
-                ]
+                "title": "Alerts in this time range",
+                "description": "Suspicious activity Falco caught on the app server (unexpected shells, sensitive file reads, privilege changes). 0 is normal.",
+                "gridPos": { "x": 8, "y": 0, "w": 16, "h": 5 },
+                "fieldConfig": { "defaults": { "decimals": 0,
+                  "thresholds": { "mode": "absolute", "steps": [
+                    { "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 10 } ] } } },
+                "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+                "targets": [ { "refId": "A", "instant": true,
+                  "expr": "sum(increase(falcosecurity_falco_rules_matches_total[$__range])) or vector(0)" } ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Alerts by rule",
+                "description": "Which Falco rules fired and when. Empty means no alerts.",
+                "gridPos": { "x": 0, "y": 5, "w": 24, "h": 9 },
+                "fieldConfig": { "defaults": { "decimals": 0, "noValue": "No alerts",
+                  "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } } },
+                "targets": [ { "refId": "A", "legendFormat": "{{priority}} · {{rule_name}}",
+                  "expr": "sum by (priority, rule_name) (increase(falcosecurity_falco_rules_matches_total[$__interval]))" } ]
               }
             ],
-            "time": { "from": "now-1h", "to": "now" },
-            "refresh": "30s"
+            "time": { "from": "now-24h", "to": "now" },
+            "refresh": "1m"
           }
       become: yes
 
@@ -381,12 +478,11 @@
       become: yes
 
     - name: Write Visitors dashboard
-      # Built from the nginx JSON access log (job="nginx_access").  A "page
-      # view" is a successful GET for an app page: requests nginx proxies to
-      # a service (/api, /store/api|uploads, /chat/, /socket.io, /health),
-      # static assets and obvious bots are excluded.  The SPA
-      # loads once per visit, so this counts visits/page loads, not in-app
-      # route changes.  Visitors are approximated by distinct client IP.
+      # Built from the nginx JSON access log (job="nginx_access").  Any unknown
+      # path is answered with the app page, so scanners posing as browsers
+      # would count as visitors; a visitor is therefore an IP whose browser
+      # ran the app (downloaded /assets/*.js or made a successful API call).
+      # Visitors are approximated by distinct client IP.
       ansible.builtin.copy:
         dest: /etc/grafana/dashboards/visitors.json
         mode: "0644"
@@ -398,106 +494,473 @@
             "panels": [
               {
                 "type": "stat",
-                "title": "Unique visitors",
-                "description": "Distinct client IPs that loaded an app page in the selected time range.",
-                "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
-                "datasource": { "type": "loki", "uid": "loki" },
+                "title": "Visitors",
+                "description": "People whose browser actually ran the app (downloaded its code or used it signed in), counted by IP address. Scanners that only fetch the home page are left out.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 6,
+                  "h": 5
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    },
+                    "decimals": 0
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
                 "targets": [
-                  { "refId": "A", "queryType": "instant",
-                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|store/(api|uploads)/.*|chat/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range])))" }
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | uri =~ \"/assets/.*[.]js|/(api|store/api|chat/api)/.*\" | status < 400 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range])))"
+                  }
                 ]
               },
               {
                 "type": "stat",
-                "title": "Page loads",
-                "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
-                "datasource": { "type": "loki", "uid": "loki" },
+                "title": "Signed-in users",
+                "description": "IP addresses that used the app while signed in (made a successful API call).",
+                "gridPos": {
+                  "x": 6,
+                  "y": 0,
+                  "w": 6,
+                  "h": 5
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    },
+                    "decimals": 0
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
                 "targets": [
-                  { "refId": "A", "queryType": "instant",
-                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|store/(api|uploads)/.*|chat/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range]))" }
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | uri =~ \"/(api|store/api|chat/api)/.*\" | status < 400 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range])))"
+                  }
                 ]
               },
               {
                 "type": "stat",
-                "title": "API requests",
-                "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
-                "datasource": { "type": "loki", "uid": "loki" },
+                "title": "App requests",
+                "description": "Successful calls the app made to the backend, store and chat. A good measure of how much the app is used.",
+                "gridPos": {
+                  "x": 12,
+                  "y": 0,
+                  "w": 6,
+                  "h": 5
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    },
+                    "decimals": 0
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
                 "targets": [
-                  { "refId": "A", "queryType": "instant",
-                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | uri =~ \"/(api|store/api|chat)/.*\" [$__range]))" }
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | uri =~ \"/(api|store/api|chat/api)/.*\" | status < 400 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range]))"
+                  }
                 ]
               },
               {
                 "type": "stat",
-                "title": "Error responses (5xx)",
-                "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
-                "datasource": { "type": "loki", "uid": "loki" },
+                "title": "Server errors (5xx)",
+                "description": "Requests the server failed to answer. Should be close to 0; see Service Logs for the cause.",
+                "gridPos": {
+                  "x": 18,
+                  "y": 0,
+                  "w": 6,
+                  "h": 5
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
                 "targets": [
-                  { "refId": "A", "queryType": "instant",
-                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | status >= 500 [$__range]))" }
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | status >= 500 [$__range])) or vector(0)"
+                  }
                 ]
               },
               {
                 "type": "timeseries",
-                "title": "Unique visitors per hour",
-                "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 },
+                "title": "Visitors per hour",
+                "gridPos": {
+                  "x": 0,
+                  "y": 5,
+                  "w": 12,
+                  "h": 8
+                },
                 "interval": "1h",
-                "datasource": { "type": "loki", "uid": "loki" },
-                "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60 } } },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {
+                      "drawStyle": "bars",
+                      "fillOpacity": 60
+                    },
+                    "decimals": 0
+                  }
+                },
+                "options": {
+                  "legend": {
+                    "showLegend": false
+                  }
+                },
                 "targets": [
-                  { "refId": "A", "legendFormat": "visitors",
-                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|store/(api|uploads)/.*|chat/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [1h])))" }
+                  {
+                    "refId": "A",
+                    "legendFormat": "visitors",
+                    "expr": "count(count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | uri =~ \"/assets/.*[.]js|/(api|store/api|chat/api)/.*\" | status < 400 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [1h])))"
+                  }
                 ]
               },
               {
                 "type": "timeseries",
-                "title": "Page loads per hour",
-                "gridPos": { "x": 12, "y": 5, "w": 12, "h": 8 },
+                "title": "App requests per hour",
+                "description": "Activity: how much the app was used each hour.",
+                "gridPos": {
+                  "x": 12,
+                  "y": 5,
+                  "w": 12,
+                  "h": 8
+                },
                 "interval": "1h",
-                "datasource": { "type": "loki", "uid": "loki" },
-                "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60 } } },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {
+                      "drawStyle": "bars",
+                      "fillOpacity": 60
+                    },
+                    "decimals": 0
+                  }
+                },
+                "options": {
+                  "legend": {
+                    "showLegend": false
+                  }
+                },
                 "targets": [
-                  { "refId": "A", "legendFormat": "page loads",
-                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|store/(api|uploads)/.*|chat/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [1h]))" }
+                  {
+                    "refId": "A",
+                    "legendFormat": "requests",
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | uri =~ \"/(api|store/api|chat/api)/.*\" | status < 400 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [1h]))"
+                  }
                 ]
               },
               {
                 "type": "bargauge",
-                "title": "Top pages",
-                "gridPos": { "x": 0, "y": 13, "w": 12, "h": 9 },
-                "datasource": { "type": "loki", "uid": "loki" },
-                "options": { "orientation": "horizontal", "displayMode": "basic" },
+                "title": "Pages opened directly",
+                "description": "App pages loaded from a link, bookmark or refresh (moving around inside the app isn't counted). The home page includes scanners.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 13,
+                  "w": 12,
+                  "h": 10
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "displayName": "${__field.labels.uri}",
+                    "decimals": 0,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    },
+                    "min": 0
+                  }
+                },
+                "options": {
+                  "orientation": "horizontal",
+                  "displayMode": "basic",
+                  "namePlacement": "left",
+                  "showUnfilled": true,
+                  "valueMode": "text",
+                  "reduceOptions": {
+                    "values": false,
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
                 "targets": [
-                  { "refId": "A", "queryType": "instant", "legendFormat": "{{uri}}",
-                    "expr": "topk(10, sum by (uri) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|store/(api|uploads)/.*|chat/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range])))" }
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sort_desc(topk(10, sum by (uri) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri =~ \"/(dashboard|login|register|messages|profile(/[0-9]+)?|reviews(/[0-9]+|/create/[0-9]+)?|my-gigs(/(created|assigned|applications))?|store(/new|/[0-9]+|/requests/(new|[0-9]+))?|tasks(/create|/[0-9]+)?|(edit|posted)/(task|item|request)/[0-9]+)?/?\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range]))))"
+                  }
                 ]
               },
               {
                 "type": "bargauge",
                 "title": "Top referrers",
-                "description": "Where visitors came from. Includes your own domain for internal links.",
-                "gridPos": { "x": 12, "y": 13, "w": 12, "h": 9 },
-                "datasource": { "type": "loki", "uid": "loki" },
-                "options": { "orientation": "horizontal", "displayMode": "basic" },
+                "description": "Sites people came from (links to the bare server IP, used by scanners, are left out). Includes your own domain for internal links.",
+                "gridPos": {
+                  "x": 12,
+                  "y": 13,
+                  "w": 12,
+                  "h": 10
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "displayName": "${__field.labels.referer}",
+                    "decimals": 0,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    },
+                    "min": 0
+                  }
+                },
+                "options": {
+                  "orientation": "horizontal",
+                  "displayMode": "basic",
+                  "namePlacement": "left",
+                  "showUnfilled": true,
+                  "valueMode": "text",
+                  "reduceOptions": {
+                    "values": false,
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
                 "targets": [
-                  { "refId": "A", "queryType": "instant", "legendFormat": "{{referer}}",
-                    "expr": "topk(10, sum by (referer) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri !~ \"/((api|socket\\\\.io|health|healthcheck|assets)(/.*)?|store/(api|uploads)/.*|chat/.*)\" | uri !~ \".*\\\\.[A-Za-z0-9]+\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" | referer != \"\" [$__range])))" }
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sort_desc(topk(10, sum by (referer) (count_over_time({job=\"nginx_access\"} | json | method=\"GET\" | status < 400 | uri =~ \"/(dashboard|login|register|messages|profile(/[0-9]+)?|reviews(/[0-9]+|/create/[0-9]+)?|my-gigs(/(created|assigned|applications))?|store(/new|/[0-9]+|/requests/(new|[0-9]+))?|tasks(/create|/[0-9]+)?|(edit|posted)/(task|item|request)/[0-9]+)?/?\" | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" | referer != \"\" | referer !~ \"https?://[0-9.]+([:/].*)?\" [$__range]))))"
+                  }
                 ]
               },
               {
                 "type": "timeseries",
                 "title": "Responses by status",
-                "gridPos": { "x": 0, "y": 22, "w": 24, "h": 8 },
-                "datasource": { "type": "loki", "uid": "loki" },
+                "description": "Every response nginx sent, by status code (200 OK, 304 unchanged, 404 not found, 5xx failed). Includes scanners.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 23,
+                  "w": 24,
+                  "h": 8
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
                 "targets": [
-                  { "refId": "A", "legendFormat": "{{status}}",
-                    "expr": "sum by (status) (count_over_time({job=\"nginx_access\"} | json [$__interval]))" }
+                  {
+                    "refId": "A",
+                    "legendFormat": "{{status}}",
+                    "expr": "sum by (status) (count_over_time({job=\"nginx_access\"} | json [$__interval]))"
+                  }
                 ]
               }
             ],
-            "time": { "from": "now-7d", "to": "now" },
+            "time": {
+              "from": "now-7d",
+              "to": "now"
+            },
             "refresh": "5m"
           }
+      become: yes
+
+    - name: Write Service Logs dashboard
+      # Container output shipped by Promtail (job="containers"), labelled by
+      # compose service and stream (stdout / stderr).
+      ansible.builtin.copy:
+        dest: /etc/grafana/dashboards/service-logs.json
+        mode: "0644"
+        content: !unsafe |
+          {
+            "title": "Service Logs",
+            "uid": "service-logs",
+            "schemaVersion": 36,
+            "templating": { "list": [
+              { "name": "service", "label": "Service", "type": "query",
+                "datasource": { "type": "loki", "uid": "loki" },
+                "query": "label_values({job=\"containers\"}, service)",
+                "includeAll": true, "multi": true, "allValue": ".+",
+                "current": { "text": "All", "value": "$__all" }, "refresh": 2 },
+              { "name": "search", "label": "Search", "type": "textbox", "query": "" }
+            ] },
+            "panels": [
+              {
+                "type": "timeseries",
+                "title": "Log lines per service",
+                "description": "How much each service is logging. A sudden spike often means something is failing in a loop.",
+                "gridPos": { "x": 0, "y": 0, "w": 12, "h": 7 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } } },
+                "targets": [ { "refId": "A", "legendFormat": "{{service}}",
+                  "expr": "sum by (service) (count_over_time({job=\"containers\", service=~\"$service\"} [$__interval]))" } ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Error output per service",
+                "description": "Lines written to stderr, plus any line mentioning error or panic. Some services log normal startup messages to stderr too.",
+                "gridPos": { "x": 12, "y": 0, "w": 12, "h": 7 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } } },
+                "targets": [ { "refId": "A", "legendFormat": "{{service}}",
+                  "expr": "sum by (service) (count_over_time({job=\"containers\", service=~\"$service\"} |~ \"(?i)(error|panic|fatal)\" [$__interval]))" } ]
+              },
+              {
+                "type": "logs",
+                "title": "Logs",
+                "description": "Newest first. Pick services and type in Search at the top to filter.",
+                "gridPos": { "x": 0, "y": 7, "w": 24, "h": 16 },
+                "datasource": { "type": "loki", "uid": "loki" },
+                "options": { "showLabels": false, "showCommonLabels": false, "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true },
+                "targets": [ { "refId": "A",
+                  "expr": "{job=\"containers\", service=~\"$service\"} |~ \"(?i)$search\"" } ]
+              }
+            ],
+            "time": { "from": "now-6h", "to": "now" },
+            "refresh": "1m"
+          }
+      become: yes
+
+    # --- Tempo ---
+
+    - name: Create Tempo config directory
+      ansible.builtin.file:
+        path: /etc/tempo
+        state: directory
+        mode: "0755"
+      become: yes
+
+    - name: Write Tempo config
+      ansible.builtin.copy:
+        dest: /etc/tempo/tempo.yml
+        mode: "0644"
+        content: |
+          stream_over_http_enabled: true
+          server:
+            http_listen_port: 3200
+            log_level: warn
+
+          distributor:
+            receivers:
+              otlp:
+                protocols:
+                  http:
+                    endpoint: 0.0.0.0:4318
+
+          ingester:
+            max_block_duration: 5m
+
+          compactor:
+            compaction:
+              # Traces carry client IPs; keep them 14 days.
+              block_retention: 336h
+
+          storage:
+            trace:
+              backend: local
+              wal:
+                path: /var/tempo/wal
+              local:
+                path: /var/tempo/blocks
+
+          usage_report:
+            reporting_enabled: false
+      notify: restart tempo
       become: yes
 
     # --- Loki ---
@@ -655,6 +1118,9 @@
           {% if item.env_file is defined %}
           EnvironmentFile={{ item.env_file }}
           {% endif %}
+          {% if item.user is defined %}
+          User={{ item.user }}
+          {% endif %}
           {% if item.exec is defined %}
           Exec={{ item.exec }}
           {% endif %}
@@ -670,6 +1136,24 @@
       loop_control:
         label: "{{ item.name }}"
       register: quadlet_units
+      become: yes
+
+    - name: Stop Zipkin (replaced by Tempo)
+      ansible.builtin.systemd:
+        name: zipkin.service
+        state: stopped
+        scope: user
+      failed_when: false
+      become: yes
+      become_user: myguy
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+        DBUS_SESSION_BUS_ADDRESS: "unix:path={{ xdg_runtime_dir }}/bus"
+
+    - name: Remove the Zipkin Quadlet unit
+      ansible.builtin.file:
+        path: "{{ quadlet_dir }}/zipkin.container"
+        state: absent
       become: yes
 
     - name: Start monitoring containers (restart those whose unit changed)

@@ -5,6 +5,14 @@
   hosts: "{{ target | default('app') }}"
   become: yes
 
+  handlers:
+    # libmodsecurity opens its audit log once and ignores `nginx -s reopen`;
+    # a reload makes it open the file again.
+    - name: reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+
   tasks:
     # --- ModSecurity WAF ---
 
@@ -49,11 +57,12 @@
               compress
               delaycompress
               notifempty
-              sharedscripts
-              postrotate
-                  nginx -s reopen
-              endscript
+              # libmodsecurity keeps the audit log open and ignores
+              # `nginx -s reopen`: after a rename it writes to the rotated
+              # (later deleted) file and Promtail and fail2ban see nothing.
+              copytruncate
           }
+      notify: reload nginx
 
     # --- Falco ---
 

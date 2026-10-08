@@ -28,3 +28,12 @@ log_format visitor_json escape=json
     '"user_agent":"$http_user_agent"}';
 
 access_log /var/log/nginx/access.json.log visitor_json;
+
+# The single-page app's routes (frontend/src/router/index.ts; the test
+# src/router/__tests__/nginxRoutes.spec.ts fails when they drift apart).
+# Other paths get a 404: still the app's "Page not found" page, but the
+# status lets fail2ban ban scanners probing for /.env, /wp-admin and the like.
+map $uri $spa_route {
+    default 0;
+    "~^/(dashboard|login|register|messages|profile(/[^/]+)?|reviews(/[0-9]+|/create/[^/]+)?|my-gigs/(created|assigned|applications)|store(/[^/]+|/requests/[^/]+)?|tasks(/[^/]+)?|(edit|posted)/(task|item|request)/[0-9]+)?/?$" 1;
+}

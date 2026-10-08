@@ -40,7 +40,7 @@ graph LR
         end
 
         subgraph Mon["📊 Monitoring Stack · 10.0.0.3"]
-            ZIPKIN["⏳ Zipkin · :9411"]:::monitoring
+            TEMPO["⏳ Tempo · :4318"]:::monitoring
             PROM["🔥 Prometheus · :9090"]:::monitoring
             LOKI["🪵 Loki · :3100"]:::monitoring
             GRAFANA["📈 Grafana · :3000"]:::monitoring
@@ -68,9 +68,9 @@ graph LR
     WAF -->|/umami tracker| UMAMI
 
     %% Telemetry & Logging
-    API -.->|OTel traces| ZIPKIN
-    STORE -.->|OTel traces| ZIPKIN
-    CHAT -.->|OTel traces| ZIPKIN
+    API -.->|OTel traces| TEMPO
+    STORE -.->|OTel traces| TEMPO
+    CHAT -.->|OTel traces| TEMPO
     
     PROM ---> GRAFANA
     LOKI ---> GRAFANA
@@ -164,10 +164,10 @@ graph TB
 
 | Tool | Port | Description |
 | :--- | :--- | :--- |
-| **Zipkin** | `9411` | Distributed tracing — collects spans from all backend services. |
+| **Tempo** | `4318` | Distributed tracing — receives OTLP spans from all backend services (14-day retention); browse them in Grafana. |
 | **Prometheus** | `9090` | Metrics collection — scrapes CPU/memory and Falco security alerts. |
 | **Grafana** | `3000` | Visualization — dashboards for app metrics, security alerts, WAF detections, and visitors. |
-| **Loki** | `3100` | Log aggregation — receives ModSecurity audit logs and the nginx JSON access log from Promtail (90-day retention). |
+| **Loki** | `3100` | Log aggregation — receives ModSecurity audit logs, the nginx JSON access log and app container logs from Promtail (90-day retention). |
 | **Umami** | `3001` | Privacy-friendly web analytics (self-hosted, with its own PostgreSQL). Only its tracker endpoints are public, via nginx. |
 
 All monitoring containers run as rootless Podman **Quadlet** units under `myguy`, so systemd starts, restarts, and boots them.
@@ -308,44 +308,45 @@ Falco monitors system calls on the app instance in real time, detecting suspicio
 
 ## Observability
 
-MyGuy has two layers of observability: **distributed tracing** via OpenTelemetry + Zipkin, and **metrics + security alerting** via Prometheus + Grafana + Falco.
+MyGuy has two layers of observability: **distributed tracing** via OpenTelemetry + Tempo, and **metrics + security alerting** via Prometheus + Grafana + Falco.
 
 In production, all monitoring tools run on a dedicated server that is only accessible within the private VPC — not exposed to the public internet.
 
-### Distributed Tracing (OpenTelemetry + Zipkin)
+### Distributed Tracing (OpenTelemetry + Tempo)
 
-Every HTTP request handled by the backend, store service, or chat service is automatically traced. Spans are exported to Zipkin where you can visualise request flows, latency, and errors across services.
+Every HTTP request handled by the backend, store service, or chat service is automatically traced. Spans are sent over OTLP/HTTP to Tempo; open Grafana → **Explore** → **Tempo** to search them and see request flows, latency, and errors across services.
 
-| Service | OTel Implementation | Service Name in Zipkin |
+| Service | OTel Implementation | Service Name in Tempo |
 | :--- | :--- | :--- |
 | **Backend** | Go SDK + `otelgin` middleware | `myguy-backend` |
 | **Store Service** | Go SDK + `otelgin` middleware | `myguy-store-service` |
 | **Chat Service** | Node.js SDK + Express/HTTP instrumentation | `myguy-chat-service` |
 
-Each service reads `ZIPKIN_URL` from its environment:
+Each service reads the standard `OTEL_EXPORTER_OTLP_ENDPOINT` from its environment (unset means `http://localhost:4318`):
 
 ```env
 # Local development
-ZIPKIN_URL=http://localhost:9411/api/v2/spans
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 
 # Production (via VPC)
-ZIPKIN_URL=http://10.0.0.3:9411/api/v2/spans
+OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
 ```
 
 ### Metrics & Security Alerting (Prometheus + Grafana + Falco)
 
 **On the app instance:**
-- `node_exporter` runs as a systemd service on `:9100`, exposing CPU and memory metrics
+- `node_exporter` runs as a systemd service on `:9100`, exposing CPU, memory and disk metrics
 - `falco` monitors system calls for suspicious runtime behaviour and exposes Prometheus metrics on `:8765`
-- `promtail` ships ModSecurity audit logs and the nginx JSON access log (`/var/log/nginx/access.json.log`) to Loki on the monitoring instance
+- `promtail` ships ModSecurity audit logs, the nginx JSON access log (`/var/log/nginx/access.json.log`) and every app container's output to Loki on the monitoring instance. Containers log to the systemd journal (`log_driver = "journald"`, set by `deploy.yml`), so logs survive container replacement; lines carrying sign-in codes are dropped before shipping
 
 **On the monitoring instance:**
 - Prometheus scrapes `node_exporter` (`:9100`) and Falco metrics (`:8765`) on the app instance via VPC every 15 seconds
-- Grafana is pre-provisioned with four dashboards:
-  - **App Instance Metrics** — CPU usage (%) and memory usage (%)
-  - **Falco Security Alerts** — alert rate by priority/rule and total alert count
+- Grafana is pre-provisioned with five dashboards:
+  - **App Instance Metrics** — CPU, memory and disk use now (green / amber / red) and over time
+  - **Falco Security Alerts** — whether Falco is reachable, alert count, and alerts by rule
   - **WAF — ModSecurity Detections** — ModSecurity rule triggers visualised from Loki
-  - **Visitors** — unique visitors, page loads, top pages and referrers, API requests, and response codes, from the nginx access log
+  - **Visitors** — visitors whose browser ran the app, signed-in users, app requests, server errors, pages opened directly, referrers and response codes, from the nginx access log
+  - **Service Logs** — every service's output in one place: lines and errors per service, and a searchable log view (90-day retention)
 
 Both Prometheus (`:9090`) and Grafana (`:3000`) are only reachable from within the VPC. To access them locally, SSH tunnel through the app instance as the `ops` user:
 
@@ -353,13 +354,12 @@ Both Prometheus (`:9090`) and Grafana (`:3000`) are only reachable from within t
 ssh -N \
   -L 3000:10.0.0.3:3000 \
   -L 9090:10.0.0.3:9090 \
-  -L 9411:10.0.0.3:9411 \
   -L 3100:10.0.0.3:3100 \
   -L 3001:10.0.0.3:3001 \
   ops@<app_public_ip>
 ```
 
-Then open `http://localhost:3000` for Grafana, `http://localhost:9411` for Zipkin, and `http://localhost:3001` for Umami.
+Then open `http://localhost:3000` for Grafana (traces under **Explore → Tempo**) and `http://localhost:3001` for Umami.
 
 ### Visitor Analytics
 
@@ -367,8 +367,8 @@ Two complementary views, both self-hosted:
 
 | Tool | What it counts | Notes |
 | :--- | :--- | :--- |
-| **Grafana → Visitors** | Unique client IPs and page loads from the nginx access log | Zero setup. Approximate: counts IPs not people, skips self-identified bots, and sees full page loads only (not in-app SPA navigation). Query strings are never logged. |
-| **Umami** | Real visitors, sessions, SPA route changes, referrers, devices, countries | The frontend loads `/umami/script.js` only when `VITE_UMAMI_WEBSITE_ID` is set at build time. |
+| **Grafana → Visitors** | Client IPs whose browser ran the app (downloaded its code or called the API), plus app usage, from the nginx access log | Zero setup. Approximate: counts IPs not people. Every unknown path returns the app page, so scanners posing as browsers are excluded by requiring the app to actually run. Query strings are never logged. |
+| **Umami** | Real visitors, sessions, SPA route changes, referrers, devices, countries; heatmaps (clicks and scroll depth) | The frontend loads `/umami/script.js` and `/umami/recorder.js` only when `VITE_UMAMI_WEBSITE_ID` is set at build time. Keep **replays** off in Umami: they would record chats and contact details. |
 
 First-time Umami setup:
 
@@ -423,11 +423,11 @@ Terraform variables (`authorized_keys`, `root_password`, `provider_token`) live 
 | Instance | VPC IP | Purpose |
 | :--- | :--- | :--- |
 | **App instance** | `10.0.0.2` | Runs the full application stack via rootless Podman Compose |
-| **Monitoring instance** | `10.0.0.3` | Runs Zipkin, Prometheus, Grafana, and Loki |
+| **Monitoring instance** | `10.0.0.3` | Runs Tempo, Prometheus, Grafana, Loki, and Umami |
 
 The monitoring instance has no public IP. It is only reachable via the app instance as a ProxyJump host.
 
-- **Compose files:** `docker-compose.yml` is the production stack; `docker-compose.override.yml` adds local-only services (Zipkin) and is loaded automatically by `podman compose` / `docker compose` on your machine. Production runs `podman compose -f docker-compose.yml …`, so traces go to the monitoring server's Zipkin instead.
+- **Compose files:** `docker-compose.yml` is the production stack; `docker-compose.override.yml` adds local-only services (Tempo and a Grafana to view traces) and is loaded automatically by `podman compose` / `docker compose` on your machine. Production runs `podman compose -f docker-compose.yml …`, so traces go to the monitoring server's Tempo instead.
 - **Journal size:** both servers cap the systemd journal at 100 MB (`/etc/systemd/journald.conf.d/size.conf`, applied by `site.yml` / `monitoring.yml`) to keep memory free on the 1 GB instances.
 
 ### Provisioning with Terraform
@@ -483,7 +483,7 @@ ansible-playbook deploy.yml -i inventory.ini \
 
 > **Tip:** `-e "key=value"` splits on spaces. For values containing spaces (SSH public keys, `SMTP_FROM`), pass JSON instead: `-e '{"smtp_from": "MyGuy <no-reply@myguy.work>"}'` — the CI workflow builds its extra-vars this way with `jq`.
 
-`deploy.yml` automatically reads the Zipkin URL from the monitoring play and writes it into the app's `.env` — no manual copy-paste needed.
+`deploy.yml` automatically reads the Tempo endpoint from the monitoring play and writes it into the app's `.env` — no manual copy-paste needed.
 
 ---
 
@@ -515,7 +515,7 @@ The backend services run locally with Podman Compose using pre-built images from
    # IMAGE_TAG=latest
    ```
 
-3. **Start the backend services** (also starts a local Zipkin from `docker-compose.override.yml`):
+3. **Start the backend services** (also starts a local Tempo and Grafana from `docker-compose.override.yml`):
    ```sh
    podman compose up -d
    ```
@@ -537,7 +537,7 @@ The backend services run locally with Podman Compose using pre-built images from
    - **Backend API:** http://localhost:8080
    - **Store Service:** http://localhost:8081
    - **Chat Service:** http://localhost:8082
-   - **Zipkin UI:** http://localhost:9411
+   - **Traces (Grafana → Explore → Tempo):** http://localhost:3000
    - **PostgreSQL:** `localhost:5433`
 
 ---

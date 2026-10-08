@@ -20,7 +20,7 @@
     app_user: myguy
     app_dir: /opt/myguy
     git_branch: main
-    zipkin_url: "{{ hostvars[groups['monitoring'][0]]['zipkin_url'] | default('http://10.0.0.3:9411/api/v2/spans') }}"
+    otel_endpoint: "{{ hostvars[groups['monitoring'][0]]['otel_endpoint'] | default('http://10.0.0.3:4318') }}"
     # "all" redeploys the whole stack, databases included; otherwise a
     # space-separated list of the compose services to replace (the CI
     # pipeline passes the ones a push changed)
@@ -91,7 +91,7 @@
           DB_PASSWORD={{ db_password }}
           INTERNAL_API_KEY={{ internal_api_key }}
           PROXIMITY_REDIS_PASSWORD={{ proximity_redis_password }}
-          ZIPKIN_URL={{ zipkin_url }}
+          OTEL_EXPORTER_OTLP_ENDPOINT={{ otel_endpoint }}
           IMAGE_TAG={{ image_tag }}
           SMTP_HOST={{ smtp_host | default('') }}
           SMTP_PORT={{ smtp_port | default('587', true) }}
@@ -103,7 +103,7 @@
     # --- Deploy ---
 
     # `-f docker-compose.yml` skips docker-compose.override.yml (local-only
-    # services such as Zipkin, which runs on the monitoring server instead).
+    # services such as Tempo, which runs on the monitoring server instead).
     - name: Pull images from Docker Hub
       ansible.builtin.command:
         cmd: "podman compose -f docker-compose.yml pull{{ '' if deploy_all else ' ' ~ services_to_deploy | join(' ') }}"
@@ -134,6 +134,22 @@
           {{ item.item | regex_replace(':.*$', '') }}@{{ item.stdout }}
       loop: "{{ image_digests.results }}"
       changed_when: false
+
+    # Container output goes to the systemd journal, where Promtail ships it
+    # to Loki (observability.yml).  Applies to containers created from now on.
+    - name: Create Podman config directory for the app user
+      ansible.builtin.file:
+        path: /home/{{ app_user }}/.config/containers
+        state: directory
+        mode: "0755"
+
+    - name: Send container logs to the journal
+      ansible.builtin.copy:
+        dest: /home/{{ app_user }}/.config/containers/containers.conf
+        mode: "0644"
+        content: |
+          [containers]
+          log_driver = "journald"
 
     - name: Remove the old app-server Zipkin (traces go to the monitoring server)
       ansible.builtin.command:
