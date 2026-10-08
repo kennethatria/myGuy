@@ -671,7 +671,7 @@ func TestUpdateItem(t *testing.T) {
 		itemRepo.AssertExpectations(t)
 	})
 
-	t.Run("update with images", func(t *testing.T) {
+	t.Run("photos are not changed by an update", func(t *testing.T) {
 		service, itemRepo, _, _ := setupService()
 		existingItem := &models.StoreItem{
 			ID:          1,
@@ -679,21 +679,17 @@ func TestUpdateItem(t *testing.T) {
 			Description: "Original note",
 			SellerID:    1,
 			Status:      "active",
-		}
-
-		req := models.UpdateStoreItemRequest{
-			Title:  "Updated Title",
-			Images: []string{"new_image1.jpg", "new_image2.jpg"},
+			Images:      []models.ItemImage{{URL: "/uploads/store/clean.jpg"}},
 		}
 
 		itemRepo.On("GetByID", uint(1)).Return(existingItem, nil)
 		itemRepo.On("Update", mock.AnythingOfType("*models.StoreItem")).Return(nil)
 
-		item, err := service.UpdateItem(1, 1, req)
+		item, err := service.UpdateItem(1, 1, models.UpdateStoreItemRequest{Title: "Updated Title"})
 
 		assert.NoError(t, err)
-		assert.Equal(t, req.Title, item.Title)
-		assert.Len(t, item.Images, 2)
+		assert.Equal(t, "Updated Title", item.Title)
+		assert.Equal(t, []models.ItemImage{{URL: "/uploads/store/clean.jpg"}}, item.Images)
 		itemRepo.AssertExpectations(t)
 	})
 }

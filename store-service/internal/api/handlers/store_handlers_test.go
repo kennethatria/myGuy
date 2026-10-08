@@ -515,6 +515,25 @@ func TestCreateItem_FormLocation(t *testing.T) {
 	mockService.AssertExpectations(t)
 }
 
+// Photos come only from uploads the handler cleans: image URLs in a JSON
+// body (which could point at another site) are dropped
+func TestCreateItem_JSONCannotSetImages(t *testing.T) {
+	mockService := new(MockStoreService)
+	router := setupTestRouter(NewStoreHandler(mockService))
+	mockService.On("CreateItem", uint(1), mock.MatchedBy(func(req models.CreateStoreItemRequest) bool {
+		return req.Title == "Lamp" && len(req.Images) == 0
+	})).Return(&models.StoreItem{ID: 7}, nil)
+
+	body := `{"title":"Lamp","description":"Brass desk lamp","images":["@evil.example/x.png"]}`
+	w := httptest.NewRecorder()
+	httpReq, _ := http.NewRequest("POST", "/api/v1/items", strings.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, httpReq)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	mockService.AssertExpectations(t)
+}
+
 func TestGetItems_Near(t *testing.T) {
 	mockService := new(MockStoreService)
 	router := setupTestRouter(NewStoreHandler(mockService))
