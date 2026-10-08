@@ -27,20 +27,21 @@
       <div v-else class="network-stage">
         <svg
           class="network"
-          :viewBox="`0 0 ${WIDTH} ${layout.height}`"
+          :viewBox="`0 0 ${WIDTH} ${HEIGHT}`"
           role="group"
           :aria-label="`${isMine ? 'Your' : `${nameOf(centreId)}'s`} network: ${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}`"
         >
-          <!-- The rings: connections on the inner one, theirs on the outer -->
+          <!-- Shaded bands as on the home radar, darker nearer the centre
+               (drawn outermost first); people sit on the band edges, your
+               connections on the inner one and theirs on the outer -->
           <g class="rings" aria-hidden="true">
-            <ellipse
-              v-for="(ring, i) in layout.rings"
-              :key="`ring-${i}`"
+            <circle
+              v-for="(radius, i) in bandRadii"
+              :key="`band-${i}`"
               :cx="layout.centre.x"
               :cy="layout.centre.y"
-              :rx="ring.rx"
-              :ry="ring.ry"
-              class="ring"
+              :r="radius"
+              :class="['band', `band-${bandRadii.length - 1 - i}`]"
             />
           </g>
 
@@ -105,7 +106,7 @@
           v-if="selected"
           ref="popup"
           class="node-popup"
-          :style="{ left: `min(${selected.x}%, calc(100% - 13rem))`, top: `${((selected.y + selected.r + 2) / layout.height) * 100}%` }"
+          :style="{ left: `min(${selected.x}%, calc(100% - 13rem))`, top: `${((selected.y + selected.r + 2) / HEIGHT) * 100}%` }"
           role="dialog"
           :aria-label="`About ${nameOf(selected.connection.userId)}`"
           @click.stop
@@ -154,7 +155,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useReviewsStore } from '@/stores/reviews'
 import { useUserStore } from '@/stores/user'
 import {
-  connectionsFrom, recentNetwork, layoutNetwork, networkSize, tierOf, MAX_PEOPLE, formatRating, WIDTH, CENTRE_RADIUS,
+  connectionsFrom, recentNetwork, layoutNetwork, networkSize, tierOf, MAX_PEOPLE, formatRating, WIDTH, HEIGHT, EDGE_RADIUS, CENTRE_RADIUS,
   type Branch, type PlacedConnection, type Via, type Tier
 } from '@/utils/network'
 
@@ -190,6 +191,8 @@ const isMine = computed(() => centreId.value === me.value)
 
 const layout = computed(() => layoutNetwork(branches.value, centreId.value))
 const placed = computed(() => layout.value.placed)
+// Each band's outer edge, outermost first: the faint edge band, then the rings
+const bandRadii = computed(() => (layout.value.rings.length ? [EDGE_RADIUS, ...[...layout.value.rings].reverse()] : []))
 
 // A person can appear under more than one branch: a node is the person in
 // one place
@@ -368,12 +371,16 @@ onBeforeUnmount(() => {
 .fair { --tier: #b7791f; --tier-soft: #fef3c7; --tier-text: #78350f; }
 .weak { --tier: #c0392b; --tier-soft: #fee2e2; --tier-text: #7f1d1d; }
 
-.ring {
-  fill: none;
-  stroke: #d1d5db;
-  stroke-width: 0.4;
-  stroke-dasharray: 1.2 1.2;
+/* Bands: darkest nearest the centre, as on the home radar; the white
+   edges are the lines people sit on */
+.band {
+  stroke: #fff;
+  stroke-width: 0.6;
 }
+
+.band-0 { fill: #d5ddfe; }
+.band-1 { fill: #e2e8ff; }
+.band-2 { fill: #f3f5ff; }
 
 .link {
   stroke: var(--tier);

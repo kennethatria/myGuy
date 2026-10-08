@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { connectionsFrom, interactionsFor, recentNetwork, layoutNetwork, networkSize, tierOf, formatRating, NODE_RADIUS, CHILD_RADIUS, WIDTH, type Interaction, type Connection } from '../network'
+import { connectionsFrom, interactionsFor, recentNetwork, layoutNetwork, networkSize, tierOf, formatRating, NODE_RADIUS, CHILD_RADIUS, WIDTH, HEIGHT, type Interaction, type Connection } from '../network'
 
 const review = (over: Partial<Interaction>): Interaction => ({
   otherId: 2,
@@ -102,7 +102,7 @@ describe('network', () => {
   })
 
   it('puts connections on the inner ring and theirs beyond them on the outer ring', () => {
-    const { placed, centre, rings, height } = layoutNetwork([
+    const { placed, centre, rings } = layoutNetwork([
       { connection: person(2), children: [person(5), person(6)] },
       { connection: person(3), children: [] }
     ], 1)
@@ -111,9 +111,10 @@ describe('network', () => {
       [2, 1, 1], [5, 2, 2], [6, 2, 2], [3, 1, 1]
     ])
     expect(rings).toHaveLength(2)
-    const ringOf = (n: { x: number; y: number }, ring: { rx: number; ry: number }) =>
-      ((n.x - centre.x) / ring.rx) ** 2 + ((n.y - centre.y) / ring.ry) ** 2
-    for (const n of placed) expect(ringOf(n, rings[n.level - 1])).toBeCloseTo(1)
+    // True circles, centred in the square, as on the home radar
+    expect(centre).toEqual({ x: WIDTH / 2, y: HEIGHT / 2 })
+    for (const n of placed) expect(Math.hypot(n.x - centre.x, n.y - centre.y)).toBeCloseTo(rings[n.level - 1])
+    expect(rings[1]).toBeGreaterThan(rings[0])
     expect(placed[0].r).toBe(NODE_RADIUS)
     expect(placed[1].r).toBe(CHILD_RADIUS)
     // The first connection is at the top
@@ -129,7 +130,7 @@ describe('network', () => {
       expect(n.x - n.r).toBeGreaterThan(0)
       expect(n.x + n.r).toBeLessThan(WIDTH)
       expect(n.y - n.r).toBeGreaterThan(0)
-      expect(n.y + n.r).toBeLessThan(height)
+      expect(n.y + n.r).toBeLessThan(HEIGHT)
     }
   })
 
@@ -152,7 +153,8 @@ describe('network', () => {
   it('needs only the inner ring when nobody has connections of their own', () => {
     const one = layoutNetwork([{ connection: person(2), children: [] }], 1)
     expect(one.rings).toHaveLength(1)
-    expect(one.height).toBeLessThan(layoutNetwork([{ connection: person(2), children: [person(3)] }], 1).height)
+    // ...and takes more of the room
+    expect(one.rings[0]).toBeGreaterThan(layoutNetwork([{ connection: person(2), children: [person(3)] }], 1).rings[0])
     expect(layoutNetwork([]).placed).toEqual([])
     expect(layoutNetwork([]).rings).toEqual([])
   })

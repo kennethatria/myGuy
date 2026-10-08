@@ -133,17 +133,20 @@ export function formatRating(rating: number): string {
   return Number.isInteger(rating) ? String(rating) : rating.toFixed(1)
 }
 
-/** The SVG is 100 units wide; its height depends on how many rings it needs. */
+/** The SVG is a 100-unit square, like the home radar */
 export const WIDTH = 100
+export const HEIGHT = 100
 /** The centre person's circle */
 export const CENTRE_RADIUS = 8
 /** Their connections, and their connections' connections (a little smaller) */
 export const NODE_RADIUS = 5.5
 export const CHILD_RADIUS = 4.2
-/** The two rings, taller than wide so the picture suits a phone */
-const RINGS = [{ rx: 23, ry: 28 }, { rx: 41, ry: 50 }] as const
-/** Room round the outer ring for its nodes */
-const MARGIN = 7
+/** Radius of the inner ring and the outer ring; people sit on them */
+const RINGS = [22, 40] as const
+/** With nobody on the outer ring, the inner one takes more of the room */
+const ONLY_RING = 34
+/** The faint outermost band beyond the last ring, as on the home radar */
+export const EDGE_RADIUS = 47
 
 /** How strong a link is, from the average rating between the two people */
 export type Tier = 'strong' | 'fair' | 'weak'
@@ -196,34 +199,27 @@ export interface PlacedConnection {
   label: { x: number; y: number }
 }
 
-export interface Ring {
-  rx: number
-  ry: number
-}
-
 export interface NetworkLayout {
   placed: PlacedConnection[]
   centre: { x: number; y: number }
-  /** The rings in use, drawn as dashed guides */
-  rings: Ring[]
-  height: number
+  /** Radii of the rings in use, innermost first */
+  rings: number[]
 }
 
 /**
- * Lays the network out on rings round the centre person. Each connection gets
- * a slice of the circle as wide as the people under it (at least one), sits on
- * the inner ring in the middle of its slice, and its own connections share
- * that slice on the outer ring, so they sit beyond it and lines never cross.
- * The first connection is at the top.
+ * Lays the network out on circles round the centre person. Each connection
+ * gets a slice of the circle as wide as the people under it (at least one),
+ * sits on the inner ring in the middle of its slice, and its own connections
+ * share that slice on the outer ring, so they sit beyond it and lines never
+ * cross. The first connection is at the top.
  */
 export function layoutNetwork(branches: Branch[], centreId = 0): NetworkLayout {
   const hasOuter = branches.some(b => b.children.length > 0)
-  const rings: Ring[] = branches.length ? [...RINGS.slice(0, hasOuter ? 2 : 1)] : []
-  const outer = rings[rings.length - 1] ?? { rx: 0, ry: 0 }
-  const centre = { x: WIDTH / 2, y: outer.ry + MARGIN + (rings.length ? 0 : CENTRE_RADIUS) }
-  const at = (ring: Ring, angle: number) => ({
-    x: centre.x + ring.rx * Math.cos(angle),
-    y: centre.y + ring.ry * Math.sin(angle)
+  const rings: number[] = !branches.length ? [] : hasOuter ? [...RINGS] : [ONLY_RING]
+  const centre = { x: WIDTH / 2, y: HEIGHT / 2 }
+  const at = (radius: number, angle: number) => ({
+    x: centre.x + radius * Math.cos(angle),
+    y: centre.y + radius * Math.sin(angle)
   })
   const node = (connection: Connection, level: 1 | 2, parentId: number, from: { x: number; y: number }, spot: { x: number; y: number }): PlacedConnection => ({
     connection, level, ...spot, r: level === 1 ? NODE_RADIUS : CHILD_RADIUS, parentId, from,
@@ -236,15 +232,15 @@ export function layoutNetwork(branches: Branch[], centreId = 0): NetworkLayout {
   let start = -Math.PI / 2 - (total ? (weights[0] / total) * Math.PI : 0)
   branches.forEach((branch, i) => {
     const span = (2 * Math.PI * weights[i]) / total
-    const parent = node(branch.connection, 1, centreId, centre, at(RINGS[0], start + span / 2))
+    const parent = node(branch.connection, 1, centreId, centre, at(rings[0], start + span / 2))
     placed.push(parent)
     const step = span / branch.children.length
     branch.children.forEach((child, j) => {
-      placed.push(node(child, 2, branch.connection.userId, { x: parent.x, y: parent.y }, at(RINGS[1], start + (j + 0.5) * step)))
+      placed.push(node(child, 2, branch.connection.userId, { x: parent.x, y: parent.y }, at(rings[1], start + (j + 0.5) * step)))
     })
     start += span
   })
-  return { placed, centre, rings, height: centre.y * 2 }
+  return { placed, centre, rings }
 }
 
 /** How many different people are in a network, the centre person left out. */
