@@ -198,6 +198,40 @@
         INTERNAL_API_KEY: "{{ internal_api_key }}"
         PROXIMITY_REDIS_PASSWORD: "{{ proximity_redis_password }}"
 
+    # --- Old images ---
+    # Each deploy pulls new image tags and nothing removed the old ones, so
+    # they piled up on the disk.  Remove every image no container uses (the
+    # running stack keeps its own); rolling back pulls the old tag again.
+    # The before/after usage shows in the deploy log.
+
+    - name: Measure Podman disk use before cleanup
+      ansible.builtin.command:
+        cmd: podman system df
+      register: podman_df_before
+      changed_when: false
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+
+    - name: Remove images no container uses
+      ansible.builtin.command:
+        cmd: podman image prune --all --force
+      register: image_prune
+      changed_when: image_prune.stdout | trim | length > 0
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+
+    - name: Measure Podman disk use after cleanup
+      ansible.builtin.command:
+        cmd: podman system df
+      register: podman_df_after
+      changed_when: false
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+
+    - name: Report image cleanup
+      ansible.builtin.debug:
+        msg: "{{ ['Before:'] + podman_df_before.stdout_lines + ['After (' ~ (image_prune.stdout_lines | length) ~ ' images removed):'] + podman_df_after.stdout_lines }}"
+
     # --- Nginx + TLS ---
 
     - name: Check if TLS certificate exists
