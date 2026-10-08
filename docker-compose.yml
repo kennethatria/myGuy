@@ -6,6 +6,8 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+      # Account / marketplace counts for Prometheus (monitoring server only)
+      - "9464:9464"
     environment:
       - PORT=8080
       - JWT_SECRET=${JWT_SECRET}
@@ -34,6 +36,8 @@ services:
     restart: unless-stopped
     ports:
       - "8081:8081"
+      # Account / marketplace counts for Prometheus (monitoring server only)
+      - "9465:9465"
     environment:
       - PORT=8081
       - JWT_SECRET=${JWT_SECRET}

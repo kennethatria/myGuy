@@ -343,7 +343,8 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
 - Prometheus scrapes `node_exporter` (`:9100`) on both servers (the app's via VPC, its own via `host.containers.internal`) and Falco metrics (`:8765`) on the app instance every 15 seconds
 - Grafana is pre-provisioned with these dashboards:
   - **App Instance Metrics** / **Monitoring Instance Metrics** — CPU, memory and disk use now (green / amber / red) and over time, one dashboard per server
-  - **Traces** — failed, slow (over 500 ms) and recent requests from Tempo; a trace ID opens the full request timeline
+  - **Traces** — whether Tempo is running and receiving spans, then failed, slow (over 500 ms) and recent requests; a trace ID opens the full request timeline
+  - **Accounts** — accounts, new sign-ups, people active in gigs and the marketplace, and gigs, listings, requests and bookings by status. Counts only: the backend (`:9464`) and store-service (`:9465`) publish them from their databases (`internal/metrics`), on ports nginx doesn't route and the firewall opens to the monitoring server alone; no names or emails leave the app server
   - **Falco Security Alerts** — whether Falco is reachable, alert count, and alerts by rule
   - **WAF — ModSecurity Detections** — ModSecurity rule triggers visualised from Loki
   - **Visitors** — IPs whose browser ran the app, signed-in IPs, app requests, server errors, pages opened directly, referrers and response codes, from the nginx access log (IP-based: one phone on mobile data counts many times)
@@ -360,7 +361,7 @@ ssh -N \
   ops@<app_public_ip>
 ```
 
-Then open `http://localhost:3000` for Grafana (traces under **Explore → Tempo**) and `http://localhost:3001` for Umami.
+Then open `http://localhost:3000` for Grafana (sign in as `admin` with the `GRAFANA_ADMIN_PASSWORD` secret; traces under **Explore → Tempo**) and `http://localhost:3001` for Umami.
 
 ### Visitor Analytics
 
@@ -408,6 +409,7 @@ Image tags: CI tags images with the latest GitHub release (or `latest` if none);
 | :--- | :--- | :--- |
 | `SSH_PRIVATE_KEY` | Secret | CI deploy key (ed25519). Its public half must be the Terraform `authorized_keys` variable. |
 | `OPS_SSH_PUBLIC_KEY` | Secret | Public key for the `ops` troubleshooting user. |
+| `GRAFANA_ADMIN_PASSWORD` | Secret | Grafana's `admin` password (12+ characters). `monitoring.yml` refuses to run without it and resets Grafana to it on every full run. |
 | `JWT_SECRET`, `POSTGRES_PASSWORD`, `INTERNAL_API_KEY` | Secret | Application secrets written to the server `.env`. |
 | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | Secret | Image push and pull (tokens expire — renew on Docker Hub). |
 | `TF_API_TOKEN` | Secret | Reads Terraform outputs (server IP). |
