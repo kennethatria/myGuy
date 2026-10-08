@@ -6,3 +6,8 @@ vpc_ip: "10.0.0.2"
 # VPC IP of the monitoring instance — used for Promtail → Loki push
 # Must match Terraform locals.zipkin_vpc_ip in infra/main.tf
 monitoring_vpc_ip: "10.0.0.3"
+
+# Old domains that redirect to DOMAIN (the GitHub variable).  Each keeps its
+# certificate, renewed as before, so old links and emails keep working.
+redirect_domains:
+  - myguy.work

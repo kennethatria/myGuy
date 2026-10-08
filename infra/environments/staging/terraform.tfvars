@@ -1,7 +1,7 @@
 # Staging Environment Configuration
 environment = "staging"
 project_name = "myguy"
-domain_name = "myguy.work"
+domain_name = "akalimu.com"
 
 # Linode Configuration
 linode_region = "eu-west"  # London region for EU
