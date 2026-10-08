@@ -137,16 +137,16 @@ export function formatRating(rating: number): string {
 export const WIDTH = 100
 export const HEIGHT = 100
 /** The centre person's circle */
-export const CENTRE_RADIUS = 8
+export const CENTRE_RADIUS = 6
 /** Their connections, and their connections' connections (a little smaller) */
-export const NODE_RADIUS = 5.5
-export const CHILD_RADIUS = 4.2
+export const NODE_RADIUS = 4.5
+export const CHILD_RADIUS = 3.6
 /** Radius of the inner ring and the outer ring; people sit on them */
-const RINGS = [22, 40] as const
+const RINGS = [24, 45] as const
 /** With nobody on the outer ring, the inner one takes more of the room */
-const ONLY_RING = 34
+const ONLY_RING = 36
 /** The faint outermost band beyond the last ring, as on the home radar */
-export const EDGE_RADIUS = 47
+export const EDGE_RADIUS = 49.6
 
 /** How strong a link is, from the average rating between the two people */
 export type Tier = 'strong' | 'fair' | 'weak'
