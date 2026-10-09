@@ -6,13 +6,6 @@
   hosts: "{{ target | default('app') }}"
   become: yes
 
-  handlers:
-    - name: restart promtail
-      ansible.builtin.systemd:
-        name: promtail
-        state: restarted
-        daemon_reload: yes
-
   tasks:
     - name: Allow listening on the VPC address at boot
       ansible.builtin.include_tasks: tasks/vpc_listen.yml
@@ -20,141 +13,89 @@
     - name: Install node_exporter
       ansible.builtin.include_tasks: tasks/node_exporter.yml
 
-    # --- Promtail (ships ModSecurity, nginx access and container logs to Loki) ---
+    # --- Promtail (ships logs to Loki on the monitoring server) ---
 
-    - name: Install unzip
-      ansible.builtin.apt:
-        name: unzip
-        state: present
-
-    - name: Download Promtail
-      ansible.builtin.get_url:
-        url: https://github.com/grafana/loki/releases/download/v2.9.10/promtail-linux-amd64.zip
-        dest: /tmp/promtail-linux-amd64.zip
-        mode: "0644"
-
-    - name: Extract Promtail
-      ansible.builtin.unarchive:
-        src: /tmp/promtail-linux-amd64.zip
-        dest: /tmp
-        remote_src: yes
-
-    - name: Install Promtail binary
-      ansible.builtin.copy:
-        src: /tmp/promtail-linux-amd64
-        dest: /usr/local/bin/promtail
-        mode: "0755"
-        remote_src: yes
-
-    - name: Create Promtail directories
-      ansible.builtin.file:
-        path: "{{ item.path }}"
-        state: directory
-        owner: "{{ item.owner }}"
-        group: "{{ item.owner }}"
-        mode: "{{ item.mode }}"
-      loop:
-        - { path: /etc/promtail,    owner: root,     mode: "0755" }
-        - { path: /var/lib/promtail, owner: promtail, mode: "0750" }
-
-    - name: Write Promtail config
-      ansible.builtin.copy:
-        dest: /etc/promtail/config.yml
-        mode: "0644"
-        content: |
-          server:
-            http_listen_port: 9080
-            grpc_listen_port: 0
-
-          positions:
-            filename: /var/lib/promtail/positions.yaml
-
-          clients:
-            - url: http://{{ monitoring_vpc_ip }}:3100/loki/api/v1/push
-
-          scrape_configs:
-            - job_name: modsecurity
-              static_configs:
-                - targets:
-                    - localhost
-                  labels:
-                    job: modsecurity
-                    __path__: /var/log/nginx/modsecurity_audit.log
-              pipeline_stages:
-                - regex:
-                    expression: '.*\[id "(?P<rule_id>\d+)"\]'
-                - labels:
-                    rule_id:
-
-            # JSON access log written by nginx-common.conf.j2.  Fields are
-            # parsed at query time (| json) so client IPs never become labels.
-            - job_name: nginx_access
-              static_configs:
-                - targets:
-                    - localhost
-                  labels:
-                    job: nginx_access
-                    __path__: /var/log/nginx/access.json.log
-
-            # App container output (podman log_driver journald, set in
-            # deploy.yml).  Labels stay low-cardinality: service and stream.
-            - job_name: containers
-              journal:
-                path: /var/log/journal
-                max_age: 12h
+    - name: Install Promtail
+      ansible.builtin.include_tasks: tasks/promtail.yml
+      vars:
+        promtail_loki_url: "http://{{ monitoring_vpc_ip }}:3100"
+        promtail_scrape_configs: |
+          # ModSecurity's Serial audit log writes each flagged request as
+          # sections A-Z over ~30 lines: A has the client IP, B the request,
+          # F the response status, H the matched rules.  Joined into one
+          # entry here, so one query sees all of a request.
+          - job_name: modsecurity
+            static_configs:
+              - targets:
+                  - localhost
                 labels:
-                  job: containers
-              relabel_configs:
-                - source_labels: ['__journal_container_name']
-                  regex: '.+'
-                  action: keep
-                # myguy_api_1 -> api
-                - source_labels: ['__journal_container_name']
-                  regex: '(?:myguy_)?(.+?)(?:_[0-9]+)?'
-                  target_label: service
-                - source_labels: ['__journal_priority_keyword']
-                  regex: 'err'
-                  replacement: stderr
-                  target_label: stream
-                - source_labels: ['__journal_priority_keyword']
-                  regex: 'info'
-                  replacement: stdout
-                  target_label: stream
-              pipeline_stages:
-                # The backend logs sign-in codes when SMTP is unset; they must
-                # never leave the server.
-                - drop:
-                    expression: 'login code for'
-      notify: restart promtail
+                  job: modsecurity
+                  __path__: /var/log/nginx/modsecurity_audit.log
+            pipeline_stages:
+              - multiline:
+                  firstline: '^---\w+---A--$'
+                  max_wait_time: 3s
+                  max_lines: 300
 
-    - name: Create Promtail systemd service
-      ansible.builtin.copy:
-        dest: /etc/systemd/system/promtail.service
-        mode: "0644"
-        content: |
-          [Unit]
-          Description=Promtail log shipper
-          After=network.target
+          # JSON access log written by nginx-common.conf.j2.  Fields are
+          # parsed at query time (| json) so client IPs never become labels.
+          - job_name: nginx_access
+            static_configs:
+              - targets:
+                  - localhost
+                labels:
+                  job: nginx_access
+                  __path__: /var/log/nginx/access.json.log
 
-          [Service]
-          User=promtail
-          Group=promtail
-          ExecStart=/usr/local/bin/promtail -config.file=/etc/promtail/config.yml
-          Restart=always
-          NoNewPrivileges=yes
-          PrivateTmp=yes
-          ReadOnlyPaths=/etc/promtail
-          ReadWritePaths=/var/lib/promtail
+          # fail2ban's bans and unbans (NOTICE), with the jail as a label.
+          # Its INFO lines ("Found <ip>", one per matched line) are dropped:
+          # the logs they match are already in Loki.
+          - job_name: fail2ban
+            static_configs:
+              - targets:
+                  - localhost
+                labels:
+                  job: fail2ban
+                  __path__: /var/log/fail2ban.log
+            pipeline_stages:
+              - drop:
+                  expression: '\s(INFO|DEBUG)\s'
+              - regex:
+                  expression: '\[(?P<jail>[\w-]+)\]\s+(?:Ban|Unban|Restore Ban)\s'
+              - labels:
+                  jail:
 
-          [Install]
-          WantedBy=multi-user.target
+          # App container output (podman log_driver journald, set in
+          # deploy.yml).  Labels stay low-cardinality: service and stream.
+          - job_name: containers
+            journal:
+              path: /var/log/journal
+              max_age: 12h
+              labels:
+                job: containers
+            relabel_configs:
+              - source_labels: ['__journal_container_name']
+                regex: '.+'
+                action: keep
+              # myguy_api_1 -> api
+              - source_labels: ['__journal_container_name']
+                regex: '(?:myguy_)?(.+?)(?:_[0-9]+)?'
+                target_label: service
+              - source_labels: ['__journal_priority_keyword']
+                regex: 'err'
+                replacement: stderr
+                target_label: stream
+              - source_labels: ['__journal_priority_keyword']
+                regex: 'info'
+                replacement: stdout
+                target_label: stream
+            pipeline_stages:
+              # The backend logs sign-in codes when SMTP is unset; they must
+              # never leave the server.
+              - drop:
+                  expression: 'login code for'
 
-    - name: Enable and start Promtail
-      ansible.builtin.systemd:
-        name: promtail
-        enabled: yes
-        state: started
-        daemon_reload: yes
+          {{ lookup('ansible.builtin.template', 'files/promtail-system-job.yml.j2', template_vars={'promtail_host': 'app'}) }}
 
     # --- Container metrics (prometheus-podman-exporter) ---
     # Memory and CPU per app container, so a full server can be traced to the

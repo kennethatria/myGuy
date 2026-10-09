@@ -17,7 +17,10 @@ SecResponseBodyAccess Off
 # Audit logging — RelevantOnly logs only requests that triggered a rule
 SecAuditEngine RelevantOnly
 SecAuditLog /var/log/nginx/modsecurity_audit.log
-SecAuditLogParts ABIJDEFHZ
+# A client IP, B request headers, F response headers (status), H matched
+# rules, Z end.  No request or response bodies (C, I, J, E): a flagged API
+# call would otherwise put its JSON, personal data included, into Loki.
+SecAuditLogParts ABFHZ
 SecAuditLogType Serial
 
 # OWASP Core Rule Set
