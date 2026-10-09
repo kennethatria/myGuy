@@ -17,10 +17,11 @@
     # pushing the whole server into swap, where everything stalls.
     monitoring_containers:
       # Traces: the services send OTLP/HTTP to 4318; Jaeger keeps the newest
-      # 10,000 in memory (lost on restart) and serves its UI on 16686.
+      # 20,000 in memory (lost on restart) and serves its UI on 16686.
       # Replaced Tempo, which needed more than 256 MB on this server.
       - name: jaeger
-        memory: 128m
+        # 20,000 stored traces measured at ~100 MB; room for richer spans.
+        memory: 160m
         image: docker.io/jaegertracing/jaeger:2.22.0
         ports: ["4318:4318", "16686:16686", "8888:8888"]
         volumes:

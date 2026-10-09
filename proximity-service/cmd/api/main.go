@@ -38,7 +38,7 @@ func main() {
 	go cleanupDaily(service)
 
 	router := gin.New()
-	router.Use(gin.Logger(), gin.Recovery(), otelgin.Middleware("myguy-proximity-service"))
+	router.Use(gin.Logger(), gin.Recovery(), otelgin.Middleware("myguy-proximity-service", otelgin.WithFilter(tracing.Traced)))
 	handlers.NewHandler(service).Register(router, middleware.InternalKey(apiKey))
 
 	port := getenv("PORT", "8083")

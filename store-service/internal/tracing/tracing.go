@@ -2,6 +2,7 @@ package tracing
 
 import (
 	"context"
+	"net/http"
 	"os"
 
 	"go.opentelemetry.io/otel"
@@ -44,4 +45,11 @@ func InitTracer(ctx context.Context, serviceName string) (func(context.Context) 
 	otel.SetTracerProvider(tp)
 
 	return tp.Shutdown, nil
+}
+
+// Traced reports whether a request is worth a trace.  Health checks are not:
+// the site prober calls /health every 15 seconds, which alone would fill
+// most of Jaeger's in-memory trace limit.  Use with otelgin.WithFilter.
+func Traced(r *http.Request) bool {
+	return r.URL.Path != "/health"
 }

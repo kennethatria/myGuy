@@ -90,7 +90,7 @@ func main() {
 
 	// Setup router
 	r := gin.Default()
-	r.Use(otelgin.Middleware("myguy-backend"))
+	r.Use(otelgin.Middleware("myguy-backend", otelgin.WithFilter(tracing.Traced)))
 
 	// Enable CORS
 	r.Use(func(c *gin.Context) {
