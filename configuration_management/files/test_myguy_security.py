@@ -227,7 +227,8 @@ class SummaryTest(TempState):
                       ("status >= 500", [({}, 3)]),
                       ("request-code", [({}, 38)]),
                       ("status=429", [({}, 2)]),
-                      ("count(count by (remote_addr)", [({}, 4)]),
+                      ("count by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | uri =~",
+                       [({"remote_addr": f"192.0.2.{i}"}, 1) for i in range(1, 5)]),
                       ("myguy_accounts", [({}, 1)])]
         for i in range(5):
             s.add("modsecurity", NOW - 3 * 60 * MIN + i * MIN, waf_entry("203.0.113.7", entry=f"A{i}"))
@@ -286,7 +287,7 @@ class SummaryTest(TempState):
                 "deploys": [["13:20", "app"]], "top_ips": [["203.0.113.7", 5, "scanner", True]]}})
         records.append({"kind": "weekly", "date": "2026-10-10", "stats": {"waf": 50}})
         ms.save_history(self.settings, records, dt.date(2026, 10, 17))
-        self.src.vectors.append(("[7d]", [({}, 22)]))
+        self.src.vectors.append(("[7d]", [({"remote_addr": f"192.0.2.{i}"}, 1) for i in range(22)]))
         ms.weekly(self.src, self.settings, {}, NOW, self.send)
         msg = self.sent[0]
         self.assertIn("weekly summary: Sun 11 Oct – Sat 17 Oct", msg)
@@ -322,6 +323,50 @@ class InvestigateTest(TempState):
         self.assertIn("WAF: 1 flagged (SQL injection 1) · serious answered without an error: 1", text)
         self.assertIn("banned now by nginx-modsecurity", text)
         self.assertIn(f"banip {ip}", text)
+
+
+COUNTRIES = {"203.0.113.7": "CN", "198.51.100.2": "US", "198.51.100.9": "NL", "192.0.2.44": "RU"}
+
+
+class CountryTest(TempState):
+    def setUp(self):
+        super().setUp()
+        self.settings["country"] = lambda ip: COUNTRIES.get(ip, "NL" if ip.startswith("192.0.2.") else "")
+
+    def test_attack_message_names_the_country(self):
+        for i in range(8):
+            self.src.add("modsecurity", NOW - 9 * MIN + i * MIN // 2, waf_entry("203.0.113.7"))
+        ms.check(self.src, self.settings, {}, NOW, self.send)
+        self.assertIn("<code>203.0.113.7</code> (CN) · 8 flagged", self.sent[0])
+
+    def test_ssh_alert_names_the_country(self):
+        self.src.add("ssh", NOW - MIN, "Accepted publickey for ops from 198.51.100.9 port 1 ssh2", host="app")
+        ms.check(self.src, self.settings, {"ssh_since": NOW - 10 * MIN}, NOW, self.send)
+        self.assertIn("from <code>198.51.100.9</code> (NL)", self.sent[0])
+
+    def test_summaries_count_countries_by_ip(self):
+        SummaryTest.populate(self)
+        ms.daily(self.src, self.settings, {}, NOW, self.send)
+        msg = self.sent[0]
+        self.assertIn("<code>203.0.113.7</code> (CN) 5 hits", msg)
+        self.assertIn("Attacker countries (IPs): CN 1, RU 1, US 1", msg)
+        self.assertIn("From: NL 4", msg)
+        ms.weekly(self.src, self.settings, {}, NOW, self.send)
+        self.assertIn("Attacker countries (IPs): CN 1, RU 1, US 1", self.sent[1])
+
+    def test_investigate_names_the_country(self):
+        out = []
+        ms.investigate(self.src, self.settings, "203.0.113.7", 24, NOW, out.append)
+        self.assertTrue(out[0].startswith("Investigate 203.0.113.7 (CN)"))
+
+    def test_no_database_means_no_country(self):
+        self.assertEqual(ms.country_lookup("/nonexistent/country.mmdb")("8.8.8.8"), "")
+        self.assertEqual(ms.place({}, "8.8.8.8"), "<code>8.8.8.8</code>")
+
+    @unittest.skipUnless(os.environ.get("GEOIP_TEST_DB"), "set GEOIP_TEST_DB to a DB-IP country .mmdb")
+    def test_real_database(self):
+        country = ms.country_lookup(os.environ["GEOIP_TEST_DB"])
+        self.assertEqual((country("8.8.8.8"), country("10.0.0.5"), country("not-an-ip")), ("US", "", ""))
 
 
 class SettingsTest(unittest.TestCase):

@@ -33,7 +33,14 @@
           - certbot
           - python3-certbot-nginx
           - libnginx-mod-http-modsecurity
+          # Each request's country in the access log (tasks/geoip.yml)
+          - libnginx-mod-http-geoip2
         state: present
+
+    # --- Visitor countries (nginx logs each request's country) ---
+
+    - name: Install the IP-to-country database
+      ansible.builtin.include_tasks: tasks/geoip.yml
 
     # --- VPC Network Interface ---
 

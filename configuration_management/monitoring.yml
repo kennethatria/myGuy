@@ -2921,6 +2921,188 @@
                     "expr": "sum by (status) (count_over_time({job=\"nginx_access\"} | json [$__interval]))"
                   }
                 ]
+              },
+              {
+                "type": "table",
+                "title": "Visitors by country",
+                "description": "IPs whose browser ran the app (as Visitors above), by the country of the IP. VPNs and cloud IPs show where the server is. Country from DB-IP's free database (CC BY 4.0, db-ip.com), looked up by nginx on the app server; requests logged before it was added have none.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 31,
+                  "w": 12,
+                  "h": 10
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0
+                  },
+                  "overrides": [
+                    {
+                      "matcher": {
+                        "id": "byName",
+                        "options": "Visitors"
+                      },
+                      "properties": [
+                        {
+                          "id": "custom.cellOptions",
+                          "value": {
+                            "type": "gauge",
+                            "mode": "basic",
+                            "valueDisplayMode": "text"
+                          }
+                        },
+                        {
+                          "id": "color",
+                          "value": {
+                            "mode": "fixed",
+                            "fixedColor": "blue"
+                          }
+                        },
+                        {
+                          "id": "custom.width",
+                          "value": 220
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sort_desc(topk(15, count by (country) (count by (remote_addr, country) (count_over_time({job=\"nginx_access\"} | json | country != \"\" | country != \"--\" | uri =~ \"/assets/.*[.]js|/(api/v1|store/api/v1|chat/api/v1)/.*\" | status < 400 | user_agent !~ \"(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*\" [$__range])))))"
+                  }
+                ],
+                "options": {
+                  "showHeader": true,
+                  "cellHeight": "sm",
+                  "sortBy": [
+                    {
+                      "displayName": "Visitors",
+                      "desc": true
+                    }
+                  ]
+                },
+                "transformations": [
+                  {
+                    "id": "labelsToFields",
+                    "options": {
+                      "mode": "columns"
+                    }
+                  },
+                  {
+                    "id": "merge",
+                    "options": {}
+                  },
+                  {
+                    "id": "organize",
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {
+                        "country": "Country",
+                        "Value": "Visitors",
+                        "Value #A": "Visitors"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "table",
+                "title": "App requests by country",
+                "description": "Calls to the app's APIs by the country of the IP. Country from DB-IP's free database (CC BY 4.0, db-ip.com), looked up by nginx on the app server; requests logged before it was added have none.",
+                "gridPos": {
+                  "x": 12,
+                  "y": 31,
+                  "w": 12,
+                  "h": 10
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0
+                  },
+                  "overrides": [
+                    {
+                      "matcher": {
+                        "id": "byName",
+                        "options": "Requests"
+                      },
+                      "properties": [
+                        {
+                          "id": "custom.cellOptions",
+                          "value": {
+                            "type": "gauge",
+                            "mode": "basic",
+                            "valueDisplayMode": "text"
+                          }
+                        },
+                        {
+                          "id": "color",
+                          "value": {
+                            "mode": "fixed",
+                            "fixedColor": "blue"
+                          }
+                        },
+                        {
+                          "id": "custom.width",
+                          "value": 220
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sort_desc(topk(15, sum by (country) (count_over_time({job=\"nginx_access\"} | json | country != \"\" | country != \"--\" | uri =~ \"/(api/v1|store/api/v1|chat/api/v1)/.*\" [$__range]))))"
+                  }
+                ],
+                "options": {
+                  "showHeader": true,
+                  "cellHeight": "sm",
+                  "sortBy": [
+                    {
+                      "displayName": "Requests",
+                      "desc": true
+                    }
+                  ]
+                },
+                "transformations": [
+                  {
+                    "id": "labelsToFields",
+                    "options": {
+                      "mode": "columns"
+                    }
+                  },
+                  {
+                    "id": "merge",
+                    "options": {}
+                  },
+                  {
+                    "id": "organize",
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {
+                        "country": "Country",
+                        "Value": "Requests",
+                        "Value #A": "Requests"
+                      }
+                    }
+                  }
+                ]
               }
             ],
             "time": {
@@ -3791,13 +3973,54 @@
                 ]
               },
               {
+                "type": "stat",
+                "title": "Country",
+                "description": "The IP's country (DB-IP's free database, looked up by nginx). VPNs and cloud IPs show where the server is.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 7,
+                  "w": 4,
+                  "h": 7
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "textMode": "name",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "legendFormat": "{{country}}",
+                    "expr": "topk(1, sum by (country) (count_over_time({job=\"nginx_access\"} |= \"\\\"remote_addr\\\":\\\"$ip\\\"\" | json | country != \"\" [$__range])))"
+                  }
+                ]
+              },
+              {
                 "type": "timeseries",
                 "title": "Requests by status",
                 "description": "When it was active and how the app answered.",
                 "gridPos": {
-                  "x": 0,
+                  "x": 4,
                   "y": 7,
-                  "w": 24,
+                  "w": 20,
                   "h": 7
                 },
                 "datasource": {
@@ -4596,6 +4819,97 @@
                   "wrapLogMessage": true,
                   "sortOrder": "Descending"
                 }
+              },
+              {
+                "type": "table",
+                "title": "Failed requests by country",
+                "description": "Requests answered 4xx, mostly scanners probing for files, by the country of the IP. Country from DB-IP's free database (CC BY 4.0, db-ip.com), looked up by nginx on the app server; requests logged before it was added have none.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 36,
+                  "w": 12,
+                  "h": 9
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0
+                  },
+                  "overrides": [
+                    {
+                      "matcher": {
+                        "id": "byName",
+                        "options": "Requests"
+                      },
+                      "properties": [
+                        {
+                          "id": "custom.cellOptions",
+                          "value": {
+                            "type": "gauge",
+                            "mode": "basic",
+                            "valueDisplayMode": "text"
+                          }
+                        },
+                        {
+                          "id": "color",
+                          "value": {
+                            "mode": "fixed",
+                            "fixedColor": "blue"
+                          }
+                        },
+                        {
+                          "id": "custom.width",
+                          "value": 220
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sort_desc(topk(15, sum by (country) (count_over_time({job=\"nginx_access\"} | json | country != \"\" | country != \"--\" | status >= 400 | status < 500 [$__range]))))"
+                  }
+                ],
+                "options": {
+                  "showHeader": true,
+                  "cellHeight": "sm",
+                  "sortBy": [
+                    {
+                      "displayName": "Requests",
+                      "desc": true
+                    }
+                  ]
+                },
+                "transformations": [
+                  {
+                    "id": "labelsToFields",
+                    "options": {
+                      "mode": "columns"
+                    }
+                  },
+                  {
+                    "id": "merge",
+                    "options": {}
+                  },
+                  {
+                    "id": "organize",
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {
+                        "country": "Country",
+                        "Value": "Requests",
+                        "Value #A": "Requests"
+                      }
+                    }
+                  }
+                ]
               }
             ]
           }
@@ -4833,7 +5147,7 @@
       ansible.builtin.shell:
         cmd: >-
           ss -Hltn | awk '{print $4}'
-          | grep -E '^(0\.0\.0\.0|\*|\[::\]):(3000|3100|4318|8888|9090|9100|9115|16686)$' || true
+          | grep -E '^(0\.0\.0\.0|\*|\[::\]):(3000|3100|4318|8888|9080|9090|9100|9115|16686)$' || true
       register: open_listeners
       changed_when: false
       failed_when: open_listeners.stdout | length > 0
@@ -4855,6 +5169,20 @@
         and local_health | reject('equalto', 'up') | list | length == 0
       retries: 12
       delay: 10
+
+    # --- IP-to-country database (the security checks name attackers' countries) ---
+
+    - name: Install the IP-to-country database
+      ansible.builtin.include_tasks:
+        file: tasks/geoip.yml
+        apply:
+          become: yes
+
+    - name: Install the country database reader for Python
+      ansible.builtin.apt:
+        name: python3-maxminddb
+        state: present
+      become: yes
 
     # --- Security checks and summaries (files/myguy_security.py) ---
     # Every 5 minutes: attacking IPs that need a decision and unexpected SSH

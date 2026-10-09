@@ -16,6 +16,19 @@ map $request_uri $request_path {
     "~^(?<path>[^?]*)" $path;
 }
 
+{% if geoip_country | default(false) %}
+# Each visitor's country (ISO code) from DB-IP's free database
+# (tasks/geoip.yml, refreshed monthly; reread without a reload).  Looked up
+# from $remote_addr, which set_real_ip_from has already made the visitor's.
+# "--" for addresses it doesn't know, such as private ones.
+geoip2 /var/lib/geoip/country.mmdb {
+    auto_reload 24h;
+    $geoip_country default=-- country iso_code;
+}
+
+{% endif %}
+# "country" goes last: fail2ban's nginx-auth-abuse filter (security.yml)
+# matches the fields before it from the start of the line.
 log_format visitor_json escape=json
     '{"time":"$time_iso8601",'
     '"remote_addr":"$remote_addr",'
@@ -25,7 +38,7 @@ log_format visitor_json escape=json
     '"bytes":$body_bytes_sent,'
     '"request_time":$request_time,'
     '"referer":"$http_referer",'
-    '"user_agent":"$http_user_agent"}';
+    '"user_agent":"$http_user_agent"{% if geoip_country | default(false) %},"country":"$geoip_country"{% endif %}}';
 
 access_log /var/log/nginx/access.json.log visitor_json;
 
