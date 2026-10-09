@@ -308,6 +308,15 @@
         mode: "0644"
         content: |
           apiVersion: 1
+          # A Prometheus datasource created before it had a fixed uid (and the
+          # retired Tempo one) stopped Grafana from starting ("Datasource
+          # provisioning error: data source not found"): delete them, then
+          # create Prometheus again with uid "prometheus" (alert rules use it).
+          deleteDatasources:
+            - name: Prometheus
+              orgId: 1
+            - name: Tempo
+              orgId: 1
           datasources:
             - name: Prometheus
               type: prometheus
