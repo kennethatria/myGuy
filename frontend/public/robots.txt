@@ -1,0 +1,5 @@
+# Crawlers are welcome everywhere public.
+User-agent: *
+# A trap, not a real page: only crawlers that ignore this file go there,
+# and the server bans them (fail2ban tripwire, configuration_management).
+Disallow: /internal-archive/

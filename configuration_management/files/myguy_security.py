@@ -5,13 +5,15 @@ Runs on the monitoring server (installed by monitoring.yml as
 /usr/local/bin/myguy-security) against its Loki and Prometheus:
 
   myguy-security check            every 5 minutes: attacks that need a
-                                  decision and unexpected SSH logins go to
+                                  decision, unexpected SSH logins and bans
+                                  that may have hit a real user go to
                                   Telegram; logs "check ok" (the heartbeat
                                   Grafana watches)
   myguy-security summary          08:00 Amsterdam time: the daily summary,
                                   plus the weekly one on Saturdays
   myguy-security daily|weekly     one of them, now
   myguy-security investigate IP   everything one IP did, in the terminal
+  myguy-security investigate EMAIL  every sign-in step for one address
 
 Add --dry-run to print messages instead of sending them.
 
@@ -183,6 +185,10 @@ SSH_ACCEPTED = re.compile(r"Accepted (?P<method>\S+) for (?P<user>\S+) from (?P<
 SSH_FAILED = re.compile(r"Invalid user|Failed \S+ for|\[preauth\]")
 SSH_ADDRESS = re.compile(r"(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F]*:[0-9a-fA-F:]+) port \d+")
 SUDO = re.compile(r"^\s*(?P<user>\S+) : .*?COMMAND=(?P<command>.*)$")
+# The backend's sign-in log (internal/api/handlers.go logAuthEvent)
+AUTH = re.compile(r'auth event=(?P<event>\S+) email="(?P<email>[^"]*)" ip=(?P<ip>\S+)')
+AUTH_QUERY = '{job="containers", service="api"} |= "auth event="'
+
 DEPLOY = re.compile(r"^(?P<what>start|end) run=(?P<run>\S+)(?P<rest>.*)$")
 
 
@@ -232,6 +238,29 @@ def parse_fail2ban(ts, line):
     m = FAIL2BAN.search(line)
     ip = valid_ip(m.group("ip")) if m else None
     return {"ts": ts, "jail": m.group("jail"), "action": m.group("action"), "ip": ip} if ip else None
+
+
+def parse_auth(ts, line):
+    m = AUTH.search(line)
+    ip = valid_ip(m.group("ip")) if m else None
+    return {"ts": ts, "event": m.group("event"), "email": m.group("email"), "ip": ip} if ip else None
+
+
+def auth_events(src, start, end, ip=None, email=None):
+    query = AUTH_QUERY
+    if ip:
+        query += f' |= "ip={ip}"'
+    if email:
+        query += ' |= "email=\\"%s\\""' % email.replace('"', "")
+    events = [e for e in (parse_auth(ts, l) for ts, _, l in src.lines(query, start, end)) if e]
+    # |= matched a prefix (ip=1.2.3.4 in ip=1.2.3.45): keep exact ones
+    return [e for e in events if (not ip or e["ip"] == ip) and (not email or e["email"] == email)]
+
+
+def mask(email):
+    """j***@gmail.com: enough to recognise, for Telegram."""
+    local_part, _, domain = email.partition("@")
+    return (local_part[:1] + "***@" + domain) if domain else "***"
 
 
 def parse_falco(ts, line):
@@ -406,6 +435,14 @@ def describe_ip(src, settings_, ip, a, ban, now):
                      + (f" · agent {code(a['agent'], 40)}" if a["agent"] else ""))
     if a["succeeded"]:
         parts.append(f"  ⚠️ {a['succeeded']} serious request(s) answered without an error")
+    if a["sign_in"]:
+        try:
+            emails = Counter(e["email"] for e in auth_events(src, now - WINDOW, now, ip=ip))
+            if emails:
+                parts.append(f"  tried {len(emails)} address(es): "
+                             + ", ".join(code(mask(e), 40) for e, _ in emails.most_common(3)))
+        except Exception:  # noqa: BLE001
+            pass
     parts.append(f"  fail2ban: {banned}" + (f" · banned {before}× before (8 days)" if before > 0 else ""))
     if a["first"]:
         parts.append(f"  active {local(a['first'])}–{local(a['last'])}")
@@ -526,8 +563,52 @@ def ssh_messages(src, settings_, state, now):
             + "\n\nNext: Defences dashboard (SSH logins, sudo)"]
 
 
+# --- check: bans that may have hit a real person --------------------------------
+
+# Jails that ban automatically for web traffic.  Not sshd (people don't SSH)
+# and not manual (you banned it yourself).
+AUTO_WEB_JAILS = {"nginx-4xx", "nginx-botsearch", "nginx-modsecurity", "nginx-auth-abuse", "tripwire"}
+
+
+def ban_messages(src, settings_, state, now):
+    """A new automatic ban of an IP someone signed in from in the last 8
+    days: probably shared (a mobile carrier IP, an office), so a real
+    person may now be locked out.  That's a decision: unban or not."""
+    since = state.get("bans_since", now - WINDOW)
+    seen = {k: t for k, t in state.get("bans_seen", {}).items() if now - t < HOUR}
+    alerts = []
+    for ts, _, line in src.lines('{job="fail2ban"} |= "] Ban "', since - 2 * MIN, now):
+        e = parse_fail2ban(ts, line)
+        key = f"{ts}:{line[-80:]}"
+        if not e or e["jail"] not in AUTO_WEB_JAILS or key in seen:
+            continue
+        seen[key] = ts
+        if not real_user(src, e["ip"], now):
+            continue
+        # What got it banned: its last requests before the ban
+        last = []
+        for _, _, l in src.lines('{job="nginx_access"} |= "\\"remote_addr\\":\\"%s\\""' % e["ip"], ts - WINDOW, ts + MIN):
+            try:
+                req = json.loads(l)
+            except ValueError:
+                continue
+            last.append(f"{req.get('method', '')} {req.get('uri', '')} {req.get('status', '')}")
+        print(f"alert: banned-user ip={e['ip']} jail={e['jail']}", flush=True)
+        alerts.append(
+            f"{place(settings_, e['ip'])} · banned by {esc(e['jail'])} at {local(ts)}"
+            + (f" · after {code(last[-1], 50)}" if last else "")
+            + "\nSomeone signed in from this IP in the last 8 days: it may be shared, so a real person may be locked out."
+            + f"\nNext: {code('investigate ' + e['ip'], 60)}. If it's a real user, unban: "
+            + code(f"ssh ops@{settings_['app_ssh_host']} 'sudo fail2ban-client set {e['jail']} unbanip {e['ip']}'", 140))
+    state["bans_since"], state["bans_seen"] = now, seen
+    if not alerts:
+        return []
+    return [f"⚠️ <b>Ban may have hit a real user</b> ({len(alerts)})\n\n" + "\n\n".join(alerts)]
+
+
 def check(src, settings_, state, now, send):
-    messages = attack_messages(src, settings_, state, now) + ssh_messages(src, settings_, state, now)
+    messages = (attack_messages(src, settings_, state, now) + ssh_messages(src, settings_, state, now)
+                + ban_messages(src, settings_, state, now))
     for message in messages:
         send(message)
     for log in ("alert_log", "ssh_alert_log"):
@@ -608,6 +689,20 @@ def collect(src, settings_, state, start, end):
         s["code_requests"] = int(total(src.loki_vector(
             f'sum(count_over_time({auth} | method="POST" | uri="/api/v1/auth/request-code" [{span}]))', end)))
         s["auth_429"] = int(total(src.loki_vector(f'sum(count_over_time({auth} | status=429 [{span}]))', end)))
+        # Requests nginx refused because fail2ban banned the IP
+        s["refused"] = int(total(src.loki_vector(
+            f'sum(count_over_time({{job="nginx_access"}} | json | status="444" [{span}]))', end)))
+
+    def sign_in():
+        events = auth_events(src, start, end)
+        kinds = Counter(e["event"] for e in events)
+        sent = [e for e in events if e["event"] in ("code_sent", "limited")]
+        s["sign_in"] = {k: kinds.get(k, 0) for k in ("code_sent", "limited", "wrong_code", "signed_in", "new_account", "signed_up")}
+        s["sign_in_addresses"] = len({e["email"] for e in sent})
+        s["sign_in_ips"] = len({e["ip"] for e in sent})
+        top = Counter(e["email"] for e in sent).most_common(1)
+        # Only worth naming when far above a real sign-in (1-2 codes)
+        s["most_targeted"] = [mask(top[0][0]), top[0][1]] if top and top[0][1] >= 5 else None
 
     def access():
         logins, failed_ips, failed = Counter(), set(), 0
@@ -649,7 +744,7 @@ def collect(src, settings_, state, start, end):
         s["signups"] = max(0, int(total(accounts))) if accounts else None
 
     for name, fn in (("health", health), ("server errors", errors), ("deploys", deploys),
-                     ("defences", defences), ("access", access), ("Falco", runtime),
+                     ("defences", defences), ("sign-in", sign_in), ("access", access), ("Falco", runtime),
                      ("visitors", visitors)):
         section(name, fn)
     # Distinct IPs per country (an IP counts once however much it did)
@@ -736,8 +831,19 @@ def format_summary(title, s, prev, days=1):
                 f"{esc(k)} {round(100 * n / all_)}%" for k, n in sorted(kinds.items(), key=lambda x: -x[1])[:3]))
     if s.get("attacker_countries"):
         lines.append("  Attacker countries (IPs): " + top_countries(Counter(s["attacker_countries"]), 5))
+    if s.get("refused") is not None:
+        lines.append(f"  Requests refused from banned IPs: {number(s.get('refused'))}"
+                     f"{compare(s.get('refused'), p.get('refused'))}")
     lines.append(f"  Sign-in: {number(s.get('code_requests'))} code requests"
                  f"{compare(s.get('code_requests'), p.get('code_requests'))} · {number(s.get('auth_429'))} rate-limited (429)")
+    si = s.get("sign_in") or {}
+    if si:
+        lines.append(f"    codes sent to {number(s.get('sign_in_addresses'))} address(es) from {number(s.get('sign_in_ips'))} IP(s)"
+                     f" · {number(si.get('signed_in', 0) + si.get('signed_up', 0))} signed in"
+                     f" ({number(si.get('signed_up'))} new) · {number(si.get('wrong_code'))} wrong codes")
+    if s.get("most_targeted"):
+        lines.append(f"    most codes: {code(s['most_targeted'][0], 40)} ×{s['most_targeted'][1]}"
+                     " (many from several IPs: someone may be email-bombing it)")
 
     lines += ["", "<b>Access</b>"]
     logins = s.get("ssh_logins") or {}
@@ -817,7 +923,7 @@ def weekly(src, settings_, state, now, send, persist=True):
     w = {"unreadable": []}
     if len(have) < 7:
         w["unreadable"].append(f"{7 - len(have)} day(s) with no daily summary")
-    for key in ("server_errors", "waf", "waf_succeeded", "unbans", "code_requests", "auth_429",
+    for key in ("server_errors", "waf", "waf_succeeded", "unbans", "code_requests", "auth_429", "refused",
                 "ssh_failed", "unknown_logins", "ops_sudo", "falco_critical", "falco_warnings",
                 "signups", "outage_minutes", "attack_alerts"):
         w[key] = sum(d.get(key) or 0 for _, d in have)
@@ -898,6 +1004,16 @@ def investigate(src, settings_, ip, hours, now, out=print):
         out(f"Sign-in calls: {len(auth)} · rate-limited (429): {sum(1 for r in auth if r.get('status') == 429)}")
     else:
         out("Requests: none")
+    tried = defaultdict(Counter)
+    try:
+        for e in auth_events(src, start, now, ip=ip):
+            tried[e["email"]][e["event"]] += 1
+    except Exception as e:  # noqa: BLE001
+        out(f"Sign-in addresses: couldn't read ({e})")
+    if tried:
+        out(f"Sign-in addresses tried from this IP: {len(tried)}")
+        for email, events in sorted(tried.items(), key=lambda x: -sum(x[1].values()))[:15]:
+            out(f"  {email:40} " + ", ".join(f"{k} {n}" for k, n in events.most_common()))
     try:
         out("Real user: " + ("signed in from this IP (8 days): may be shared, careful with bans"
                              if real_user(src, ip, now) else "no sign-ins from this IP (8 days)"))
@@ -932,6 +1048,29 @@ def investigate(src, settings_, ip, hours, now, out=print):
     out("")
     out(f"Ban for 7 days: {ban_command(settings_, ip)}")
     out(f"Grafana: Investigate IP dashboard, ip = {ip}")
+
+
+def investigate_email(src, settings_, email, hours, now, out=print):
+    """Every sign-in step for one address: which IPs, how many codes."""
+    events = auth_events(src, now - hours * HOUR, now, email=email)
+    out(f"Sign-in for {email} (last {hours} h, times Europe/Amsterdam)")
+    out("")
+    if not events:
+        out("No sign-in steps for this address.")
+        return
+    kinds = Counter(e["event"] for e in events)
+    out("Steps: " + ", ".join(f"{k} {n}" for k, n in kinds.most_common())
+        + f" · first {local(events[0]['ts'], '%a %H:%M')}, last {local(events[-1]['ts'], '%a %H:%M')}")
+    country = settings_.get("country", no_country)
+    ips = Counter(e["ip"] for e in events)
+    out(f"From {len(ips)} IP(s):")
+    for ip, n in ips.most_common(15):
+        out(f"  {ip:40} {country(ip) or '--':3} {n}")
+    if len(ips) >= 3 and kinds.get("code_sent", 0) + kinds.get("limited", 0) >= 5:
+        out("")
+        out("Many codes from several IPs: someone may be email-bombing this address.")
+    out("")
+    out(f"An IP in detail: investigate <IP>")
 
 
 # --- Main ---------------------------------------------------------------------
@@ -975,8 +1114,8 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("check", "summary", "daily", "weekly"):
         sub.add_parser(name)
-    inv = sub.add_parser("investigate", help="everything one IP did")
-    inv.add_argument("ip")
+    inv = sub.add_parser("investigate", help="everything one IP did, or every sign-in step for an email")
+    inv.add_argument("ip", metavar="IP_OR_EMAIL")
     inv.add_argument("--hours", type=int, default=24, help="how far back (at most 192, Loki's 8 days)")
     args = parser.parse_args(argv)
 
@@ -986,10 +1125,14 @@ def main(argv=None):
     now = int(dt.datetime.now(dt.timezone.utc).timestamp()) * 10**9
 
     if args.command == "investigate":
+        hours = max(1, min(args.hours, 192))
+        if "@" in args.ip:
+            investigate_email(src, settings_, args.ip.strip().lower(), hours, now)
+            return 0
         ip = valid_ip(args.ip)
         if not ip:
-            parser.error(f"not an IP address: {args.ip}")
-        investigate(src, settings_, ip, max(1, min(args.hours, 192)), now)
+            parser.error(f"not an IP address or email: {args.ip}")
+        investigate(src, settings_, ip, hours, now)
         return 0
 
     send = telegram(settings_, args.dry_run)

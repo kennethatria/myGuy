@@ -12,6 +12,12 @@ server {
     server_name{% for name in ([domain] + redirect_domains) | unique %} {{ name }} www.{{ name }}{% endfor %};
     real_ip_header X-Forwarded-For;
 
+    # Banned by fail2ban (nginx-common.conf.j2): close without an answer,
+    # logged as 444.
+    if ($banned_ip) {
+        return 444;
+    }
+
     # The NodeBalancer's port-80 health check (infra/main.tf, check_body
     # "healthcheck") must get a 200; a redirect marks the backend down.
     location /healthcheck/ {
@@ -31,6 +37,12 @@ server {
     server_name {{ old }} www.{{ old }};
     real_ip_header proxy_protocol;
 
+    # Banned by fail2ban (nginx-common.conf.j2): close without an answer,
+    # logged as 444.
+    if ($banned_ip) {
+        return 444;
+    }
+
     ssl_certificate /etc/letsencrypt/live/{{ old }}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/{{ old }}/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -49,6 +61,12 @@ server {
     listen 443 ssl proxy_protocol;
     server_name{% for name in app_names %} {{ name }} www.{{ name }}{% endfor %};
     real_ip_header proxy_protocol;
+
+    # Banned by fail2ban (nginx-common.conf.j2): close without an answer,
+    # logged as 444.
+    if ($banned_ip) {
+        return 444;
+    }
 
     ssl_certificate /etc/letsencrypt/live/{{ app_cert }}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/{{ app_cert }}/privkey.pem;

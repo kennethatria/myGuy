@@ -68,14 +68,15 @@ type VerifyResult struct {
 	NewAccount bool
 }
 
-func normalizeEmail(email string) string {
+// NormalizeEmail is the form emails are stored, looked up and logged in.
+func NormalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
 // RequestCode emails a fresh code to email, replacing any outstanding one.
 // It behaves the same whether or not an account exists.
 func (s *AuthService) RequestCode(ctx context.Context, email string) error {
-	email = normalizeEmail(email)
+	email = NormalizeEmail(email)
 	now := s.now()
 
 	recent, err := s.codeRepo.CountSince(ctx, email, now.Add(-time.Hour))
@@ -107,7 +108,7 @@ func (s *AuthService) RequestCode(ctx context.Context, email string) error {
 // VerifyCode checks code against the latest active code for email and
 // consumes it on success.
 func (s *AuthService) VerifyCode(ctx context.Context, email, code string) (*VerifyResult, error) {
-	email = normalizeEmail(email)
+	email = NormalizeEmail(email)
 
 	loginCode, err := s.codeRepo.LatestActive(ctx, email, s.now())
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -148,7 +149,7 @@ func (s *AuthService) VerifyCode(ctx context.Context, email, code string) (*Veri
 
 // CompleteSignup creates the account for an email whose code was verified.
 func (s *AuthService) CompleteSignup(ctx context.Context, email, fullName string) (*models.UserResponse, error) {
-	email = normalizeEmail(email)
+	email = NormalizeEmail(email)
 	fullName = strings.TrimSpace(fullName)
 	if fullName == "" {
 		return nil, ErrFullNameRequired

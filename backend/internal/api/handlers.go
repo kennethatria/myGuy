@@ -40,6 +40,18 @@ func NewHandler(
 	}
 }
 
+// ClientIPHeader carries the visitor's IP: nginx sets it from the
+// NodeBalancer's PROXY header or X-Forwarded-For.  Trusting it is safe
+// because only nginx can reach the API (it listens on 127.0.0.1).
+const ClientIPHeader = "X-Real-IP"
+
+// logAuthEvent records one sign-in step with the address and IP, so abuse
+// can be traced from an IP to the emails it tried and back (Loki,
+// investigate <IP>).  Never the code.
+func logAuthEvent(c *gin.Context, event, email string) {
+	log.Printf("auth event=%s email=%q ip=%s", event, services.NormalizeEmail(email), c.ClientIP())
+}
+
 type requestCodeRequest struct {
 	Email string `json:"email" binding:"required,email"`
 }
@@ -55,14 +67,18 @@ func (h *Handler) RequestLoginCode(c *gin.Context) {
 
 	err := h.authService.RequestCode(c.Request.Context(), req.Email)
 	if errors.Is(err, services.ErrTooManyRequests) {
+		logAuthEvent(c, "limited", req.Email)
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
 		return
 	}
 	if err != nil {
 		log.Printf("request login code: %v", err)
+		logAuthEvent(c, "failed", req.Email)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to send code"})
 		return
 	}
+
+	logAuthEvent(c, "code_sent", req.Email)
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "code sent"})
 }
@@ -83,16 +99,19 @@ func (h *Handler) VerifyLoginCode(c *gin.Context) {
 
 	result, err := h.authService.VerifyCode(c.Request.Context(), req.Email, req.Code)
 	if errors.Is(err, services.ErrInvalidCode) {
+		logAuthEvent(c, "wrong_code", req.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 	if err != nil {
 		log.Printf("verify login code: %v", err)
+		logAuthEvent(c, "failed", req.Email)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to verify code"})
 		return
 	}
 
 	if result.NewAccount {
+		logAuthEvent(c, "new_account", req.Email)
 		signupToken, err := h.authMiddleware.GenerateSignupToken(result.Email)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
@@ -102,6 +121,7 @@ func (h *Handler) VerifyLoginCode(c *gin.Context) {
 		return
 	}
 
+	logAuthEvent(c, "signed_in", req.Email)
 	h.respondWithSession(c, http.StatusOK, result.User)
 }
 
@@ -134,10 +154,12 @@ func (h *Handler) CompleteSignup(c *gin.Context) {
 		return
 	case err != nil:
 		log.Printf("complete signup: %v", err)
+		logAuthEvent(c, "failed", email)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create account"})
 		return
 	}
 
+	logAuthEvent(c, "signed_up", email)
 	h.respondWithSession(c, http.StatusCreated, user)
 }
 
