@@ -8,11 +8,11 @@ Terraform for MyGuy's Akamai Cloud (Linode) infrastructure. State and variables 
 | :--- | :--- |
 | `linode_vpc.main` + subnet `10.0.0.0/24` | Private network between the two servers |
 | `linode_instance.my_guy_instance` (`g6-nanode-1`, VPC `10.0.0.2`) | App server: nginx + WAF, API, store, chat, PostgreSQL, Redis |
-| `linode_instance.zipkin_instance` (`g6-nanode-1`, VPC `10.0.0.3`) | Monitoring server: Prometheus, Loki, Grafana, Jaeger, blackbox prober (no public ingress) |
+| `linode_instance.zipkin_instance` (`g6-nanode-1`, VPC `10.0.0.3`) | Monitoring server: Prometheus, Loki, Grafana, Jaeger, blackbox prober. It has a public IP, but its firewall admits only the VPC |
 | `linode_nodebalancer.main` | Public entry point; the domain's DNS `A` record points here |
 | NodeBalancer config `:80` (HTTP mode) | Health-checks `/healthcheck/` expecting body `healthcheck`; adds `X-Forwarded-For` |
 | NodeBalancer config `:443` (TCP, **PROXY protocol v2**) | TLS passthrough; nginx must listen with `proxy_protocol` |
-| `linode_firewall.my_firewall` | App server: 80, 443, 22 public; node_exporter/Falco metrics from the VPC |
+| `linode_firewall.my_firewall` | App server: 80, 443, 22 public; from the VPC only: node_exporter (9100), Falco (8765), app counts (9464–9465) and the podman exporter (9882) |
 | `linode_firewall.zipkin_firewall` | Monitoring server: Jaeger (OTLP 4318, UI 16686), Prometheus, Loki, Grafana, SSH — VPC only |
 
 Outputs include `instance_ip_address`, `nodebalancer_ipv4` and `zipkin_vpc_ip` (the monitoring server).

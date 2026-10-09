@@ -15,18 +15,18 @@ NOW = int(dt.datetime(2026, 10, 17, 6, 0, tzinfo=dt.timezone.utc).timestamp()) *
 
 def waf_entry(ip, path="/api/v1/tasks?q=1", status=404, rules=("942100",), agent="sqlmap/1.7",
               flagged=True, entry="AAAA1111"):
-    """A joined ModSecurity Serial audit entry, as Promtail ships it."""
-    lines = [f"---{entry}---A--",
-             f"[17/Oct/2026:06:00:00 +0000] 1791.1 {ip} 45616 192.168.128.141 443",
-             f"---{entry}---B--", f"GET {path} HTTP/1.1", f"user-agent: {agent}", "host: akalimu.com", "",
-             f"---{entry}---F--", f"HTTP/1.1 {status}", "Content-Type: text/html", "",
-             f"---{entry}---H--"]
-    for rule in rules:
-        lines.append(f'ModSecurity: Warning. Matched "x" [file "y.conf"] [line "1"] [id "{rule}"] [msg "m"]')
-    if flagged:
-        lines.append('ModSecurity: Warning. Matched "x" [id "949110"] [msg "Inbound Anomaly Score Exceeded"]')
-    lines += ["", f"---{entry}---Z--"]
-    return "\n".join(lines)
+    """A ModSecurity JSON audit line (SecAuditLogFormat JSON), as Promtail ships it."""
+    ids = list(rules) + (["949110"] if flagged else [])
+    return json.dumps({"transaction": {
+        "client_ip": ip, "time_stamp": "Sat Oct 17 06:00:00 2026", "unique_id": entry,
+        "request": {"method": "GET", "uri": path, "headers": {"Host": "akalimu.com", "User-Agent": agent}},
+        "response": {"http_code": status, "headers": {}},
+        "messages": [{"message": "m", "details": {"ruleId": rule, "severity": "2"}} for rule in ids]}},
+        separators=(",", ":"))
+
+
+# A real line from ModSecurity 3.0.17 + CRS 4.0.0 (local nginx, documentation IP)
+REAL_LINE = '{"transaction":{"client_ip":"203.0.113.7","time_stamp":"Fri Oct  9 20:19:57 2026","server_id":"9c4c93100cf9d0ae5392c296aefcdf5ec9892d69","client_port":0,"host_ip":"127.0.0.1","host_port":18090,"unique_id":"179156999755.849453","is_interrupted":false,"request":{"method":"GET","http_version":"1.1","hostname":"127.0.0.1","uri":"/api/v1/tasks?q=1%27%20OR%201%3D1--","headers":{"Host":"127.0.0.1:18090","User-Agent":"sqlmap/1.7","Accept":"*/*","X-Forwarded-For":"203.0.113.7"}},"response":{"http_code":200,"headers":{"Server":"nginx/1.31.6\\u0000","Date":"Fri, 09 Oct 2026 18:19:57 GMT","Content-Length":"2","Content-Type":"text/plain","Connection":"keep-alive"}},"producer":{"modsecurity":"ModSecurity v3.0.17 (MacOSX)","connector":"ModSecurity-nginx v1.0.3","secrules_engine":"DetectionOnly","components":["OWASP_CRS/4.0.0\\""]},"messages":[{"message":"Found User-Agent associated with security scanner","details":{"match":"Matched \\"Operator `PmFromFile\' with parameter `scanners-user-agents.data\' against variable `REQUEST_HEADERS:User-Agent\' (Value: `sqlmap/1.7\' )","reference":"o0,6v83,10","ruleId":"913100","file":"/etc/nginx/modsecurity/owasp-crs/rules/REQUEST-913-SCANNER-DETECTION.conf","lineNumber":"38","data":"Matched Data: sqlmap found within REQUEST_HEADERS:User-Agent: sqlmap/1.7","severity":"2","ver":"OWASP_CRS/4.0.0","rev":"","tags":["application-multi","language-multi","platform-multi","attack-reputation-scanner","paranoia-level/1","OWASP_CRS","capec/1000/118/224/541/310","PCI/6.5.10"],"maturity":"0","accuracy":"0"}},{"message":"Host header is a numeric IP address","details":{"match":"Matched \\"Operator `Rx\' with parameter `(?:^([\\\\d.]+|\\\\[[\\\\da-f:]+\\\\]|[\\\\da-f:]+)(:[\\\\d]+)?$)\' against variable `REQUEST_HEADERS:Host\' (Value: `127.0.0.1:18090\' )","reference":"o0,15o0,9o9,6v55,15","ruleId":"920350","file":"/etc/nginx/modsecurity/owasp-crs/rules/REQUEST-920-PROTOCOL-ENFORCEMENT.conf","lineNumber":"772","data":"127.0.0.1:18090","severity":"4","ver":"OWASP_CRS/4.0.0","rev":"","tags":["application-multi","language-multi","platform-multi","attack-protocol","paranoia-level/1","OWASP_CRS","capec/1000/210/272","PCI/6.5.10"],"maturity":"0","accuracy":"0"}}]}}'
 
 
 class FakeSources:
@@ -78,6 +78,17 @@ class ParseTest(unittest.TestCase):
         self.assertEqual((d["method"], d["status"], d["agent"]), ("GET", 200, "sqlmap/1.7"))
         self.assertTrue(d["flagged"] and d["serious"])
         self.assertEqual(d["kinds"], ["SQL injection"])
+
+    def test_real_modsecurity_line(self):
+        d = ms.parse_waf(1, REAL_LINE)
+        self.assertEqual((d["ip"], d["method"], d["path"], d["status"], d["agent"]),
+                         ("203.0.113.7", "GET", "/api/v1/tasks", 200, "sqlmap/1.7"))
+        self.assertEqual(d["kinds"], ["protocol", "scanner"])
+        self.assertFalse(d["serious"])
+
+    def test_not_an_audit_line(self):
+        self.assertIsNone(ms.parse_waf(1, "---AAAA1111---A--"))
+        self.assertIsNone(ms.parse_waf(1, '{"transaction":{"client_ip":"nope"}}'))
 
     def test_low_score_protocol_warning_is_not_flagged(self):
         d = ms.parse_waf(1, waf_entry("203.0.113.7", rules=("920170",), flagged=False))

@@ -37,6 +37,8 @@
         remote_src: yes
         force: no
 
+    # nginx only reads it on a reload: without one a change is written but
+    # never used (#203's audit log change stayed inactive this way).
     - name: Write ModSecurity config
       ansible.builtin.template:
         src: coraza.conf.j2
@@ -44,6 +46,14 @@
         mode: "0644"
       vars:
         coraza_config_dir: /etc/nginx/modsecurity
+      register: modsecurity_config
+      notify: reload nginx
+
+    - name: Check the nginx configuration with the new ModSecurity config
+      ansible.builtin.command:
+        cmd: nginx -t
+      when: modsecurity_config.changed
+      changed_when: false
 
     - name: Add modsecurity_audit.log logrotate config
       ansible.builtin.copy:
@@ -279,15 +289,15 @@
           ignoreregex =
 
     - name: Write nginx-modsecurity fail2ban filter
-      # ModSecurity audit log section A format:
-      #   [timestamp] unique_id client_ip client_port server_ip server_port
-      # We extract the client IP from that line.
+      # One JSON audit line per flagged request (coraza.conf.j2), starting
+      # {"transaction":{"client_ip":"<ip>","time_stamp":"Fri Oct  9 ..."};
+      # fail2ban finds the date in time_stamp.
       ansible.builtin.copy:
         dest: /etc/fail2ban/filter.d/nginx-modsecurity.conf
         mode: "0644"
         content: |
           [Definition]
-          failregex = ^\[.*?\]\s+\S+\s+<HOST>\s+\d+
+          failregex = ^\{"transaction":\{"client_ip":"<HOST>"
           ignoreregex =
 
     - name: Write nginx-auth-abuse fail2ban filter

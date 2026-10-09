@@ -22,6 +22,11 @@ SecAuditLog /var/log/nginx/modsecurity_audit.log
 # call would otherwise put its JSON, personal data included, into Loki.
 SecAuditLogParts ABFHZ
 SecAuditLogType Serial
+# One JSON line per flagged request ({"transaction":{"client_ip", "request",
+# "response":{"http_code"}, "messages":[{"details":{"ruleId"}}]}}): Promtail
+# ships it as one Loki line; fail2ban's nginx-modsecurity filter, the
+# security checks and the dashboards read these fields.
+SecAuditLogFormat JSON
 
 # OWASP Core Rule Set
 Include {{ coraza_config_dir }}/owasp-crs/crs-setup.conf

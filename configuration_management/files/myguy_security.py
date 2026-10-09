@@ -178,11 +178,6 @@ def total(vector):
 
 # --- Parsing ----------------------------------------------------------------
 
-A_SECTION = re.compile(r"^\[[^\]]+\]\s+\S+\s+(?P<ip>[0-9A-Fa-f:.]+)\s+\d+", re.M)
-REQUEST = re.compile(r"---B--\n(?P<method>[A-Z]+) (?P<uri>\S+) HTTP")
-USER_AGENT = re.compile(r"^user-agent: (?P<ua>.*)$", re.M | re.I)
-STATUS = re.compile(r"---F--\nHTTP/[\d.]+ (?P<status>\d{3})")
-RULE = re.compile(r'\[id "(?P<id>\d+)"\]')
 FAIL2BAN = re.compile(r"\[(?P<jail>[\w-]+)\]\s+(?P<action>Restore Ban|Ban|Unban)\s+(?P<ip>\S+)")
 SSH_ACCEPTED = re.compile(r"Accepted (?P<method>\S+) for (?P<user>\S+) from (?P<ip>\S+) port \d+")
 SSH_FAILED = re.compile(r"Invalid user|Failed \S+ for|\[preauth\]")
@@ -203,26 +198,30 @@ def category(rule_id):
 
 
 def parse_waf(ts, line):
-    """One joined ModSecurity audit entry (Promtail's multiline stage)."""
-    a = A_SECTION.search(line)
-    ip = valid_ip(a.group("ip")) if a else None
+    """One ModSecurity audit line: JSON, one per flagged request
+    (coraza.conf.j2: {"transaction": {"client_ip", "request", "response",
+    "messages"}})."""
+    try:
+        t = json.loads(line)["transaction"]
+    except (ValueError, KeyError, TypeError):
+        return None
+    ip = valid_ip(str(t.get("client_ip", "")))
     if not ip:
         return None
-    request = REQUEST.search(line)
-    status = STATUS.search(line)
-    agent = USER_AGENT.search(line)
-    ids = RULE.findall(line)
-    findings = [i for i in ids if i[:3] not in EVALUATION]
+    request = t.get("request") or {}
+    headers = {str(k).lower(): v for k, v in (request.get("headers") or {}).items()}
+    ids = [str((m.get("details") or {}).get("ruleId", "")) for m in t.get("messages") or []]
+    findings = [i for i in ids if i and i[:3] not in EVALUATION]
     serious = sorted({category(i) for i in findings if i[:3] in SERIOUS})
     kinds = serious or sorted({category(i) for i in findings})
     return {
         "ts": ts,
         "ip": ip,
-        "method": request.group("method") if request else "?",
+        "method": str(request.get("method") or "?"),
         # The path only: query strings can carry personal data
-        "path": request.group("uri").split("?")[0] if request else "?",
-        "status": int(status.group("status")) if status else 0,
-        "agent": agent.group("ua").strip() if agent else "",
+        "path": str(request.get("uri") or "?").split("?")[0],
+        "status": int((t.get("response") or {}).get("http_code") or 0),
+        "agent": str(headers.get("user-agent", "")).strip(),
         "flagged": FLAGGED_RULE in ids or bool(serious),
         "serious": bool(serious),
         "kinds": kinds or ["other"],
@@ -339,7 +338,7 @@ def deploy_windows(src, start, end):
 
 
 def waf_entries(src, start, end, ip=None):
-    query = '{job="modsecurity"}' + (f' |= " {ip} "' if ip else "")
+    query = '{job="modsecurity"}' + (f' |= "\\"client_ip\\":\\"{ip}\\""' if ip else "")
     return [d for d in (parse_waf(ts, l) for ts, _, l in src.lines(query, start, end)) if d]
 
 
