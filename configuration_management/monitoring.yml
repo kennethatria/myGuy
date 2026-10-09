@@ -36,6 +36,13 @@
           # with a new file, and a single-file mount keeps showing the old
           # one, so the HUP reload would reread stale config.
           - /etc/prometheus:/etc/prometheus:ro
+          # Named, so history survives the container being recreated (the
+          # image's own anonymous volume went with each container).
+          - prometheus-data:/prometheus
+        exec: >-
+          --config.file=/etc/prometheus/prometheus.yml
+          --storage.tsdb.path=/prometheus
+          --storage.tsdb.retention.time=15d
       - name: grafana
         # Its alerting engine (rules every minute) needs more than 256 MB;
         # at 256 MB it was killed in a loop.
@@ -267,6 +274,12 @@
             - job_name: loki
               static_configs:
                 - targets: ['host.containers.internal:3100']
+              # Only `up` is used (it's added by Prometheus, not scraped, so
+              # this keeps it); Loki's ~1,600 own series were 70% of all.
+              metric_relabel_configs:
+                - source_labels: [__name__]
+                  regex: '.+'
+                  action: drop
       become: yes
 
     # --- Grafana provisioning files ---
@@ -2969,6 +2982,20 @@
       loop: [zipkin, umami, umami-db, tempo]
       become: yes
 
+    - name: Remove retired containers
+      # A stopped unit can leave its container behind (Umami's stayed as
+      # "Created").  umami goes before umami-db, which it depends on.
+      ansible.builtin.command:
+        cmd: podman rm -f {{ item }}
+      loop: [zipkin, tempo, umami, umami-db]
+      register: retired_rm
+      changed_when: retired_rm.rc == 0
+      failed_when: false
+      become: yes
+      become_user: myguy
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+
     - name: Remove retired settings, the Tempo datasource and the Traces dashboard
       ansible.builtin.file:
         path: "{{ item }}"
@@ -3014,6 +3041,44 @@
       become_user: myguy
       environment:
         XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+
+    # --- Old images ---
+    # Remove every image no container uses (retired services, replaced
+    # versions); the running ones keep theirs.  Before/after in the log.
+
+    - name: Measure Podman disk use before cleanup
+      ansible.builtin.command:
+        cmd: podman system df
+      register: podman_df_before
+      changed_when: false
+      become: yes
+      become_user: myguy
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+
+    - name: Remove images no container uses
+      ansible.builtin.command:
+        cmd: podman image prune --all --force
+      register: image_prune
+      changed_when: image_prune.stdout | trim | length > 0
+      become: yes
+      become_user: myguy
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+
+    - name: Measure Podman disk use after cleanup
+      ansible.builtin.command:
+        cmd: podman system df
+      register: podman_df_after
+      changed_when: false
+      become: yes
+      become_user: myguy
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+
+    - name: Report image cleanup
+      ansible.builtin.debug:
+        msg: "{{ ['Before:'] + podman_df_before.stdout_lines + ['After (' ~ (image_prune.stdout_lines | length) ~ ' images removed):'] + podman_df_after.stdout_lines }}"
 
     - name: Reload Prometheus config
       ansible.builtin.command:
