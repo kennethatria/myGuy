@@ -377,14 +377,14 @@ The production infrastructure runs on Linode (Akamai Cloud), is provisioned with
 | Trigger | What runs |
 | :--- | :--- |
 | **Pull request** | Commit lint → tests and coverage (all four services) · CodeQL |
-| **Push to `main`** | Tests and coverage → images built, **Cosign-signed**, pushed to Docker Hub → **automatic app deploy** (`Run ansible`, scope `app`). Release Please, SBOM, and Scorecard run alongside. |
+| **Push to `main`** | Tests and coverage → images built, **Cosign-signed**, pushed to Docker Hub → **automatic deploy** (`Run ansible`: scope `full` when Ansible provisioning files changed, i.e. anything in `configuration_management/` but `deploy.yml` and `templates/`; otherwise scope `app`). Release Please, SBOM, and Scorecard run alongside. |
 
 Each stage only runs if the previous one passed, so failing tests never reach production. Deploys are serialised (one at a time per environment).
 
 | Workflow | When to run it manually |
 | :--- | :--- |
 | **Run ansible**, scope `app` | Re-deploy the current images and frontend (same as the automatic deploy). |
-| **Run ansible**, scope `full` | New servers, or after changing `users.yml`, `site.yml`, `security.yml`, `observability.yml`, or `monitoring.yml`. |
+| **Run ansible**, scope `full` | New servers, or to re-apply provisioning by hand (pushes to `main` that change it already run it). |
 | **Terraform** (`component.infra.tf.deploy.yml`) | Any change under `infra/`. Kept manual so plans are reviewed — instance changes can replace servers. |
 
 Image tags: CI tags images with the latest GitHub release (or `latest` if none); the deploy writes that tag to the server's `.env` as `IMAGE_TAG`, so the server runs exactly the image whose signature was verified.

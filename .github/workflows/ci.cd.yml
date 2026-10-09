@@ -70,6 +70,8 @@ jobs:
   #   deploy   "all" (whole stack, databases included), a space-separated
   #            list of services to replace, or "" (no containers touched)
   #   frontend whether to build and upload the frontend
+  #   scope    "full" when server provisioning changed (any Ansible file but
+  #            deploy.yml and templates/, which the app deploy covers), else "app"
   changes:
     needs: [context]
     if: ${{ needs.context.outputs.isRelease == 'true' }}
@@ -81,6 +83,7 @@ jobs:
       build: ${{ steps.detect.outputs.build }}
       deploy: ${{ steps.detect.outputs.deploy }}
       frontend: ${{ steps.detect.outputs.frontend }}
+      scope: ${{ steps.detect.outputs.scope }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -102,11 +105,11 @@ jobs:
             --branch main --event push --status success --limit 1 --json headSha --jq '.[0].headSha // empty' 2>/dev/null || true)
           echo "Changes since ${BEFORE:-(no successful run found)}"
 
-          build="" deploy="" frontend=false
+          build="" deploy="" frontend=false scope=app
           if [[ -z $BEFORE ]] || ! files=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" 2>/dev/null); then
             # No successful run, or its commit is gone (force-push): everything
             echo "Couldn't tell what changed; deploying everything"
-            build=$SERVICES deploy=all frontend=true
+            build=$SERVICES deploy=all frontend=true scope=full
           else
             for service in $SERVICES; do
               grep -q "^$(source_dir "$service")/" <<<"$files" && build="$build $service"
@@ -117,6 +120,12 @@ jobs:
             # services, but leave the databases running
             if grep -q '^configuration_management/' <<<"$files"; then
               deploy=$SERVICES frontend=true
+            fi
+            # Server provisioning (monitoring, security, observability, users,
+            # site, group_vars, tasks, files...): run every playbook
+            if grep '^configuration_management/' <<<"$files" \
+                | grep -vqE '^configuration_management/(deploy\.yml|templates/)'; then
+              scope=full
             fi
             # The stack itself: replace everything, as a full deploy does
             if grep -qx 'docker-compose.yml' <<<"$files"; then
@@ -142,6 +151,7 @@ jobs:
             echo "build=$build"
             echo "deploy=$deploy"
             echo "frontend=$frontend"
+            echo "scope=$scope"
           } >> "$GITHUB_OUTPUT"
           {
             echo "## What this push deploys"
@@ -150,6 +160,7 @@ jobs:
             echo "| Images to build | \`$build\` |"
             echo "| Containers to replace | \`${deploy:-none}\` |"
             echo "| Frontend | $frontend |"
+            echo "| Ansible scope | $scope |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   standards:
@@ -238,8 +249,8 @@ jobs:
   #   secrets: inherit
 
   # Deploys what each main push changed (see `changes`): those containers
-  # and/or the frontend (scope: app). Server provisioning changes still need
-  # a manual "Run ansible" with scope full; Terraform stays manual
+  # and/or the frontend, with scope full (every playbook) when server
+  # provisioning changed, else app (deploy.yml only). Terraform stays manual
   # (deploy-infra above) so plans get reviewed.
   deploy-application:
     permissions:
@@ -255,7 +266,7 @@ jobs:
     uses: ./.github/workflows/component.infra.config.deploy.application.yml
     with:
       environment: dev
-      scope: app
+      scope: ${{ needs.changes.outputs.scope }}
       services: ${{ needs.changes.outputs.deploy }}
       frontend: ${{ needs.changes.outputs.frontend == 'true' }}
     secrets: inherit
