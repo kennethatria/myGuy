@@ -258,6 +258,34 @@
                   labels:
                     service: store-service
 
+            # The public site, probed through blackbox (role: what users see).
+            - job_name: site
+              metrics_path: /probe
+              params:
+                module: [https_ok]
+              static_configs:
+                - targets:
+                    - https://{{ domain }}/
+                    - https://{{ domain }}/health
+              relabel_configs: &blackbox_relabel
+                - source_labels: [__address__]
+                  target_label: __param_target
+                - source_labels: [__param_target]
+                  target_label: instance
+                - target_label: __address__
+                  replacement: host.containers.internal:9115
+
+            # Old domains: answer with a redirect, over a valid certificate.
+            - job_name: redirects
+              metrics_path: /probe
+              params:
+                module: [https_redirect]
+              static_configs:
+                # Prefix and suffix, no regex backreference: in task content
+                # Ansible kept the backslash, and the target became literal.
+                - targets: {{ (hostvars[groups['app'][0]].redirect_domains | default([])) | map('regex_replace', '^', 'https://') | map('regex_replace', '$', '/') | list | to_json }}
+              relabel_configs: *blackbox_relabel
+
             # Memory and CPU per app container (observability.yml).
             - job_name: podman
               static_configs:
