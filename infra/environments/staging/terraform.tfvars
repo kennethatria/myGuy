@@ -1,20 +1,20 @@
 # Staging Environment Configuration
-environment = "staging"
+environment  = "staging"
 project_name = "myguy"
-domain_name = "akalimu.com"
+domain_name  = "akalimu.com"
 
 # Linode Configuration
-linode_region = "eu-west"  # London region for EU
-app_instance_type = "g6-nanode-1"  # 1GB RAM, €4.50/month
+linode_region     = "eu-west"     # London region for EU
+app_instance_type = "g6-nanode-1" # 1GB RAM, €4.50/month
 
 # Cost Optimization Settings
-use_shared_database = true      # Share production database
-enable_backups = false         # Disable backups for cost savings
-enable_monitoring = false      # Basic monitoring only
+use_shared_database = true  # Share production database
+enable_backups      = false # Disable backups for cost savings
+enable_monitoring   = false # Basic monitoring only
 
 # Database Configuration
 database_engine_version = "15"
-database_instance_type = "g6-nanode-1"
+database_instance_type  = "g6-nanode-1"
 
 # You'll need to set these via environment variables or terraform.tfvars.secret
 # linode_token = "your_linode_api_token"

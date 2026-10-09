@@ -16,11 +16,11 @@ resource "linode_vpc_subnet" "main" {
 }
 
 resource "linode_nodebalancer" "main" {
-  label  = "${var.infra_name}-${var.environment}-nodebalancer"
-  region = var.region
-  client_conn_throttle = 20
+  label                    = "${var.infra_name}-${var.environment}-nodebalancer"
+  region                   = var.region
+  client_conn_throttle     = 20
   client_udp_sess_throttle = 10
-  tags = ["dev"]
+  tags                     = ["dev"]
 }
 
 resource "linode_nodebalancer_config" "main" {
@@ -56,11 +56,11 @@ resource "linode_nodebalancer_config" "https" {
   protocol        = "tcp"
   # TLS passes through untouched, so the client IP is sent as a PROXY protocol
   # header instead. nginx must listen with proxy_protocol to match.
-  proxy_protocol  = "v2"
-  check           = "connection"
-  check_attempts  = 3
-  check_timeout   = 10
-  check_interval  = 30
+  proxy_protocol = "v2"
+  check          = "connection"
+  check_attempts = 3
+  check_timeout  = 10
+  check_interval = 30
 }
 
 resource "linode_nodebalancer_node" "https" {
