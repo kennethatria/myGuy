@@ -30,7 +30,6 @@ import PostForm from '@/components/PostForm.vue'
 import PostTypeSwitch from '@/components/PostTypeSwitch.vue'
 import LocationField from '@/components/LocationField.vue'
 import { useRoughLocation } from '@/composables/useRoughLocation'
-import { trackEvent } from '@/utils/analytics'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -60,7 +59,6 @@ const handleSubmit = async () => {
       // store-service explains what to change (limits, contact details)
       throw new Error(data.error || 'Could not post your request. Please try again.')
     }
-    trackEvent('request-posted')
     router.push({ name: 'posted', params: { kind: 'request', id: data.id } })
   } catch (error) {
     formError.value = error instanceof Error ? error.message : 'Could not post your request. Please try again.'

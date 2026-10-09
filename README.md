@@ -44,7 +44,6 @@ graph LR
             PROM["🔥 Prometheus · :9090"]:::monitoring
             LOKI["🪵 Loki · :3100"]:::monitoring
             GRAFANA["📈 Grafana · :3000"]:::monitoring
-            UMAMI["📊 Umami Analytics · :3001"]:::monitoring
         end
     end
 
@@ -65,7 +64,6 @@ graph LR
     
     STORE ==>|booking notify| CHAT
     API -->|login codes| MAIL
-    WAF -->|/umami tracker| UMAMI
 
     %% Telemetry & Logging
     API -.->|OTel traces| TEMPO
@@ -121,7 +119,6 @@ graph TB
             PROM["🔥 Prometheus Core"]:::monitoring
             LOKI["🪵 Loki Aggregator"]:::monitoring
             GRAFANA["📈 Grafana Visualization"]:::monitoring
-            UMAMI["📊 Umami Analytics"]:::monitoring
         end
     end
 
@@ -168,7 +165,6 @@ graph TB
 | **Prometheus** | `9090` | Metrics collection — scrapes CPU/memory and Falco security alerts. |
 | **Grafana** | `3000` | Visualization — dashboards for app metrics, security alerts, WAF detections, and visitors. |
 | **Loki** | `3100` | Log aggregation — receives ModSecurity audit logs, the nginx JSON access log and app container logs from Promtail (8-day retention). |
-| **Umami** | `3001` | Privacy-friendly web analytics (self-hosted, with its own PostgreSQL). Only its tracker endpoints are public, via nginx. |
 
 All monitoring containers run as rootless Podman **Quadlet** units under `myguy`, so systemd starts, restarts, and boots them.
 
@@ -363,26 +359,14 @@ ssh -N \
   -L 9090:10.0.0.3:9090 \
   -L 3200:10.0.0.3:3200 \
   -L 3100:10.0.0.3:3100 \
-  -L 3001:10.0.0.3:3001 \
   ops@<app_public_ip>
 ```
 
-Then open `http://localhost:3000` for Grafana (sign in as `admin` with the `GRAFANA_ADMIN_PASSWORD` secret; traces under **Explore → Tempo**), `http://localhost:3200` for Tempo's API and `http://localhost:3001` for Umami.
+Then open `http://localhost:3000` for Grafana (sign in as `admin` with the `GRAFANA_ADMIN_PASSWORD` secret; traces under **Explore → Tempo**), and `http://localhost:3200` for Tempo's API.
 
 ### Visitor Analytics
 
-Two complementary views, both self-hosted:
-
-| Tool | What it counts | Notes |
-| :--- | :--- | :--- |
-| **Grafana → Visitors** | Client IPs whose browser ran the app (downloaded its code or called the API), plus app usage, from the nginx access log | Zero setup. Approximate: counts IPs not people. Every unknown path returns the app page, so scanners posing as browsers are excluded by requiring the app to actually run. Query strings are never logged. |
-| **Umami** | Real visitors, sessions, SPA route changes, referrers, devices, countries; heatmaps (clicks and scroll depth) | The frontend loads `/umami/script.js` and `/umami/recorder.js` only when `VITE_UMAMI_WEBSITE_ID` is set at build time. Keep **replays** off in Umami: they would record chats and contact details. Key actions show on Umami's **Events** page (`utils/analytics.ts`: sign-in, sign-up, gig posted/applied/status, application answered, listing/request posted, item booked, booking step, review left, post reposted), with only fixed options, never ids or text. |
-
-First-time Umami setup:
-
-1. Open Umami through the SSH tunnel above and log in as `admin` / `umami`, then **change the password immediately**.
-2. **Settings → Websites → Add** your domain and copy the **Website ID**.
-3. Add it as the GitHub `dev` environment **variable** `UMAMI_WEBSITE_ID`; the next deploy rebuilds the frontend with tracking enabled.
+**Grafana → Visitors** counts client IPs whose browser ran the app (downloaded its code or called the API), plus app usage, from the nginx access log. Approximate: it counts IPs, not people (a phone on mobile data counts again with each new IP), and sees only full page loads, not in-app navigation. Every unknown path returns 404, and scanners posing as browsers are left out by requiring the app to actually run. Query strings are never logged. Umami (session-accurate visitors, events, heatmaps) was removed to free memory on the 1 GB monitoring server; its database volume `umami-db-data` is still there until deleted.
 
 ---
 
@@ -424,7 +408,6 @@ Image tags: CI tags images with the latest GitHub release (or `latest` if none);
 | `SMTP_PASSWORD` | Secret | SMTP password (Resend API key). |
 | `DOMAIN`, `REGISTRY` | Variable | e.g. `akalimu.com`, `docker.io/katria47`. Old domains listed in `redirect_domains` (`configuration_management/group_vars/app.yml`) keep their certificates and redirect to `DOMAIN`; changing `DOMAIN` keeps HTTPS up while the new certificate is issued (its DNS must already point at the NodeBalancer). |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_FROM` | Variable | e.g. `smtp.resend.com`, `2587`, `resend`, `MyGuy <no-reply@myguy.work>`. Akamai blocks outbound 25/465/587 on new accounts, so prefer the provider's alternate port. |
-| `UMAMI_WEBSITE_ID` | Variable | Optional; enables Umami tracking in the frontend build. |
 
 Terraform variables (`authorized_keys`, `root_password`, `provider_token`) live in the HCP Terraform workspace. `authorized_keys` must be a single-line public key; the Akamai API token needs **Events: read** in addition to Linodes, NodeBalancers, Firewalls, VPCs, and IPs.
 
@@ -433,7 +416,7 @@ Terraform variables (`authorized_keys`, `root_password`, `provider_token`) live 
 | Instance | VPC IP | Purpose |
 | :--- | :--- | :--- |
 | **App instance** | `10.0.0.2` | Runs the full application stack via rootless Podman Compose |
-| **Monitoring instance** | `10.0.0.3` | Runs Tempo, Prometheus, Grafana, Loki, and Umami |
+| **Monitoring instance** | `10.0.0.3` | Runs Tempo, Prometheus, Grafana and Loki |
 
 The monitoring instance has no public IP. It is only reachable via the app instance as a ProxyJump host.
 

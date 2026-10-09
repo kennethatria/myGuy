@@ -100,7 +100,6 @@ import ActionBar from '@/components/ActionBar.vue'
 import { hasDistances } from '@/utils/distance'
 import { noteMeta, postedMeta } from '@/utils/gigNote'
 import { setPageTitle } from '@/utils/pageTitle'
-import { trackEvent } from '@/utils/analytics'
 
 interface ItemRequest {
   id: number
@@ -183,7 +182,6 @@ const repost = async () => {
     })
     const data = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(data.error || 'Could not repost the request. Please try again.')
-    trackEvent('post-reposted', { kind: 'request' })
     await load()
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Could not repost the request. Please try again.'

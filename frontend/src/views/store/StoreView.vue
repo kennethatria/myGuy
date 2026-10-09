@@ -196,7 +196,6 @@ import { hasDistances } from '@/utils/distance'
 import { useViewerLocation, nearParam } from '@/composables/useViewerLocation'
 import { expiryLabel, noteMeta } from '@/utils/gigNote'
 import { offersLabel } from '@/utils/listingNote'
-import { trackEvent } from '@/utils/analytics'
 
 interface StoreItem {
   id: number
@@ -358,7 +357,6 @@ const repost = async (kind: Kind, note: { id: number }) => {
     })
     const data = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(data.error || 'Could not repost it. Please try again.')
-    trackEvent('post-reposted', { kind: kind === 'items' ? 'listing' : 'request' })
     await load()
   } catch (err) {
     alert(err instanceof Error ? err.message : 'Could not repost it. Please try again.')
