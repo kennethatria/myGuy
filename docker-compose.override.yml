@@ -2,7 +2,7 @@
 # `docker compose` alongside docker-compose.yml.
 #
 # Production deploys with `-f docker-compose.yml` only, so none of this runs
-# there: services send traces to the monitoring server's Tempo instead
+# there: services send traces to the monitoring server's Jaeger instead
 # (OTEL_EXPORTER_OTLP_ENDPOINT in the server's .env).
 services:
   # A fixed password so the proximity Redis starts without a .env entry;
@@ -14,30 +14,16 @@ services:
     environment:
       - REDIS_PASSWORD=local-dev-only
 
-  # Traces: services send OTLP to tempo:4318; view them in Grafana at
-  # http://localhost:3000 (Explore → Tempo).
-  tempo:
-    image: docker.io/grafana/tempo:2.6.1
+  # Traces: services send OTLP to jaeger:4318; view them at
+  # http://localhost:16686 (Jaeger's UI).  Same Jaeger as production.
+  jaeger:
+    image: docker.io/jaegertracing/jaeger:2.22.0
     restart: unless-stopped
-    user: "0"
-    command: ["-config.file=/etc/tempo/tempo.yml"]
+    command: ["--config", "/etc/jaeger/jaeger.yml"]
     volumes:
-      - ./observability/tempo-local.yml:/etc/tempo/tempo.yml:ro
+      - ./configuration_management/files/jaeger.yml:/etc/jaeger/jaeger.yml:ro
     ports:
       - "4318:4318"
-    networks:
-      - myguy-network
-
-  grafana:
-    image: docker.io/grafana/grafana:latest
-    restart: unless-stopped
-    environment:
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-      - GF_AUTH_DISABLE_LOGIN_FORM=true
-    volumes:
-      - ./observability/grafana-local-datasources.yml:/etc/grafana/provisioning/datasources/tempo.yml:ro
-    ports:
-      - "3000:3000"
+      - "16686:16686"
     networks:
       - myguy-network
