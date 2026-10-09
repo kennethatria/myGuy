@@ -276,8 +276,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      # Base images (golang, node, alpine) come from Docker Hub, whose
+      # anonymous pull limit is shared by GitHub's runners and busy days hit
+      # it (429 Too Many Requests, 2026-10-09).  The Docker Hub login lives
+      # in the dev environment, which pull requests don't get, so pull
+      # through Google's public Docker Hub mirror instead (Docker Hub if the
+      # mirror lacks an image).  The pushed images build with a login.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
 
       - name: Build image
         uses: docker/build-push-action@v7
