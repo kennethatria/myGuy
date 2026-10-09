@@ -7,6 +7,7 @@ package proximity
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"math"
 	"net/http"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // Step is a cell's size in degrees.
@@ -60,7 +63,12 @@ type Client struct {
 // New returns a Client for the proximity service at baseURL (e.g.
 // http://proximity-service:8083), authenticated with INTERNAL_API_KEY.
 func New(baseURL, apiKey string) *Client {
-	return &Client{baseURL: baseURL, apiKey: apiKey, client: &http.Client{Timeout: 300 * time.Millisecond}}
+	return &Client{baseURL: baseURL, apiKey: apiKey, client: &http.Client{
+		Timeout: 300 * time.Millisecond,
+		// Sends the caller's trace context (traceparent), so a distance lookup
+		// shows in the same trace as the request that needed it.
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+	}}
 }
 
 // Save stores the rough location of a post of kind (task, item, request).
@@ -125,18 +133,18 @@ const maxIDsPerCall = 1000
 // Distances returns the distance bucket of each id that has a stored
 // location, measured from at. It waits for the answer (300 ms at most per
 // call); on any error callers fall back to their usual order.
-func (c *Client) Distances(kind string, at Location, ids []uint) (map[uint]int, error) {
-	return c.distances(kind, map[string]interface{}{"lat": at.Lat, "lng": at.Lng}, ids)
+func (c *Client) Distances(ctx context.Context, kind string, at Location, ids []uint) (map[uint]int, error) {
+	return c.distances(ctx, kind, map[string]interface{}{"lat": at.Lat, "lng": at.Lng}, ids)
 }
 
 // DistancesFrom is Distances measured from another stored post (such as the
 // request a listing answers) instead of a position. Nothing comes back when
 // that post has no location.
-func (c *Client) DistancesFrom(kind, fromKind string, fromID uint, ids []uint) (map[uint]int, error) {
-	return c.distances(kind, map[string]interface{}{"from": map[string]interface{}{"kind": fromKind, "id": fromID}}, ids)
+func (c *Client) DistancesFrom(ctx context.Context, kind, fromKind string, fromID uint, ids []uint) (map[uint]int, error) {
+	return c.distances(ctx, kind, map[string]interface{}{"from": map[string]interface{}{"kind": fromKind, "id": fromID}}, ids)
 }
 
-func (c *Client) distances(kind string, origin map[string]interface{}, ids []uint) (map[uint]int, error) {
+func (c *Client) distances(ctx context.Context, kind string, origin map[string]interface{}, ids []uint) (map[uint]int, error) {
 	buckets := make(map[uint]int, len(ids))
 	for start := 0; start < len(ids); start += maxIDsPerCall {
 		end := start + maxIDsPerCall
@@ -151,7 +159,7 @@ func (c *Client) distances(kind string, origin map[string]interface{}, ids []uin
 		if err != nil {
 			return nil, err
 		}
-		req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/internal/distances/%s", c.baseURL, kind), bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/internal/distances/%s", c.baseURL, kind), bytes.NewReader(body))
 		if err != nil {
 			return nil, err
 		}

@@ -169,7 +169,7 @@ All monitoring containers run as rootless Podman **Quadlet** units under `myguy`
 
 Sign-in is **passwordless**. One flow covers both login and sign-up:
 
-1. The user enters their email address; the backend emails a **6-digit code** (`POST /api/v1/auth/request-code`).
+1. The user enters their email address; the backend emails a **6-digit code** (`POST /api/v1/auth/request-code`). It answers `202` once the code is stored and sends the email in the background (`mailer.Background`), so the form doesn't wait about a second for the mail server; a failed send is logged and the user asks for another code.
 2. The user enters the code (`POST /api/v1/auth/verify-code`). An existing account is signed in with a session JWT.
 3. A new email instead gets a 15-minute signup token; the user enters their full name and the account is created with a username derived from the email (`POST /api/v1/auth/complete-signup`).
 
@@ -231,7 +231,8 @@ Security is implemented in layers — network, access control, HTTP, runtime, an
 | Control | Detail |
 | :--- | :--- |
 | **Linode Firewall** | Inbound allowlist: 80, 443, 22 only. Default policy: DROP. All other ports silently dropped at the network edge. |
-| **Private VPC** | Monitoring instance (`10.0.0.3`) has no public IP. Reachable only via VPC — unreachable from the internet entirely. |
+| **Private VPC** | The monitoring instance (`10.0.0.3`) has a public IP, but its firewall drops everything that doesn't come from the VPC (`10.0.0.0/24`), so it's unreachable from the internet. |
+| **Listening addresses** | A second layer in case a firewall rule is wrong: no service listens on every address. App ports nginx proxies to (8080–8082), Postgres (5433) and Redis (6379) listen on `127.0.0.1`; what the monitoring server scrapes (9464, 9465, 9100, 8765, 9882) listens on the app's VPC address; every monitoring port listens on `10.0.0.3`. Deploys fail if a port listens on every address. `net.ipv4.ip_nonlocal_bind=1` lets services bind the VPC address at boot before it's up. |
 | **NodeBalancer** | Single public entry point (`akalimu.com` and the old `myguy.work` DNS point here). Port 80 in HTTP mode (adds `X-Forwarded-For`, health-checks `/healthcheck/`); port 443 is TLS passthrough with **PROXY protocol v2**. Connection throttle of 20 connections/sec. |
 | **Real client IPs** | nginx trusts only the NodeBalancer range (`192.168.255.0/24`) and restores each visitor's real IP from the PROXY header or `X-Forwarded-For`, so fail2ban, the WAF, logs, and the backends see the actual client — never the NodeBalancer. |
 
@@ -305,11 +306,11 @@ Falco monitors system calls on the app instance in real time, detecting suspicio
 
 MyGuy has **metrics, logs and alerting** via Prometheus + Loki + Grafana + Falco, and **distributed tracing** via OpenTelemetry + Jaeger.
 
-In production, all monitoring tools run on a dedicated server that is only accessible within the private VPC — not exposed to the public internet.
+In production, all monitoring tools run on a dedicated server whose ports listen on its VPC address only and whose firewall admits only the VPC — not exposed to the public internet.
 
 ### Distributed Tracing (OpenTelemetry + Jaeger)
 
-Every HTTP request handled by the backend, store, chat and proximity services is traced with OpenTelemetry and sent over OTLP/HTTP to `OTEL_EXPORTER_OTLP_ENDPOINT`: in production Jaeger on the monitoring server (`http://10.0.0.3:4318`, written by `deploy.yml`), locally the Jaeger in `docker-compose.override.yml`. Both use `configuration_management/files/jaeger.yml`: the newest **20,000 traces are kept in memory** (lost when Jaeger restarts), in about 100 MB (limit 160 MB). Open Jaeger's UI at http://localhost:16686 (through the SSH tunnel in production). Jaeger 2.x dropped the API Grafana's Jaeger datasource used, so traces are viewed in Jaeger's UI, not Grafana. Requests to `/health` aren't traced (the site prober calls it every 15 seconds). `OTEL_TRACES_EXPORTER=none` turns export off in any service.
+Every HTTP request handled by the backend, store, chat and proximity services is traced with OpenTelemetry and sent over OTLP/HTTP to `OTEL_EXPORTER_OTLP_ENDPOINT`: in production Jaeger on the monitoring server (`http://10.0.0.3:4318`, written by `deploy.yml`), locally the Jaeger in `docker-compose.override.yml`. Both use `configuration_management/files/jaeger.yml`: the newest **20,000 traces are kept in memory** (lost when Jaeger restarts), in about 100 MB (limit 160 MB). Open Jaeger's UI at http://localhost:16686 (through the SSH tunnel in production). Jaeger 2.x dropped the API Grafana's Jaeger datasource used, so traces are viewed in Jaeger's UI, not Grafana. Requests to `/health` aren't traced (the site prober calls it every 15 seconds). Calls between services carry W3C trace context (`traceparent`): a distance lookup from the backend or store-service to the proximity service shows inside the request that needed it, as one trace. Chat notifications are sent after the response, in the background, and stay separate traces. `OTEL_TRACES_EXPORTER=none` turns export off in any service.
 
 Tempo was used before but kept outgrowing its memory on the 1 GB monitoring server.
 
@@ -335,13 +336,13 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
 ### Metrics & Security Alerting (Prometheus + Grafana + Falco)
 
 **On the app instance:**
-- `node_exporter` runs as a systemd service on `:9100`, exposing CPU, memory and disk metrics
+- `node_exporter` runs as a systemd service on `10.0.0.2:9100` (the VPC address), exposing CPU, memory and disk metrics
 - `prometheus-podman-exporter` (Quadlet, as `myguy`, 64 MB limit) on `:9882` exposes memory and CPU per container, read from myguy's Podman API socket; the firewall opens it to the monitoring server only
-- `falco` monitors system calls for suspicious runtime behaviour and exposes Prometheus metrics on `:8765`
+- `falco` monitors system calls for suspicious runtime behaviour and exposes Prometheus metrics on `10.0.0.2:8765`
 - `promtail` ships ModSecurity audit logs, the nginx JSON access log (`/var/log/nginx/access.json.log`) and every app container's output to Loki on the monitoring instance. Containers log to the systemd journal (`log_driver = "journald"`, set by `deploy.yml`), so logs survive container replacement; lines carrying sign-in codes are dropped before shipping
 
 **On the monitoring instance:**
-- Prometheus scrapes `node_exporter` (`:9100`) on both servers (the app's via VPC, its own via `host.containers.internal`) and Falco metrics (`:8765`) on the app instance every 15 seconds It keeps 15 days of history in the `prometheus-data` volume; of Loki's own metrics only `up` is kept. Each full run also removes images no container uses on the monitoring server (report: *Report image cleanup* in the *Configure monitoring instance* step).
+- Prometheus scrapes `node_exporter` (`:9100`) on both servers (both on their VPC addresses; the monitoring containers reach each other on `10.0.0.3` too) and Falco metrics (`:8765`) on the app instance every 15 seconds It keeps 15 days of history in the `prometheus-data` volume; of Loki's own metrics only `up` is kept. Each full run also removes images no container uses on the monitoring server (report: *Report image cleanup* in the *Configure monitoring instance* step).
 - Grafana sends **alerts to Telegram** (provisioned in `monitoring.yml`, folder *Alerts*): site down (a blackbox prober on the monitoring server loads `https://<DOMAIN>/` and `/health`, and checks that old domains answer 301), certificate expiring within 14 days, more than 10 server errors in 10 minutes, attack bursts (over 50 WAF-flagged requests in 10 minutes), serious attack attempts (over 20 SQL injection / code execution / file inclusion / XSS / SSRF / Log4Shell matches in 10 minutes), sign-in abuse from one IP (over 10 sign-in calls in 10 minutes, IP and ban command in the message), a sign-in code surge (over 30 code requests in 10 minutes), disk above 85 %, memory above 90 %, a scrape target down (Loki and Jaeger included), and any Falco rule match. Repeats every 12 hours while firing.
 - Grafana is pre-provisioned with these dashboards:
   - **App Instance Metrics** / **Monitoring Instance Metrics** — CPU, memory and disk use now (green / amber / red) and over time, one dashboard per server; App Instance Metrics also shows memory and CPU per container
@@ -419,9 +420,11 @@ Terraform variables (`authorized_keys`, `root_password`, `provider_token`) live 
 | **App instance** | `10.0.0.2` | Runs the full application stack via rootless Podman Compose |
 | **Monitoring instance** | `10.0.0.3` | Runs Prometheus, Grafana, Loki, Jaeger and the blackbox prober |
 
-The monitoring instance has no public IP. It is only reachable via the app instance as a ProxyJump host.
+The monitoring instance has a public IP, but its firewall admits only the VPC, so it's reached through the app instance as a ProxyJump host.
 
-- **Compose files:** `docker-compose.yml` is the production stack; `docker-compose.override.yml` adds local-only services (Jaeger for traces) and is loaded automatically by `podman compose` / `docker compose` on your machine. Production runs `podman compose -f docker-compose.yml …`, so traces go to the monitoring server's Tempo instead.
+**After a reboot** the app containers start again by themselves: `deploy.yml` enables myguy's `podman-restart.service` (linger starts myguy's systemd at boot), which starts every container with `restart: always`; `docker-compose.yml` uses `always` for that reason. The monitoring containers are Quadlet units and boot with systemd.
+
+- **Compose files:** `docker-compose.yml` is the production stack; `docker-compose.override.yml` adds local-only services (Jaeger for traces) and is loaded automatically by `podman compose` / `docker compose` on your machine. Production runs `podman compose -f docker-compose.yml …`, so traces go to the monitoring server's Jaeger instead.
 - **Journal size:** both servers cap the systemd journal at 100 MB (`/etc/systemd/journald.conf.d/size.conf`, applied by `site.yml` / `monitoring.yml`) to keep memory free on the 1 GB instances.
 
 ### Provisioning with Terraform

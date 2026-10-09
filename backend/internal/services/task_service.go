@@ -100,7 +100,7 @@ func (noopLocator) Delete(string, uint)                   {}
 // Distancer measures rough distances to posts, as buckets (an index into
 // proximity.Buckets). Posts without a stored location are left out.
 type Distancer interface {
-	Distances(kind string, at proximity.Location, ids []uint) (map[uint]int, error)
+	Distances(ctx context.Context, kind string, at proximity.Location, ids []uint) (map[uint]int, error)
 }
 
 type TaskService struct {
@@ -317,7 +317,7 @@ func (s *TaskService) ListTasksNear(ctx context.Context, filters map[string]inte
 	if err != nil {
 		return nil, err
 	}
-	buckets, err := s.distancer.Distances("task", at, ids)
+	buckets, err := s.distancer.Distances(ctx, "task", at, ids)
 	if err != nil {
 		log.Printf("WARNING: distance sort unavailable, showing newest first: %v", err)
 		return s.ListTasksWithPagination(ctx, filters)
@@ -381,7 +381,7 @@ func (s *TaskService) ListTasksNear(ctx context.Context, filters map[string]inte
 
 // TagDistances adds a rough distance tag from at to each task that has a
 // location, keeping their order. Best effort: without distances, no tags.
-func (s *TaskService) TagDistances(tasks []models.Task, at proximity.Location) {
+func (s *TaskService) TagDistances(ctx context.Context, tasks []models.Task, at proximity.Location) {
 	if s.distancer == nil || len(tasks) == 0 {
 		return
 	}
@@ -389,7 +389,7 @@ func (s *TaskService) TagDistances(tasks []models.Task, at proximity.Location) {
 	for i, task := range tasks {
 		ids[i] = task.ID
 	}
-	buckets, err := s.distancer.Distances("task", at, ids)
+	buckets, err := s.distancer.Distances(ctx, "task", at, ids)
 	if err != nil {
 		log.Printf("WARNING: distance tags unavailable: %v", err)
 		return

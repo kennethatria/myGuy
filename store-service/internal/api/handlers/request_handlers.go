@@ -76,11 +76,11 @@ func (h *RequestHandler) GetRequests(c *gin.Context) {
 	var requests []models.ItemRequest
 	var total int64
 	if near != nil && filter.SortBy == "distance" {
-		requests, total, err = h.service.GetRequestsNear(filter, *near)
+		requests, total, err = h.service.GetRequestsNear(c.Request.Context(), filter, *near)
 	} else {
 		requests, total, err = h.service.GetRequests(filter)
 		if err == nil && near != nil {
-			h.service.TagRequestDistances(requests, *near)
+			h.service.TagRequestDistances(c.Request.Context(), requests, *near)
 		}
 	}
 	if err != nil {
@@ -111,7 +111,7 @@ func (h *RequestHandler) GetRequestListings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request id"})
 		return
 	}
-	items, err := h.service.GetRequestListings(id)
+	items, err := h.service.GetRequestListings(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve listings"})
 		return

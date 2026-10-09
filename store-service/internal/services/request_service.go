@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"log"
 	"store-service/internal/models"
 	"store-service/internal/proximity"
@@ -13,9 +14,9 @@ type RequestServiceInterface interface {
 	CreateRequest(userID uint, req models.CreateItemRequestRequest) (*models.ItemRequest, error)
 	GetRequest(id uint) (*models.ItemRequest, error)
 	GetRequests(filter models.ItemRequestFilter) ([]models.ItemRequest, int64, error)
-	GetRequestsNear(filter models.ItemRequestFilter, at proximity.Location) ([]models.ItemRequest, int64, error)
-	TagRequestDistances(requests []models.ItemRequest, at proximity.Location)
-	GetRequestListings(id uint) ([]models.StoreItem, error)
+	GetRequestsNear(ctx context.Context, filter models.ItemRequestFilter, at proximity.Location) ([]models.ItemRequest, int64, error)
+	TagRequestDistances(ctx context.Context, requests []models.ItemRequest, at proximity.Location)
+	GetRequestListings(ctx context.Context, id uint) ([]models.StoreItem, error)
 	GetUserRequests(userID uint) ([]models.ItemRequest, error)
 	RepostRequest(id uint, userID uint) (*models.ItemRequest, error)
 	UpdateRequest(id uint, userID uint, req models.UpdateItemRequestRequest) (*models.ItemRequest, error)
@@ -91,7 +92,7 @@ func (s *RequestService) GetRequests(filter models.ItemRequestFilter) ([]models.
 
 // GetRequestsNear is GetRequests ordered by distance from at, the way
 // StoreService.GetItemsNear orders listings, with the same fallback.
-func (s *RequestService) GetRequestsNear(filter models.ItemRequestFilter, at proximity.Location) ([]models.ItemRequest, int64, error) {
+func (s *RequestService) GetRequestsNear(ctx context.Context, filter models.ItemRequestFilter, at proximity.Location) ([]models.ItemRequest, int64, error) {
 	if s.distancer == nil {
 		return s.GetRequests(filter)
 	}
@@ -99,7 +100,7 @@ func (s *RequestService) GetRequestsNear(filter models.ItemRequestFilter, at pro
 	if err != nil {
 		return nil, 0, err
 	}
-	buckets, err := s.distancer.Distances("request", at, ids)
+	buckets, err := s.distancer.Distances(ctx, "request", at, ids)
 	if err != nil {
 		log.Printf("WARNING: distance sort unavailable, showing newest first: %v", err)
 		return s.GetRequests(filter)
@@ -127,7 +128,7 @@ func (s *RequestService) GetRequestsNear(filter models.ItemRequestFilter, at pro
 
 // TagRequestDistances adds a rough distance tag from at to each request
 // that has a location. Best effort.
-func (s *RequestService) TagRequestDistances(requests []models.ItemRequest, at proximity.Location) {
+func (s *RequestService) TagRequestDistances(ctx context.Context, requests []models.ItemRequest, at proximity.Location) {
 	if s.distancer == nil || len(requests) == 0 {
 		return
 	}
@@ -135,7 +136,7 @@ func (s *RequestService) TagRequestDistances(requests []models.ItemRequest, at p
 	for i, request := range requests {
 		ids[i] = request.ID
 	}
-	buckets, err := s.distancer.Distances("request", at, ids)
+	buckets, err := s.distancer.Distances(ctx, "request", at, ids)
 	if err != nil {
 		log.Printf("WARNING: distance tags unavailable: %v", err)
 		return
@@ -148,7 +149,7 @@ func (s *RequestService) TagRequestDistances(requests []models.ItemRequest, at p
 // GetRequestListings lists the live listings sellers made for a request,
 // nearest to the requester first (tagged with that distance) when both have
 // a location; otherwise newest first.
-func (s *RequestService) GetRequestListings(id uint) ([]models.StoreItem, error) {
+func (s *RequestService) GetRequestListings(ctx context.Context, id uint) ([]models.StoreItem, error) {
 	items, _, err := s.itemRepo.GetAll(models.StoreItemFilter{RequestID: id, Status: "active", PerPage: 100})
 	if err != nil || s.distancer == nil || len(items) == 0 {
 		return items, err
@@ -157,7 +158,7 @@ func (s *RequestService) GetRequestListings(id uint) ([]models.StoreItem, error)
 	for i, item := range items {
 		ids[i] = item.ID
 	}
-	buckets, derr := s.distancer.DistancesFrom("item", "request", id, ids)
+	buckets, derr := s.distancer.DistancesFrom(ctx, "item", "request", id, ids)
 	if derr != nil {
 		log.Printf("WARNING: distance sort for request %d unavailable: %v", id, derr)
 		return items, nil

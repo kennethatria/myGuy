@@ -1,13 +1,21 @@
 # IMAGE_TAG is set by the deploy (configuration_management/deploy.yml) to the
 # tag CI pushed and whose signature it verified; local runs default to latest.
+#
+# Every published port names the address it listens on, so a firewall
+# mistake can't expose it: 127.0.0.1 for what only nginx or the server itself
+# uses, METRICS_BIND (the deploy sets the VPC address) for what the
+# monitoring server scrapes.
+#
+# restart: always (not unless-stopped) because podman-restart.service, which
+# starts containers again after a reboot, starts only restart=always ones.
 services:
   api:
     image: docker.io/katria47/myguy-api:${IMAGE_TAG:-latest}
-    restart: unless-stopped
+    restart: always
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
       # Account / marketplace counts for Prometheus (monitoring server only)
-      - "9464:9464"
+      - "${METRICS_BIND:-127.0.0.1}:9464:9464"
     environment:
       - PORT=8080
       - JWT_SECRET=${JWT_SECRET}
@@ -34,11 +42,11 @@ services:
 
   store-service:
     image: docker.io/katria47/myguy-store-service:${IMAGE_TAG:-latest}
-    restart: unless-stopped
+    restart: always
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
       # Account / marketplace counts for Prometheus (monitoring server only)
-      - "9465:9465"
+      - "${METRICS_BIND:-127.0.0.1}:9465:9465"
     environment:
       - PORT=8081
       - JWT_SECRET=${JWT_SECRET}
@@ -63,9 +71,9 @@ services:
 
   chat-websocket-service:
     image: docker.io/katria47/myguy-chat-websocket-service:${IMAGE_TAG:-latest}
-    restart: unless-stopped
+    restart: always
     ports:
-      - "8082:8082"
+      - "127.0.0.1:8082:8082"
     environment:
       - PORT=8082
       - NODE_ENV=development
@@ -99,7 +107,7 @@ services:
   # published ports; the backend and store-service call it.
   proximity-service:
     image: docker.io/katria47/myguy-proximity-service:${IMAGE_TAG:-latest}
-    restart: unless-stopped
+    restart: always
     environment:
       - PORT=8083
       - GIN_MODE=release
@@ -118,7 +126,7 @@ services:
   # append-only file synced every second, no published ports.
   proximity-redis:
     image: docker.io/redis:7-alpine
-    restart: unless-stopped
+    restart: always
     environment:
       - REDIS_PASSWORD=${PROXIMITY_REDIS_PASSWORD}
     command: ["sh", "-c", "exec redis-server --appendonly yes --appendfsync everysec --requirepass \"$$REDIS_PASSWORD\""]
@@ -134,9 +142,9 @@ services:
 
   redis:
     image: docker.io/redis:7-alpine
-    restart: unless-stopped
+    restart: always
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     networks:
@@ -151,9 +159,9 @@ services:
 
   postgres-db:
     image: docker.io/postgres:15-alpine
-    restart: unless-stopped
+    restart: always
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${DB_PASSWORD}

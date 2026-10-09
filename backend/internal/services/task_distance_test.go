@@ -19,7 +19,7 @@ type fakeDistancer struct {
 	asked   [][]uint
 }
 
-func (f *fakeDistancer) Distances(kind string, at proximity.Location, ids []uint) (map[uint]int, error) {
+func (f *fakeDistancer) Distances(_ context.Context, kind string, at proximity.Location, ids []uint) (map[uint]int, error) {
 	f.asked = append(f.asked, append([]uint(nil), ids...))
 	return f.buckets, f.err
 }
@@ -120,16 +120,16 @@ func TestTagDistances(t *testing.T) {
 	service, _, _ := setupTaskService()
 
 	tasks := tasksFor(1, 2)
-	service.TagDistances(tasks, at) // no distancer: no tags, no panic
+	service.TagDistances(context.Background(), tasks, at) // no distancer: no tags, no panic
 	assert.Empty(t, tasks[0].Distance)
 
 	service.WithDistancer(&fakeDistancer{buckets: map[uint]int{2: 4}})
-	service.TagDistances(tasks, at)
+	service.TagDistances(context.Background(), tasks, at)
 	assert.Empty(t, tasks[0].Distance)
 	assert.Equal(t, "10+ km", tasks[1].Distance)
 
 	service.WithDistancer(&fakeDistancer{err: errors.New("down")})
 	fresh := tasksFor(1)
-	service.TagDistances(fresh, at)
+	service.TagDistances(context.Background(), fresh, at)
 	assert.Empty(t, fresh[0].Distance)
 }

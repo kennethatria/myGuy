@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -18,11 +19,11 @@ type fakeDistancer struct {
 	from    string
 }
 
-func (f *fakeDistancer) Distances(kind string, at proximity.Location, ids []uint) (map[uint]int, error) {
+func (f *fakeDistancer) Distances(_ context.Context, kind string, at proximity.Location, ids []uint) (map[uint]int, error) {
 	return f.buckets, f.err
 }
 
-func (f *fakeDistancer) DistancesFrom(kind, fromKind string, fromID uint, ids []uint) (map[uint]int, error) {
+func (f *fakeDistancer) DistancesFrom(_ context.Context, kind, fromKind string, fromID uint, ids []uint) (map[uint]int, error) {
 	f.from = fromKind
 	return f.buckets, f.err
 }
@@ -48,7 +49,7 @@ func TestGetItemsNear(t *testing.T) {
 		itemRepo.On("ListIDs", filter).Return([]uint{6, 5, 4, 3, 2, 1}, nil)
 		itemRepo.On("GetByIDs", []uint{5, 2, 1, 4}).Return([]models.StoreItem{{ID: 4}, {ID: 1}, {ID: 2}, {ID: 5}}, nil)
 
-		items, total, err := service.GetItemsNear(filter, at)
+		items, total, err := service.GetItemsNear(context.Background(), filter, at)
 
 		require.NoError(t, err)
 		assert.Equal(t, []uint{5, 2, 1, 4}, itemIDs(items))
@@ -64,7 +65,7 @@ func TestGetItemsNear(t *testing.T) {
 		itemRepo.On("ListIDs", filter).Return([]uint{6, 5, 4, 3, 2, 1}, nil)
 		itemRepo.On("GetByIDs", []uint{6, 3}).Return([]models.StoreItem{{ID: 3}, {ID: 6}}, nil)
 
-		items, _, err := service.GetItemsNear(filter, at)
+		items, _, err := service.GetItemsNear(context.Background(), filter, at)
 		require.NoError(t, err)
 		assert.Equal(t, []uint{6, 3}, itemIDs(items))
 		assert.Empty(t, items[0].Distance)
@@ -78,7 +79,7 @@ func TestGetItemsNear(t *testing.T) {
 			itemRepo.On("ListIDs", filter).Return([]uint{1}, nil).Maybe()
 			itemRepo.On("GetAll", filter).Return([]models.StoreItem{{ID: 1}}, int64(1), nil)
 
-			items, total, err := service.GetItemsNear(filter, at)
+			items, total, err := service.GetItemsNear(context.Background(), filter, at)
 			require.NoError(t, err)
 			assert.Equal(t, []uint{1}, itemIDs(items))
 			assert.Equal(t, int64(1), total)
@@ -89,7 +90,7 @@ func TestGetItemsNear(t *testing.T) {
 		service, itemRepo, _ := setupService()
 		service.WithDistancer(dist)
 		itemRepo.On("ListIDs", mock.Anything).Return([]uint(nil), errors.New("db down"))
-		_, _, err := service.GetItemsNear(models.StoreItemFilter{}, at)
+		_, _, err := service.GetItemsNear(context.Background(), models.StoreItemFilter{}, at)
 		assert.Error(t, err)
 	})
 }
@@ -97,17 +98,17 @@ func TestGetItemsNear(t *testing.T) {
 func TestTagItemDistances(t *testing.T) {
 	service, _, _ := setupService()
 	items := []models.StoreItem{{ID: 1}, {ID: 2}}
-	service.TagItemDistances(items, at)
+	service.TagItemDistances(context.Background(), items, at)
 	assert.Empty(t, items[1].Distance)
 
 	service.WithDistancer(&fakeDistancer{buckets: map[uint]int{2: 1}})
-	service.TagItemDistances(items, at)
+	service.TagItemDistances(context.Background(), items, at)
 	assert.Empty(t, items[0].Distance)
 	assert.Equal(t, "~2 km", items[1].Distance)
 
 	service.WithDistancer(&fakeDistancer{err: errors.New("down")})
 	fresh := []models.StoreItem{{ID: 2}}
-	service.TagItemDistances(fresh, at)
+	service.TagItemDistances(context.Background(), fresh, at)
 	assert.Empty(t, fresh[0].Distance)
 }
 
@@ -118,7 +119,7 @@ func TestGetRequestsNear(t *testing.T) {
 	requests.On("ListIDs", filter).Return([]uint{3, 2, 1}, nil)
 	requests.On("GetByIDs", []uint{2, 3, 1}).Return([]models.ItemRequest{{ID: 1}, {ID: 3}, {ID: 2}}, nil)
 
-	got, total, err := service.GetRequestsNear(filter, at)
+	got, total, err := service.GetRequestsNear(context.Background(), filter, at)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), total)
@@ -128,25 +129,25 @@ func TestGetRequestsNear(t *testing.T) {
 
 	// tags, and fallbacks
 	tagged := []models.ItemRequest{{ID: 2}, {ID: 9}}
-	service.TagRequestDistances(tagged, at)
+	service.TagRequestDistances(context.Background(), tagged, at)
 	assert.Equal(t, "<1 km", tagged[0].Distance)
 	assert.Empty(t, tagged[1].Distance)
 
 	off, offRequests, _ := setupRequestService()
 	offRequests.On("GetAll", filter).Return([]models.ItemRequest{{ID: 3}}, int64(1), nil)
-	plain, _, err := off.GetRequestsNear(filter, at)
+	plain, _, err := off.GetRequestsNear(context.Background(), filter, at)
 	require.NoError(t, err)
 	assert.Equal(t, uint(3), plain[0].ID)
-	off.TagRequestDistances(plain, at)
+	off.TagRequestDistances(context.Background(), plain, at)
 	assert.Empty(t, plain[0].Distance)
 
 	broken, brokenRequests, _ := setupRequestService()
 	broken.WithDistancer(&fakeDistancer{err: errors.New("down")})
 	brokenRequests.On("ListIDs", filter).Return([]uint{3}, nil)
 	brokenRequests.On("GetAll", filter).Return([]models.ItemRequest{{ID: 3}}, int64(1), nil)
-	_, _, err = broken.GetRequestsNear(filter, at)
+	_, _, err = broken.GetRequestsNear(context.Background(), filter, at)
 	assert.NoError(t, err)
-	broken.TagRequestDistances(plain, at)
+	broken.TagRequestDistances(context.Background(), plain, at)
 }
 
 func TestGetRequestListingsNearestToRequester(t *testing.T) {
@@ -156,7 +157,7 @@ func TestGetRequestListingsNearestToRequester(t *testing.T) {
 	items.On("GetAll", models.StoreItemFilter{RequestID: 31, Status: "active", PerPage: 100}).
 		Return([]models.StoreItem{{ID: 53}, {ID: 52}, {ID: 51}}, int64(3), nil)
 
-	got, err := service.GetRequestListings(31)
+	got, err := service.GetRequestListings(context.Background(), 31)
 
 	require.NoError(t, err)
 	assert.Equal(t, "request", dist.from)
@@ -167,7 +168,7 @@ func TestGetRequestListingsNearestToRequester(t *testing.T) {
 
 	// distances down: newest first, untagged
 	service.WithDistancer(&fakeDistancer{err: errors.New("down")})
-	got, err = service.GetRequestListings(31)
+	got, err = service.GetRequestListings(context.Background(), 31)
 	require.NoError(t, err)
 	assert.Equal(t, []uint{53, 52, 51}, itemIDs(got))
 }

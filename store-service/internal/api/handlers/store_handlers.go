@@ -248,11 +248,11 @@ func (h *StoreHandler) GetItems(c *gin.Context) {
 	var items []models.StoreItem
 	var total int64
 	if near != nil && filter.SortBy == "distance" {
-		items, total, err = h.service.GetItemsNear(filter, *near)
+		items, total, err = h.service.GetItemsNear(c.Request.Context(), filter, *near)
 	} else {
 		items, total, err = h.service.GetItems(filter)
 		if err == nil && near != nil {
-			h.service.TagItemDistances(items, *near)
+			h.service.TagItemDistances(c.Request.Context(), items, *near)
 		}
 	}
 	if err != nil {

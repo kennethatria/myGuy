@@ -119,7 +119,8 @@
           webserver:
             enabled: true
             listen_port: 8765
-            listen_address: 0.0.0.0
+            # The VPC address only: Prometheus on the monitoring server
+            listen_address: {{ vpc_ip }}
             prometheus_metrics_enabled: true
 
     # Our own deploys tripped two rules on every run (Falco logs, 2026-10-09):

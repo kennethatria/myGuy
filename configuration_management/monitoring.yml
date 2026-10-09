@@ -12,6 +12,9 @@
   vars:
     # Run as rootless Podman Quadlet units owned by myguy: systemd starts,
     # restarts and boots each container (linger is enabled in users.yml).
+    # Ports listen on the VPC address (vpc_ip) only, never on every address,
+    # so a firewall mistake can't expose them; the containers reach each
+    # other there too.
     # memory: a hard limit with no swap.  On this 1 GB server a container
     # that outgrows it is killed and restarted (Restart=always) instead of
     # pushing the whole server into swap, where everything stalls.
@@ -23,14 +26,14 @@
         # 20,000 stored traces measured at ~100 MB; room for richer spans.
         memory: 160m
         image: docker.io/jaegertracing/jaeger:2.22.0
-        ports: ["4318:4318", "16686:16686", "8888:8888"]
+        ports: ["{{ vpc_ip }}:4318:4318", "{{ vpc_ip }}:16686:16686", "{{ vpc_ip }}:8888:8888"]
         volumes:
           - /etc/jaeger/jaeger.yml:/etc/jaeger/jaeger.yml:ro
         exec: --config /etc/jaeger/jaeger.yml
       - name: prometheus
         memory: 256m
         image: docker.io/prom/prometheus:latest
-        ports: ["9090:9090"]
+        ports: ["{{ vpc_ip }}:9090:9090"]
         volumes:
           # The directory, not the file: Ansible replaces prometheus.yml
           # with a new file, and a single-file mount keeps showing the old
@@ -48,7 +51,7 @@
         # at 256 MB it was killed in a loop.
         memory: 384m
         image: docker.io/grafana/grafana:latest
-        ports: ["3000:3000"]
+        ports: ["{{ vpc_ip }}:3000:3000"]
         volumes:
           - /etc/grafana/provisioning:/etc/grafana/provisioning:ro
           - /etc/grafana/dashboards:/etc/grafana/dashboards:ro
@@ -63,7 +66,7 @@
       - name: loki
         memory: 320m
         image: docker.io/grafana/loki:2.9.10
-        ports: ["3100:3100"]
+        ports: ["{{ vpc_ip }}:3100:3100"]
         volumes:
           - /etc/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
           - loki-data:/loki
@@ -73,7 +76,7 @@
       - name: blackbox
         memory: 64m
         image: docker.io/prom/blackbox-exporter:v0.25.0
-        ports: ["9115:9115"]
+        ports: ["{{ vpc_ip }}:9115:9115"]
         volumes:
           - /etc/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
         exec: --config.file=/etc/blackbox/blackbox.yml
@@ -207,6 +210,12 @@
 
     # --- node_exporter (this server's CPU, memory and disk) ---
 
+    - name: Allow listening on the VPC address at boot
+      ansible.builtin.include_tasks:
+        file: tasks/vpc_listen.yml
+        apply:
+          become: yes
+
     - name: Install node_exporter
       ansible.builtin.include_tasks:
         file: tasks/node_exporter.yml
@@ -236,8 +245,8 @@
                 - targets: ['{{ instance_vpc_ip }}:{{ node_exporter_port }}']
                   labels:
                     instance: app
-                # This server's own node_exporter, reached from the container.
-                - targets: ['host.containers.internal:{{ node_exporter_port }}']
+                # This server's own node_exporter, on its VPC address.
+                - targets: ['{{ vpc_ip }}:{{ node_exporter_port }}']
                   labels:
                     instance: monitoring
 
@@ -273,7 +282,7 @@
                 - source_labels: [__param_target]
                   target_label: instance
                 - target_label: __address__
-                  replacement: host.containers.internal:9115
+                  replacement: '{{ vpc_ip }}:9115'
 
             # Old domains: answer with a redirect, over a valid certificate.
             - job_name: redirects
@@ -296,12 +305,12 @@
             # Jaeger's own counters (spans received and stored).
             - job_name: jaeger
               static_configs:
-                - targets: ['host.containers.internal:8888']
+                - targets: ['{{ vpc_ip }}:8888']
 
             # Loki's own health, so "Monitoring target down" covers it too.
             - job_name: loki
               static_configs:
-                - targets: ['host.containers.internal:3100']
+                - targets: ['{{ vpc_ip }}:3100']
               # Only `up` is used (it's added by Prometheus, not scraped, so
               # this keeps it); Loki's ~1,600 own series were 70% of all.
               metric_relabel_configs:
@@ -363,7 +372,7 @@
               type: prometheus
               uid: prometheus
               access: proxy
-              url: http://host.containers.internal:9090
+              url: http://{{ vpc_ip }}:9090
               isDefault: true
       notify: restart grafana
       become: yes
@@ -379,7 +388,7 @@
               type: loki
               uid: loki
               access: proxy
-              url: http://host.containers.internal:3100
+              url: http://{{ vpc_ip }}:3100
               isDefault: false
       notify: restart grafana
       become: yes
@@ -3729,6 +3738,35 @@
       environment:
         XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
         DBUS_SESSION_BUS_ADDRESS: "unix:path={{ xdg_runtime_dir }}/bus"
+
+    # Second layer behind the firewall: no port of ours may listen on every
+    # address, or a firewall mistake would expose it.  Each names vpc_ip.
+    - name: Check no monitoring port listens on every address
+      ansible.builtin.shell:
+        cmd: >-
+          ss -Hltn | awk '{print $4}'
+          | grep -E '^(0\.0\.0\.0|\*|\[::\]):(3000|3100|4318|8888|9090|9100|9115|16686)$' || true
+      register: open_listeners
+      changed_when: false
+      failed_when: open_listeners.stdout | length > 0
+
+    # Prometheus reaches this server's exporters on the VPC address now, not
+    # host.containers.internal; every local target must answer there.
+    - name: Check Prometheus scrapes this server's targets
+      ansible.builtin.uri:
+        url: "http://{{ vpc_ip }}:9090/api/v1/targets?state=active"
+        return_content: yes
+      register: prometheus_targets
+      vars:
+        local_health: >-
+          {{ prometheus_targets.json.data.activeTargets
+             | selectattr('scrapeUrl', 'search', '//' ~ vpc_ip ~ ':')
+             | map(attribute='health') | list }}
+      until: >-
+        prometheus_targets.json is defined and local_health | length > 0
+        and local_health | reject('equalto', 'up') | list | length == 0
+      retries: 12
+      delay: 10
 
     # GF_SECURITY_ADMIN_PASSWORD only applies when Grafana creates its
     # database; resetting keeps the secret authoritative after that too.

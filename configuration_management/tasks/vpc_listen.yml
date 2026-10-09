@@ -1,0 +1,17 @@
+# Lets services listen on this server's VPC address (vpc_ip) before the
+# address is up.  At boot, systemd and Podman can start them before
+# networkd has added it; their bind would fail and leave them down.
+# Included by observability.yml (app) and monitoring.yml.  Needs become.
+
+- name: Allow listening on the VPC address before it is up
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/60-vpc-listen.conf
+    mode: "0644"
+    content: |
+      net.ipv4.ip_nonlocal_bind = 1
+  register: vpc_listen_sysctl
+
+- name: Apply it without a reboot
+  ansible.builtin.command:
+    cmd: sysctl -p /etc/sysctl.d/60-vpc-listen.conf
+  when: vpc_listen_sysctl.changed

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -43,16 +44,16 @@ func (m *MockRequestService) GetRequests(filter models.ItemRequestFilter) ([]mod
 	return args.Get(0).([]models.ItemRequest), args.Get(1).(int64), args.Error(2)
 }
 
-func (m *MockRequestService) GetRequestsNear(filter models.ItemRequestFilter, at proximity.Location) ([]models.ItemRequest, int64, error) {
+func (m *MockRequestService) GetRequestsNear(_ context.Context, filter models.ItemRequestFilter, at proximity.Location) ([]models.ItemRequest, int64, error) {
 	args := m.Called(filter, at)
 	return args.Get(0).([]models.ItemRequest), args.Get(1).(int64), args.Error(2)
 }
 
-func (m *MockRequestService) TagRequestDistances(requests []models.ItemRequest, at proximity.Location) {
+func (m *MockRequestService) TagRequestDistances(_ context.Context, requests []models.ItemRequest, at proximity.Location) {
 	m.Called(requests, at)
 }
 
-func (m *MockRequestService) GetRequestListings(id uint) ([]models.StoreItem, error) {
+func (m *MockRequestService) GetRequestListings(_ context.Context, id uint) ([]models.StoreItem, error) {
 	args := m.Called(id)
 	return args.Get(0).([]models.StoreItem), args.Error(1)
 }
