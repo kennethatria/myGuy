@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"image"
@@ -52,12 +53,12 @@ func (m *MockStoreService) GetItems(filter models.StoreItemFilter) ([]models.Sto
 	return args.Get(0).([]models.StoreItem), args.Get(1).(int64), args.Error(2)
 }
 
-func (m *MockStoreService) GetItemsNear(filter models.StoreItemFilter, at proximity.Location) ([]models.StoreItem, int64, error) {
+func (m *MockStoreService) GetItemsNear(_ context.Context, filter models.StoreItemFilter, at proximity.Location) ([]models.StoreItem, int64, error) {
 	args := m.Called(filter, at)
 	return args.Get(0).([]models.StoreItem), args.Get(1).(int64), args.Error(2)
 }
 
-func (m *MockStoreService) TagItemDistances(items []models.StoreItem, at proximity.Location) {
+func (m *MockStoreService) TagItemDistances(_ context.Context, items []models.StoreItem, at proximity.Location) {
 	m.Called(items, at)
 	if len(items) > 0 {
 		items[0].Distance = "~2 km"

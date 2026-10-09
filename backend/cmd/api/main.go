@@ -183,7 +183,7 @@ func expireStaleTasks(taskService *services.TaskService) {
 	}
 }
 
-// newCodeSender emails login codes over SMTP, or logs them when SMTP_HOST is
+// newCodeSender emails login codes over SMTP in the background, or logs them when SMTP_HOST is
 // unset so local development works without a mail account.
 func newCodeSender() services.CodeSender {
 	host := os.Getenv("SMTP_HOST")
@@ -195,13 +195,13 @@ func newCodeSender() services.CodeSender {
 	if port == "" {
 		port = "587"
 	}
-	return mailer.NewSMTPSender(mailer.SMTPConfig{
+	return mailer.Background{Sender: mailer.NewSMTPSender(mailer.SMTPConfig{
 		Host:     host,
 		Port:     port,
 		Username: os.Getenv("SMTP_USERNAME"),
 		Password: os.Getenv("SMTP_PASSWORD"),
 		From:     os.Getenv("SMTP_FROM"),
-	})
+	})}
 }
 
 // newDistancer sorts and tags gigs by distance through the proximity

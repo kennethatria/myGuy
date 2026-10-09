@@ -1,6 +1,8 @@
 package mailer
 
 import (
+	"context"
+	"errors"
 	"net/mail"
 	"strings"
 	"testing"
@@ -42,4 +44,31 @@ func TestRecipientAcceptsOnlyABareAddress(t *testing.T) {
 			t.Errorf("expected %q to be rejected", bad)
 		}
 	}
+}
+
+// slowSender stands in for an SMTP server that takes its time.
+type slowSender struct {
+	release chan struct{}
+	err     error
+	ctxErr  error
+}
+
+func (s *slowSender) SendLoginCode(ctx context.Context, _, _ string) error {
+	<-s.release
+	s.ctxErr = ctx.Err()
+	return s.err
+}
+
+func TestBackgroundAnswersBeforeTheMailIsSent(t *testing.T) {
+	slow := &slowSender{release: make(chan struct{}), err: errors.New("smtp down")}
+	sent := make(chan error, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	err := Background{Sender: slow, done: func(err error) { sent <- err }}.SendLoginCode(ctx, "a@example.com", "123456")
+
+	assert.NoError(t, err, "returns before the mail server answers")
+	cancel() // the request ends
+	close(slow.release)
+	assert.EqualError(t, <-sent, "smtp down", "failures reach the log, not the person")
+	assert.NoError(t, slow.ctxErr, "sending outlives the request")
 }

@@ -334,7 +334,7 @@ func (h *Handler) ListTasks(c *gin.Context) {
 	} else {
 		result, err = h.taskService.ListTasksWithPagination(c.Request.Context(), filters)
 		if err == nil && near != nil {
-			h.taskService.TagDistances(result.Tasks, *near)
+			h.taskService.TagDistances(c.Request.Context(), result.Tasks, *near)
 		}
 	}
 	if err != nil {

@@ -1,6 +1,7 @@
 package proximity
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"math"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestCellSharedCases(t *testing.T) {
@@ -124,7 +128,7 @@ func TestDistances(t *testing.T) {
 	for i := uint(1); i <= 2500; i++ {
 		ids = append(ids, i)
 	}
-	got, err := c.Distances("task", Location{Lat: 0.35, Lng: 32.585}, ids)
+	got, err := c.Distances(context.Background(), "task", Location{Lat: 0.35, Lng: 32.585}, ids)
 
 	require.NoError(t, err)
 	assert.Equal(t, 3, calls, "sent in batches of 1000")
@@ -133,10 +137,34 @@ func TestDistances(t *testing.T) {
 	_, has := got[3]
 	assert.False(t, has, "ids without a location are left out")
 
-	empty, err := c.Distances("task", Location{}, nil)
+	empty, err := c.Distances(context.Background(), "task", Location{}, nil)
 	require.NoError(t, err)
 	assert.Empty(t, empty)
 	assert.Equal(t, 3, calls, "no call for no ids")
+}
+
+// A distance lookup carries the caller's trace, so it shows in that trace.
+func TestDistancesSendTraceContext(t *testing.T) {
+	prev := otel.GetTextMapPropagator()
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	defer otel.SetTextMapPropagator(prev)
+
+	traceparent := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceparent <- r.Header.Get("traceparent")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"results": []interface{}{}})
+	}))
+	defer server.Close()
+
+	traceID, _ := trace.TraceIDFromHex("4bf92f3577b34da6a3ce929d0e0e4736")
+	spanID, _ := trace.SpanIDFromHex("00f067aa0ba902b7")
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled,
+	}))
+	_, err := New(server.URL, "k").Distances(ctx, "task", Location{}, []uint{1})
+
+	require.NoError(t, err)
+	assert.Contains(t, <-traceparent, traceID.String())
 }
 
 func TestDistancesErrors(t *testing.T) {
@@ -144,14 +172,14 @@ func TestDistancesErrors(t *testing.T) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer failing.Close()
-	_, err := New(failing.URL, "k").Distances("task", Location{}, []uint{1})
+	_, err := New(failing.URL, "k").Distances(context.Background(), "task", Location{}, []uint{1})
 	assert.ErrorContains(t, err, "503")
 
 	garbled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("not json"))
 	}))
 	defer garbled.Close()
-	_, err = New(garbled.URL, "k").Distances("task", Location{}, []uint{1})
+	_, err = New(garbled.URL, "k").Distances(context.Background(), "task", Location{}, []uint{1})
 	assert.Error(t, err)
 
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -159,7 +187,7 @@ func TestDistancesErrors(t *testing.T) {
 	}))
 	defer slow.Close()
 	start := time.Now()
-	_, err = New(slow.URL, "k").Distances("task", Location{}, []uint{1})
+	_, err = New(slow.URL, "k").Distances(context.Background(), "task", Location{}, []uint{1})
 	assert.Error(t, err)
 	assert.Less(t, time.Since(start), 450*time.Millisecond, "gives up after 300 ms")
 }

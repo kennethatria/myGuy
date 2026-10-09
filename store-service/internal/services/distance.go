@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"sort"
 
 	"store-service/internal/proximity"
@@ -10,8 +11,8 @@ import (
 // proximity.Buckets): from a position, or from another stored post. Posts
 // without a stored location are left out.
 type Distancer interface {
-	Distances(kind string, at proximity.Location, ids []uint) (map[uint]int, error)
-	DistancesFrom(kind, fromKind string, fromID uint, ids []uint) (map[uint]int, error)
+	Distances(ctx context.Context, kind string, at proximity.Location, ids []uint) (map[uint]int, error)
+	DistancesFrom(ctx context.Context, kind, fromKind string, fromID uint, ids []uint) (map[uint]int, error)
 }
 
 // rankByDistance orders ids (given newest first) nearest bucket first,

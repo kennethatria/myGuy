@@ -7,6 +7,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
@@ -43,6 +44,9 @@ func InitTracer(ctx context.Context, serviceName string) (func(context.Context) 
 	)
 
 	otel.SetTracerProvider(tp)
+	// Read and send W3C trace context (traceparent), so a call to another
+	// service joins the caller's trace instead of starting its own.
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 
 	return tp.Shutdown, nil
 }

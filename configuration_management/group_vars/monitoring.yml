@@ -3,6 +3,10 @@
 # Must match Terraform locals.instance_vpc_ip in infra/main.tf
 instance_vpc_ip: "10.0.0.2"
 
+# This server's own VPC address: its services listen here, not on every
+# address.  Must match Terraform locals.zipkin_vpc_ip in infra/main.tf
+vpc_ip: "10.0.0.3"
+
 # Ports exposed by the app instance for metrics collection
 node_exporter_port: 9100
 falco_metrics_port: 8765

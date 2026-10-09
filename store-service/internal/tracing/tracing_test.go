@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -30,6 +31,9 @@ func TestInitTracerSendsSpansOverOTLP(t *testing.T) {
 	}
 	_, span := otel.Tracer("test").Start(context.Background(), "ping")
 	span.End()
+	if fields := otel.GetTextMapPropagator().Fields(); !slices.Contains(fields, "traceparent") {
+		t.Errorf("propagator sends %v, want traceparent", fields)
+	}
 	if err := shutdown(context.Background()); err != nil {
 		t.Fatalf("shutdown: %v", err)
 	}

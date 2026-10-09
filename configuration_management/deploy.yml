@@ -93,6 +93,9 @@
           # Traces go to Jaeger on the monitoring server.  OTEL_TRACES_EXPORTER=none
           # here would turn them off.
           OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ monitoring_vpc_ip }}:4318
+          # Metrics ports listen on the VPC address only (Prometheus scrapes
+          # them from the monitoring server); everything else is 127.0.0.1
+          METRICS_BIND={{ vpc_ip }}
           IMAGE_TAG={{ image_tag }}
           SMTP_HOST={{ smtp_host | default('') }}
           SMTP_PORT={{ smtp_port | default('587', true) }}
@@ -198,6 +201,32 @@
         DB_PASSWORD: "{{ db_password }}"
         INTERNAL_API_KEY: "{{ internal_api_key }}"
         PROXIMITY_REDIS_PASSWORD: "{{ proximity_redis_password }}"
+
+    # --- Second layer behind the firewall ---
+    # No port of ours may listen on every address: a firewall mistake would
+    # then expose it.  docker-compose.yml, Falco, node_exporter and the
+    # podman exporter each name an address; this catches one that doesn't.
+    # (Runs after security.yml and observability.yml in a full deploy.)
+    - name: Check no app port listens on every address
+      ansible.builtin.shell:
+        cmd: >-
+          ss -Hltn | awk '{print $4}'
+          | grep -E '^(0\.0\.0\.0|\*|\[::\]):(5433|6379|808[0-3]|8765|9100|946[45]|9882)$' || true
+      register: open_listeners
+      changed_when: false
+      failed_when: open_listeners.stdout | length > 0
+
+    # --- After a reboot ---
+    # Podman has no daemon to bring containers back; this user unit starts
+    # every restart=always container at boot (linger starts myguy's systemd).
+    - name: Start the app containers at boot
+      ansible.builtin.systemd:
+        name: podman-restart.service
+        scope: user
+        enabled: yes
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+        DBUS_SESSION_BUS_ADDRESS: "unix:path={{ xdg_runtime_dir }}/bus"
 
     # --- Old images ---
     # Each deploy pulls new image tags and nothing removed the old ones, so

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"store-service/internal/contacts"
@@ -262,7 +263,7 @@ func (s *StoreService) GetItems(filter models.StoreItemFilter) ([]models.StoreIt
 // first, newest first within a bucket, listings without a location last.
 // Every match is ranked before the page is cut, so paging and totals work as
 // usual. If distances can't be had, it falls back to GetItems.
-func (s *StoreService) GetItemsNear(filter models.StoreItemFilter, at proximity.Location) ([]models.StoreItem, int64, error) {
+func (s *StoreService) GetItemsNear(ctx context.Context, filter models.StoreItemFilter, at proximity.Location) ([]models.StoreItem, int64, error) {
 	if s.distancer == nil {
 		return s.GetItems(filter)
 	}
@@ -270,7 +271,7 @@ func (s *StoreService) GetItemsNear(filter models.StoreItemFilter, at proximity.
 	if err != nil {
 		return nil, 0, err
 	}
-	buckets, err := s.distancer.Distances("item", at, ids)
+	buckets, err := s.distancer.Distances(ctx, "item", at, ids)
 	if err != nil {
 		log.Printf("WARNING: distance sort unavailable, showing newest first: %v", err)
 		return s.GetItems(filter)
@@ -298,7 +299,7 @@ func (s *StoreService) GetItemsNear(filter models.StoreItemFilter, at proximity.
 
 // TagItemDistances adds a rough distance tag from at to each listing that
 // has a location. Best effort: without distances, no tags.
-func (s *StoreService) TagItemDistances(items []models.StoreItem, at proximity.Location) {
+func (s *StoreService) TagItemDistances(ctx context.Context, items []models.StoreItem, at proximity.Location) {
 	if s.distancer == nil || len(items) == 0 {
 		return
 	}
@@ -306,7 +307,7 @@ func (s *StoreService) TagItemDistances(items []models.StoreItem, at proximity.L
 	for i, item := range items {
 		ids[i] = item.ID
 	}
-	buckets, err := s.distancer.Distances("item", at, ids)
+	buckets, err := s.distancer.Distances(ctx, "item", at, ids)
 	if err != nil {
 		log.Printf("WARNING: distance tags unavailable: %v", err)
 		return

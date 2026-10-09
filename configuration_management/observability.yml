@@ -14,6 +14,9 @@
         daemon_reload: yes
 
   tasks:
+    - name: Allow listening on the VPC address at boot
+      ansible.builtin.include_tasks: tasks/vpc_listen.yml
+
     - name: Install node_exporter
       ansible.builtin.include_tasks: tasks/node_exporter.yml
 
@@ -204,7 +207,7 @@
           # The image's own user can't open myguy's socket; container root is
           # myguy on the host (rootless), so this grants nothing more.
           User=0
-          PublishPort=9882:9882
+          PublishPort={{ vpc_ip }}:9882:9882
           # %t is myguy's runtime directory
           Volume=%t/podman/podman.sock:/run/podman/podman.sock
           Environment=CONTAINER_HOST=unix:///run/podman/podman.sock

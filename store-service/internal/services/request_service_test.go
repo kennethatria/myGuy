@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"store-service/internal/models"
 	"strings"
@@ -158,7 +159,7 @@ func TestRequestReads(t *testing.T) {
 	mine, err := service.GetUserRequests(4)
 	assert.NoError(t, err)
 	assert.Len(t, mine, 1)
-	offers, err := service.GetRequestListings(1)
+	offers, err := service.GetRequestListings(context.Background(), 1)
 	assert.NoError(t, err)
 	assert.Len(t, offers, 1)
 }

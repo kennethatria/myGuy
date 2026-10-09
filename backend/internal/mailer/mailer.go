@@ -139,3 +139,33 @@ func (LogSender) SendLoginCode(_ context.Context, email, code string) error {
 	log.Printf("[mailer] SMTP not configured; login code for %s is %s", email, code)
 	return nil
 }
+
+// Sender delivers a login code; SMTPSender and LogSender are senders.
+type Sender interface {
+	SendLoginCode(ctx context.Context, email, code string) error
+}
+
+// Background sends codes after the request has been answered, so signing in
+// doesn't wait for the mail server (an SMTP session takes about a second).
+// Failures are only logged: the person sees no code and asks for another.
+type Background struct {
+	Sender Sender
+	// done, when set, is called after each send (tests wait on it).
+	done func(error)
+}
+
+func (b Background) SendLoginCode(ctx context.Context, email, code string) error {
+	// The request's context ends with the response; keep its values (the
+	// trace) but not its cancellation. The SMTP sender bounds its own time.
+	ctx = context.WithoutCancel(ctx)
+	go func() {
+		err := b.Sender.SendLoginCode(ctx, email, code)
+		if err != nil {
+			log.Printf("[mailer] sending login code failed: %v", err)
+		}
+		if b.done != nil {
+			b.done(err)
+		}
+	}()
+	return nil
+}

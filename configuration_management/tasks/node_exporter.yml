@@ -1,6 +1,7 @@
 # node_exporter (CPU, memory and disk metrics for Prometheus) as a systemd
-# service.  Included by observability.yml (app) and monitoring.yml; the
-# node_exporter user comes from users.yml.  Needs become.
+# service, on the VPC address only (tasks/vpc_listen.yml).  Included by
+# observability.yml (app) and monitoring.yml; the node_exporter user comes
+# from users.yml.  Needs become.
 
 - name: Download node_exporter
   ansible.builtin.get_url:
@@ -34,6 +35,7 @@
       User=node_exporter
       Group=node_exporter
       ExecStart=/usr/local/bin/node_exporter \
+        --web.listen-address={{ vpc_ip }}:9100 \
         --collector.disable-defaults \
         --collector.cpu \
         --collector.meminfo \
