@@ -68,7 +68,3 @@ output "zipkin_vpc_ip" {
   value       = local.zipkin_vpc_ip
 }
 
-output "otel_endpoint" {
-  description = "Tempo OTLP/HTTP endpoint reachable from within the VPC (OTEL_EXPORTER_OTLP_ENDPOINT)"
-  value       = "http://${local.zipkin_vpc_ip}:4318"
-}

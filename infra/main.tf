@@ -152,24 +152,6 @@ resource "linode_firewall" "zipkin_firewall" {
   label = "${var.infra_name}-${var.environment}-monitoring-firewall"
 
   inbound {
-    label    = "allow-tempo-otlp-from-vpc"
-    action   = "ACCEPT"
-    protocol = "TCP"
-    ports    = "4318"
-    ipv4     = ["10.0.0.0/24"]
-  }
-
-  # Tempo's query API, for an SSH tunnel through the app server (Grafana
-  # reaches it locally and doesn't need this).
-  inbound {
-    label    = "allow-tempo-query-from-vpc"
-    action   = "ACCEPT"
-    protocol = "TCP"
-    ports    = "3200"
-    ipv4     = ["10.0.0.0/24"]
-  }
-
-  inbound {
     label    = "allow-prometheus-from-vpc"
     action   = "ACCEPT"
     protocol = "TCP"
@@ -248,6 +230,14 @@ resource "linode_instance" "zipkin_instance" {
       vpc = local.zipkin_vpc_ip
     }
   }
+
+  # The VPC interface's ipam_address isn't read back the way it's written,
+  # so every apply saw a change and "updated" the interface, which reboots
+  # the server (and replaced the NodeBalancer nodes).  Interfaces are set
+  # once at creation; to change one on purpose, remove this temporarily.
+  lifecycle {
+    ignore_changes = [interface]
+  }
 }
 
 resource "linode_instance" "my_guy_instance" {
@@ -268,5 +258,13 @@ resource "linode_instance" "my_guy_instance" {
     purpose      = "vpc"
     subnet_id    = linode_vpc_subnet.main.id
     ipam_address = "${local.instance_vpc_ip}/24"
+  }
+
+  # The VPC interface's ipam_address isn't read back the way it's written,
+  # so every apply saw a change and "updated" the interface, which reboots
+  # the server (and replaced the NodeBalancer nodes).  Interfaces are set
+  # once at creation; to change one on purpose, remove this temporarily.
+  lifecycle {
+    ignore_changes = [interface]
   }
 }

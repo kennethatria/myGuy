@@ -20,7 +20,6 @@
     app_user: myguy
     app_dir: /opt/myguy
     git_branch: main
-    otel_endpoint: "{{ hostvars[groups['monitoring'][0]]['otel_endpoint'] | default('http://10.0.0.3:4318') }}"
     # "all" redeploys the whole stack, databases included; otherwise a
     # space-separated list of the compose services to replace (the CI
     # pipeline passes the ones a push changed)
@@ -91,7 +90,8 @@
           DB_PASSWORD={{ db_password }}
           INTERNAL_API_KEY={{ internal_api_key }}
           PROXIMITY_REDIS_PASSWORD={{ proximity_redis_password }}
-          OTEL_EXPORTER_OTLP_ENDPOINT={{ otel_endpoint }}
+          # No Tempo in production (removed to fit the 1 GB monitoring server)
+          OTEL_TRACES_EXPORTER=none
           IMAGE_TAG={{ image_tag }}
           SMTP_HOST={{ smtp_host | default('') }}
           SMTP_PORT={{ smtp_port | default('587', true) }}
@@ -103,7 +103,7 @@
     # --- Deploy ---
 
     # `-f docker-compose.yml` skips docker-compose.override.yml (local-only
-    # services such as Tempo, which runs on the monitoring server instead).
+    # services such as a local Tempo and Grafana for traces).
     - name: Pull images from Docker Hub
       ansible.builtin.command:
         cmd: "podman compose -f docker-compose.yml pull{{ '' if deploy_all else ' ' ~ services_to_deploy | join(' ') }}"
