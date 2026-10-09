@@ -235,7 +235,7 @@ Requires `INTERNAL_API_KEY` (shared with the chat service) and `CHAT_API_URL`.
 | `JWT_SECRET` | Shared with store and chat services |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` | Sign-in code email. With `SMTP_HOST` unset, codes are logged instead (local development) |
 | `INTERNAL_API_KEY`, `CHAT_API_URL` | Posting task events into Messages via the chat service |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Trace export (Tempo, OTLP/HTTP) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Trace export (Jaeger, OTLP/HTTP) |
 | `OTEL_TRACES_EXPORTER` | `none` turns trace export off (production) |
 
 ## Testing

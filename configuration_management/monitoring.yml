@@ -1,4 +1,4 @@
-# monitoring.yml - Install Prometheus, Grafana, Loki and the blackbox prober on the monitoring instance
+# monitoring.yml - Install Prometheus, Grafana, Loki, Jaeger and the blackbox prober on the monitoring instance
 #
 # Runs as myguy (inventory ansible_user).  System tasks (apt, file writes under
 # /etc/) carry explicit become: yes.  Podman containers run rootlessly as myguy
@@ -16,6 +16,17 @@
     # that outgrows it is killed and restarted (Restart=always) instead of
     # pushing the whole server into swap, where everything stalls.
     monitoring_containers:
+      # Traces: the services send OTLP/HTTP to 4318; Jaeger keeps the newest
+      # 20,000 in memory (lost on restart) and serves its UI on 16686.
+      # Replaced Tempo, which needed more than 256 MB on this server.
+      - name: jaeger
+        # 20,000 stored traces measured at ~100 MB; room for richer spans.
+        memory: 160m
+        image: docker.io/jaegertracing/jaeger:2.22.0
+        ports: ["4318:4318", "16686:16686", "8888:8888"]
+        volumes:
+          - /etc/jaeger/jaeger.yml:/etc/jaeger/jaeger.yml:ro
+        exec: --config /etc/jaeger/jaeger.yml
       - name: prometheus
         memory: 256m
         image: docker.io/prom/prometheus:latest
@@ -74,6 +85,14 @@
       environment:
         XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
       changed_when: false
+
+    - name: restart jaeger
+      ansible.builtin.command:
+        cmd: podman restart jaeger
+      environment:
+        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
+      changed_when: false
+      failed_when: false   # first run: the container starts later in the play
 
     - name: restart blackbox
       ansible.builtin.command:
@@ -236,6 +255,11 @@
                 - targets: ['{{ instance_vpc_ip }}:9882']
                   labels:
                     instance: app
+
+            # Jaeger's own counters (spans received and stored).
+            - job_name: jaeger
+              static_configs:
+                - targets: ['host.containers.internal:8888']
 
             # Loki's own health, so "Monitoring target down" covers it too.
             - job_name: loki
@@ -2750,6 +2774,23 @@
           }
       become: yes
 
+    # --- Jaeger ---
+
+    - name: Create Jaeger config directory
+      ansible.builtin.file:
+        path: /etc/jaeger
+        state: directory
+        mode: "0755"
+      become: yes
+
+    - name: Write Jaeger config
+      ansible.builtin.copy:
+        src: files/jaeger.yml
+        dest: /etc/jaeger/jaeger.yml
+        mode: "0644"
+      notify: restart jaeger
+      become: yes
+
     # --- Loki ---
 
     - name: Create Loki config directory
@@ -2894,8 +2935,8 @@
       register: quadlet_units
       become: yes
 
-    # Retired: Zipkin (replaced by Tempo), then Umami and Tempo (removed to
-    # fit this 1 GB server).  Their volumes (umami-db-data, tempo-data) are
+    # Retired: Zipkin (replaced by Tempo), Umami (removed to fit this 1 GB
+    # server) and Tempo (replaced by Jaeger, which needs a fraction of it).  Their volumes (umami-db-data, tempo-data) are
     # kept; `podman volume rm <name>` as myguy deletes one for good.
     - name: Stop retired containers
       ansible.builtin.systemd:

@@ -299,15 +299,15 @@ Falco monitors system calls on the app instance in real time, detecting suspicio
 
 ## Observability
 
-MyGuy has **metrics, logs and alerting** in production via Prometheus + Loki + Grafana + Falco, and **distributed tracing** (OpenTelemetry + Tempo) in local development.
+MyGuy has **metrics, logs and alerting** via Prometheus + Loki + Grafana + Falco, and **distributed tracing** via OpenTelemetry + Jaeger.
 
 In production, all monitoring tools run on a dedicated server that is only accessible within the private VPC — not exposed to the public internet.
 
-### Distributed Tracing (OpenTelemetry + Tempo, local only)
+### Distributed Tracing (OpenTelemetry + Jaeger)
 
-Every HTTP request handled by the backend, store, chat and proximity services is traced with OpenTelemetry and sent over OTLP/HTTP to `OTEL_EXPORTER_OTLP_ENDPOINT` (default `http://localhost:4318`). Locally, `docker-compose.override.yml` runs Tempo and a Grafana: open http://localhost:3000 → **Explore** → **Tempo**.
+Every HTTP request handled by the backend, store, chat and proximity services is traced with OpenTelemetry and sent over OTLP/HTTP to `OTEL_EXPORTER_OTLP_ENDPOINT`: in production Jaeger on the monitoring server (`http://10.0.0.3:4318`, written by `deploy.yml`), locally the Jaeger in `docker-compose.override.yml`. Both use `configuration_management/files/jaeger.yml`: the newest **20,000 traces are kept in memory** (lost when Jaeger restarts), in about 100 MB (limit 160 MB). Open Jaeger's UI at http://localhost:16686 (through the SSH tunnel in production). Jaeger 2.x dropped the API Grafana's Jaeger datasource used, so traces are viewed in Jaeger's UI, not Grafana. Requests to `/health` aren't traced (the site prober calls it every 15 seconds). `OTEL_TRACES_EXPORTER=none` turns export off in any service.
 
-**Production has no Tempo**: it was removed because it kept outgrowing its memory on the 1 GB monitoring server. `deploy.yml` sets `OTEL_TRACES_EXPORTER=none`, so the services export nothing (the Go services and the Node SDK both honour it). To bring tracing back, run Tempo somewhere with room and drop that setting.
+Tempo was used before but kept outgrowing its memory on the 1 GB monitoring server.
 
 | Service | OTel Implementation | Service Name |
 | :--- | :--- | :--- |
@@ -338,7 +338,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
 
 **On the monitoring instance:**
 - Prometheus scrapes `node_exporter` (`:9100`) on both servers (the app's via VPC, its own via `host.containers.internal`) and Falco metrics (`:8765`) on the app instance every 15 seconds
-- Grafana sends **alerts to Telegram** (provisioned in `monitoring.yml`, folder *Alerts*): site down (a blackbox prober on the monitoring server loads `https://<DOMAIN>/` and `/health`, and checks that old domains answer 301), certificate expiring within 14 days, more than 10 server errors in 10 minutes, disk above 85 %, memory above 90 %, a scrape target down (Loki included), and any Falco rule match. Repeats every 12 hours while firing.
+- Grafana sends **alerts to Telegram** (provisioned in `monitoring.yml`, folder *Alerts*): site down (a blackbox prober on the monitoring server loads `https://<DOMAIN>/` and `/health`, and checks that old domains answer 301), certificate expiring within 14 days, more than 10 server errors in 10 minutes, disk above 85 %, memory above 90 %, a scrape target down (Loki and Jaeger included), and any Falco rule match. Repeats every 12 hours while firing.
 - Grafana is pre-provisioned with these dashboards:
   - **App Instance Metrics** / **Monitoring Instance Metrics** — CPU, memory and disk use now (green / amber / red) and over time, one dashboard per server; App Instance Metrics also shows memory and CPU per container
   - **Accounts** — accounts, new sign-ups, people active in gigs and the marketplace, and gigs, listings, requests and bookings by status. Counts only: the backend (`:9464`) and store-service (`:9465`) publish them from their databases (`internal/metrics`), on ports nginx doesn't route and the firewall opens to the monitoring server alone; no names or emails leave the app server
@@ -354,10 +354,11 @@ ssh -N \
   -L 3000:10.0.0.3:3000 \
   -L 9090:10.0.0.3:9090 \
   -L 3100:10.0.0.3:3100 \
+  -L 16686:10.0.0.3:16686 \
   ops@<app_public_ip>
 ```
 
-Then open `http://localhost:3000` for Grafana (sign in as `admin` with the `GRAFANA_ADMIN_PASSWORD` secret).
+Then open `http://localhost:3000` for Grafana (sign in as `admin` with the `GRAFANA_ADMIN_PASSWORD` secret) and `http://localhost:16686` for Jaeger (traces).
 
 ### Visitor Analytics
 
@@ -411,11 +412,11 @@ Terraform variables (`authorized_keys`, `root_password`, `provider_token`) live 
 | Instance | VPC IP | Purpose |
 | :--- | :--- | :--- |
 | **App instance** | `10.0.0.2` | Runs the full application stack via rootless Podman Compose |
-| **Monitoring instance** | `10.0.0.3` | Runs Prometheus, Grafana, Loki and the blackbox prober |
+| **Monitoring instance** | `10.0.0.3` | Runs Prometheus, Grafana, Loki, Jaeger and the blackbox prober |
 
 The monitoring instance has no public IP. It is only reachable via the app instance as a ProxyJump host.
 
-- **Compose files:** `docker-compose.yml` is the production stack; `docker-compose.override.yml` adds local-only services (Tempo and a Grafana to view traces) and is loaded automatically by `podman compose` / `docker compose` on your machine. Production runs `podman compose -f docker-compose.yml …`, so traces go to the monitoring server's Tempo instead.
+- **Compose files:** `docker-compose.yml` is the production stack; `docker-compose.override.yml` adds local-only services (Jaeger for traces) and is loaded automatically by `podman compose` / `docker compose` on your machine. Production runs `podman compose -f docker-compose.yml …`, so traces go to the monitoring server's Tempo instead.
 - **Journal size:** both servers cap the systemd journal at 100 MB (`/etc/systemd/journald.conf.d/size.conf`, applied by `site.yml` / `monitoring.yml`) to keep memory free on the 1 GB instances.
 
 ### Provisioning with Terraform
@@ -471,7 +472,7 @@ ansible-playbook deploy.yml -i inventory.ini \
 
 > **Tip:** `-e "key=value"` splits on spaces. For values containing spaces (SSH public keys, `SMTP_FROM`), pass JSON instead: `-e '{"smtp_from": "MyGuy <no-reply@myguy.work>"}'` — the CI workflow builds its extra-vars this way with `jq`.
 
-`deploy.yml` writes `OTEL_TRACES_EXPORTER=none` into the app's `.env`: production exports no traces.
+`deploy.yml` writes `OTEL_EXPORTER_OTLP_ENDPOINT=http://<monitoring VPC IP>:4318` into the app's `.env`, so traces go to Jaeger.
 
 ---
 
@@ -503,7 +504,7 @@ The backend services run locally with Podman Compose using pre-built images from
    # IMAGE_TAG=latest
    ```
 
-3. **Start the backend services** (also starts a local Tempo and Grafana from `docker-compose.override.yml`):
+3. **Start the backend services** (also starts a local Jaeger from `docker-compose.override.yml`):
    ```sh
    podman compose up -d
    ```
@@ -525,7 +526,7 @@ The backend services run locally with Podman Compose using pre-built images from
    - **Backend API:** http://localhost:8080
    - **Store Service:** http://localhost:8081
    - **Chat Service:** http://localhost:8082
-   - **Traces (Grafana → Explore → Tempo):** http://localhost:3000
+   - **Traces (Jaeger):** http://localhost:16686
    - **PostgreSQL:** `localhost:5433`
 
 ---
