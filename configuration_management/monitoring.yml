@@ -1747,7 +1747,7 @@
         mode: "0644"
         content: !unsafe |
           {
-            "title": "Accounts",
+            "title": "Application Activities",
             "uid": "accounts",
             "schemaVersion": 36,
             "panels": [
@@ -2356,7 +2356,7 @@
         mode: "0644"
         content: !unsafe |
           {
-            "title": "Visitors",
+            "title": "Application Visitors",
             "uid": "visitors",
             "schemaVersion": 36,
             "panels": [
@@ -2812,6 +2812,443 @@
             ],
             "time": {
               "from": "now-7d",
+              "to": "now"
+            },
+            "refresh": "5m"
+          }
+      become: yes
+
+    - name: Write Slow Requests dashboard
+      # From the nginx JSON access log's request_time (8 days in Loki).
+      # "Real" requests: a method (malformed connections have none) and not
+      # the long-lived chat socket.  Replaces Tempo's slow-request table.
+      ansible.builtin.copy:
+        dest: /etc/grafana/dashboards/slow-requests.json
+        mode: "0644"
+        content: !unsafe |
+          {
+            "title": "Slow Requests",
+            "uid": "slow-requests",
+            "schemaVersion": 36,
+            "panels": [
+              {
+                "type": "stat",
+                "title": "Requests over 0.5 s",
+                "description": "Real requests (malformed connections and chat sockets left out) that took longer than half a second, in the selected range.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 6,
+                  "h": 5
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 1
+                        },
+                        {
+                          "color": "red",
+                          "value": 50
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | method != \"\" | uri !~ \"/socket\\\\.io.*\" | request_time > 0.5 [$__range])) or vector(0)"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Typical request (median)",
+                "gridPos": {
+                  "x": 6,
+                  "y": 0,
+                  "w": 6,
+                  "h": 5
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "s",
+                    "decimals": 3,
+                    "color": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "quantile_over_time(0.5, {job=\"nginx_access\"} | json | method != \"\" | uri !~ \"/socket\\\\.io.*\" | unwrap request_time | __error__=\"\" [$__range]) by (job)"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Slowest 5% (p95)",
+                "description": "95% of requests finished within this time.",
+                "gridPos": {
+                  "x": 12,
+                  "y": 0,
+                  "w": 6,
+                  "h": 5
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "s",
+                    "decimals": 3,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 0.5
+                        },
+                        {
+                          "color": "red",
+                          "value": 2
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "quantile_over_time(0.95, {job=\"nginx_access\"} | json | method != \"\" | uri !~ \"/socket\\\\.io.*\" | unwrap request_time | __error__=\"\" [$__range]) by (job)"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Slowest 1% (p99)",
+                "gridPos": {
+                  "x": 18,
+                  "y": 0,
+                  "w": 6,
+                  "h": 5
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "s",
+                    "decimals": 3,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 1
+                        },
+                        {
+                          "color": "red",
+                          "value": 5
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "quantile_over_time(0.99, {job=\"nginx_access\"} | json | method != \"\" | uri !~ \"/socket\\\\.io.*\" | unwrap request_time | __error__=\"\" [$__range]) by (job)"
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Response time",
+                "description": "Median, p95 and p99 per interval.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 5,
+                  "w": 16,
+                  "h": 8
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "s",
+                    "min": 0,
+                    "custom": {
+                      "lineWidth": 2,
+                      "fillOpacity": 0
+                    }
+                  }
+                },
+                "options": {
+                  "legend": {
+                    "showLegend": true
+                  },
+                  "tooltip": {
+                    "mode": "multi"
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "legendFormat": "median",
+                    "expr": "quantile_over_time(0.5, {job=\"nginx_access\"} | json | method != \"\" | uri !~ \"/socket\\\\.io.*\" | unwrap request_time | __error__=\"\" [$__interval]) by (job)"
+                  },
+                  {
+                    "refId": "B",
+                    "legendFormat": "p95",
+                    "expr": "quantile_over_time(0.95, {job=\"nginx_access\"} | json | method != \"\" | uri !~ \"/socket\\\\.io.*\" | unwrap request_time | __error__=\"\" [$__interval]) by (job)"
+                  },
+                  {
+                    "refId": "C",
+                    "legendFormat": "p99",
+                    "expr": "quantile_over_time(0.99, {job=\"nginx_access\"} | json | method != \"\" | uri !~ \"/socket\\\\.io.*\" | unwrap request_time | __error__=\"\" [$__interval]) by (job)"
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Slow requests per hour",
+                "gridPos": {
+                  "x": 16,
+                  "y": 5,
+                  "w": 8,
+                  "h": 8
+                },
+                "interval": "1h",
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "min": 0,
+                    "custom": {
+                      "drawStyle": "bars",
+                      "fillOpacity": 60
+                    }
+                  }
+                },
+                "options": {
+                  "legend": {
+                    "showLegend": false
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "legendFormat": "slow requests",
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | method != \"\" | uri !~ \"/socket\\\\.io.*\" | request_time > 0.5 [1h]))"
+                  }
+                ]
+              },
+              {
+                "type": "table",
+                "title": "Slowest endpoints",
+                "description": "Average time per path in the selected range. Paths with ids count separately.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 13,
+                  "w": 10,
+                  "h": 10
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "s",
+                    "decimals": 3
+                  },
+                  "overrides": [
+                    {
+                      "matcher": {
+                        "id": "byName",
+                        "options": "Average"
+                      },
+                      "properties": [
+                        {
+                          "id": "custom.cellOptions",
+                          "value": {
+                            "type": "gauge",
+                            "mode": "basic",
+                            "valueDisplayMode": "text"
+                          }
+                        },
+                        {
+                          "id": "color",
+                          "value": {
+                            "mode": "fixed",
+                            "fixedColor": "orange"
+                          }
+                        },
+                        {
+                          "id": "custom.width",
+                          "value": 220
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "options": {
+                  "showHeader": true,
+                  "cellHeight": "sm",
+                  "sortBy": [
+                    {
+                      "displayName": "Average",
+                      "desc": true
+                    }
+                  ]
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "topk(10, avg_over_time({job=\"nginx_access\"} | json | method != \"\" | uri !~ \"/socket\\\\.io.*\" | unwrap request_time | __error__=\"\" [$__range]) by (uri))"
+                  }
+                ],
+                "transformations": [
+                  {
+                    "id": "labelsToFields",
+                    "options": {
+                      "mode": "columns"
+                    }
+                  },
+                  {
+                    "id": "merge",
+                    "options": {}
+                  },
+                  {
+                    "id": "organize",
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {
+                        "uri": "Path",
+                        "Value": "Average",
+                        "Value #A": "Average"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "logs",
+                "title": "Requests over 0.5 s",
+                "description": "Newest first: duration, status, method and path. Status 499: the visitor gave up; 504: the server behind nginx didn't answer in time.",
+                "gridPos": {
+                  "x": 10,
+                  "y": 13,
+                  "w": 14,
+                  "h": 10
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "options": {
+                  "showTime": true,
+                  "wrapLogMessage": false,
+                  "sortOrder": "Descending",
+                  "enableLogDetails": true
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "{job=\"nginx_access\"} | json | method != \"\" | uri !~ \"/socket\\\\.io.*\" | request_time > 0.5 | line_format \"{{.request_time}}s  {{.status}}  {{.method}} {{.uri}}\""
+                  }
+                ]
+              }
+            ],
+            "time": {
+              "from": "now-24h",
               "to": "now"
             },
             "refresh": "5m"
