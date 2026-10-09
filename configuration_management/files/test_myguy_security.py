@@ -443,6 +443,50 @@ class SignInTest(TempState):
         self.assertNotIn("jane@example.com", msg)
 
 
+class BannedUserTest(TempState):
+    """A ban that may have locked a real person out is the one ban worth a message."""
+
+    def setUp(self):
+        super().setUp()
+        # 198.51.100.9 signed in during the last 8 days; 203.0.113.7 never did
+        self.src.vectors.append(("198.51.100.9", [({}, 3)]))
+
+    def ban(self, ts, jail, ip, action="Ban"):
+        self.src.add("fail2ban", ts, f"2026-10-17 06:00:00,1 fail2ban.actions [1]: NOTICE  [{jail}] {action} {ip}", jail=jail)
+
+    def check(self, now=NOW, state=None):
+        state = {} if state is None else state
+        ms.check(self.src, self.settings, state, now, self.send)
+        return state
+
+    def test_tripwire_ban_of_a_signed_in_ip(self):
+        self.src.add("nginx_access", NOW - 2 * MIN, json.dumps(
+            {"remote_addr": "198.51.100.9", "method": "GET", "uri": "/wp-login.php", "status": 404}, separators=(",", ":")))
+        self.ban(NOW - MIN, "tripwire", "198.51.100.9")
+        self.check()
+        self.assertEqual(len(self.sent), 1)
+        msg = self.sent[0]
+        self.assertIn("Ban may have hit a real user", msg)
+        self.assertIn("<code>198.51.100.9</code> · banned by tripwire", msg)
+        self.assertIn("after <code>GET /wp-login.php 404</code>", msg)
+        self.assertIn("sudo fail2ban-client set tripwire unbanip 198.51.100.9", msg)
+
+    def test_other_bans_stay_quiet(self):
+        self.ban(NOW - MIN, "tripwire", "203.0.113.7")            # nobody signed in from it
+        self.ban(NOW - MIN, "sshd", "198.51.100.9")               # SSH, not the site
+        self.ban(NOW - MIN, "manual", "198.51.100.9")             # you did it
+        self.ban(NOW - MIN, "nginx-4xx", "198.51.100.9", "Restore Ban")  # fail2ban restarted
+        self.check()
+        self.assertEqual(self.sent, [])
+
+    def test_one_message_per_ban(self):
+        self.ban(NOW - MIN, "nginx-modsecurity", "198.51.100.9")
+        state = self.check()
+        state["bans_since"] = NOW - 5 * MIN   # overlapping window
+        self.check(NOW + 1, state)
+        self.assertEqual(len(self.sent), 1)
+
+
 class SettingsTest(unittest.TestCase):
     def test_environment_wins_over_the_file(self):
         os.environ["LOKI_URL"] = "http://loki.test:3100"

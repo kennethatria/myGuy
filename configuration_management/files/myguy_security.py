@@ -5,7 +5,8 @@ Runs on the monitoring server (installed by monitoring.yml as
 /usr/local/bin/myguy-security) against its Loki and Prometheus:
 
   myguy-security check            every 5 minutes: attacks that need a
-                                  decision and unexpected SSH logins go to
+                                  decision, unexpected SSH logins and bans
+                                  that may have hit a real user go to
                                   Telegram; logs "check ok" (the heartbeat
                                   Grafana watches)
   myguy-security summary          08:00 Amsterdam time: the daily summary,
@@ -562,8 +563,52 @@ def ssh_messages(src, settings_, state, now):
             + "\n\nNext: Defences dashboard (SSH logins, sudo)"]
 
 
+# --- check: bans that may have hit a real person --------------------------------
+
+# Jails that ban automatically for web traffic.  Not sshd (people don't SSH)
+# and not manual (you banned it yourself).
+AUTO_WEB_JAILS = {"nginx-4xx", "nginx-botsearch", "nginx-modsecurity", "nginx-auth-abuse", "tripwire"}
+
+
+def ban_messages(src, settings_, state, now):
+    """A new automatic ban of an IP someone signed in from in the last 8
+    days: probably shared (a mobile carrier IP, an office), so a real
+    person may now be locked out.  That's a decision: unban or not."""
+    since = state.get("bans_since", now - WINDOW)
+    seen = {k: t for k, t in state.get("bans_seen", {}).items() if now - t < HOUR}
+    alerts = []
+    for ts, _, line in src.lines('{job="fail2ban"} |= "] Ban "', since - 2 * MIN, now):
+        e = parse_fail2ban(ts, line)
+        key = f"{ts}:{line[-80:]}"
+        if not e or e["jail"] not in AUTO_WEB_JAILS or key in seen:
+            continue
+        seen[key] = ts
+        if not real_user(src, e["ip"], now):
+            continue
+        # What got it banned: its last requests before the ban
+        last = []
+        for _, _, l in src.lines('{job="nginx_access"} |= "\\"remote_addr\\":\\"%s\\""' % e["ip"], ts - WINDOW, ts + MIN):
+            try:
+                req = json.loads(l)
+            except ValueError:
+                continue
+            last.append(f"{req.get('method', '')} {req.get('uri', '')} {req.get('status', '')}")
+        print(f"alert: banned-user ip={e['ip']} jail={e['jail']}", flush=True)
+        alerts.append(
+            f"{place(settings_, e['ip'])} · banned by {esc(e['jail'])} at {local(ts)}"
+            + (f" · after {code(last[-1], 50)}" if last else "")
+            + "\nSomeone signed in from this IP in the last 8 days: it may be shared, so a real person may be locked out."
+            + f"\nNext: {code('investigate ' + e['ip'], 60)}. If it's a real user, unban: "
+            + code(f"ssh ops@{settings_['app_ssh_host']} 'sudo fail2ban-client set {e['jail']} unbanip {e['ip']}'", 140))
+    state["bans_since"], state["bans_seen"] = now, seen
+    if not alerts:
+        return []
+    return [f"⚠️ <b>Ban may have hit a real user</b> ({len(alerts)})\n\n" + "\n\n".join(alerts)]
+
+
 def check(src, settings_, state, now, send):
-    messages = attack_messages(src, settings_, state, now) + ssh_messages(src, settings_, state, now)
+    messages = (attack_messages(src, settings_, state, now) + ssh_messages(src, settings_, state, now)
+                + ban_messages(src, settings_, state, now))
     for message in messages:
         send(message)
     for log in ("alert_log", "ssh_alert_log"):

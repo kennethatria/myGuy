@@ -454,6 +454,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
     - `ops` on the app server from an IP not seen in 8 days (your first login after this is deployed counts)
     - anything on the monitoring server not coming through the app server
     - any other user
+  - Every 5 minutes, **Ban may have hit a real user**: an automatic web ban (tripwire, WAF, 4xx, bot paths, sign-in abuse) of an IP someone signed in from in the last 8 days, probably shared (a mobile carrier, an office). It names the jail, the request that triggered it and the exact unban command. Other bans never send a message; they're counted in the summaries.
   - At 08:00 Amsterdam time, the **daily summary** (last 24 h, compared with the day before):
     - health: uptime, certificate, disk, memory peak, server errors, deploys
     - defences: WAF detections, bans by jail, top 3 IPs (with country), attacker countries, requests refused from banned IPs, sign-in: codes sent to how many addresses from how many IPs, sign-ins, wrong codes, and the most-codes address (masked, when 5+)
@@ -520,6 +521,7 @@ What each security message means and what to do. Every message ends with its nex
 | **Unexpected SSH login** | A login the rules didn't expect (CI key outside a deploy, `ops` from a new IP, the monitoring server reached directly, another user). | If it was you, nothing (the IP is now known). If not: replace the key (`SSH_PRIVATE_KEY` or `OPS_SSH_PUBLIC_KEY`), run a full deploy so `users.yml` installs it, and check *Defences*: sudo by people. |
 | **Falco security alert** | A critical runtime event on the app server (rule, process, container). | *Defences*: Falco events, or `journalctl -u 'falco*'` on the app server. A shell in a container or an unexpected process writing to `/etc` needs a look. |
 | **Security checks stopped** | No heartbeat for 20 minutes, so attacks and logins aren't being reported. | On the monitoring server: `systemctl status myguy-security-check.timer` and `journalctl -u myguy-security-check`. |
+| **Ban may have hit a real user** | An automatic ban caught an IP someone signed in from recently, probably shared, so a real person may be locked out (for a week, if it was the tripwire). | `investigate <IP>`: if the requests around the ban look like normal use, unban with the command in the message. If a real request tripped the tripwire, remove that path from the `tripwire` filter (`security.yml`). |
 | *A real user says the site won't load* | Their IP may be banned (tripwire, WAF, 4xx), for example a shared mobile IP someone else used for scanning. Banned IPs get no answer at all. | Ask for their IP (or `investigate <their email>` for the IP they sign in from), then `investigate <IP>`: fail2ban shows which jail banned it and the requests show `444`. Unban below; if a tripwire path caught real use, remove that path from the `tripwire` filter (`security.yml`). |
 
 Bans take effect within a minute (nginx reloads when a ban list changes); a banned IP's requests show as `444` in *Investigate IP*. Unban: `ssh ops@<app IP> 'sudo fail2ban-client set <jail> unbanip <IP>'`.
