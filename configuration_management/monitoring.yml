@@ -38,7 +38,9 @@
           # one, so the HUP reload would reread stale config.
           - /etc/prometheus:/etc/prometheus:ro
       - name: grafana
-        memory: 256m
+        # Its alerting engine (rules every minute) needs more than 256 MB;
+        # at 256 MB it was killed in a loop.
+        memory: 384m
         image: docker.io/grafana/grafana:latest
         ports: ["3000:3000"]
         volumes:
