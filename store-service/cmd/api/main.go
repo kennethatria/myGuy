@@ -101,7 +101,7 @@ func main() {
 	// Setup routes
 
 	router := gin.Default()
-	router.Use(otelgin.Middleware("myguy-store-service"))
+	router.Use(otelgin.Middleware("myguy-store-service", otelgin.WithFilter(tracing.Traced)))
 	
 	// Serve static files for uploaded images
 	router.Static("/uploads", "./uploads")

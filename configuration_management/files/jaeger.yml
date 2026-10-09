@@ -1,6 +1,6 @@
 # Jaeger v2 all-in-one, used on the 1 GB monitoring server (monitoring.yml)
 # and locally (docker-compose.override.yml): OTLP/HTTP in, the
-# newest 10,000 traces kept in memory (lost on restart), UI and API on
+# newest 20,000 traces kept in memory (lost on restart), UI and API on
 # 16686 (open it through the SSH tunnel), own metrics on 8888 for Prometheus.
 service:
   extensions: [jaeger_storage, jaeger_query, healthcheckv2]
@@ -37,7 +37,7 @@ extensions:
     backends:
       memstore:
         memory:
-          max_traces: 10000
+          max_traces: 20000
 
 receivers:
   otlp:

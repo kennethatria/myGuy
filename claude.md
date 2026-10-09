@@ -59,7 +59,7 @@ Each service has a `.env.example` to copy. Constraints not visible from any sing
 - **`INTERNAL_API_KEY`** must match between store-service and chat-websocket-service — it's what lets store-service notify chat of new bookings (`POST /internal/booking-created`). Without it, booking requests never appear in Messages.
 - **`SMTP_*`** (backend) sends sign-in codes. If `SMTP_HOST` is unset the backend *logs* codes instead — fine locally, but in production nobody could log in.
 - **`DOMAIN`** (GitHub variable) is the app's domain (`akalimu.com`); `redirect_domains` in `configuration_management/group_vars/app.yml` (`myguy.work`) keep their certificates and 301 to it. `deploy.yml` writes nginx for the certificates that exist, requests missing ones, then writes it again, so a new `DOMAIN` never drops HTTPS.
-- **Traces go to Jaeger** (`configuration_management/files/jaeger.yml`, shared by production and the override): newest 10,000 in memory, UI on 16686, not in Grafana (Jaeger 2.x dropped the API Grafana's Jaeger datasource uses). `OTEL_TRACES_EXPORTER=none` turns export off; all four services honour it. Tempo was removed: it outgrew the 1 GB monitoring server.
+- **Traces go to Jaeger** (`configuration_management/files/jaeger.yml`, shared by production and the override): newest 20,000 in memory (~100 MB, limit 160 MB), UI on 16686, not in Grafana (Jaeger 2.x dropped the API Grafana's Jaeger datasource uses). `OTEL_TRACES_EXPORTER=none` turns export off; all four services honour it. Tempo was removed: it outgrew the 1 GB monitoring server.
 - **`IMAGE_TAG`** selects the app image tag in `docker-compose.yml` (default `latest`); the deploy sets it to the tag whose Cosign signature it verified.
 
 ## Deployment & Infrastructure

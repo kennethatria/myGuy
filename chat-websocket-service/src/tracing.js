@@ -10,7 +10,11 @@ const { ExpressInstrumentation } = require('@opentelemetry/instrumentation-expre
 const sdk = new NodeSDK({
   serviceName: 'myguy-chat-service',
   instrumentations: [
-    new HttpInstrumentation(),
+    // Health checks aren't worth a trace and would crowd out real requests
+    // in Jaeger's in-memory limit.
+    new HttpInstrumentation({
+      ignoreIncomingRequestHook: (req) => (req.url || '').split('?')[0] === '/health',
+    }),
     new ExpressInstrumentation(),
   ],
 });
