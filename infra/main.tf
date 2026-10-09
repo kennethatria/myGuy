@@ -151,6 +151,23 @@ resource "linode_firewall" "my_firewall" {
 resource "linode_firewall" "zipkin_firewall" {
   label = "${var.infra_name}-${var.environment}-monitoring-firewall"
 
+  # Jaeger: OTLP traces from the app server, and its UI for an SSH tunnel.
+  inbound {
+    label    = "allow-jaeger-otlp-from-vpc"
+    action   = "ACCEPT"
+    protocol = "TCP"
+    ports    = "4318"
+    ipv4     = ["10.0.0.0/24"]
+  }
+
+  inbound {
+    label    = "allow-jaeger-ui-from-vpc"
+    action   = "ACCEPT"
+    protocol = "TCP"
+    ports    = "16686"
+    ipv4     = ["10.0.0.0/24"]
+  }
+
   inbound {
     label    = "allow-prometheus-from-vpc"
     action   = "ACCEPT"

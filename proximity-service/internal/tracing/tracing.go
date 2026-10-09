@@ -11,14 +11,13 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 )
 
-// localTempo is where traces go when OTEL_EXPORTER_OTLP_ENDPOINT is unset:
-// a Tempo on this machine (docker-compose.override.yml).
-const localTempo = "http://localhost:4318/v1/traces"
+// localCollector is where traces go when OTEL_EXPORTER_OTLP_ENDPOINT is unset:
+// a Jaeger on this machine (docker-compose.override.yml).
+const localCollector = "http://localhost:4318/v1/traces"
 
 // InitTracer sets up the OpenTelemetry tracer provider with an OTLP/HTTP
-// exporter that sends to OTEL_EXPORTER_OTLP_ENDPOINT (Tempo).  With
-// OTEL_TRACES_EXPORTER=none (production, which has no Tempo) nothing is
-// exported and spans stay no-ops.
+// exporter that sends to OTEL_EXPORTER_OTLP_ENDPOINT (Jaeger).  With
+// OTEL_TRACES_EXPORTER=none nothing is exported and spans stay no-ops.
 // Returns a shutdown function that should be deferred in main.
 func InitTracer(ctx context.Context, serviceName string) (func(context.Context) error, error) {
 	if os.Getenv("OTEL_TRACES_EXPORTER") == "none" {
@@ -27,7 +26,7 @@ func InitTracer(ctx context.Context, serviceName string) (func(context.Context) 
 
 	var opts []otlptracehttp.Option
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" && os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") == "" {
-		opts = append(opts, otlptracehttp.WithEndpointURL(localTempo))
+		opts = append(opts, otlptracehttp.WithEndpointURL(localCollector))
 	}
 	exporter, err := otlptracehttp.New(ctx, opts...)
 	if err != nil {
