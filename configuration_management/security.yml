@@ -365,9 +365,10 @@
           ignoreregex =
 
     # Bans that work for web traffic.  Each jail keeps its banned IPs in
-    # /etc/nginx/banned/<jail>.conf; nginx reads the folder as a geo map
-    # (nginx-common.conf.j2) and refuses those IPs.  nginx-bans-sync.timer
-    # reloads nginx when a list changed, so bursts share one reload.
+    # /etc/nginx/banned/<jail>.conf; nginx-bans-sync.timer merges them into
+    # /etc/nginx/banned-ips.conf, which nginx reads as a geo map
+    # (nginx-common.conf.j2), and reloads nginx when a list changed, so
+    # bursts share one reload.
     - name: Write the nginx-ban fail2ban action
       ansible.builtin.copy:
         dest: /etc/fail2ban/action.d/nginx-ban.conf
@@ -400,23 +401,44 @@
         state: directory
         mode: "0755"
 
+    # What nginx includes (nginx-common.conf.j2); nginx-bans-sync rewrites it
+    - name: Create the merged nginx ban list
+      ansible.builtin.copy:
+        dest: /etc/nginx/banned-ips.conf
+        content: ""
+        force: no
+        mode: "0644"
+
     - name: Install the nginx ban sync
       ansible.builtin.copy:
         dest: /usr/local/bin/nginx-bans-sync
         mode: "0755"
         content: |
           #!/bin/sh
-          # Reloads nginx if fail2ban changed a ban list (/etc/nginx/banned)
-          # since the last reload.  Run every minute: bans arriving together
-          # share one reload, and a change made during a reload is caught
-          # the next minute (its time is after the stamp).
+          # If fail2ban changed a jail's ban list (/etc/nginx/banned) since
+          # the last run, merges them into /etc/nginx/banned-ips.conf (what
+          # nginx includes) and reloads nginx.  Run every minute: bans
+          # arriving together share one reload, and a change made meanwhile
+          # is caught the next minute (its time is after the stamp).  If
+          # nginx rejects the new list, the previous one is put back, so the
+          # config on disk always passes nginx -t.
           set -eu
+          dir=/etc/nginx/banned
+          list=/etc/nginx/banned-ips.conf
           stamp=/run/nginx-bans.stamp
-          if [ -e "$stamp" ] && [ -z "$(find /etc/nginx/banned -newer "$stamp" -print -quit)" ]; then
+          if [ -e "$stamp" ] && [ -z "$(find "$dir" -newer "$stamp" -print -quit)" ]; then
             exit 0
           fi
           touch "$stamp.next"
-          nginx -t -q
+          find "$dir" -name '*.conf' -type f -exec cat {} + | sort -u > "$list.new"
+          cp "$list" "$list.old" 2>/dev/null || : > "$list.old"
+          mv "$list.new" "$list"
+          if ! nginx -t -q; then
+            mv "$list.old" "$list"
+            echo "nginx rejected the ban list; kept the previous one" >&2
+            exit 1
+          fi
+          rm -f "$list.old"
           systemctl reload nginx
           mv "$stamp.next" "$stamp"
 

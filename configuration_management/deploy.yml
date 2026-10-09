@@ -298,13 +298,15 @@
       ansible.builtin.set_fact:
         geoip_country: "{{ geoip_db.stat.exists and geoip_module.matched > 0 }}"
 
-    # nginx reads fail2ban's ban lists from here (security.yml creates it
-    # too; a deploy can come first on a new server)
-    - name: Create the nginx ban folder
-      ansible.builtin.file:
-        path: /etc/nginx/banned
-        state: directory
-        mode: "0755"
+    # nginx includes the merged ban list (security.yml's nginx-bans-sync
+    # fills it); it must exist for nginx -t, so create it empty if missing
+    # (a deploy can come before security.yml on a new server).
+    - name: Create the nginx ban list
+      ansible.builtin.copy:
+        dest: /etc/nginx/banned-ips.conf
+        content: ""
+        force: no
+        mode: "0644"
       become: yes
 
     - name: Write nginx shared config (real client IP, JSON access log)
