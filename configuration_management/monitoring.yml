@@ -692,7 +692,7 @@
                         "datasourceUid": "prometheus",
                         "model": {
                           "refId": "A",
-                          "expr": "sum by (rule_name, priority) (increase(falcosecurity_falco_rules_matches_total[10m]))",
+                          "expr": "sum by (rule_name, priority) (increase(falcosecurity_falco_rules_matches_total{priority=~\"0|1|2|3\"}[10m]))",
                           "instant": true
                         }
                       },
@@ -719,10 +719,58 @@
                     "noDataState": "OK",
                     "execErrState": "Error",
                     "annotations": {
-                      "summary": "Falco rule '{{ $labels.rule_name }}' ({{ $labels.priority }}) fired on the app server."
+                      "summary": "Falco rule '{{ $labels.rule_name }}' (priority {{ $labels.priority }}: emergency to error) fired on the app server."
                     },
                     "labels": {
                       "severity": "critical"
+                    }
+                  },
+                  {
+                    "uid": "falco-warning",
+                    "title": "Falco warning",
+                    "condition": "C",
+                    "for": "0m",
+                    "data": [
+                      {
+                        "refId": "A",
+                        "relativeTimeRange": {
+                          "from": 600,
+                          "to": 0
+                        },
+                        "datasourceUid": "prometheus",
+                        "model": {
+                          "refId": "A",
+                          "expr": "sum by (rule_name, priority) (increase(falcosecurity_falco_rules_matches_total{priority=\"4\"}[10m]))",
+                          "instant": true
+                        }
+                      },
+                      {
+                        "refId": "C",
+                        "datasourceUid": "__expr__",
+                        "model": {
+                          "refId": "C",
+                          "type": "threshold",
+                          "expression": "A",
+                          "conditions": [
+                            {
+                              "evaluator": {
+                                "type": "gt",
+                                "params": [
+                                  0
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "noDataState": "OK",
+                    "execErrState": "Error",
+                    "annotations": {
+                      "summary": "Falco warning '{{ $labels.rule_name }}' fired on the app server (check Falco's log on the app server: journalctl -u falco-modern-bpf or falco)."
+                    },
+                    "labels": {
+                      "severity": "warning"
                     }
                   }
                 ]
