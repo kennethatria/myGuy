@@ -62,17 +62,6 @@
           - /etc/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
           - loki-data:/loki
         exec: -config.file=/etc/loki/loki-config.yml
-      # Umami web analytics.  Umami joins umami-db's network namespace so it
-      # reaches Postgres on localhost without depending on Podman DNS; the
-      # Umami port (3000 in-container) is therefore published on umami-db.
-      # Only the tracker endpoints are public, via nginx on the app instance.
-      - name: umami-db
-        memory: 128m
-        image: docker.io/library/postgres:16-alpine
-        ports: ["3001:3000"]
-        volumes:
-          - umami-db-data:/var/lib/postgresql/data
-        env_file: /etc/umami/umami.env
       # Probes the public site from outside the app server (HTTPS answer,
       # certificate expiry) for the Site down / certificate alerts.
       - name: blackbox
@@ -82,13 +71,6 @@
         volumes:
           - /etc/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
         exec: --config.file=/etc/blackbox/blackbox.yml
-      - name: umami
-        memory: 300m
-        image: ghcr.io/umami-software/umami:postgresql-latest
-        network: container:umami-db
-        env_file: /etc/umami/umami.env
-        # Restart with the database: a new umami-db means a new namespace.
-        part_of: umami-db
 
   handlers:
     - name: restart grafana
@@ -1414,7 +1396,7 @@
               {
                 "type": "stat",
                 "title": "Memory used now",
-                "description": "Share of RAM in use (page cache the kernel can free is not counted). This server has only 1 GB for Grafana, Prometheus, Loki, Tempo and Umami; near 100% the kernel starts killing containers.",
+                "description": "Share of RAM in use (page cache the kernel can free is not counted). This server has only 1 GB for Grafana, Prometheus, Loki and Tempo; near 100% the kernel starts killing containers.",
                 "gridPos": {
                   "x": 8,
                   "y": 0,
@@ -1465,7 +1447,7 @@
               {
                 "type": "stat",
                 "title": "Disk used now",
-                "description": "Share of the monitoring server's disk in use: 8 days of logs (Loki), 14 days of traces (Tempo), metrics and Umami. Act before 85%: a full disk stops log and trace collection.",
+                "description": "Share of the monitoring server's disk in use: 8 days of logs (Loki), 14 days of traces (Tempo) and metrics. Act before 85%: a full disk stops log and trace collection.",
                 "gridPos": {
                   "x": 16,
                   "y": 0,
@@ -2533,7 +2515,7 @@
               {
                 "type": "stat",
                 "title": "Visitors",
-                "description": "IP addresses whose browser actually ran the app (downloaded its code or used it). Not people: a phone on mobile data changes IP often and counts again each time. Umami counts real visitors.",
+                "description": "IP addresses whose browser actually ran the app (downloaded its code or used it). Not people: a phone on mobile data changes IP often and counts again each time.",
                 "gridPos": {
                   "x": 0,
                   "y": 0,
@@ -3149,44 +3131,6 @@
       notify: restart loki
       become: yes
 
-    # --- Umami secrets ---
-    # Generated once on the server and never overwritten (force: false), so
-    # the Postgres password stays in sync with the initialised database.
-
-    - name: Create Umami config directory
-      ansible.builtin.file:
-        path: /etc/umami
-        state: directory
-        owner: myguy
-        group: myguy
-        mode: "0700"
-      become: yes
-
-    - name: Generate candidate Umami secrets
-      # Evaluated once here; a lookup in the copy task's vars would be
-      # re-evaluated on every reference and produce mismatched passwords.
-      ansible.builtin.set_fact:
-        umami_db_password: "{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_letters', 'digits'], length=32) }}"
-        umami_app_secret: "{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_letters', 'digits'], length=48) }}"
-      no_log: true
-
-    - name: Write Umami environment file (first run only)
-      ansible.builtin.copy:
-        dest: /etc/umami/umami.env
-        owner: myguy
-        group: myguy
-        mode: "0600"
-        force: false
-        content: |
-          POSTGRES_USER=umami
-          POSTGRES_DB=umami
-          POSTGRES_PASSWORD={{ umami_db_password }}
-          DATABASE_URL=postgresql://umami:{{ umami_db_password }}@localhost:5432/umami
-          APP_SECRET={{ umami_app_secret }}
-          DISABLE_TELEMETRY=1
-      no_log: true
-      become: yes
-
     # --- Containers (Podman Quadlet) ---
     # Runs after all config files above are written.  Each container is a
     # rootless systemd user service generated from a .container file; Quadlet
@@ -3273,11 +3217,15 @@
       register: quadlet_units
       become: yes
 
-    - name: Stop Zipkin (replaced by Tempo)
+    # Retired: Zipkin (replaced by Tempo) and Umami (removed to free memory
+    # on this 1 GB server).  Umami's database volume (umami-db-data) is kept;
+    # `podman volume rm umami-db-data` as myguy deletes it for good.
+    - name: Stop retired containers
       ansible.builtin.systemd:
-        name: zipkin.service
+        name: "{{ item }}.service"
         state: stopped
         scope: user
+      loop: [zipkin, umami, umami-db]
       failed_when: false
       become: yes
       become_user: myguy
@@ -3285,9 +3233,16 @@
         XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
         DBUS_SESSION_BUS_ADDRESS: "unix:path={{ xdg_runtime_dir }}/bus"
 
-    - name: Remove the Zipkin Quadlet unit
+    - name: Remove retired Quadlet units
       ansible.builtin.file:
-        path: "{{ quadlet_dir }}/zipkin.container"
+        path: "{{ quadlet_dir }}/{{ item }}.container"
+        state: absent
+      loop: [zipkin, umami, umami-db]
+      become: yes
+
+    - name: Remove Umami's settings
+      ansible.builtin.file:
+        path: /etc/umami
         state: absent
       become: yes
 

@@ -194,14 +194,6 @@ resource "linode_firewall" "zipkin_firewall" {
   }
 
   inbound {
-    label    = "allow-umami-from-vpc"
-    action   = "ACCEPT"
-    protocol = "TCP"
-    ports    = "3001"
-    ipv4     = ["10.0.0.0/24"]
-  }
-
-  inbound {
     label    = "allow-ssh-from-vpc"
     action   = "ACCEPT"
     protocol = "TCP"

@@ -7,7 +7,6 @@ import { useContextStore } from './context';
 import config from '@/config';
 import type { Message, ConversationSummary, BookingAction } from './messages';
 import { stateFromMessage, endsConversation } from '@/utils/conversationStatus';
-import { trackEvent } from '@/utils/analytics';
 
 interface TypingUser {
   userId: number;
@@ -917,8 +916,6 @@ export const useChatStore = defineStore('chat', () => {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `Failed to ${action} booking`);
       }
-
-      trackEvent('booking-step', { action });
 
       // The WebSocket will receive the updated message automatically
       console.log(`✓ Booking action ${action} completed successfully`);
