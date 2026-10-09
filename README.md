@@ -341,10 +341,11 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
 - Grafana sends **alerts to Telegram** (provisioned in `monitoring.yml`, folder *Alerts*): site down (a blackbox prober on the monitoring server loads `https://<DOMAIN>/` and `/health`, and checks that old domains answer 301), certificate expiring within 14 days, more than 10 server errors in 10 minutes, disk above 85 %, memory above 90 %, a scrape target down (Loki and Jaeger included), and any Falco rule match. Repeats every 12 hours while firing.
 - Grafana is pre-provisioned with these dashboards:
   - **App Instance Metrics** / **Monitoring Instance Metrics** — CPU, memory and disk use now (green / amber / red) and over time, one dashboard per server; App Instance Metrics also shows memory and CPU per container
-  - **Accounts** — accounts, new sign-ups, people active in gigs and the marketplace, and gigs, listings, requests and bookings by status. Counts only: the backend (`:9464`) and store-service (`:9465`) publish them from their databases (`internal/metrics`), on ports nginx doesn't route and the firewall opens to the monitoring server alone; no names or emails leave the app server
+  - **Application Activities** — accounts, new sign-ups, people active in gigs and the marketplace, and gigs, listings, requests and bookings by status. Counts only: the backend (`:9464`) and store-service (`:9465`) publish them from their databases (`internal/metrics`), on ports nginx doesn't route and the firewall opens to the monitoring server alone; no names or emails leave the app server
   - **Falco Security Alerts** — whether Falco is reachable, alert count, and alerts by rule
   - **WAF — ModSecurity Detections** — ModSecurity rule triggers visualised from Loki
-  - **Visitors** — IPs whose browser ran the app, signed-in IPs, app requests, server errors, pages opened directly, referrers and response codes, from the nginx access log (IP-based: one phone on mobile data counts many times)
+  - **Application Visitors** — IPs whose browser ran the app, signed-in IPs, app requests, server errors, pages opened directly, referrers and response codes, from the nginx access log (IP-based: one phone on mobile data counts many times)
+  - **Slow Requests** — requests over 0.5 s (count, newest list, slowest endpoints) and median / p95 / p99 response time, from nginx's `request_time` in the access log (8 days); malformed connections and the chat socket are left out
   - **Service Logs** — every service's output in one place: lines and errors per service, and a searchable log view (8-day retention)
 
 Both Prometheus (`:9090`) and Grafana (`:3000`) are only reachable from within the VPC. To access them locally, SSH tunnel through the app instance as the `ops` user:
@@ -362,7 +363,7 @@ Then open `http://localhost:3000` for Grafana (sign in as `admin` with the `GRAF
 
 ### Visitor Analytics
 
-**Grafana → Visitors** counts client IPs whose browser ran the app (downloaded its code or called the API), plus app usage, from the nginx access log. Approximate: it counts IPs, not people (a phone on mobile data counts again with each new IP), and sees only full page loads, not in-app navigation. Every unknown path returns 404, and scanners posing as browsers are left out by requiring the app to actually run. Query strings are never logged. Umami (session-accurate visitors, events, heatmaps) was removed to free memory on the 1 GB monitoring server; its database volume `umami-db-data` is still there until deleted.
+**Grafana → Application Visitors** counts client IPs whose browser ran the app (downloaded its code or called the API), plus app usage, from the nginx access log. Approximate: it counts IPs, not people (a phone on mobile data counts again with each new IP), and sees only full page loads, not in-app navigation. Every unknown path returns 404, and scanners posing as browsers are left out by requiring the app to actually run. Query strings are never logged. Umami (session-accurate visitors, events, heatmaps) was removed to free memory on the 1 GB monitoring server; its database volume `umami-db-data` is still there until deleted.
 
 ---
 
