@@ -828,6 +828,198 @@
                     "labels": {
                       "severity": "warning"
                     }
+                  },
+                  {
+                    "uid": "attack-burst",
+                    "title": "Attack burst",
+                    "condition": "C",
+                    "for": "0m",
+                    "data": [
+                      {
+                        "refId": "A",
+                        "relativeTimeRange": {
+                          "from": 600,
+                          "to": 0
+                        },
+                        "datasourceUid": "loki",
+                        "model": {
+                          "refId": "A",
+                          "expr": "sum(count_over_time({job=\"modsecurity\"} |~ \"Inbound Anomaly Score Exceeded\" [10m]))",
+                          "queryType": "instant"
+                        }
+                      },
+                      {
+                        "refId": "C",
+                        "datasourceUid": "__expr__",
+                        "model": {
+                          "refId": "C",
+                          "type": "threshold",
+                          "expression": "A",
+                          "conditions": [
+                            {
+                              "evaluator": {
+                                "type": "gt",
+                                "params": [
+                                  50
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "noDataState": "OK",
+                    "execErrState": "OK",
+                    "annotations": {
+                      "summary": "{{ humanize $values.A.Value }} requests flagged by the WAF in 10 minutes (normal background: a few). Attacker IPs: WAF - ModSecurity Detections dashboard; fail2ban bans IPs after 3 hits ('sudo fail2ban-client status nginx-modsecurity'). Ban for 7 days: ssh ops@<app IP> 'sudo fail2ban-client set manual banip <IP>'"
+                    },
+                    "labels": {
+                      "severity": "warning"
+                    }
+                  },
+                  {
+                    "uid": "serious-attack",
+                    "title": "Serious attack attempt",
+                    "condition": "C",
+                    "for": "0m",
+                    "data": [
+                      {
+                        "refId": "A",
+                        "relativeTimeRange": {
+                          "from": 600,
+                          "to": 0
+                        },
+                        "datasourceUid": "loki",
+                        "model": {
+                          "refId": "A",
+                          "expr": "sum(count_over_time({job=\"modsecurity\"} |~ \"ModSecurity: Warning\" |~ \"\\\\[id \\\"9(31|32|33|34|41|42|44)[0-9]{3}\\\"\\\\]\" [10m]))",
+                          "queryType": "instant"
+                        }
+                      },
+                      {
+                        "refId": "C",
+                        "datasourceUid": "__expr__",
+                        "model": {
+                          "refId": "C",
+                          "type": "threshold",
+                          "expression": "A",
+                          "conditions": [
+                            {
+                              "evaluator": {
+                                "type": "gt",
+                                "params": [
+                                  20
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "noDataState": "OK",
+                    "execErrState": "OK",
+                    "annotations": {
+                      "summary": "{{ humanize $values.A.Value }} SQL injection / code execution / file inclusion / XSS / SSRF / Log4Shell rule matches in 10 minutes (OWASP A03, A06, A10). Details and IPs: WAF - ModSecurity Detections dashboard. Ban for 7 days: ssh ops@<app IP> 'sudo fail2ban-client set manual banip <IP>'"
+                    },
+                    "labels": {
+                      "severity": "warning"
+                    }
+                  },
+                  {
+                    "uid": "sign-in-abuse",
+                    "title": "Sign-in abuse from one IP",
+                    "condition": "C",
+                    "for": "0m",
+                    "data": [
+                      {
+                        "refId": "A",
+                        "relativeTimeRange": {
+                          "from": 600,
+                          "to": 0
+                        },
+                        "datasourceUid": "loki",
+                        "model": {
+                          "refId": "A",
+                          "expr": "sum by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | method=\"POST\" | uri =~ \"/api/v1/auth/.*\" [10m]))",
+                          "queryType": "instant"
+                        }
+                      },
+                      {
+                        "refId": "C",
+                        "datasourceUid": "__expr__",
+                        "model": {
+                          "refId": "C",
+                          "type": "threshold",
+                          "expression": "A",
+                          "conditions": [
+                            {
+                              "evaluator": {
+                                "type": "gt",
+                                "params": [
+                                  10
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "noDataState": "OK",
+                    "execErrState": "OK",
+                    "annotations": {
+                      "summary": "{{ $labels.remote_addr }} made {{ humanize $values.A.Value }} sign-in calls in 10 minutes (a real sign-in takes 2-3; normal peak 6). Code guessing or email bombing (OWASP A07). fail2ban bans it at 15 ('sudo fail2ban-client status nginx-auth-abuse'). Ban for 7 days: ssh ops@<app IP> 'sudo fail2ban-client set manual banip {{ $labels.remote_addr }}'"
+                    },
+                    "labels": {
+                      "severity": "warning"
+                    }
+                  },
+                  {
+                    "uid": "sign-in-surge",
+                    "title": "Sign-in code surge",
+                    "condition": "C",
+                    "for": "0m",
+                    "data": [
+                      {
+                        "refId": "A",
+                        "relativeTimeRange": {
+                          "from": 600,
+                          "to": 0
+                        },
+                        "datasourceUid": "loki",
+                        "model": {
+                          "refId": "A",
+                          "expr": "sum(count_over_time({job=\"nginx_access\"} | json | method=\"POST\" | uri=\"/api/v1/auth/request-code\" [10m]))",
+                          "queryType": "instant"
+                        }
+                      },
+                      {
+                        "refId": "C",
+                        "datasourceUid": "__expr__",
+                        "model": {
+                          "refId": "C",
+                          "type": "threshold",
+                          "expression": "A",
+                          "conditions": [
+                            {
+                              "evaluator": {
+                                "type": "gt",
+                                "params": [
+                                  30
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "noDataState": "OK",
+                    "execErrState": "OK",
+                    "annotations": {
+                      "summary": "{{ humanize $values.A.Value }} sign-in codes requested in 10 minutes across all clients (normal: ~2 a day). Possible email bombing from many IPs: it uses the Resend quota and the domain's sending reputation. Check the Application Visitors and Service Logs dashboards."
+                    },
+                    "labels": {
+                      "severity": "warning"
+                    }
                   }
                 ]
               }

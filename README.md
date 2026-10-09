@@ -242,7 +242,7 @@ Root SSH is disabled on every server. Two non-root accounts replace it.
 | User | Scope | Auth |
 | :--- | :--- | :--- |
 | `myguy` | Runs app containers (rootless Podman) and Ansible automation. Passwordless sudo, required by Ansible `become`. Protected by the CI/CD key, which lives only in the GitHub `dev` environment. | CI/CD SSH key |
-| `ops` | Troubleshooting only. Sudo scoped to: container observe/restart (`appctl`), read `.env` secrets, `fail2ban-client status` and unban. Nothing else. | Personal SSH key |
+| `ops` | Troubleshooting only. Sudo scoped to: container observe/restart (`appctl`), read `.env` secrets, `fail2ban-client status`, unban, and bans in the 7-day `manual` jail (`sudo fail2ban-client set manual banip <IP>`). Nothing else. | Personal SSH key |
 | `node_exporter` | Dedicated no-login system account. Runs only the metrics daemon. No sudo, no shell. | — |
 | `promtail` | Dedicated no-login system account. Member of `adm` group for log read access. No sudo, no shell. | — |
 
@@ -267,6 +267,10 @@ Four jails are active on the app instance:
 | `nginx-4xx` | nginx access log | 20 × 4xx in 5 min | 1 hour |
 | `nginx-botsearch` | nginx access log | 2 hits to scanner paths | 24 hours |
 | `nginx-modsecurity` | ModSecurity audit log | 3 WAF rule triggers | 24 hours |
+| `nginx-auth-abuse` | nginx JSON access log | 15 sign-in calls (`/api/v1/auth/`) in 10 min | 24 hours |
+| `manual` | — (never matches) | bans added by hand | 7 days |
+
+The nginx jails read log files, so they set `backend = auto`; the default `systemd` backend reads only the journal (before this they never banned anyone). Sign-in is also rate limited in nginx: 10 requests a minute per IP, bursts of 5, then 429.
 
 ### HTTP Security — Nginx + ModSecurity
 
@@ -338,7 +342,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
 
 **On the monitoring instance:**
 - Prometheus scrapes `node_exporter` (`:9100`) on both servers (the app's via VPC, its own via `host.containers.internal`) and Falco metrics (`:8765`) on the app instance every 15 seconds It keeps 15 days of history in the `prometheus-data` volume; of Loki's own metrics only `up` is kept. Each full run also removes images no container uses on the monitoring server (report: *Report image cleanup* in the *Configure monitoring instance* step).
-- Grafana sends **alerts to Telegram** (provisioned in `monitoring.yml`, folder *Alerts*): site down (a blackbox prober on the monitoring server loads `https://<DOMAIN>/` and `/health`, and checks that old domains answer 301), certificate expiring within 14 days, more than 10 server errors in 10 minutes, disk above 85 %, memory above 90 %, a scrape target down (Loki and Jaeger included), and any Falco rule match. Repeats every 12 hours while firing.
+- Grafana sends **alerts to Telegram** (provisioned in `monitoring.yml`, folder *Alerts*): site down (a blackbox prober on the monitoring server loads `https://<DOMAIN>/` and `/health`, and checks that old domains answer 301), certificate expiring within 14 days, more than 10 server errors in 10 minutes, attack bursts (over 50 WAF-flagged requests in 10 minutes), serious attack attempts (over 20 SQL injection / code execution / file inclusion / XSS / SSRF / Log4Shell matches in 10 minutes), sign-in abuse from one IP (over 10 sign-in calls in 10 minutes, IP and ban command in the message), a sign-in code surge (over 30 code requests in 10 minutes), disk above 85 %, memory above 90 %, a scrape target down (Loki and Jaeger included), and any Falco rule match. Repeats every 12 hours while firing.
 - Grafana is pre-provisioned with these dashboards:
   - **App Instance Metrics** / **Monitoring Instance Metrics** — CPU, memory and disk use now (green / amber / red) and over time, one dashboard per server; App Instance Metrics also shows memory and CPU per container
   - **Application Activities** — accounts, new sign-ups, people active in gigs and the marketplace, and gigs, listings, requests and bookings by status. Counts only: the backend (`:9464`) and store-service (`:9465`) publish them from their databases (`internal/metrics`), on ports nginx doesn't route and the firewall opens to the monitoring server alone; no names or emails leave the app server

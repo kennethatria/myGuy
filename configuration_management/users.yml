@@ -195,7 +195,8 @@
 
     - name: Write sudoers file for ops (app instance)
       # ops can only run appctl (container ops), read the .env secrets file,
-      # and run scoped fail2ban-client commands for observability and unban.
+      # and run scoped fail2ban-client commands: status, unban, and bans in
+      # the 7-day "manual" jail.
       # No broad sudo — shells are implicitly denied by omission.
       ansible.builtin.copy:
         dest: /etc/sudoers.d/ops
@@ -208,7 +209,8 @@
           Cmnd_Alias FAIL2BAN_OBS  = /usr/bin/fail2ban-client status, \
                                      /usr/bin/fail2ban-client status *
           Cmnd_Alias FAIL2BAN_CTRL = /usr/bin/fail2ban-client set * unbanip *
-          ops ALL=(root) NOPASSWD: APP_CMDS, APP_SECRETS, FAIL2BAN_OBS, FAIL2BAN_CTRL
+          Cmnd_Alias FAIL2BAN_BAN  = /usr/bin/fail2ban-client set manual banip *
+          ops ALL=(root) NOPASSWD: APP_CMDS, APP_SECRETS, FAIL2BAN_OBS, FAIL2BAN_CTRL, FAIL2BAN_BAN
 
     # --- SSH hardening (must be last — restarts sshd) ---
     # Restarting sshd does not kill the current connection; it only affects
