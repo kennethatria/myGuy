@@ -46,6 +46,8 @@
     mode: "0644"
     content: |
       server:
+        # Its status page: this server only, never every address
+        http_listen_address: 127.0.0.1
         http_listen_port: 9080
         grpc_listen_port: 0
 

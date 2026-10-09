@@ -211,7 +211,7 @@
       ansible.builtin.shell:
         cmd: >-
           ss -Hltn | awk '{print $4}'
-          | grep -E '^(0\.0\.0\.0|\*|\[::\]):(5433|6379|808[0-3]|8765|9100|946[45]|9882)$' || true
+          | grep -E '^(0\.0\.0\.0|\*|\[::\]):(5433|6379|808[0-3]|8765|9080|9100|946[45]|9882)$' || true
       register: open_listeners
       changed_when: false
       failed_when: open_listeners.stdout | length > 0
@@ -278,6 +278,25 @@
     - name: Note the names that have a certificate
       ansible.builtin.set_fact:
         tls_domains: "{{ cert_stats.results | selectattr('stat.exists') | map(attribute='item') | list }}"
+
+    # Visitor countries need nginx's geoip2 module and the country database
+    # (site.yml).  Without both, nginx -t would fail, so the access log just
+    # goes without a country.
+    - name: Check for the country database
+      ansible.builtin.stat:
+        path: /var/lib/geoip/country.mmdb
+      register: geoip_db
+
+    - name: Check for nginx's geoip2 module
+      ansible.builtin.find:
+        paths: /etc/nginx/modules-enabled
+        patterns: "*geoip2*"
+        file_type: any
+      register: geoip_module
+
+    - name: Note whether nginx can look up countries
+      ansible.builtin.set_fact:
+        geoip_country: "{{ geoip_db.stat.exists and geoip_module.matched > 0 }}"
 
     - name: Write nginx shared config (real client IP, JSON access log)
       ansible.builtin.template:

@@ -232,7 +232,7 @@ Security is implemented in layers — network, access control, HTTP, runtime, an
 | :--- | :--- |
 | **Linode Firewall** | Inbound allowlist: 80, 443, 22 only. Default policy: DROP. All other ports silently dropped at the network edge. |
 | **Private VPC** | The monitoring instance (`10.0.0.3`) has a public IP, but its firewall drops everything that doesn't come from the VPC (`10.0.0.0/24`), so it's unreachable from the internet. |
-| **Listening addresses** | A second layer in case a firewall rule is wrong: no service listens on every address. App ports nginx proxies to (8080–8082), Postgres (5433) and Redis (6379) listen on `127.0.0.1`; what the monitoring server scrapes (9464, 9465, 9100, 8765, 9882) listens on the app's VPC address; every monitoring port listens on `10.0.0.3`. Deploys fail if a port listens on every address. `net.ipv4.ip_nonlocal_bind=1` lets services bind the VPC address at boot before it's up. |
+| **Listening addresses** | A second layer in case a firewall rule is wrong: no service listens on every address. App ports nginx proxies to (8080–8082), Postgres (5433) and Redis (6379) listen on `127.0.0.1`; what the monitoring server scrapes (9464, 9465, 9100, 8765, 9882) listens on the app's VPC address; every monitoring port listens on `10.0.0.3`; Promtail's status page (9080) on `127.0.0.1` on both. Deploys fail if a port listens on every address. `net.ipv4.ip_nonlocal_bind=1` lets services bind the VPC address at boot before it's up. |
 | **NodeBalancer** | Single public entry point (`akalimu.com` and the old `myguy.work` DNS point here). Port 80 in HTTP mode (adds `X-Forwarded-For`, health-checks `/healthcheck/`); port 443 is TLS passthrough with **PROXY protocol v2**. Connection throttle of 20 connections/sec. |
 | **Real client IPs** | nginx trusts only the NodeBalancer range (`192.168.255.0/24`) and restores each visitor's real IP from the PROXY header or `X-Forwarded-For`, so fail2ban, the WAF, logs, and the backends see the actual client — never the NodeBalancer. |
 
@@ -379,10 +379,10 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
     - any other user
   - At 08:00 Amsterdam time, the **daily summary** (last 24 h, compared with the day before):
     - health: uptime, certificate, disk, memory peak, server errors, deploys
-    - defences: WAF detections, bans by jail, top 3 IPs, sign-in rate limits
+    - defences: WAF detections, bans by jail, top 3 IPs (with country), attacker countries, sign-in rate limits
     - access: SSH logins, failed attempts, sudo by `ops`
     - Falco
-    - visitors and sign-ups
+    - visitors (and their countries) and sign-ups
     - *Needs attention* last, which is "nothing ✅" on a quiet day. If the summary doesn't come, monitoring is broken.
   - On Saturdays, also the **weekly summary** (last 7 days against the 7 before, added up from the saved daily ones), leaving the weekend to look into anything. It adds repeat offenders, the busiest day and attack types.
   - The daily numbers are kept for 15 days in `/var/lib/myguy-security/history.jsonl` (IPs included, about as long as Loki keeps them).
@@ -392,11 +392,11 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
   - **Application Activities** — accounts, new sign-ups, people active in gigs and the marketplace, and gigs, listings, requests and bookings by status. Counts only: the backend (`:9464`) and store-service (`:9465`) publish them from their databases (`internal/metrics`), on ports nginx doesn't route and the firewall opens to the monitoring server alone; no names or emails leave the app server
   - **Falco Security Alerts** — whether Falco is reachable, alert count, and alerts by rule
   - **WAF — ModSecurity Detections** — ModSecurity rule triggers visualised from Loki
-  - **Application Visitors** — IPs whose browser ran the app, signed-in IPs, app requests, server errors, pages opened directly, referrers and response codes, from the nginx access log (IP-based: one phone on mobile data counts many times)
+  - **Application Visitors** — IPs whose browser ran the app, signed-in IPs, app requests, server errors, pages opened directly, referrers and response codes, and visitors and app requests by country, from the nginx access log (IP-based: one phone on mobile data counts many times)
   - **Slow Requests** — requests over 0.5 s (count, newest list, slowest endpoints) and median / p95 / p99 response time, from nginx's `request_time` in the access log (8 days); malformed connections and the chat socket are left out
   - **Service Logs** — every service's output in one place: lines and errors per service, and a searchable log view (8-day retention)
-  - **Investigate IP** — type an IP to see everything it did: requests by status, top paths, user agents, WAF entries in full, sign-in calls, fail2ban bans and SSH lines. Also shown: *Serious, answered* (attack requests the app didn't refuse) and *Signed in from this IP*, which warns that a ban may lock out real users.
-  - **Defences** — what the defences did: bans by jail, banned IPs, WAF and sign-in rate limits, the security checks' alerts, SSH logins on both servers, sudo by people, Falco events and deploys
+  - **Investigate IP** — type an IP to see everything it did: requests by status, top paths, user agents, WAF entries in full, sign-in calls, fail2ban bans and SSH lines, and its country. Also shown: *Serious, answered* (attack requests the app didn't refuse) and *Signed in from this IP*, which warns that a ban may lock out real users.
+  - **Defences** — what the defences did: bans by jail, banned IPs, WAF and sign-in rate limits, the security checks' alerts, SSH logins on both servers, sudo by people, Falco events, deploys, and failed requests by country
 
 Both Prometheus (`:9090`) and Grafana (`:3000`) are only reachable from within the VPC. To access them locally, SSH tunnel through the app instance as the `ops` user:
 
@@ -413,7 +413,14 @@ Then open `http://localhost:3000` for Grafana (sign in as `admin` with the `GRAF
 
 ### Visitor Analytics
 
-**Grafana → Application Visitors** counts client IPs whose browser ran the app (downloaded its code or called the API), plus app usage, from the nginx access log. Approximate: it counts IPs, not people (a phone on mobile data counts again with each new IP), and sees only full page loads, not in-app navigation. Every unknown path returns 404, and scanners posing as browsers are left out by requiring the app to actually run. Query strings are never logged. Umami (session-accurate visitors, events, heatmaps) was removed to free memory on the 1 GB monitoring server; its database volume `umami-db-data` is still there until deleted.
+**Grafana → Application Visitors** counts client IPs whose browser ran the app (downloaded its code or called the API), plus app usage, from the nginx access log. Approximate: it counts IPs, not people (a phone on mobile data counts again with each new IP), and sees only full page loads, not in-app navigation. Every unknown path returns 404, and scanners posing as browsers are left out by requiring the app to actually run. Query strings are never logged.
+
+**Countries.** nginx's `geoip2` module (`libnginx-mod-http-geoip2`) looks up each request's IP and writes its country to the access log (`"country":"NL"`; `--` for private and unknown addresses). It uses the real visitor IP, restored from the NodeBalancer's headers. The data is DB-IP's free IP to Country Lite database ([db-ip.com](https://db-ip.com), CC BY 4.0, no account). `tasks/geoip.yml` puts it at `/var/lib/geoip/country.mmdb` on both servers, and the `update-geoip.timer` refreshes it monthly (nginx rereads it without a reload). Lookups happen on the servers: no IP is sent anywhere.
+- On the app server, the deploy adds the lookup only when both the module and the database are there, so a missing download can't fail `nginx -t`. `country` goes last in the log line because fail2ban's sign-in filter matches the fields before it.
+- On the monitoring server, the security checks look up any IP (SSH scanners included) with `python3-maxminddb`.
+- Country is about 98% accurate; VPN and cloud IPs show where the server is. IP geolocation by [DB-IP](https://db-ip.com).
+
+Umami (session-accurate visitors, events, heatmaps) was removed to free memory on the 1 GB monitoring server; its database volume `umami-db-data` is still there until deleted.
 
 ---
 

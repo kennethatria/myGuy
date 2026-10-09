@@ -1,0 +1,98 @@
+# IP-to-country database at /var/lib/geoip/country.mmdb: DB-IP's free
+# "IP to Country Lite" (https://db-ip.com, CC BY 4.0; no account or key).
+# Lookups happen on the server: no IP is sent anywhere.  Included by
+# site.yml (nginx logs each request's country) and monitoring.yml (the
+# security checks look up attackers).  Needs become.
+
+- name: Create the country database directory
+  ansible.builtin.file:
+    path: /var/lib/geoip
+    state: directory
+    mode: "0755"
+
+- name: Install the country database updater
+  ansible.builtin.copy:
+    dest: /usr/local/bin/update-geoip
+    mode: "0755"
+    content: |
+      #!/bin/sh
+      # Downloads DB-IP's IP to Country Lite (CC BY 4.0, https://db-ip.com)
+      # to /var/lib/geoip/country.mmdb: this month's, or last month's before
+      # this month's is published.  Readers reopen it on their own (nginx:
+      # auto_reload), so nothing restarts.  A failed download keeps the old file.
+      set -eu
+      dir=/var/lib/geoip
+      this=$(date +%Y-%m)
+      last=$(date -d "$(date +%Y-%m-01) -1 month" +%Y-%m)
+      for month in "$this" "$last"; do
+        url="https://download.db-ip.com/free/dbip-country-lite-$month.mmdb.gz"
+        if curl -fsSL --max-time 300 "$url" -o "$dir/download.gz" \
+            && gunzip -c "$dir/download.gz" > "$dir/download.mmdb" \
+            && grep -aq "MaxMind.com" "$dir/download.mmdb"; then
+          chmod 0644 "$dir/download.mmdb"
+          mv "$dir/download.mmdb" "$dir/country.mmdb"
+          rm -f "$dir/download.gz"
+          echo "country database: $month"
+          exit 0
+        fi
+      done
+      rm -f "$dir/download.gz" "$dir/download.mmdb"
+      echo "country database: download failed, keeping the current one" >&2
+      exit 1
+
+- name: Write the country database update units
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item.key }}"
+    mode: "0644"
+    content: "{{ item.value }}"
+  loop: "{{ geoip_units | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  vars:
+    geoip_units:
+      update-geoip.service: |
+        [Unit]
+        Description=Update the IP-to-country database (DB-IP Lite)
+        Wants=network-online.target
+        After=network-online.target
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/bin/update-geoip
+        ProtectSystem=strict
+        ReadWritePaths=/var/lib/geoip
+        ProtectHome=yes
+        PrivateTmp=yes
+        NoNewPrivileges=yes
+      # DB-IP publishes on the 1st; a few days later is safe
+      update-geoip.timer: |
+        [Unit]
+        Description=Update the IP-to-country database monthly
+
+        [Timer]
+        OnCalendar=*-*-04 04:00:00
+        RandomizedDelaySec=1h
+        Persistent=true
+
+        [Install]
+        WantedBy=timers.target
+
+- name: Start the monthly country database update
+  ansible.builtin.systemd:
+    name: update-geoip.timer
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+# Best effort: without it, nginx just logs no country (deploy.yml checks)
+- name: Download the country database if there's none yet
+  ansible.builtin.command:
+    cmd: /usr/local/bin/update-geoip
+    creates: /var/lib/geoip/country.mmdb
+  register: geoip_download
+  failed_when: false
+
+- name: Report a failed country database download
+  ansible.builtin.debug:
+    msg: "Couldn't download the country database ({{ geoip_download.stderr | default('') }}); countries stay empty until update-geoip.timer succeeds."
+  when: geoip_download.rc is defined and geoip_download.rc != 0

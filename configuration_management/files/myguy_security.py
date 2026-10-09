@@ -89,6 +89,7 @@ def settings():
         "app_ssh_host": values.get("APP_SSH_HOST", "<app IP>"),
         "app_vpc_ip": values.get("APP_VPC_IP", "10.0.0.2"),
         "state_dir": values.get("STATE_DIRECTORY", "/var/lib/myguy-security"),
+        "geoip_db": values.get("GEOIP_DB", "/var/lib/geoip/country.mmdb"),
         "telegram_token": values.get("TELEGRAM_BOT_TOKEN", ""),
         "telegram_chat": values.get("TELEGRAM_CHAT_ID", ""),
     }
@@ -135,6 +136,40 @@ class Sources:
     def prom_vector(self, expr, at):
         data = self._get(self.prometheus + "/api/v1/query", {"query": expr, "time": at / 1e9})
         return [(r["metric"], float(r["value"][1])) for r in data["result"]]
+
+
+def country_lookup(path):
+    """An IP's country code from the DB-IP database (tasks/geoip.yml), looked
+    up on this server; "" when the database or its reader isn't there."""
+    try:
+        import maxminddb  # python3-maxminddb (monitoring.yml)
+        reader = maxminddb.open_database(path)
+    except Exception:  # noqa: BLE001 - no country is fine
+        return lambda ip: ""
+
+    def country(ip):
+        try:
+            record = reader.get(ip) or {}
+        except ValueError:
+            return ""
+        return (record.get("country") or {}).get("iso_code", "")
+    return country
+
+
+def no_country(ip):
+    return ""
+
+
+def place(settings_, ip):
+    """The IP as untrusted code, with its country when known."""
+    country = settings_.get("country", no_country)(ip)
+    return code(ip, 45) + (f" ({esc(country)})" if country else "")
+
+
+def top_countries(counter, n=3):
+    # Most first; ties alphabetically, so the order is the same every day
+    ranked = sorted(counter.items(), key=lambda x: (-x[1], x[0]))[:n]
+    return ", ".join(f"{esc(c)} {k}" for c, k in ranked)
 
 
 def total(vector):
@@ -363,7 +398,7 @@ def describe_ip(src, settings_, ip, a, ban, now):
     banned = (f"banned by {esc(', '.join(sorted(jails)))} since {local(max(jails.values()))}"
               if jails else "not banned")
     before = (ban["bans"] - len([t for t in ban["ban_times"] if t >= (a["first"] or now)])) if ban else 0
-    parts = [f"{code(ip, 45)} · {a['hits']} flagged"
+    parts = [f"{place(settings_, ip)} · {a['hits']} flagged"
              + (f", {a['sign_in']} sign-in calls" if a["sign_in"] else "") + " in 10 min"]
     if a["kinds"]:
         parts[0] += " · " + esc(", ".join(k for k, _ in a["kinds"].most_common(2)))
@@ -434,7 +469,7 @@ def attack_messages(src, settings_, state, now):
             hits = None
         banned = (f"banned ({esc(', '.join(sorted(ban['jails'])))})" if ban and ban["jails"]
                   else "not banned")
-        ended.append(f"{code(ip, 45)} · {local(known['first'])}–{local(known['last'])} · "
+        ended.append(f"{place(settings_, ip)} · {local(known['first'])}–{local(known['last'])} · "
                      f"{number(hits)} flagged in total · {banned}")
         del alerts[ip]
     if ended:
@@ -482,7 +517,7 @@ def ssh_messages(src, settings_, state, now):
             why = f"no one but ops and myguy should log in (user {user})"
         if why:
             print(f"alert: ssh host={host} user={user} ip={ip}", flush=True)
-            alerts.append(f"{esc(host)} · user {code(user, 30)} · from {code(ip, 45)} · "
+            alerts.append(f"{esc(host)} · user {code(user, 30)} · from {place(settings_, ip)} · "
                           f"{local(ts)}\nwhy: {esc(why)}")
     state["ssh_since"], state["ssh_seen"], state["ops_ips"] = now, seen, known_ips
     if not alerts:
@@ -503,10 +538,18 @@ def check(src, settings_, state, now, send):
 
 # --- Summaries --------------------------------------------------------------
 
-def collect(src, state, start, end):
+VISITOR_QUERY = ('count by (remote_addr) (count_over_time({job="nginx_access"} | json '
+                 '| uri =~ "/assets/.*[.]js|/(api/v1|store/api/v1|chat/api/v1)/.*" | status < 400 '
+                 '| user_agent !~ "(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*" '
+                 '[%s]))')
+
+
+def collect(src, settings_, state, start, end):
     """The day's numbers.  A section that can't be read is named in
     "unreadable" (and in Needs attention) rather than stopping the rest."""
     s = {"unreadable": []}
+    country = settings_.get("country", no_country)
+    attackers = set()  # IPs flagged by the WAF, banned, or failing SSH
 
     def section(name, fn):
         try:
@@ -559,7 +602,9 @@ def collect(src, state, start, end):
         for d in entries:
             by_ip[d["ip"]].update(d["kinds"][:1])
         top = sorted(by_ip.items(), key=lambda x: -sum(x[1].values()))[:3]
-        s["top_ips"] = [[ip, sum(c.values()), c.most_common(1)[0][0], ip in banned] for ip, c in top]
+        s["top_ips"] = [[ip, sum(c.values()), c.most_common(1)[0][0], ip in banned, country(ip)]
+                        for ip, c in top]
+        attackers.update(by_ip, banned)
         auth = f'{{job="nginx_access"}} | json | uri=~"/api/v1/auth/.*"'
         s["code_requests"] = int(total(src.loki_vector(
             f'sum(count_over_time({auth} | method="POST" | uri="/api/v1/auth/request-code" [{span}]))', end)))
@@ -579,6 +624,7 @@ def collect(src, state, start, end):
         s["ssh_logins"] = dict(logins)
         s["ssh_failed"] = failed
         s["ssh_failed_ips"] = len(failed_ips)
+        attackers.update(failed_ips)
         s["unknown_logins"] = len([t for t in state.get("ssh_alert_log", []) if start <= t < end])
         commands = Counter()
         for _, labels, line in src.lines('{job="sudo"} |= "COMMAND="', start, end):
@@ -596,11 +642,9 @@ def collect(src, state, start, end):
         s["falco_rules"] = [r for r, _ in warnings.most_common(2)]
 
     def visitors():
-        query = ('count(count by (remote_addr) (count_over_time({job="nginx_access"} | json '
-                 '| uri =~ "/assets/.*[.]js|/(api/v1|store/api/v1|chat/api/v1)/.*" | status < 400 '
-                 '| user_agent !~ "(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*" '
-                 f'[{span}])))')
-        s["visitors"] = int(total(src.loki_vector(query, end)))
+        ips = [m.get("remote_addr", "") for m, _ in src.loki_vector(VISITOR_QUERY % span, end)]
+        s["visitors"] = len(ips)
+        s["visitor_countries"] = dict(Counter(c for c in map(country, ips) if c))
         # Growth over the window (works while Prometheus has less history)
         accounts = src.prom_vector(f"max(myguy_accounts) - min(min_over_time(myguy_accounts[{span}]))", end)
         s["signups"] = max(0, int(total(accounts))) if accounts else None
@@ -609,6 +653,8 @@ def collect(src, state, start, end):
                      ("defences", defences), ("access", access), ("Falco", runtime),
                      ("visitors", visitors)):
         section(name, fn)
+    # Distinct IPs per country (an IP counts once however much it did)
+    s["attacker_countries"] = dict(Counter(c for c in map(country, attackers) if c))
     s["attack_alerts"] = len([t for t in state.get("alert_log", []) if start <= t < end])
     return s
 
@@ -676,8 +722,9 @@ def format_summary(title, s, prev, days=1):
                     if bans else "") + f" · unbans: {number(s.get('unbans'))}")
     if s.get("top_ips"):
         lines.append("  Top IPs:")
-        for ip, hits, kind, banned in s["top_ips"]:
-            lines.append(f"    {code(ip, 45)} {hits} hits · {esc(kind)} · {'banned' if banned else 'not banned'}")
+        for ip, hits, kind, banned, *rest in s["top_ips"]:
+            where = f" ({esc(rest[0])})" if rest and rest[0] else ""
+            lines.append(f"    {code(ip, 45)}{where} {hits} hits · {esc(kind)} · {'banned' if banned else 'not banned'}")
     if days > 1:
         if s.get("repeat_offenders"):
             lines.append(f"  Repeat offenders: {len(s['repeat_offenders'])} IPs banned on 2+ days")
@@ -688,6 +735,8 @@ def format_summary(title, s, prev, days=1):
             all_ = sum(kinds.values())
             lines.append("  Attack types: " + ", ".join(
                 f"{esc(k)} {round(100 * n / all_)}%" for k, n in sorted(kinds.items(), key=lambda x: -x[1])[:3]))
+    if s.get("attacker_countries"):
+        lines.append("  Attacker countries (IPs): " + top_countries(Counter(s["attacker_countries"]), 5))
     lines.append(f"  Sign-in: {number(s.get('code_requests'))} code requests"
                  f"{compare(s.get('code_requests'), p.get('code_requests'))} · {number(s.get('auth_429'))} rate-limited (429)")
 
@@ -698,7 +747,7 @@ def format_summary(title, s, prev, days=1):
     lines.append(f"  Failed SSH attempts: {number(s.get('ssh_failed'))}{compare(s.get('ssh_failed'), p.get('ssh_failed'))}"
                  + (f" from {s['ssh_failed_ips']} IPs" if s.get("ssh_failed_ips") else ""))
     lines.append(f"  sudo by ops: {number(s.get('ops_sudo'))}"
-                 + (" (" + ", ".join(code(c, 40) for c in s.get("ops_commands") or []) + ")"
+                 + (" (" + ", ".join(code(c, 60) for c in s.get("ops_commands") or []) + ")"
                     if s.get("ops_commands") else ""))
 
     lines += ["", "<b>Runtime (Falco)</b>"]
@@ -710,6 +759,8 @@ def format_summary(title, s, prev, days=1):
     lines += ["", "<b>Visitors</b>"]
     lines.append(f"  ~{number(s.get('visitors'))} real visitors{compare(s.get('visitors'), p.get('visitors'))}"
                  f" · sign-ups {number(s.get('signups'))}{compare(s.get('signups'), p.get('signups'))}")
+    if s.get("visitor_countries"):
+        lines.append("  From: " + top_countries(Counter(s["visitor_countries"]), 5))
 
     items = attention(s)
     lines += ["", "<b>Needs attention:</b> " + ("nothing ✅" if not items else "")]
@@ -748,7 +799,7 @@ def find(records, kind, date):
 
 def daily(src, settings_, state, now, send, persist=True):
     today = dt.datetime.fromtimestamp(now / 1e9, TZ).date()
-    stats = collect(src, state, now - DAY, now)
+    stats = collect(src, settings_, state, now - DAY, now)
     records = [r for r in load_history(settings_) if not (r["kind"] == "daily" and r["date"] == today.isoformat())]
     prev = find(records, "daily", today - dt.timedelta(days=1))
     send(format_summary(f"MyGuy daily summary: {today:%a %d %b} (last 24 h)", stats, prev))
@@ -795,14 +846,18 @@ def weekly(src, settings_, state, now, send, persist=True):
                 w["memory_peak"][h] = max(v, w["memory_peak"].get(h, 0))
     top = Counter()
     for _, d in have:
-        for ip, hits, kind, banned in d.get("top_ips") or []:
+        for ip, hits, kind, banned, *rest in d.get("top_ips") or []:
             top[(ip, kind)] += hits
-    w["top_ips"] = [[ip, hits, kind, ip in banned_days] for (ip, kind), hits in top.most_common(3)]
+    country = settings_.get("country", no_country)
+    w["top_ips"] = [[ip, hits, kind, ip in banned_days, country(ip)] for (ip, kind), hits in top.most_common(3)]
+    w["attacker_countries"] = Counter()
+    for _, d in have:
+        w["attacker_countries"].update(d.get("attacker_countries") or {})
+    w["attacker_countries"] = dict(w["attacker_countries"])
     try:
-        query = ('count(count by (remote_addr) (count_over_time({job="nginx_access"} | json '
-                 '| uri =~ "/assets/.*[.]js|/(api/v1|store/api/v1|chat/api/v1)/.*" | status < 400 '
-                 '| user_agent !~ "(?i).*(bot|crawl|spider|slurp|curl|wget|python|go-http|monitor|uptime|headless).*" [7d])))')
-        w["visitors"] = int(total(src.loki_vector(query, now)))
+        ips = [m.get("remote_addr", "") for m, _ in src.loki_vector(VISITOR_QUERY % "7d", now)]
+        w["visitors"] = len(ips)
+        w["visitor_countries"] = dict(Counter(c for c in map(country, ips) if c))
     except Exception:  # noqa: BLE001
         w["unreadable"].append("visitors")
     w["bans"], w["kinds"], w["ssh_logins"] = dict(w["bans"]), dict(w["kinds"]), dict(w["ssh_logins"])
@@ -821,7 +876,8 @@ def weekly(src, settings_, state, now, send, persist=True):
 def investigate(src, settings_, ip, hours, now, out=print):
     """Everything one IP did, as plain text for a terminal."""
     start = now - hours * HOUR
-    out(f"Investigate {ip} (last {hours} h, times Europe/Amsterdam)")
+    country = settings_.get("country", no_country)(ip)
+    out(f"Investigate {ip}" + (f" ({country})" if country else "") + f" (last {hours} h, times Europe/Amsterdam)")
     out("")
     requests = []
     for ts, _, line in src.lines('{job="nginx_access"} |= "\\"remote_addr\\":\\"%s\\""' % ip, start, now):
@@ -926,6 +982,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     settings_ = settings()
+    settings_["country"] = country_lookup(settings_["geoip_db"])
     src = Sources(settings_["loki"], settings_["prometheus"])
     now = int(dt.datetime.now(dt.timezone.utc).timestamp()) * 10**9
 
