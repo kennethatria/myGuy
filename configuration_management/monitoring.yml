@@ -1,4 +1,4 @@
-# monitoring.yml - Install Tempo, Prometheus, Grafana, and Loki on the monitoring instance
+# monitoring.yml - Install Prometheus, Grafana, Loki and the blackbox prober on the monitoring instance
 #
 # Runs as myguy (inventory ansible_user).  System tasks (apt, file writes under
 # /etc/) carry explicit become: yes.  Podman containers run rootlessly as myguy
@@ -16,18 +16,6 @@
     # that outgrows it is killed and restarted (Restart=always) instead of
     # pushing the whole server into swap, where everything stalls.
     monitoring_containers:
-      # Traces: the services send OTLP/HTTP to 4318; Grafana reads 3200.
-      # Runs as container root (still the unprivileged myguy on the host)
-      # because the image's user can't write a fresh named volume.
-      - name: tempo
-        memory: 256m
-        image: docker.io/grafana/tempo:2.6.1
-        ports: ["4318:4318", "3200:3200"]
-        user: "0"
-        volumes:
-          - /etc/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
-          - tempo-data:/var/tempo
-        exec: -config.file=/etc/tempo/tempo.yml
       - name: prometheus
         memory: 256m
         image: docker.io/prom/prometheus:latest
@@ -95,15 +83,6 @@
       changed_when: false
       failed_when: false   # first run: the container starts later in the play
 
-    - name: restart tempo
-      ansible.builtin.command:
-        cmd: podman restart tempo
-      environment:
-        XDG_RUNTIME_DIR: "{{ xdg_runtime_dir }}"
-      changed_when: false
-
-  pre_tasks:
-    # Grafana would otherwise start with admin / admin
     - name: Require the Grafana admin password
       ansible.builtin.assert:
         that: grafana_admin_password | default('') | length >= 12
@@ -251,39 +230,6 @@
                   labels:
                     service: store-service
 
-            # Tempo's own counters: spans received shows tracing works.
-            # The public site, probed through blackbox (role: what users see).
-            - job_name: site
-              metrics_path: /probe
-              params:
-                module: [https_ok]
-              static_configs:
-                - targets:
-                    - https://{{ domain }}/
-                    - https://{{ domain }}/health
-              relabel_configs: &blackbox_relabel
-                - source_labels: [__address__]
-                  target_label: __param_target
-                - source_labels: [__param_target]
-                  target_label: instance
-                - target_label: __address__
-                  replacement: host.containers.internal:9115
-
-            # Old domains: answer with a redirect, over a valid certificate.
-            - job_name: redirects
-              metrics_path: /probe
-              params:
-                module: [https_redirect]
-              static_configs:
-                # Prefix and suffix, no regex backreference: in task content
-                # Ansible kept the backslash, and the target became literal.
-                - targets: {{ (hostvars[groups['app'][0]].redirect_domains | default([])) | map('regex_replace', '^', 'https://') | map('regex_replace', '$', '/') | list | to_json }}
-              relabel_configs: *blackbox_relabel
-
-            - job_name: tempo
-              static_configs:
-                - targets: ['host.containers.internal:3200']
-
             # Memory and CPU per app container (observability.yml).
             - job_name: podman
               static_configs:
@@ -361,24 +307,6 @@
               isDefault: false
       notify: restart grafana
       become: yes
-
-    - name: Write Grafana Tempo datasource
-      ansible.builtin.copy:
-        dest: /etc/grafana/provisioning/datasources/tempo.yml
-        mode: "0644"
-        content: |
-          apiVersion: 1
-          datasources:
-            - name: Tempo
-              type: tempo
-              uid: tempo
-              access: proxy
-              url: http://host.containers.internal:3200
-              isDefault: false
-      notify: restart grafana
-      become: yes
-
-    # --- Alerts (sent to Telegram) ---
 
     - name: Create Grafana alerting provisioning directory
       ansible.builtin.file:
@@ -1396,7 +1324,7 @@
               {
                 "type": "stat",
                 "title": "Memory used now",
-                "description": "Share of RAM in use (page cache the kernel can free is not counted). This server has only 1 GB for Grafana, Prometheus, Loki and Tempo; near 100% the kernel starts killing containers.",
+                "description": "Share of RAM in use (page cache the kernel can free is not counted). This server has only 1 GB for Grafana, Prometheus and Loki; near 100% the kernel starts killing containers.",
                 "gridPos": {
                   "x": 8,
                   "y": 0,
@@ -1447,7 +1375,7 @@
               {
                 "type": "stat",
                 "title": "Disk used now",
-                "description": "Share of the monitoring server's disk in use: 8 days of logs (Loki), 14 days of traces (Tempo) and metrics. Act before 85%: a full disk stops log and trace collection.",
+                "description": "Share of the monitoring server's disk in use: 8 days of logs (Loki) and metrics. Act before 85%: a full disk stops log and trace collection.",
                 "gridPos": {
                   "x": 16,
                   "y": 0,
@@ -2181,210 +2109,6 @@
           }
       become: yes
 
-    - name: Write Traces dashboard
-      # Tempo search (TraceQL) tables; a trace ID opens the trace view.
-      ansible.builtin.copy:
-        dest: /etc/grafana/dashboards/traces.json
-        mode: "0644"
-        content: !unsafe |
-          {
-            "title": "Traces",
-            "uid": "traces",
-            "schemaVersion": 36,
-            "panels": [
-              {
-                "type": "stat",
-                "title": "Tempo running",
-                "description": "Whether Prometheus can reach Tempo. If this is Down, empty trace lists mean nothing.",
-                "gridPos": {
-                  "x": 0,
-                  "y": 0,
-                  "w": 8,
-                  "h": 5
-                },
-                "datasource": {
-                  "type": "prometheus"
-                },
-                "fieldConfig": {
-                  "defaults": {
-                    "mappings": [
-                      {
-                        "type": "value",
-                        "options": {
-                          "0": {
-                            "text": "Down",
-                            "color": "red"
-                          },
-                          "1": {
-                            "text": "Running",
-                            "color": "green"
-                          }
-                        }
-                      }
-                    ],
-                    "thresholds": {
-                      "mode": "absolute",
-                      "steps": [
-                        {
-                          "color": "red",
-                          "value": null
-                        },
-                        {
-                          "color": "green",
-                          "value": 1
-                        }
-                      ]
-                    }
-                  }
-                },
-                "options": {
-                  "colorMode": "background",
-                  "graphMode": "none",
-                  "reduceOptions": {
-                    "calcs": [
-                      "lastNotNull"
-                    ]
-                  }
-                },
-                "targets": [
-                  {
-                    "refId": "A",
-                    "expr": "max(up{job=\"tempo\"}) or vector(0)",
-                    "instant": true
-                  }
-                ]
-              },
-              {
-                "type": "stat",
-                "title": "Spans received (last hour)",
-                "description": "Steps of requests the services sent to Tempo in the last hour. 0 while people use the site means tracing is broken.",
-                "gridPos": {
-                  "x": 8,
-                  "y": 0,
-                  "w": 16,
-                  "h": 5
-                },
-                "datasource": {
-                  "type": "prometheus"
-                },
-                "fieldConfig": {
-                  "defaults": {
-                    "decimals": 0,
-                    "color": {
-                      "mode": "fixed",
-                      "fixedColor": "text"
-                    }
-                  }
-                },
-                "options": {
-                  "colorMode": "value",
-                  "graphMode": "area",
-                  "reduceOptions": {
-                    "calcs": [
-                      "lastNotNull"
-                    ]
-                  }
-                },
-                "targets": [
-                  {
-                    "refId": "A",
-                    "expr": "sum(increase(tempo_distributor_spans_received_total[1h])) or vector(0)"
-                  }
-                ]
-              },
-              {
-                "type": "table",
-                "title": "Failed requests",
-                "description": "Requests that ended in an error, newest first. Click a trace ID to see every step and where it failed.",
-                "gridPos": {
-                  "x": 0,
-                  "y": 5,
-                  "w": 24,
-                  "h": 9
-                },
-                "datasource": {
-                  "type": "tempo",
-                  "uid": "tempo"
-                },
-                "targets": [
-                  {
-                    "refId": "A",
-                    "datasource": {
-                      "type": "tempo",
-                      "uid": "tempo"
-                    },
-                    "queryType": "traceql",
-                    "query": "{ status = error }",
-                    "limit": 20,
-                    "tableType": "traces"
-                  }
-                ]
-              },
-              {
-                "type": "table",
-                "title": "Slow requests (over 500 ms)",
-                "description": "Requests that took longer than half a second. Click a trace ID to see which step was slow.",
-                "gridPos": {
-                  "x": 0,
-                  "y": 14,
-                  "w": 24,
-                  "h": 9
-                },
-                "datasource": {
-                  "type": "tempo",
-                  "uid": "tempo"
-                },
-                "targets": [
-                  {
-                    "refId": "A",
-                    "datasource": {
-                      "type": "tempo",
-                      "uid": "tempo"
-                    },
-                    "queryType": "traceql",
-                    "query": "{ kind = server && duration > 500ms }",
-                    "limit": 20,
-                    "tableType": "traces"
-                  }
-                ]
-              },
-              {
-                "type": "table",
-                "title": "Recent requests",
-                "description": "The latest requests handled by the backend, store and chat services.",
-                "gridPos": {
-                  "x": 0,
-                  "y": 23,
-                  "w": 24,
-                  "h": 9
-                },
-                "datasource": {
-                  "type": "tempo",
-                  "uid": "tempo"
-                },
-                "targets": [
-                  {
-                    "refId": "A",
-                    "datasource": {
-                      "type": "tempo",
-                      "uid": "tempo"
-                    },
-                    "queryType": "traceql",
-                    "query": "{ kind = server }",
-                    "limit": 20,
-                    "tableType": "traces"
-                  }
-                ]
-              }
-            ],
-            "time": {
-              "from": "now-24h",
-              "to": "now"
-            },
-            "refresh": "1m"
-          }
-      become: yes
-
     - name: Write Falco security alerts dashboard
       # Falco (0.38+) exports rule hits as falcosecurity_falco_rules_matches_total,
       # a series that only appears once a rule first fires, so the stat falls
@@ -3026,53 +2750,6 @@
           }
       become: yes
 
-    # --- Tempo ---
-
-    - name: Create Tempo config directory
-      ansible.builtin.file:
-        path: /etc/tempo
-        state: directory
-        mode: "0755"
-      become: yes
-
-    - name: Write Tempo config
-      ansible.builtin.copy:
-        dest: /etc/tempo/tempo.yml
-        mode: "0644"
-        content: |
-          stream_over_http_enabled: true
-          server:
-            http_listen_port: 3200
-            log_level: warn
-
-          distributor:
-            receivers:
-              otlp:
-                protocols:
-                  http:
-                    endpoint: 0.0.0.0:4318
-
-          ingester:
-            max_block_duration: 5m
-
-          compactor:
-            compaction:
-              # Traces carry client IPs; keep them 14 days.
-              block_retention: 336h
-
-          storage:
-            trace:
-              backend: local
-              wal:
-                path: /var/tempo/wal
-              local:
-                path: /var/tempo/blocks
-
-          usage_report:
-            reporting_enabled: false
-      notify: restart tempo
-      become: yes
-
     # --- Loki ---
 
     - name: Create Loki config directory
@@ -3217,15 +2894,15 @@
       register: quadlet_units
       become: yes
 
-    # Retired: Zipkin (replaced by Tempo) and Umami (removed to free memory
-    # on this 1 GB server).  Umami's database volume (umami-db-data) is kept;
-    # `podman volume rm umami-db-data` as myguy deletes it for good.
+    # Retired: Zipkin (replaced by Tempo), then Umami and Tempo (removed to
+    # fit this 1 GB server).  Their volumes (umami-db-data, tempo-data) are
+    # kept; `podman volume rm <name>` as myguy deletes one for good.
     - name: Stop retired containers
       ansible.builtin.systemd:
         name: "{{ item }}.service"
         state: stopped
         scope: user
-      loop: [zipkin, umami, umami-db]
+      loop: [zipkin, umami, umami-db, tempo]
       failed_when: false
       become: yes
       become_user: myguy
@@ -3237,13 +2914,19 @@
       ansible.builtin.file:
         path: "{{ quadlet_dir }}/{{ item }}.container"
         state: absent
-      loop: [zipkin, umami, umami-db]
+      loop: [zipkin, umami, umami-db, tempo]
       become: yes
 
-    - name: Remove Umami's settings
+    - name: Remove retired settings, the Tempo datasource and the Traces dashboard
       ansible.builtin.file:
-        path: /etc/umami
+        path: "{{ item }}"
         state: absent
+      loop:
+        - /etc/umami
+        - /etc/tempo
+        - /etc/grafana/provisioning/datasources/tempo.yml
+        - /etc/grafana/dashboards/traces.json
+      notify: restart grafana
       become: yes
 
     - name: Start monitoring containers (restart those whose unit changed)

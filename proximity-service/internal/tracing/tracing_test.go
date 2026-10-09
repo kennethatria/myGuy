@@ -39,3 +39,32 @@ func TestInitTracerSendsSpansOverOTLP(t *testing.T) {
 		t.Fatal("no spans reached the collector")
 	}
 }
+
+func TestInitTracerExportsNothingWhenDisabled(t *testing.T) {
+	requests := make(chan struct{}, 1)
+	collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case requests <- struct{}{}:
+		default:
+		}
+	}))
+	defer collector.Close()
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", collector.URL)
+	t.Setenv("OTEL_TRACES_EXPORTER", "none")
+
+	shutdown, err := InitTracer(context.Background(), "test-service")
+	if err != nil {
+		t.Fatalf("InitTracer: %v", err)
+	}
+	_, span := otel.Tracer("test").Start(context.Background(), "ping")
+	span.End()
+	if err := shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+
+	select {
+	case <-requests:
+		t.Fatal("spans were exported although OTEL_TRACES_EXPORTER=none")
+	default:
+	}
+}

@@ -40,7 +40,6 @@ graph LR
         end
 
         subgraph Mon["📊 Monitoring Stack · 10.0.0.3"]
-            TEMPO["⏳ Tempo · :4318"]:::monitoring
             PROM["🔥 Prometheus · :9090"]:::monitoring
             LOKI["🪵 Loki · :3100"]:::monitoring
             GRAFANA["📈 Grafana · :3000"]:::monitoring
@@ -66,9 +65,6 @@ graph LR
     API -->|login codes| MAIL
 
     %% Telemetry & Logging
-    API -.->|OTel traces| TEMPO
-    STORE -.->|OTel traces| TEMPO
-    CHAT -.->|OTel traces| TEMPO
     
     PROM ---> GRAFANA
     LOKI ---> GRAFANA
@@ -161,7 +157,6 @@ graph TB
 
 | Tool | Port | Description |
 | :--- | :--- | :--- |
-| **Tempo** | `4318` | Distributed tracing — receives OTLP spans from all backend services (14-day retention); browse them in Grafana. |
 | **Prometheus** | `9090` | Metrics collection — scrapes CPU/memory and Falco security alerts. |
 | **Grafana** | `3000` | Visualization — dashboards for app metrics, security alerts, WAF detections, and visitors. |
 | **Loki** | `3100` | Log aggregation — receives ModSecurity audit logs, the nginx JSON access log and app container logs from Promtail (8-day retention). |
@@ -304,15 +299,17 @@ Falco monitors system calls on the app instance in real time, detecting suspicio
 
 ## Observability
 
-MyGuy has two layers of observability: **distributed tracing** via OpenTelemetry + Tempo, and **metrics + security alerting** via Prometheus + Grafana + Falco.
+MyGuy has **metrics, logs and alerting** in production via Prometheus + Loki + Grafana + Falco, and **distributed tracing** (OpenTelemetry + Tempo) in local development.
 
 In production, all monitoring tools run on a dedicated server that is only accessible within the private VPC — not exposed to the public internet.
 
-### Distributed Tracing (OpenTelemetry + Tempo)
+### Distributed Tracing (OpenTelemetry + Tempo, local only)
 
-Every HTTP request handled by the backend, store service, or chat service is automatically traced. Spans are sent over OTLP/HTTP to Tempo; open Grafana → **Explore** → **Tempo** to search them and see request flows, latency, and errors across services.
+Every HTTP request handled by the backend, store, chat and proximity services is traced with OpenTelemetry and sent over OTLP/HTTP to `OTEL_EXPORTER_OTLP_ENDPOINT` (default `http://localhost:4318`). Locally, `docker-compose.override.yml` runs Tempo and a Grafana: open http://localhost:3000 → **Explore** → **Tempo**.
 
-| Service | OTel Implementation | Service Name in Tempo |
+**Production has no Tempo**: it was removed because it kept outgrowing its memory on the 1 GB monitoring server. `deploy.yml` sets `OTEL_TRACES_EXPORTER=none`, so the services export nothing (the Go services and the Node SDK both honour it). To bring tracing back, run Tempo somewhere with room and drop that setting.
+
+| Service | OTel Implementation | Service Name |
 | :--- | :--- | :--- |
 | **Backend** | Go SDK + `otelgin` middleware | `myguy-backend` |
 | **Store Service** | Go SDK + `otelgin` middleware | `myguy-store-service` |
@@ -341,10 +338,9 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
 
 **On the monitoring instance:**
 - Prometheus scrapes `node_exporter` (`:9100`) on both servers (the app's via VPC, its own via `host.containers.internal`) and Falco metrics (`:8765`) on the app instance every 15 seconds
-- Grafana sends **alerts to Telegram** (provisioned in `monitoring.yml`, folder *Alerts*): site down (a blackbox prober on the monitoring server loads `https://<DOMAIN>/` and `/health`, and checks that old domains answer 301), certificate expiring within 14 days, more than 10 server errors in 10 minutes, disk above 85 %, memory above 90 %, a scrape target down (Loki and Tempo included), and any Falco rule match. Repeats every 12 hours while firing.
+- Grafana sends **alerts to Telegram** (provisioned in `monitoring.yml`, folder *Alerts*): site down (a blackbox prober on the monitoring server loads `https://<DOMAIN>/` and `/health`, and checks that old domains answer 301), certificate expiring within 14 days, more than 10 server errors in 10 minutes, disk above 85 %, memory above 90 %, a scrape target down (Loki included), and any Falco rule match. Repeats every 12 hours while firing.
 - Grafana is pre-provisioned with these dashboards:
   - **App Instance Metrics** / **Monitoring Instance Metrics** — CPU, memory and disk use now (green / amber / red) and over time, one dashboard per server; App Instance Metrics also shows memory and CPU per container
-  - **Traces** — whether Tempo is running and receiving spans, then failed, slow (over 500 ms) and recent requests; a trace ID opens the full request timeline
   - **Accounts** — accounts, new sign-ups, people active in gigs and the marketplace, and gigs, listings, requests and bookings by status. Counts only: the backend (`:9464`) and store-service (`:9465`) publish them from their databases (`internal/metrics`), on ports nginx doesn't route and the firewall opens to the monitoring server alone; no names or emails leave the app server
   - **Falco Security Alerts** — whether Falco is reachable, alert count, and alerts by rule
   - **WAF — ModSecurity Detections** — ModSecurity rule triggers visualised from Loki
@@ -357,12 +353,11 @@ Both Prometheus (`:9090`) and Grafana (`:3000`) are only reachable from within t
 ssh -N \
   -L 3000:10.0.0.3:3000 \
   -L 9090:10.0.0.3:9090 \
-  -L 3200:10.0.0.3:3200 \
   -L 3100:10.0.0.3:3100 \
   ops@<app_public_ip>
 ```
 
-Then open `http://localhost:3000` for Grafana (sign in as `admin` with the `GRAFANA_ADMIN_PASSWORD` secret; traces under **Explore → Tempo**), and `http://localhost:3200` for Tempo's API.
+Then open `http://localhost:3000` for Grafana (sign in as `admin` with the `GRAFANA_ADMIN_PASSWORD` secret).
 
 ### Visitor Analytics
 
@@ -416,7 +411,7 @@ Terraform variables (`authorized_keys`, `root_password`, `provider_token`) live 
 | Instance | VPC IP | Purpose |
 | :--- | :--- | :--- |
 | **App instance** | `10.0.0.2` | Runs the full application stack via rootless Podman Compose |
-| **Monitoring instance** | `10.0.0.3` | Runs Tempo, Prometheus, Grafana and Loki |
+| **Monitoring instance** | `10.0.0.3` | Runs Prometheus, Grafana, Loki and the blackbox prober |
 
 The monitoring instance has no public IP. It is only reachable via the app instance as a ProxyJump host.
 
@@ -476,7 +471,7 @@ ansible-playbook deploy.yml -i inventory.ini \
 
 > **Tip:** `-e "key=value"` splits on spaces. For values containing spaces (SSH public keys, `SMTP_FROM`), pass JSON instead: `-e '{"smtp_from": "MyGuy <no-reply@myguy.work>"}'` — the CI workflow builds its extra-vars this way with `jq`.
 
-`deploy.yml` automatically reads the Tempo endpoint from the monitoring play and writes it into the app's `.env` — no manual copy-paste needed.
+`deploy.yml` writes `OTEL_TRACES_EXPORTER=none` into the app's `.env`: production exports no traces.
 
 ---
 
