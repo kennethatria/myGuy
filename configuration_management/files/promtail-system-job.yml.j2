@@ -1,0 +1,52 @@
+# Security-relevant lines from the systemd journal, the same on both servers
+# (observability.yml, monitoring.yml): SSH logins, sudo, Falco events,
+# deploy markers and the security checks' heartbeat.  host tells the
+# servers apart.
+- job_name: system
+  journal:
+    path: /var/log/journal
+    max_age: 12h
+    labels:
+      host: {{ promtail_host }}
+  relabel_configs:
+    - source_labels: ['__journal_syslog_identifier']
+      regex: 'sshd|sshd-session'
+      replacement: ssh
+      target_label: job
+    - source_labels: ['__journal_syslog_identifier']
+      regex: 'sudo'
+      replacement: sudo
+      target_label: job
+    # Falco's alerts (JSON, security.yml), whichever driver unit runs it
+    - source_labels: ['__journal__systemd_unit']
+      regex: 'falco.*\.service'
+      replacement: falco
+      target_label: job
+    # Written by the deploy workflow when a deploy starts and ends
+    - source_labels: ['__journal_syslog_identifier']
+      regex: 'myguy-deploy'
+      replacement: deploy
+      target_label: job
+    # The security checks (myguy-security) log "check ok" every run
+    - source_labels: ['__journal_syslog_identifier']
+      regex: 'myguy-security'
+      replacement: security-checks
+      target_label: job
+    - source_labels: ['job']
+      regex: '.+'
+      action: keep
+  pipeline_stages:
+    - match:
+        selector: '{job="sudo"}'
+        stages:
+          # Session open/close lines; the command line says it all
+          - drop:
+              expression: 'pam_unix'
+    - match:
+        selector: '{job="falco"}'
+        stages:
+          - json:
+              expressions:
+                priority: priority
+          - labels:
+              priority:

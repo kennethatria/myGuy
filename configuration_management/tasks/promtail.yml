@@ -1,0 +1,92 @@
+# Promtail (ships logs to Loki) as a systemd service.  Included by
+# observability.yml (app) and monitoring.yml with:
+#   promtail_loki_url        where to push, e.g. http://10.0.0.3:3100
+#   promtail_scrape_configs  the scrape_configs list, as YAML text
+# The promtail user comes from users.yml.  Needs become.
+
+- name: Install unzip
+  ansible.builtin.apt:
+    name: unzip
+    state: present
+
+- name: Download Promtail
+  ansible.builtin.get_url:
+    url: https://github.com/grafana/loki/releases/download/v2.9.10/promtail-linux-amd64.zip
+    dest: /tmp/promtail-linux-amd64.zip
+    mode: "0644"
+
+- name: Extract Promtail
+  ansible.builtin.unarchive:
+    src: /tmp/promtail-linux-amd64.zip
+    dest: /tmp
+    remote_src: yes
+
+- name: Install Promtail binary
+  ansible.builtin.copy:
+    src: /tmp/promtail-linux-amd64
+    dest: /usr/local/bin/promtail
+    mode: "0755"
+    remote_src: yes
+  register: promtail_binary
+
+- name: Create Promtail directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.owner }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/promtail,    owner: root,     mode: "0755" }
+    - { path: /var/lib/promtail, owner: promtail, mode: "0750" }
+
+- name: Write Promtail config
+  ansible.builtin.copy:
+    dest: /etc/promtail/config.yml
+    mode: "0644"
+    content: |
+      server:
+        http_listen_port: 9080
+        grpc_listen_port: 0
+
+      positions:
+        filename: /var/lib/promtail/positions.yaml
+
+      clients:
+        - url: {{ promtail_loki_url }}/loki/api/v1/push
+
+      scrape_configs:
+      {{ promtail_scrape_configs | indent(2, first=true) }}
+  register: promtail_config
+
+- name: Create Promtail systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/promtail.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Promtail log shipper
+      After=network.target
+
+      [Service]
+      User=promtail
+      Group=promtail
+      ExecStart=/usr/local/bin/promtail -config.file=/etc/promtail/config.yml
+      Restart=always
+      NoNewPrivileges=yes
+      PrivateTmp=yes
+      ReadOnlyPaths=/etc/promtail
+      ReadWritePaths=/var/lib/promtail
+      # Room for its buffers; a leak can't take memory from the services
+      MemoryMax=192M
+
+      [Install]
+      WantedBy=multi-user.target
+  register: promtail_unit
+
+- name: Enable and start Promtail (restart when it changed)
+  ansible.builtin.systemd:
+    name: promtail
+    enabled: yes
+    state: "{{ 'restarted' if (promtail_binary.changed or promtail_config.changed or promtail_unit.changed) else 'started' }}"
+    daemon_reload: yes

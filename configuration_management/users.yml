@@ -301,6 +301,18 @@
           Defaults:{{ app_user }} !requiretty
           {{ app_user }} ALL=(ALL) NOPASSWD: ALL
 
+    - name: Create promtail system user
+      ansible.builtin.user:
+        name: promtail
+        system: yes
+        shell: /usr/sbin/nologin
+        home: /nonexistent
+        create_home: no
+        groups:
+          - systemd-journal   # read journald (SSH logins, sudo)
+        append: yes
+        state: present
+
     # --- ops troubleshooting user (monitoring instance) ---
     # Same as app instance except no .env secret access — there are no
     # application secrets on the monitoring server.

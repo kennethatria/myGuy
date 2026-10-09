@@ -222,6 +222,18 @@
         apply:
           become: yes
 
+    # --- Promtail (this server's SSH logins, sudo and security checks) ---
+
+    - name: Install Promtail
+      ansible.builtin.include_tasks:
+        file: tasks/promtail.yml
+        apply:
+          become: yes
+      vars:
+        promtail_loki_url: "http://{{ vpc_ip }}:3100"
+        promtail_scrape_configs: |
+          {{ lookup('ansible.builtin.template', 'files/promtail-system-job.yml.j2', template_vars={'promtail_host': 'monitoring'}) }}
+
     # --- Prometheus ---
 
     - name: Create Prometheus config directory
@@ -421,7 +433,9 @@
                     "settings": {
                       "bottoken": "${TELEGRAM_BOT_TOKEN}",
                       "chatid": "${TELEGRAM_CHAT_ID}",
-                      "disable_web_page_preview": true
+                      "disable_web_page_preview": true,
+                      "parse_mode": "HTML",
+                      "message": "{{ template \"myguy.message\" . }}"
                     }
                   }
                 ]
@@ -436,7 +450,7 @@
                 ],
                 "group_wait": "30s",
                 "group_interval": "5m",
-                "repeat_interval": "12h"
+                "repeat_interval": "24h"
               }
             ],
             "groups": [
@@ -466,6 +480,19 @@
                         }
                       },
                       {
+                        "refId": "B",
+                        "relativeTimeRange": {
+                          "from": 1800,
+                          "to": 0
+                        },
+                        "datasourceUid": "loki",
+                        "model": {
+                          "refId": "B",
+                          "expr": "sum(count_over_time({job=\"deploy\"} |= \"start\" [30m])) or vector(0)",
+                          "queryType": "instant"
+                        }
+                      },
+                      {
                         "refId": "C",
                         "datasourceUid": "__expr__",
                         "model": {
@@ -488,7 +515,8 @@
                     "noDataState": "Alerting",
                     "execErrState": "Error",
                     "annotations": {
-                      "summary": "{{ $labels.instance }} is not answering correctly (checked from the monitoring server)."
+                      "summary": "{{ $labels.instance | html }} is not answering correctly (checked from the monitoring server). {{ if gt $values.B.Value 0.0 }}A deploy started in the last 30 minutes: likely the cause.{{ else }}No deploy in the last 30 minutes.{{ end }}",
+                      "next": "Service Logs dashboard; on the app server <code>sudo appctl ps</code>."
                     },
                     "labels": {
                       "severity": "critical"
@@ -536,7 +564,8 @@
                     "noDataState": "OK",
                     "execErrState": "Error",
                     "annotations": {
-                      "summary": "The certificate for {{ $labels.instance }} expires in {{ humanize $values.A.Value }} days; renewal is failing."
+                      "summary": "The certificate for {{ $labels.instance | html }} expires in {{ humanize $values.A.Value }} days; renewal is failing.",
+                      "next": "Run the deploy workflow by hand with scope full: deploy.yml requests missing certificates (see its certbot steps)."
                     },
                     "labels": {
                       "severity": "warning"
@@ -584,7 +613,8 @@
                     "noDataState": "OK",
                     "execErrState": "Error",
                     "annotations": {
-                      "summary": "The {{ $labels.instance }} server's disk is {{ humanize $values.A.Value }}% full."
+                      "summary": "The {{ $labels.instance | html }} server's disk is {{ humanize $values.A.Value }}% full.",
+                      "next": "App server: images are pruned each deploy, so look at uploads and Postgres; monitoring: Loki and Prometheus data."
                     },
                     "labels": {
                       "severity": "warning"
@@ -632,7 +662,8 @@
                     "noDataState": "OK",
                     "execErrState": "Error",
                     "annotations": {
-                      "summary": "The {{ $labels.instance }} server's memory is {{ humanize $values.A.Value }}% used; containers may be killed."
+                      "summary": "The {{ $labels.instance | html }} server's memory is {{ humanize $values.A.Value }}% used; containers may be killed.",
+                      "next": "App Instance Metrics (memory by container) shows which container."
                     },
                     "labels": {
                       "severity": "warning"
@@ -680,7 +711,8 @@
                     "noDataState": "OK",
                     "execErrState": "Error",
                     "annotations": {
-                      "summary": "Prometheus can't reach {{ $labels.job }} ({{ $labels.instance }}): its dashboard panels are empty."
+                      "summary": "Prometheus can't reach {{ $labels.job | html }} ({{ $labels.instance | html }}): its dashboard panels are empty.",
+                      "next": "On the app server <code>sudo appctl ps</code>; Loki or Jaeger down usually means the monitoring server ran short of memory."
                     },
                     "labels": {
                       "severity": "warning"
@@ -698,11 +730,11 @@
                           "from": 600,
                           "to": 0
                         },
-                        "datasourceUid": "prometheus",
+                        "datasourceUid": "loki",
                         "model": {
                           "refId": "A",
-                          "expr": "sum by (rule_name, priority) (increase(falcosecurity_falco_rules_matches_total{priority=~\"0|1|2|3\"}[10m]))",
-                          "instant": true
+                          "expr": "sum by (rule, output_fields_proc_name, output_fields_container_name) (count_over_time({job=\"falco\", priority=~\"Emergency|Alert|Critical|Error\"} | json [10m]))",
+                          "queryType": "instant"
                         }
                       },
                       {
@@ -728,58 +760,11 @@
                     "noDataState": "OK",
                     "execErrState": "Error",
                     "annotations": {
-                      "summary": "Falco rule '{{ $labels.rule_name }}' (priority {{ $labels.priority }}: emergency to error) fired on the app server."
+                      "summary": "Falco rule <code>{{ $labels.rule | html }}</code> fired {{ humanize $values.A.Value }}× on the app server: process <code>{{ $labels.output_fields_proc_name | html }}</code> {{ with $labels.output_fields_container_name }}in container {{ . | html }}{{ else }}on the host{{ end }}.",
+                      "next": "Defences dashboard (Falco events), or on the app server <code>journalctl -u 'falco*'</code>."
                     },
                     "labels": {
                       "severity": "critical"
-                    }
-                  },
-                  {
-                    "uid": "falco-warning",
-                    "title": "Falco warning",
-                    "condition": "C",
-                    "for": "0m",
-                    "data": [
-                      {
-                        "refId": "A",
-                        "relativeTimeRange": {
-                          "from": 600,
-                          "to": 0
-                        },
-                        "datasourceUid": "prometheus",
-                        "model": {
-                          "refId": "A",
-                          "expr": "sum by (rule_name, priority) (increase(falcosecurity_falco_rules_matches_total{priority=\"4\"}[10m]))",
-                          "instant": true
-                        }
-                      },
-                      {
-                        "refId": "C",
-                        "datasourceUid": "__expr__",
-                        "model": {
-                          "refId": "C",
-                          "type": "threshold",
-                          "expression": "A",
-                          "conditions": [
-                            {
-                              "evaluator": {
-                                "type": "gt",
-                                "params": [
-                                  0
-                                ]
-                              }
-                            }
-                          ]
-                        }
-                      }
-                    ],
-                    "noDataState": "OK",
-                    "execErrState": "Error",
-                    "annotations": {
-                      "summary": "Falco warning '{{ $labels.rule_name }}' fired on the app server (check Falco's log on the app server: journalctl -u falco-modern-bpf or falco)."
-                    },
-                    "labels": {
-                      "severity": "warning"
                     }
                   }
                 ]
@@ -810,146 +795,15 @@
                         }
                       },
                       {
-                        "refId": "C",
-                        "datasourceUid": "__expr__",
-                        "model": {
-                          "refId": "C",
-                          "type": "threshold",
-                          "expression": "A",
-                          "conditions": [
-                            {
-                              "evaluator": {
-                                "type": "gt",
-                                "params": [
-                                  10
-                                ]
-                              }
-                            }
-                          ]
-                        }
-                      }
-                    ],
-                    "noDataState": "OK",
-                    "execErrState": "OK",
-                    "annotations": {
-                      "summary": "{{ humanize $values.A.Value }} requests failed with a 5xx in the last 10 minutes. See Service Logs."
-                    },
-                    "labels": {
-                      "severity": "warning"
-                    }
-                  },
-                  {
-                    "uid": "attack-burst",
-                    "title": "Attack burst",
-                    "condition": "C",
-                    "for": "0m",
-                    "data": [
-                      {
-                        "refId": "A",
+                        "refId": "B",
                         "relativeTimeRange": {
                           "from": 600,
                           "to": 0
                         },
                         "datasourceUid": "loki",
                         "model": {
-                          "refId": "A",
-                          "expr": "sum(count_over_time({job=\"modsecurity\"} |~ \"Inbound Anomaly Score Exceeded\" [10m]))",
-                          "queryType": "instant"
-                        }
-                      },
-                      {
-                        "refId": "C",
-                        "datasourceUid": "__expr__",
-                        "model": {
-                          "refId": "C",
-                          "type": "threshold",
-                          "expression": "A",
-                          "conditions": [
-                            {
-                              "evaluator": {
-                                "type": "gt",
-                                "params": [
-                                  50
-                                ]
-                              }
-                            }
-                          ]
-                        }
-                      }
-                    ],
-                    "noDataState": "OK",
-                    "execErrState": "OK",
-                    "annotations": {
-                      "summary": "{{ humanize $values.A.Value }} requests flagged by the WAF in 10 minutes (normal background: a few). Attacker IPs: WAF - ModSecurity Detections dashboard; fail2ban bans IPs after 3 hits ('sudo fail2ban-client status nginx-modsecurity'). Ban for 7 days: ssh ops@<app IP> 'sudo fail2ban-client set manual banip <IP>'"
-                    },
-                    "labels": {
-                      "severity": "warning"
-                    }
-                  },
-                  {
-                    "uid": "serious-attack",
-                    "title": "Serious attack attempt",
-                    "condition": "C",
-                    "for": "0m",
-                    "data": [
-                      {
-                        "refId": "A",
-                        "relativeTimeRange": {
-                          "from": 600,
-                          "to": 0
-                        },
-                        "datasourceUid": "loki",
-                        "model": {
-                          "refId": "A",
-                          "expr": "sum(count_over_time({job=\"modsecurity\"} |~ \"ModSecurity: Warning\" |~ \"\\\\[id \\\"9(31|32|33|34|41|42|44)[0-9]{3}\\\"\\\\]\" [10m]))",
-                          "queryType": "instant"
-                        }
-                      },
-                      {
-                        "refId": "C",
-                        "datasourceUid": "__expr__",
-                        "model": {
-                          "refId": "C",
-                          "type": "threshold",
-                          "expression": "A",
-                          "conditions": [
-                            {
-                              "evaluator": {
-                                "type": "gt",
-                                "params": [
-                                  20
-                                ]
-                              }
-                            }
-                          ]
-                        }
-                      }
-                    ],
-                    "noDataState": "OK",
-                    "execErrState": "OK",
-                    "annotations": {
-                      "summary": "{{ humanize $values.A.Value }} SQL injection / code execution / file inclusion / XSS / SSRF / Log4Shell rule matches in 10 minutes (OWASP A03, A06, A10). Details and IPs: WAF - ModSecurity Detections dashboard. Ban for 7 days: ssh ops@<app IP> 'sudo fail2ban-client set manual banip <IP>'"
-                    },
-                    "labels": {
-                      "severity": "warning"
-                    }
-                  },
-                  {
-                    "uid": "sign-in-abuse",
-                    "title": "Sign-in abuse from one IP",
-                    "condition": "C",
-                    "for": "0m",
-                    "data": [
-                      {
-                        "refId": "A",
-                        "relativeTimeRange": {
-                          "from": 600,
-                          "to": 0
-                        },
-                        "datasourceUid": "loki",
-                        "model": {
-                          "refId": "A",
-                          "expr": "sum by (remote_addr) (count_over_time({job=\"nginx_access\"} | json | method=\"POST\" | uri =~ \"/api/v1/auth/.*\" [10m]))",
+                          "refId": "B",
+                          "expr": "topk(1, sum by (method, uri) (count_over_time({job=\"nginx_access\"} | json | status >= 500 [10m])))",
                           "queryType": "instant"
                         }
                       },
@@ -976,7 +830,8 @@
                     "noDataState": "OK",
                     "execErrState": "OK",
                     "annotations": {
-                      "summary": "{{ $labels.remote_addr }} made {{ humanize $values.A.Value }} sign-in calls in 10 minutes (a real sign-in takes 2-3; normal peak 6). Code guessing or email bombing (OWASP A07). fail2ban bans it at 15 ('sudo fail2ban-client status nginx-auth-abuse'). Ban for 7 days: ssh ops@<app IP> 'sudo fail2ban-client set manual banip {{ $labels.remote_addr }}'"
+                      "summary": "{{ humanize $values.A.Value }} requests failed with a 5xx in the last 10 minutes{{ with $values.B }}, most on <code>{{ .Labels.method | html }} {{ .Labels.uri | html }}</code> ({{ humanize .Value }}){{ end }}.",
+                      "next": "Service Logs dashboard for that service; a deploy restarting containers shows as a short burst."
                     },
                     "labels": {
                       "severity": "warning"
@@ -1024,13 +879,70 @@
                     "noDataState": "OK",
                     "execErrState": "OK",
                     "annotations": {
-                      "summary": "{{ humanize $values.A.Value }} sign-in codes requested in 10 minutes across all clients (normal: ~2 a day). Possible email bombing from many IPs: it uses the Resend quota and the domain's sending reputation. Check the Application Visitors and Service Logs dashboards."
+                      "summary": "{{ humanize $values.A.Value }} sign-in codes requested in 10 minutes across all clients (normal: ~2 a day). Possible email bombing from many IPs: it uses the Resend quota and the domain's sending reputation. Check the Application Visitors and Service Logs dashboards.",
+                      "next": "Defences dashboard (sign-in rate limits) and Service Logs. One IP behind it gets its own message from the security checks."
+                    },
+                    "labels": {
+                      "severity": "warning"
+                    }
+                  },
+                  {
+                    "uid": "security-checks-stopped",
+                    "title": "Security checks stopped",
+                    "condition": "C",
+                    "for": "10m",
+                    "data": [
+                      {
+                        "refId": "A",
+                        "relativeTimeRange": {
+                          "from": 1200,
+                          "to": 0
+                        },
+                        "datasourceUid": "loki",
+                        "model": {
+                          "refId": "A",
+                          "expr": "absent_over_time({job=\"security-checks\"} |= \"check ok\" [20m])",
+                          "queryType": "instant"
+                        }
+                      },
+                      {
+                        "refId": "C",
+                        "datasourceUid": "__expr__",
+                        "model": {
+                          "refId": "C",
+                          "type": "threshold",
+                          "expression": "A",
+                          "conditions": [
+                            {
+                              "evaluator": {
+                                "type": "gt",
+                                "params": [
+                                  0
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "noDataState": "OK",
+                    "execErrState": "OK",
+                    "annotations": {
+                      "summary": "The security checks haven't run for 20 minutes: attacks and unexpected SSH logins aren't being reported.",
+                      "next": "On the monitoring server: <code>systemctl status myguy-security-check.timer</code> and <code>journalctl -u myguy-security-check</code>."
                     },
                     "labels": {
                       "severity": "warning"
                     }
                   }
                 ]
+              }
+            ],
+            "templates": [
+              {
+                "orgID": 1,
+                "name": "myguy",
+                "template": "{{ define \"myguy.message\" -}}\n{{ range .Alerts.Firing -}}\n{{ if eq .Labels.severity \"critical\" }}🚨{{ else }}⚠️{{ end }} <b>{{ .Labels.alertname | html }}</b> · {{ .StartsAt | tz \"Europe/Amsterdam\" | date \"Mon 15:04\" }}\n{{ .Annotations.summary }}\n{{ with .Annotations.next }}Next: {{ . }}\n{{ end }}\n{{ end -}}\n{{ range .Alerts.Resolved -}}\n✅ <b>Resolved: {{ .Labels.alertname | html }}</b> · {{ .StartsAt | tz \"Europe/Amsterdam\" | date \"Mon 15:04\" }}–{{ .EndsAt | tz \"Europe/Amsterdam\" | date \"15:04\" }}\n{{ .Annotations.summary }}\n\n{{ end -}}\n{{ end }}"
               }
             ]
           }
@@ -3514,6 +3426,1182 @@
 
     # --- Jaeger ---
 
+    - name: Write Investigate IP dashboard
+      # Everything one IP did, from the logs (type it in the box).  The terminal
+      # version is `investigate <IP>` on this server (myguy-security).
+      ansible.builtin.copy:
+        dest: /etc/grafana/dashboards/investigate-ip.json
+        mode: "0644"
+        content: !unsafe |
+          {
+            "title": "Investigate IP",
+            "uid": "investigate-ip",
+            "schemaVersion": 36,
+            "time": {
+              "from": "now-24h",
+              "to": "now"
+            },
+            "templating": {
+              "list": [
+                {
+                  "type": "textbox",
+                  "name": "ip",
+                  "label": "IP address",
+                  "query": "",
+                  "current": {
+                    "text": "",
+                    "value": ""
+                  }
+                }
+              ]
+            },
+            "panels": [
+              {
+                "type": "text",
+                "title": "",
+                "gridPos": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 24,
+                  "h": 3
+                },
+                "options": {
+                  "mode": "markdown",
+                  "content": "Type an IP above to see everything it did in the time range (Loki keeps 8 days). The same report in a terminal on the monitoring server: `investigate <IP> --hours 48`. Before banning, check **Signed in from this IP**: above 0 means a real person used it (mobile carriers share IPs). Ban for 7 days: `ssh ops@<app IP> 'sudo fail2ban-client set manual banip <IP>'`; unban: `... set manual unbanip <IP>`."
+                }
+              },
+              {
+                "type": "stat",
+                "title": "Requests",
+                "description": "Every request from this IP in the range.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 3,
+                  "w": 4,
+                  "h": 4
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 1000
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} |= \"\\\"remote_addr\\\":\\\"$ip\\\"\" [$__range])) or vector(0)"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "WAF flagged",
+                "description": "Requests the WAF scored as an attack (it only logs; nothing is blocked).",
+                "gridPos": {
+                  "x": 4,
+                  "y": 3,
+                  "w": 4,
+                  "h": 4
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"modsecurity\"} |= \" $ip \" |~ \"949110|id \\\"9(31|32|33|34|41|42|44)[0-9]{3}\\\"\" [$__range])) or vector(0)"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Serious, answered",
+                "description": "SQL injection / code execution / file inclusion / XSS / SSRF / Log4Shell requests answered with 2xx or 3xx: not refused by the app. Look at these first.",
+                "gridPos": {
+                  "x": 8,
+                  "y": 3,
+                  "w": 4,
+                  "h": 4
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 1
+                        },
+                        {
+                          "color": "red",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"modsecurity\"} |= \" $ip \" |~ \"id \\\"9(31|32|33|34|41|42|44)[0-9]{3}\\\"\" |~ \"---F--\\nHTTP/[0-9.]+ [23][0-9][0-9]\" [$__range])) or vector(0)"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Sign-in calls",
+                "description": "Sign-in API calls. A real sign-in takes 2-3; fail2ban bans at 15 in 10 minutes.",
+                "gridPos": {
+                  "x": 12,
+                  "y": 3,
+                  "w": 4,
+                  "h": 4
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 6
+                        },
+                        {
+                          "color": "red",
+                          "value": 15
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} |= \"\\\"remote_addr\\\":\\\"$ip\\\"\" | json | uri=~\"/api/v1/auth/.*\" [$__range])) or vector(0)"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Bans",
+                "description": "Times fail2ban banned it in the range (any jail).",
+                "gridPos": {
+                  "x": 16,
+                  "y": 3,
+                  "w": 4,
+                  "h": 4
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"fail2ban\"} |= \"] Ban \" |~ ` ${ip:regex}$` [$__range])) or vector(0)"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Signed in from this IP (8 days)",
+                "description": "Above 0: a signed-in person used this IP in the last 8 days, so a ban may lock real users out.",
+                "gridPos": {
+                  "x": 20,
+                  "y": 3,
+                  "w": 4,
+                  "h": 4
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} |= \"\\\"remote_addr\\\":\\\"$ip\\\"\" | json | uri=\"/api/v1/profile\" | status=\"200\" [8d])) or vector(0)"
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Requests by status",
+                "description": "When it was active and how the app answered.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 7,
+                  "w": 24,
+                  "h": 7
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {
+                      "drawStyle": "bars",
+                      "fillOpacity": 60,
+                      "stacking": {
+                        "mode": "normal"
+                      }
+                    }
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "sum by (status) (count_over_time({job=\"nginx_access\"} |= \"\\\"remote_addr\\\":\\\"$ip\\\"\" | json [$__interval]))",
+                    "legendFormat": "{{status}}"
+                  }
+                ]
+              },
+              {
+                "type": "table",
+                "title": "Top paths",
+                "description": "Paths only: query strings are never logged.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 14,
+                  "w": 14,
+                  "h": 9
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "topk(20, sum by (method, uri, status) (count_over_time({job=\"nginx_access\"} |= \"\\\"remote_addr\\\":\\\"$ip\\\"\" | json [$__range])))"
+                  }
+                ],
+                "transformations": [
+                  {
+                    "id": "labelsToFields",
+                    "options": {
+                      "mode": "columns"
+                    }
+                  },
+                  {
+                    "id": "organize",
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {
+                        "method": "Method",
+                        "uri": "Path",
+                        "status": "Status",
+                        "Value #A": "Requests"
+                      }
+                    }
+                  }
+                ],
+                "options": {
+                  "sortBy": [
+                    {
+                      "displayName": "Value #A",
+                      "desc": true
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "table",
+                "title": "User agents",
+                "description": "What it said it was. Scanners often pose as browsers.",
+                "gridPos": {
+                  "x": 14,
+                  "y": 14,
+                  "w": 10,
+                  "h": 9
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "topk(10, sum by (user_agent) (count_over_time({job=\"nginx_access\"} |= \"\\\"remote_addr\\\":\\\"$ip\\\"\" | json [$__range])))"
+                  }
+                ],
+                "transformations": [
+                  {
+                    "id": "labelsToFields",
+                    "options": {
+                      "mode": "columns"
+                    }
+                  },
+                  {
+                    "id": "organize",
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {
+                        "user_agent": "User agent",
+                        "Value #A": "Requests"
+                      }
+                    }
+                  }
+                ],
+                "options": {
+                  "sortBy": [
+                    {
+                      "displayName": "Value #A",
+                      "desc": true
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "logs",
+                "title": "WAF entries",
+                "description": "Each flagged request in full: A has the IP, B the request, F the answer, H the rules matched.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 23,
+                  "w": 24,
+                  "h": 10
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "{job=\"modsecurity\"} |= \" $ip \""
+                  }
+                ],
+                "options": {
+                  "showTime": true,
+                  "wrapLogMessage": true,
+                  "sortOrder": "Descending"
+                }
+              },
+              {
+                "type": "logs",
+                "title": "fail2ban",
+                "description": "Bans and unbans, with the jail.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 33,
+                  "w": 12,
+                  "h": 7
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "{job=\"fail2ban\"} |~ ` ${ip:regex}$`"
+                  }
+                ],
+                "options": {
+                  "showTime": true,
+                  "wrapLogMessage": true,
+                  "sortOrder": "Descending"
+                }
+              },
+              {
+                "type": "logs",
+                "title": "SSH",
+                "description": "SSH lines mentioning it (logins, failed attempts).",
+                "gridPos": {
+                  "x": 12,
+                  "y": 33,
+                  "w": 12,
+                  "h": 7
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "{job=\"ssh\"} |= \"$ip\""
+                  }
+                ],
+                "options": {
+                  "showTime": true,
+                  "wrapLogMessage": true,
+                  "sortOrder": "Descending"
+                }
+              }
+            ]
+          }
+      notify: restart grafana
+      become: yes
+
+    - name: Write Defences dashboard
+      # What the defences did: fail2ban bans, WAF, sign-in rate limits, the
+      # security checks' alerts, SSH logins, sudo, Falco and deploys.
+      ansible.builtin.copy:
+        dest: /etc/grafana/dashboards/defences.json
+        mode: "0644"
+        content: !unsafe |
+          {
+            "title": "Defences",
+            "uid": "defences",
+            "schemaVersion": 36,
+            "time": {
+              "from": "now-24h",
+              "to": "now"
+            },
+            "refresh": "1m",
+            "panels": [
+              {
+                "type": "stat",
+                "title": "Bans",
+                "description": "IPs banned by fail2ban (any jail) in the range.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 4,
+                  "h": 4
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 20
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"fail2ban\"} |= \"] Ban \" [$__range])) or vector(0)"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Unbans",
+                "description": "Bans that ran out.",
+                "gridPos": {
+                  "x": 4,
+                  "y": 0,
+                  "w": 4,
+                  "h": 4
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"fail2ban\"} |= \"] Unban \" [$__range])) or vector(0)"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "WAF flagged",
+                "description": "Requests the WAF scored as an attack.",
+                "gridPos": {
+                  "x": 8,
+                  "y": 0,
+                  "w": 4,
+                  "h": 4
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 100
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"modsecurity\"} |~ \"949110|id \\\"9(31|32|33|34|41|42|44)[0-9]{3}\\\"\" [$__range])) or vector(0)"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Serious, answered",
+                "description": "Serious attack requests answered with 2xx or 3xx (not refused by the app).",
+                "gridPos": {
+                  "x": 12,
+                  "y": 0,
+                  "w": 4,
+                  "h": 4
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 1
+                        },
+                        {
+                          "color": "red",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"modsecurity\"} |~ \"id \\\"9(31|32|33|34|41|42|44)[0-9]{3}\\\"\" |~ \"---F--\\nHTTP/[0-9.]+ [23][0-9][0-9]\" [$__range])) or vector(0)"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Sign-in rate-limited",
+                "description": "Sign-in calls nginx refused (over 10 a minute from one IP).",
+                "gridPos": {
+                  "x": 16,
+                  "y": 0,
+                  "w": 4,
+                  "h": 4
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | uri=~\"/api/v1/auth/.*\" | status=\"429\" [$__range])) or vector(0)"
+                  }
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Security check alerts",
+                "description": "Messages the security checks sent to Telegram (attacks that needed a look, unexpected SSH logins).",
+                "gridPos": {
+                  "x": 20,
+                  "y": 0,
+                  "w": 4,
+                  "h": 4
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0,
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 1
+                        },
+                        {
+                          "color": "red",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  }
+                },
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "reduceOptions": {
+                    "calcs": [
+                      "lastNotNull"
+                    ]
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sum(count_over_time({job=\"security-checks\"} |= \"alert:\" [$__range])) or vector(0)"
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Bans by jail",
+                "description": "nginx-modsecurity: 3 WAF hits. nginx-auth-abuse: 15 sign-in calls. sshd, nginx-4xx, nginx-botsearch: probing. manual: banned by hand (7 days).",
+                "gridPos": {
+                  "x": 0,
+                  "y": 4,
+                  "w": 12,
+                  "h": 7
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {
+                      "drawStyle": "bars",
+                      "fillOpacity": 60,
+                      "stacking": {
+                        "mode": "normal"
+                      }
+                    }
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "sum by (jail) (count_over_time({job=\"fail2ban\"} |= \"] Ban \" [$__interval]))",
+                    "legendFormat": "{{jail}}"
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "WAF flagged and sign-in rate limits",
+                "description": "Attack traffic over time.",
+                "gridPos": {
+                  "x": 12,
+                  "y": 4,
+                  "w": 12,
+                  "h": 7
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {
+                      "drawStyle": "bars",
+                      "fillOpacity": 60,
+                      "stacking": {
+                        "mode": "normal"
+                      }
+                    }
+                  }
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "sum(count_over_time({job=\"modsecurity\"} |~ \"949110|id \\\"9(31|32|33|34|41|42|44)[0-9]{3}\\\"\" [$__interval]))",
+                    "legendFormat": "WAF flagged"
+                  },
+                  {
+                    "refId": "B",
+                    "legendFormat": "sign-in 429",
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | uri=~\"/api/v1/auth/.*\" | status=\"429\" [$__interval]))"
+                  }
+                ]
+              },
+              {
+                "type": "table",
+                "title": "Banned IPs",
+                "description": "Most banned first. Put one into Investigate IP for the details.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 11,
+                  "w": 12,
+                  "h": 9
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "topk(20, sum by (ip, jail) (count_over_time({job=\"fail2ban\"} |= \"] Ban \" | regexp \"Ban (?P<ip>\\\\S+)$\" [$__range])))"
+                  }
+                ],
+                "transformations": [
+                  {
+                    "id": "labelsToFields",
+                    "options": {
+                      "mode": "columns"
+                    }
+                  },
+                  {
+                    "id": "organize",
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {
+                        "ip": "IP",
+                        "jail": "Jail",
+                        "Value #A": "Bans"
+                      }
+                    }
+                  }
+                ],
+                "options": {
+                  "sortBy": [
+                    {
+                      "displayName": "Value #A",
+                      "desc": true
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "logs",
+                "title": "Security check alerts",
+                "description": "What the security checks reported (they run every 5 minutes; 'check ok' heartbeats hidden).",
+                "gridPos": {
+                  "x": 12,
+                  "y": 11,
+                  "w": 12,
+                  "h": 9
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "{job=\"security-checks\"} != \"check ok\""
+                  }
+                ],
+                "options": {
+                  "showTime": true,
+                  "wrapLogMessage": true,
+                  "sortOrder": "Descending"
+                }
+              },
+              {
+                "type": "logs",
+                "title": "SSH logins",
+                "description": "Every login on both servers (host label). myguy is the deploy; ops is you.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 20,
+                  "w": 12,
+                  "h": 8
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "{job=\"ssh\"} |= \"Accepted\""
+                  }
+                ],
+                "options": {
+                  "showTime": true,
+                  "wrapLogMessage": true,
+                  "sortOrder": "Descending"
+                }
+              },
+              {
+                "type": "logs",
+                "title": "sudo by people",
+                "description": "Commands run with sudo, except the deploy's own (myguy).",
+                "gridPos": {
+                  "x": 12,
+                  "y": 20,
+                  "w": 12,
+                  "h": 8
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "{job=\"sudo\"} !~ \"^\\\\s*myguy :\""
+                  }
+                ],
+                "options": {
+                  "showTime": true,
+                  "wrapLogMessage": true,
+                  "sortOrder": "Descending"
+                }
+              },
+              {
+                "type": "logs",
+                "title": "Falco events",
+                "description": "Runtime alerts on the app server.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 28,
+                  "w": 12,
+                  "h": 8
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "{job=\"falco\"} | json | line_format \"{{.priority}} · {{.rule}} · {{.output_fields_proc_name}} in {{.output_fields_container_name}}\""
+                  }
+                ],
+                "options": {
+                  "showTime": true,
+                  "wrapLogMessage": true,
+                  "sortOrder": "Descending"
+                }
+              },
+              {
+                "type": "logs",
+                "title": "Deploys",
+                "description": "Start and end of each deploy (the workflow writes them).",
+                "gridPos": {
+                  "x": 12,
+                  "y": 28,
+                  "w": 12,
+                  "h": 8
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "{job=\"deploy\"}"
+                  }
+                ],
+                "options": {
+                  "showTime": true,
+                  "wrapLogMessage": true,
+                  "sortOrder": "Descending"
+                }
+              }
+            ]
+          }
+      notify: restart grafana
+      become: yes
+
     - name: Create Jaeger config directory
       ansible.builtin.file:
         path: /etc/jaeger
@@ -3767,6 +4855,140 @@
         and local_health | reject('equalto', 'up') | list | length == 0
       retries: 12
       delay: 10
+
+    # --- Security checks and summaries (files/myguy_security.py) ---
+    # Every 5 minutes: attacking IPs that need a decision and unexpected SSH
+    # logins go to Telegram ("check ok" is the heartbeat Grafana watches).
+    # 08:00 Amsterdam time: the daily summary, plus the weekly on Saturdays.
+    # `investigate <IP>` gives anyone on this server the same view of an IP.
+
+    - name: Install the security checks
+      ansible.builtin.copy:
+        src: files/myguy_security.py
+        dest: /usr/local/bin/myguy-security
+        mode: "0755"
+      become: yes
+
+    - name: Install the investigate command
+      ansible.builtin.copy:
+        dest: /usr/local/bin/investigate
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          # Everything one IP did, from the logs: investigate <IP> [--hours N]
+          exec /usr/local/bin/myguy-security investigate "$@"
+      become: yes
+
+    - name: Create the security checks' settings directory
+      ansible.builtin.file:
+        path: /etc/myguy-security
+        state: directory
+        mode: "0755"
+      become: yes
+
+    - name: Write the security checks' settings
+      ansible.builtin.copy:
+        dest: /etc/myguy-security/settings.env
+        mode: "0644"
+        content: |
+          LOKI_URL=http://{{ vpc_ip }}:3100
+          PROMETHEUS_URL=http://{{ vpc_ip }}:9090
+          APP_SSH_HOST={{ groups['app'][0] }}
+          APP_VPC_IP={{ instance_vpc_ip }}
+      become: yes
+
+    # Only the Telegram values, not grafana.env (it holds the admin password)
+    - name: Write the security checks' Telegram settings
+      ansible.builtin.copy:
+        dest: /etc/myguy-security/telegram.env
+        mode: "0600"
+        content: |
+          TELEGRAM_BOT_TOKEN={{ telegram_bot_token | default('') }}
+          TELEGRAM_CHAT_ID={{ telegram_chat_id | default('') }}
+      no_log: true
+      become: yes
+
+    - name: Write the security checks' systemd units
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ item.key }}"
+        mode: "0644"
+        content: "{{ item.value }}"
+      loop: "{{ security_units | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      vars:
+        security_units:
+          myguy-security-check.service: |
+            [Unit]
+            Description=MyGuy security checks (attacks, SSH logins)
+
+            [Service]
+            ExecStart=/usr/local/bin/myguy-security check
+            Type=oneshot
+            EnvironmentFile=-/etc/myguy-security/telegram.env
+            # One dynamic user for both units, so they share the state
+            DynamicUser=yes
+            User=myguy-security
+            StateDirectory=myguy-security
+            SyslogIdentifier=myguy-security
+            NoNewPrivileges=yes
+            ProtectSystem=strict
+            ProtectHome=yes
+            PrivateTmp=yes
+            MemoryMax=128M
+            TimeoutStartSec=300
+
+          myguy-security-check.timer: |
+            [Unit]
+            Description=MyGuy security checks every 5 minutes
+
+            [Timer]
+            OnCalendar=*:0/5
+            AccuracySec=30s
+
+            [Install]
+            WantedBy=timers.target
+          myguy-security-summary.service: |
+            [Unit]
+            Description=MyGuy daily summary (and weekly on Saturdays)
+
+            [Service]
+            ExecStart=/usr/local/bin/myguy-security summary
+            Type=oneshot
+            EnvironmentFile=-/etc/myguy-security/telegram.env
+            # One dynamic user for both units, so they share the state
+            DynamicUser=yes
+            User=myguy-security
+            StateDirectory=myguy-security
+            SyslogIdentifier=myguy-security
+            NoNewPrivileges=yes
+            ProtectSystem=strict
+            ProtectHome=yes
+            PrivateTmp=yes
+            MemoryMax=128M
+            TimeoutStartSec=300
+
+          myguy-security-summary.timer: |
+            [Unit]
+            Description=MyGuy summaries at 08:00 Amsterdam time
+
+            [Timer]
+            OnCalendar=*-*-* 08:00:00 Europe/Amsterdam
+            # Sent at boot if the server was off at 08:00
+            Persistent=true
+
+            [Install]
+            WantedBy=timers.target
+      become: yes
+
+    - name: Start the security check and summary timers
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: yes
+        state: started
+        daemon_reload: yes
+      loop: [myguy-security-check.timer, myguy-security-summary.timer]
+      become: yes
 
     # GF_SECURITY_ADMIN_PASSWORD only applies when Grafana creates its
     # database; resetting keeps the secret authoritative after that too.

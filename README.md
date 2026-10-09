@@ -298,7 +298,7 @@ Deployment is aborted if any signature is missing or invalid.
 
 ### Runtime Security — Falco
 
-Falco monitors system calls on the app instance in real time, detecting suspicious behaviour such as privilege escalation, unexpected file access, and container escape attempts. Alerts are exported as Prometheus metrics and visualised in Grafana with a dedicated **Falco Security Alerts** dashboard.
+Falco monitors system calls on the app instance in real time, detecting suspicious behaviour such as privilege escalation, unexpected file access, and container escape attempts. Counts are exported as Prometheus metrics (**Falco Security Alerts** dashboard). The events themselves go to the journal as JSON and on to Loki (*Defences* dashboard): critical ones alert in Telegram with the rule, process and container, and warnings are counted in the daily summary.
 
 ---
 
@@ -339,11 +339,54 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
 - `node_exporter` runs as a systemd service on `10.0.0.2:9100` (the VPC address), exposing CPU, memory and disk metrics
 - `prometheus-podman-exporter` (Quadlet, as `myguy`, 64 MB limit) on `:9882` exposes memory and CPU per container, read from myguy's Podman API socket; the firewall opens it to the monitoring server only
 - `falco` monitors system calls for suspicious runtime behaviour and exposes Prometheus metrics on `10.0.0.2:8765`
-- `promtail` ships ModSecurity audit logs, the nginx JSON access log (`/var/log/nginx/access.json.log`) and every app container's output to Loki on the monitoring instance. Containers log to the systemd journal (`log_driver = "journald"`, set by `deploy.yml`), so logs survive container replacement; lines carrying sign-in codes are dropped before shipping
+- `promtail` ships to Loki on the monitoring instance:
+  - ModSecurity audit entries, each joined into one line, so one query sees the IP, request, response status and rules. Request and response bodies aren't logged (`SecAuditLogParts ABFHZ`), so no personal data from an API answer reaches Loki.
+  - the nginx JSON access log (`/var/log/nginx/access.json.log`)
+  - fail2ban's bans and unbans (`job="fail2ban"`, jail as a label)
+  - every app container's output. Containers log to the systemd journal (`log_driver = "journald"`, set by `deploy.yml`), so logs survive container replacement; lines carrying sign-in codes are dropped before shipping.
+  - from the journal: SSH logins (`job="ssh"`), sudo (`job="sudo"`), Falco events as JSON (`job="falco"`) and the deploy workflow's start and end markers (`job="deploy"`), with `host="app"`
 
 **On the monitoring instance:**
+- `promtail` ships this server's SSH logins, sudo and the security checks' log (`host="monitoring"`)
 - Prometheus scrapes `node_exporter` (`:9100`) on both servers (both on their VPC addresses; the monitoring containers reach each other on `10.0.0.3` too) and Falco metrics (`:8765`) on the app instance every 15 seconds It keeps 15 days of history in the `prometheus-data` volume; of Loki's own metrics only `up` is kept. Each full run also removes images no container uses on the monitoring server (report: *Report image cleanup* in the *Configure monitoring instance* step).
-- Grafana sends **alerts to Telegram** (provisioned in `monitoring.yml`, folder *Alerts*): site down (a blackbox prober on the monitoring server loads `https://<DOMAIN>/` and `/health`, and checks that old domains answer 301), certificate expiring within 14 days, more than 10 server errors in 10 minutes, attack bursts (over 50 WAF-flagged requests in 10 minutes), serious attack attempts (over 20 SQL injection / code execution / file inclusion / XSS / SSRF / Log4Shell matches in 10 minutes), sign-in abuse from one IP (over 10 sign-in calls in 10 minutes, IP and ban command in the message), a sign-in code surge (over 30 code requests in 10 minutes), disk above 85 %, memory above 90 %, a scrape target down (Loki and Jaeger included), and any Falco rule match. Repeats every 12 hours while firing.
+- Grafana sends **alerts to Telegram** (provisioned in `monitoring.yml`, folder *Alerts*), each with the time in Amsterdam and a *Next:* step:
+  - site down (a blackbox prober on the monitoring server loads `https://<DOMAIN>/` and `/health`, and checks that old domains answer 301), saying whether a deploy started in the last 30 minutes
+  - certificate expiring within 14 days
+  - more than 10 server errors in 10 minutes, with the endpoint failing most
+  - a sign-in code surge (over 30 code requests in 10 minutes)
+  - disk above 85 %, memory above 90 %, a scrape target down (Loki and Jaeger included)
+  - Falco critical events (emergency to error), with the rule, process and container
+  - *Security checks stopped*: no heartbeat from the security checks for 20 minutes
+
+  Messages are HTML: values that came from a request are escaped and shown as code, never as links. An unchanged alert repeats once a day, and a resolved one says so.
+- The **security checks** (`files/myguy_security.py`, installed as `myguy-security`, systemd timers) send the messages Grafana can't, because they combine several logs per IP. See the [Security runbook](#security-runbook).
+  - Every 5 minutes, an **Attack needs a look** message for each attacking IP that needs a decision:
+    - a serious attack request (SQL injection, code execution, file inclusion, XSS, SSRF, Log4Shell) the app answered without an error
+    - 5+ WAF-flagged requests that fail2ban hasn't banned after 5 minutes
+    - over 10 sign-in calls in 10 minutes, not banned
+
+    It lists up to 5 IPs, each with:
+    - counts, attack types, top path and user agent
+    - whether fail2ban banned it, and how often before
+    - when it was active
+    - whether someone signed in from the IP (it may be shared)
+
+    It names the next step and gives the ban command. Attackers fail2ban already banned get no message; they're in the summaries. One **Attack ended** line follows when an IP goes quiet for 30 minutes.
+  - Every 5 minutes, an **Unexpected SSH login** message for:
+    - `myguy` (the CI key) outside a deploy
+    - `ops` on the app server from an IP not seen in 8 days (your first login after this is deployed counts)
+    - anything on the monitoring server not coming through the app server
+    - any other user
+  - At 08:00 Amsterdam time, the **daily summary** (last 24 h, compared with the day before):
+    - health: uptime, certificate, disk, memory peak, server errors, deploys
+    - defences: WAF detections, bans by jail, top 3 IPs, sign-in rate limits
+    - access: SSH logins, failed attempts, sudo by `ops`
+    - Falco
+    - visitors and sign-ups
+    - *Needs attention* last, which is "nothing ✅" on a quiet day. If the summary doesn't come, monitoring is broken.
+  - On Saturdays, also the **weekly summary** (last 7 days against the 7 before, added up from the saved daily ones), leaving the weekend to look into anything. It adds repeat offenders, the busiest day and attack types.
+  - The daily numbers are kept for 15 days in `/var/lib/myguy-security/history.jsonl` (IPs included, about as long as Loki keeps them).
+  - `myguy-security --dry-run daily` prints a summary instead of sending it.
 - Grafana is pre-provisioned with these dashboards:
   - **App Instance Metrics** / **Monitoring Instance Metrics** — CPU, memory and disk use now (green / amber / red) and over time, one dashboard per server; App Instance Metrics also shows memory and CPU per container
   - **Application Activities** — accounts, new sign-ups, people active in gigs and the marketplace, and gigs, listings, requests and bookings by status. Counts only: the backend (`:9464`) and store-service (`:9465`) publish them from their databases (`internal/metrics`), on ports nginx doesn't route and the firewall opens to the monitoring server alone; no names or emails leave the app server
@@ -352,6 +395,8 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
   - **Application Visitors** — IPs whose browser ran the app, signed-in IPs, app requests, server errors, pages opened directly, referrers and response codes, from the nginx access log (IP-based: one phone on mobile data counts many times)
   - **Slow Requests** — requests over 0.5 s (count, newest list, slowest endpoints) and median / p95 / p99 response time, from nginx's `request_time` in the access log (8 days); malformed connections and the chat socket are left out
   - **Service Logs** — every service's output in one place: lines and errors per service, and a searchable log view (8-day retention)
+  - **Investigate IP** — type an IP to see everything it did: requests by status, top paths, user agents, WAF entries in full, sign-in calls, fail2ban bans and SSH lines. Also shown: *Serious, answered* (attack requests the app didn't refuse) and *Signed in from this IP*, which warns that a ban may lock out real users.
+  - **Defences** — what the defences did: bans by jail, banned IPs, WAF and sign-in rate limits, the security checks' alerts, SSH logins on both servers, sudo by people, Falco events and deploys
 
 Both Prometheus (`:9090`) and Grafana (`:3000`) are only reachable from within the VPC. To access them locally, SSH tunnel through the app instance as the `ops` user:
 
@@ -371,6 +416,24 @@ Then open `http://localhost:3000` for Grafana (sign in as `admin` with the `GRAF
 **Grafana → Application Visitors** counts client IPs whose browser ran the app (downloaded its code or called the API), plus app usage, from the nginx access log. Approximate: it counts IPs, not people (a phone on mobile data counts again with each new IP), and sees only full page loads, not in-app navigation. Every unknown path returns 404, and scanners posing as browsers are left out by requiring the app to actually run. Query strings are never logged. Umami (session-accurate visitors, events, heatmaps) was removed to free memory on the 1 GB monitoring server; its database volume `umami-db-data` is still there until deleted.
 
 ---
+
+### Security runbook
+
+What each security message means and what to do. Every message ends with its next step. To look into an IP:
+- **Grafana:** *Investigate IP* (SSH tunnel below).
+- **Terminal:** on the monitoring server (`ssh -J ops@<app IP> ops@10.0.0.3`), run `investigate <IP> [--hours 48]`.
+
+| Message | What it means | What to do |
+| :--- | :--- | :--- |
+| **Attack needs a look**: answered without an error | A serious attack request got a 2xx/3xx. The WAF only logs, so the app answered it. | Open *Investigate IP*, read the WAF entry (path, rule, status). If the endpoint returned data it shouldn't, treat it as a possible breach: ban the IP and fix the endpoint. Usually it's harmless (e.g. a search that returned nothing). |
+| **Attack needs a look**: fail2ban hasn't banned it | 5+ flagged requests and still no ban after 5 minutes: fail2ban isn't doing its job for this IP. | Check *Signed in from this IP*. If no one did, ban it: `ssh ops@<app IP> 'sudo fail2ban-client set manual banip <IP>'` (7 days). Then check fail2ban: `sudo fail2ban-client status nginx-modsecurity`. |
+| **Attack needs a look**: sign-in calls | Code guessing or email bombing from one IP. fail2ban bans at 15 calls. | Usually it bans itself. If it's slow and steady, ban it by hand. Many IPs at once shows up as *Sign-in code surge* instead. |
+| **Attack ended** | The IP has been quiet for 30 minutes: totals and whether it was banned. | Nothing, unless it was never banned and you think it'll come back. |
+| **Unexpected SSH login** | A login the rules didn't expect (CI key outside a deploy, `ops` from a new IP, the monitoring server reached directly, another user). | If it was you, nothing (the IP is now known). If not: replace the key (`SSH_PRIVATE_KEY` or `OPS_SSH_PUBLIC_KEY`), run a full deploy so `users.yml` installs it, and check *Defences*: sudo by people. |
+| **Falco security alert** | A critical runtime event on the app server (rule, process, container). | *Defences*: Falco events, or `journalctl -u 'falco*'` on the app server. A shell in a container or an unexpected process writing to `/etc` needs a look. |
+| **Security checks stopped** | No heartbeat for 20 minutes, so attacks and logins aren't being reported. | On the monitoring server: `systemctl status myguy-security-check.timer` and `journalctl -u myguy-security-check`. |
+
+Unban: `ssh ops@<app IP> 'sudo fail2ban-client set <jail> unbanip <IP>'`.
 
 ## Infrastructure & Deployment
 

@@ -172,6 +172,18 @@ jobs:
           # is reached via ProxyJump through the app instance (handled in inventory)
           ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
 
+      # Marks the deploy in the app server's journal (Promtail ships it to
+      # Loki as job="deploy"): the security checks expect myguy logins only
+      # between start and end, and Site down alerts say when a deploy ran.
+      # Best effort: a fresh server has no myguy yet.
+      - name: Mark deploy start
+        env:
+          SCOPE: ${{ inputs.scope }}
+          SERVICES: ${{ inputs.services }}
+        run: |
+          ssh -i ~/.ssh/linode -o StrictHostKeyChecking=no -o ConnectTimeout=15 "myguy@$SERVER_IP" \
+            logger -t myguy-deploy "start run=$GITHUB_RUN_ID scope=$SCOPE services=${SERVICES// /,}" || true
+
       - name: Bootstrap users and harden SSH
         if: inputs.scope != 'app'
         # Connects as root (remote_user: root inside users.yml overrides inventory).
@@ -282,6 +294,12 @@ jobs:
             -e "ssh -i ~/.ssh/linode -o StrictHostKeyChecking=no" \
             frontend/dist/ \
             myguy@$SERVER_IP:/opt/myguy/frontend/dist/
+
+      - name: Mark deploy end
+        if: always()
+        run: |
+          ssh -i ~/.ssh/linode -o StrictHostKeyChecking=no -o ConnectTimeout=15 "myguy@$SERVER_IP" \
+            logger -t myguy-deploy "end run=$GITHUB_RUN_ID result=${{ job.status }}" || true
 
       - name: Cleanup SSH key
         if: always()

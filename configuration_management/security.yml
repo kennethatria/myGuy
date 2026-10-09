@@ -123,6 +123,23 @@
             listen_address: {{ vpc_ip }}
             prometheus_metrics_enabled: true
 
+    # Alerts as JSON on stdout, which systemd puts in the journal; Promtail
+    # ships them to Loki (job="falco") with the rule, process, container and
+    # command line as fields.  Syslog output is off: it would send each
+    # alert to the journal a second time.
+    - name: Write Falco output config (JSON to the journal)
+      ansible.builtin.copy:
+        dest: /etc/falco/config.d/output.yaml
+        mode: "0644"
+        content: |
+          json_output: true
+          json_include_output_property: true
+          json_include_tags_property: true
+          stdout_output:
+            enabled: true
+          syslog_output:
+            enabled: false
+
     # Our own deploys tripped two rules on every run (Falco logs, 2026-10-09):
     # Ansible's Python under sudo reads /etc/shadow ("Read sensitive file
     # untrusted"), and its git module walks the OWASP CRS submodules through

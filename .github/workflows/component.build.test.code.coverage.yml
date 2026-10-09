@@ -214,6 +214,24 @@ jobs:
   # The production frontend bundle (the tests above don't build it). Runs
   # alongside the tests rather than after them; the Go services are compiled
   # by their tests and by the Docker builds below.
+  # configuration_management/files/myguy_security.py: the monitoring
+  # server's security checks and summaries (standard library only)
+  security-checks-tests:
+    name: Security Checks Tests (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      # The monitoring server's Python (Ubuntu 24.04)
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Run tests
+        run: python -m unittest discover -s configuration_management/files -v
+
   build-check:
     name: Build Check
     runs-on: ubuntu-latest
