@@ -291,7 +291,9 @@
               params:
                 module: [https_redirect]
               static_configs:
-                - targets: {{ (hostvars[groups['app'][0]].redirect_domains | default([])) | map('regex_replace', '^(.*)$', 'https://\\1/') | list | to_json }}
+                # Prefix and suffix, no regex backreference: in task content
+                # Ansible kept the backslash, and the target became literal.
+                - targets: {{ (hostvars[groups['app'][0]].redirect_domains | default([])) | map('regex_replace', '^', 'https://') | map('regex_replace', '$', '/') | list | to_json }}
               relabel_configs: *blackbox_relabel
 
             - job_name: tempo
@@ -544,54 +546,6 @@
                     }
                   },
                   {
-                    "uid": "server-errors",
-                    "title": "Server errors",
-                    "condition": "C",
-                    "for": "0m",
-                    "data": [
-                      {
-                        "refId": "A",
-                        "relativeTimeRange": {
-                          "from": 600,
-                          "to": 0
-                        },
-                        "datasourceUid": "loki",
-                        "model": {
-                          "refId": "A",
-                          "expr": "sum(count_over_time({job=\"nginx_access\"} | json | status >= 500 [10m]))",
-                          "queryType": "instant"
-                        }
-                      },
-                      {
-                        "refId": "C",
-                        "datasourceUid": "__expr__",
-                        "model": {
-                          "refId": "C",
-                          "type": "threshold",
-                          "expression": "A",
-                          "conditions": [
-                            {
-                              "evaluator": {
-                                "type": "gt",
-                                "params": [
-                                  10
-                                ]
-                              }
-                            }
-                          ]
-                        }
-                      }
-                    ],
-                    "noDataState": "OK",
-                    "execErrState": "OK",
-                    "annotations": {
-                      "summary": "{{ humanize $values.A.Value }} requests failed with a 5xx in the last 10 minutes. See Service Logs."
-                    },
-                    "labels": {
-                      "severity": "warning"
-                    }
-                  },
-                  {
                     "uid": "disk-full",
                     "title": "Disk almost full",
                     "condition": "C",
@@ -781,6 +735,62 @@
                     },
                     "labels": {
                       "severity": "critical"
+                    }
+                  }
+                ]
+              },
+              {
+                "orgId": 1,
+                "name": "akalimu-logs",
+                "folder": "Alerts",
+                "interval": "5m",
+                "rules": [
+                  {
+                    "uid": "server-errors",
+                    "title": "Server errors",
+                    "condition": "C",
+                    "for": "0m",
+                    "data": [
+                      {
+                        "refId": "A",
+                        "relativeTimeRange": {
+                          "from": 600,
+                          "to": 0
+                        },
+                        "datasourceUid": "loki",
+                        "model": {
+                          "refId": "A",
+                          "expr": "sum(count_over_time({job=\"nginx_access\"} | json | status >= 500 [10m]))",
+                          "queryType": "instant"
+                        }
+                      },
+                      {
+                        "refId": "C",
+                        "datasourceUid": "__expr__",
+                        "model": {
+                          "refId": "C",
+                          "type": "threshold",
+                          "expression": "A",
+                          "conditions": [
+                            {
+                              "evaluator": {
+                                "type": "gt",
+                                "params": [
+                                  10
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "noDataState": "OK",
+                    "execErrState": "OK",
+                    "annotations": {
+                      "summary": "{{ humanize $values.A.Value }} requests failed with a 5xx in the last 10 minutes. See Service Logs."
+                    },
+                    "labels": {
+                      "severity": "warning"
                     }
                   }
                 ]
@@ -3247,6 +3257,9 @@
 
           [Service]
           Restart=always
+          # Pause before restarting: a container killed at its memory limit
+          # otherwise restarts at once, over and over, on this 1-CPU server.
+          RestartSec=10
           # First start pulls the image, which can exceed the 90s default.
           TimeoutStartSec=900
 
