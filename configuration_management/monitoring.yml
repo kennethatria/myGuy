@@ -102,6 +102,8 @@
       changed_when: false
       failed_when: false   # first run: the container starts later in the play
 
+  pre_tasks:
+    # Grafana would otherwise start with admin / admin
     - name: Require the Grafana admin password
       ansible.builtin.assert:
         that: grafana_admin_password | default('') | length >= 12

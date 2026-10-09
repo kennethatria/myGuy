@@ -162,6 +162,8 @@
           fi
 
           XDG="/run/user/$MYGUY_UID"
+          # myguy can't enter the caller's home directory (ops is 0750)
+          cd / || exit 1
           CMD="${1:-}"
 
           case "$CMD" in
@@ -353,6 +355,8 @@
           fi
 
           XDG="/run/user/$MYGUY_UID"
+          # myguy can't enter the caller's home directory (ops is 0750)
+          cd / || exit 1
           CMD="${1:-}"
 
           case "$CMD" in
