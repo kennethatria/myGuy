@@ -1,12 +1,149 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/kennethatria/myGuy/badge)](https://scorecard.dev/viewer/?uri=github.com/kennethatria/myGuy)
 
-# MyGuy - Task Marketplace Platform
+# MyGuy
 
-MyGuy is a modern, microservices-based task marketplace. It allows users to post tasks they need done, and enables other users to apply, negotiate, and complete those tasks.
+A task marketplace and second-hand market on sticky notes: post a short note for a gig or an item, agree the details in chat, review each other. Built as Go and Node.js microservices with a Vue frontend, running on two small Linode servers.
 
-The platform is designed with a clean architecture, separating concerns into distinct services for task management, real-time chat, and a marketplace.
+**Jump to:** [Quick start](#quick-start-local-development) · [How MyGuy works](#how-it-works) · [Architecture](#architecture) · [Security](#security) · [Observability](#observability) · [Security runbook](#runbook) · [Infrastructure & deployment](#infrastructure) · [Service docs](#documentation)
 
-## Architecture & Tech Stack
+Sections marked ▶ are collapsed: click a title to open it.
+
+## Quick Start (Local Development)
+
+The backend services run locally with Podman Compose using pre-built images from Docker Hub; the frontend runs with the Vite dev server.
+
+### Prerequisites
+- Podman & Podman Compose
+- Node.js 22+
+- Git
+
+### Running the Application
+
+1. **Clone the repository:**
+   ```sh
+   git clone <repository-url>
+   cd myguy
+   ```
+
+2. **Create a root `.env` file** in the project root:
+   ```env
+   JWT_SECRET=your-secret-key-here
+   DB_PASSWORD=mysecretpassword
+   INTERNAL_API_KEY=your-internal-api-key-here
+   # Optional: leave SMTP_HOST unset to log sign-in codes instead of emailing them
+   # SMTP_HOST=smtp.resend.com
+   # Optional: image tag to run (default: latest)
+   # IMAGE_TAG=latest
+   ```
+
+3. **Start the backend services** (also starts a local Jaeger from `docker-compose.override.yml`):
+   ```sh
+   podman compose up -d
+   ```
+
+4. **Start the frontend:**
+   ```sh
+   cd frontend
+   npm install
+   npm run dev
+   ```
+
+5. **Sign in:** open the frontend, enter any email, and read the code from the API logs:
+   ```sh
+   podman compose logs api | grep "login code"
+   ```
+
+6. **Access the application:**
+   - **Frontend:** http://localhost:5173
+   - **Backend API:** http://localhost:8080
+   - **Store Service:** http://localhost:8081
+   - **Chat Service:** http://localhost:8082
+   - **Traces (Jaeger):** http://localhost:16686
+   - **PostgreSQL:** `localhost:5433`
+
+## At a glance
+
+| Service | Language | Port | What it does | Docs |
+| :--- | :--- | :--- | :--- | :--- |
+| **Frontend** | Vue 3 + TypeScript | `5173` | The app: boards, floating chat, radar | [README](./frontend/README.md) |
+| **Backend** | Go (Gin) | `8080` | Passwordless sign-in, users, gigs, applications, reviews | [README](./backend/README.md) |
+| **Store service** | Go (Gin) | `8081` | Listings, requests, bookings | [README](./store-service/README.md) |
+| **Chat service** | Node.js (Socket.IO) | `8082` | Real-time messaging and events | [README](./chat-websocket-service/README.md) |
+| **Proximity service** | Go (Gin) | `8083` (internal) | Rough locations and distance buckets | [README](./proximity-service/README.md) |
+| **PostgreSQL** | PostgreSQL 15 | `5432` (`5433` on the host) | One database per service | — |
+| **Redis** | Redis 7 | `6379` | Socket.IO adapter for multi-instance chat; the proximity service has its own | — |
+
+Services never read each other's databases. The rules every change has to keep are in [CLAUDE.md](./claude.md).
+
+<details id="how-it-works">
+<summary><b>How MyGuy works</b> — sign-in, gigs, marketplace, chat, nearby, ratings</summary>
+
+Everything happens on **sticky notes** and in the **floating chat**: there is no Messages page and no prices on the board (price is agreed in chat).
+
+### Sign-in
+
+Sign-in is **passwordless**. One flow covers both login and sign-up:
+
+1. The user enters their email address; the backend emails a **6-digit code** (`POST /api/v1/auth/request-code`). It answers `202` once the code is stored and sends the email in the background (`mailer.Background`), so the form doesn't wait about a second for the mail server; a failed send is logged and the user asks for another code.
+2. The user enters the code (`POST /api/v1/auth/verify-code`). An existing account is signed in with a session JWT.
+3. A new email instead gets a 15-minute signup token; the user enters their full name and the account is created with a username derived from the email (`POST /api/v1/auth/complete-signup`).
+
+| Rule | Value |
+| :--- | :--- |
+| Code lifetime | 10 minutes, single use; requesting a new code invalidates the previous one |
+| Wrong guesses | 5 per code, then the code is dead |
+| Requests | 5 codes per email per hour (`429` after that) |
+| Storage | Only an HMAC of the code is stored, never the code itself |
+| Signup token | Signed with a key derived from `JWT_SECRET`, so it is never accepted as a session by any service |
+
+Codes are sent over SMTP with mandatory STARTTLS (production uses [Resend](https://resend.com) on port `2587`). When `SMTP_HOST` is unset — e.g. local development — the backend **logs the code instead of emailing it**.
+
+### Gigs
+
+| Step | Poster | Person who applies |
+| :--- | :--- | :--- |
+| **Post** | Sticks a note on the board: a headline (≤ 5 words) and a note (≤ 20 words), no fee, deadline or contact details. It stays up 24 hours | — |
+| **Apply** | Gets the application as a message in the floating chat | One tap opens the chat with the poster, with a short message. Nobody can apply twice or to their own gig |
+| **Decide** | **Accept** or **Decline** on that message. Accepting starts the gig and opens the chat for typing | Gets *accepted* or *declined* in the same chat |
+| **Do it** | — | **Mark as done** when finished |
+| **Finish** | **Approve** (completed) or **Not yet** | — |
+| **Review** | Both review each other in the chat | |
+
+- **One conversation per pair:** poster and that person, per gig. It's closed to typing until the poster accepts. When the gig is completed, declined or cancelled, the conversation stays readable (and reviews can still be left), but takes no new messages and is listed last.
+- **Expiry:** a note nobody applies to within 24 hours is marked *expired* and comes off the board. The poster can repost it (another 24 hours) or cancel it. Boards show a note only within its 24 hours.
+- **Cancelling:** a gig nobody was assigned can be removed, and its waiting applicants are told. A gig someone is doing can be cancelled, and that person and the applicants are told.
+- **Your own:** gigs and applications are under **My Gigs** (side navigation). Completed gigs are hidden there.
+
+### Marketplace
+
+- **Listings:** a note with a headline (≤ 5 words), a note (≤ 20 words) and up to three photos. No price, category or condition fields.
+- **Booking:** **Book** is one tap that opens the chat with the seller. A buyer gets one booking request per item.
+- **Approving:** the seller answers on the booking card in chat. Approving reserves the item: it's off the board and the chat opens for typing.
+- **Handover:** the seller marks it **Picked up**, the buyer presses **Confirm received** (sold), and both review.
+- **Releasing:** the seller can **Release reservation** from the chat. The item goes back up for 24 hours, and that buyer can't book it again.
+- **Expiry and removal:** a listing nobody books within 24 hours expires and can be reposted or removed. Removing a listing declines its waiting bookings and tells each buyer in chat.
+- **Requests:** buyers can post a *Wanted* note too. A seller presses **I have this** and posts a listing linked to it. The requester gets a message with **Book it**, and approving their booking marks the request fulfilled.
+
+### Contact details follow consent
+
+Phone numbers, emails, links and @handles are refused on notes, applications, listings and booking messages, and masked in chat, until the two people are matched (an accepted application or an approved booking). After that their chat is unfiltered.
+
+### Nearby first
+
+When posting, people can add their rough area (about 500 m, never their exact spot, optional). Home shows a **Near you** radar of other people's nearest gigs, items and requests, by rough distance only. Boards show the nearest notes first, tagged `📍 ~2 km`, when the viewer taps *Show what's near me*. Location is never asked for unprompted.
+
+### Notifications
+
+Everything arrives live in the floating chat, with an unread badge: chat messages, gig events and booking steps. Events are system messages and can't be edited or deleted. There's no email or push notification yet.
+
+### Ratings
+
+A profile shows one rating combining gig reviews (backend) and marketplace ratings (store service). **Reviews** shows your network as circles: who rated whom, coloured by the average rating.
+
+</details>
+
+<details id="architecture">
+<summary><b>Architecture</b> — diagrams, services, monitoring stack</summary>
 
 ### Application Diagram
 
@@ -141,90 +278,26 @@ graph TB
     LOKI ---> GRAFANA
 ```
 
-### Application Services
-
-| Service | Language | Port | Description |
-| :--- | :--- | :--- | :--- |
-| **Frontend** | TypeScript (Vue.js) | `5173` | The main user interface that communicates with all backend services. |
-| **Backend** | Go (Gin) | `8080` | The core API: passwordless sign-in, users, tasks, applications, and reviews. |
-| **Proximity Service** | Go (Gin) | `8083` (internal) | Rough locations of gigs, listings and requests; tells the other services how far each is, as a coarse bucket. Has its own Redis. |
-| **Store Service** | Go (Gin) | `8081` | Marketplace listings and requests as sticky notes, with booking requests. No prices. |
-| **Chat Service** | JavaScript (Node.js) | `8082` | A real-time WebSocket service for all messaging features. |
-| **Database** | PostgreSQL | `5432` | Primary data store, with each service connecting to its own database. |
-| **Redis** | Redis | `6379` | Socket.IO adapter for multi-instance chat scaling. |
-
 ### Monitoring Stack (Dedicated Instance)
 
 | Tool | Port | Description |
 | :--- | :--- | :--- |
 | **Prometheus** | `9090` | Metrics collection — scrapes CPU/memory and Falco security alerts. |
-| **Grafana** | `3000` | Visualization — dashboards for app metrics, security alerts, WAF detections, and visitors. |
-| **Loki** | `3100` | Log aggregation — receives ModSecurity audit logs, the nginx JSON access log and app container logs from Promtail (8-day retention). |
+| **Grafana** | `3000` | Dashboards and Telegram alerts (see Observability). |
+| **Loki** | `3100` | Log aggregation from Promtail on both servers: WAF audit log, nginx access log, fail2ban, SSH, sudo, Falco events, app containers, deploy markers (8-day retention). |
+| **Jaeger** | `4318` / `16686` | Traces from all four services (OTLP in, UI out); newest 20,000 kept in memory. |
+| **Blackbox prober** | `9115` | Loads the site from outside the app server for the *Site down* and certificate alerts. |
+| **Security checks** | — | `myguy-security` (systemd timers): per-IP attack and SSH-login messages, daily and weekly summaries, `investigate <IP>`. |
 
 All monitoring containers run as rootless Podman **Quadlet** units under `myguy`, so systemd starts, restarts, and boots them.
 
----
+</details>
 
-## Authentication
+<details id="security">
+<summary><b>Security</b> — network, access, fail2ban, WAF, containers, supply chain, Falco</summary>
 
-Sign-in is **passwordless**. One flow covers both login and sign-up:
+Security is layered: a failure at one layer is contained by the ones beneath it.
 
-1. The user enters their email address; the backend emails a **6-digit code** (`POST /api/v1/auth/request-code`). It answers `202` once the code is stored and sends the email in the background (`mailer.Background`), so the form doesn't wait about a second for the mail server; a failed send is logged and the user asks for another code.
-2. The user enters the code (`POST /api/v1/auth/verify-code`). An existing account is signed in with a session JWT.
-3. A new email instead gets a 15-minute signup token; the user enters their full name and the account is created with a username derived from the email (`POST /api/v1/auth/complete-signup`).
-
-| Rule | Value |
-| :--- | :--- |
-| Code lifetime | 10 minutes, single use; requesting a new code invalidates the previous one |
-| Wrong guesses | 5 per code, then the code is dead |
-| Requests | 5 codes per email per hour (`429` after that) |
-| Storage | Only an HMAC of the code is stored, never the code itself |
-| Signup token | Signed with a key derived from `JWT_SECRET`, so it is never accepted as a session by any service |
-
-Codes are sent over SMTP with mandatory STARTTLS (production uses [Resend](https://resend.com) on port `2587`). When `SMTP_HOST` is unset — e.g. local development — the backend **logs the code instead of emailing it**.
-
----
-
-## How Gigs Work
-
-| Step | Poster | Applicant |
-| :--- | :--- | :--- |
-| **Post** | Sticks a note on the board: a headline (≤ 5 words) and note (≤ 20 words), no contact details. It stays up 24 hours | — |
-| **Apply** | Gets a 📩 *New application* message in Messages | Replies with a short message; price is agreed in chat. Can't apply twice or to their own gig |
-| **Talk** | Presses **Message** on an application card to chat with that person | Chats with the poster from the gig page |
-| **Decide** | Accepts one application (the gig moves to *In progress*, and the two can now share phone numbers in chat) or declines | Gets ✅ *accepted* or *not selected*; everyone else still waiting is told they weren't selected |
-| **Track** | Dashboard shows "*N awaiting your reply*" per gig | Dashboard → **My Applications** shows each application's status |
-| **Finish** | Either party marks it complete; both can then review each other | — |
-
-There is **one private conversation per pair** (poster ↔ each person) per gig, shown on the gig page and in Messages. Posters can cancel a gig (pending applicants are told) and delete gigs that were never assigned.
-
-**Expiry.** A note nobody applies to within 24 hours is marked *expired* and comes off the board; the poster can repost it from the gig page or dashboard for another 24 hours. A gig with at least one application stays open until the poster accepts someone or cancels.
-
-**Contact details follow consent.** Phone numbers, emails, links and @handles are refused on notes and applications, and masked in chat, until the two people are matched (an accepted application, or an approved store booking). After that, chat between them is unfiltered.
-
-### Marketplace listings
-
-Selling works the same way. A listing is a sticky note with a headline (≤ 5 words), a note (≤ 20 words) and up to three photos (the first is taped to the note). There are no price, category or condition fields: put the price in the note or agree it in chat. A buyer presses **Book**; once the seller approves, the two can share contact details in chat. A listing nobody books within 24 hours expires; the seller can repost or remove it from the item page or the **Yours** tab.
-
-**Requests.** Buyers can ask too. A request ("Printer wanted") is a note on the **Wanted** tab, with the same limits and 24-hour life. A seller who has the item presses **I have this** and posts a listing linked to the request; it goes on the board as usual, and the requester gets a message in Messages with a link to it. The requester books it like any listing, and once the seller approves that booking the request closes. A request no seller answers within 24 hours expires and can be reposted.
-
-### Nearby first
-
-When posting a gig, listing or request, people can add their rough area (about 500 m; never their exact spot; optional). Boards then show the nearest notes first, each tagged with a rough distance (`📍 ~2 km`), with notes that have no location after them. The board asks for the viewer's location only when they tap "Show what's near me"; if location is blocked, boards stay newest first. On a request's page, the listings made for it are ordered by distance from the requester.
-
-### Notifications
-
-Everything arrives in **Messages**, live, with an unread badge on the floating chat button and the Messages menu item: chat messages, task events (above), and store booking requests and updates. Event messages are system notices and can't be edited or deleted. There is no email or push notification yet; people who are offline see the unread counts next time they open the app.
-
-### Ratings
-
-A user's profile shows **one rating** combining task reviews (backend) and store ratings received as a seller or buyer (store service), with each review labelled by its gig or item.
-
----
-
-## Security
-
-Security is implemented in layers — network, access control, HTTP, runtime, and supply chain. A failure at any one layer is contained by the layers beneath it.
 
 ### Network
 
@@ -245,7 +318,7 @@ Root SSH is disabled on every server. Two non-root accounts replace it.
 | `myguy` | Runs app containers (rootless Podman) and Ansible automation. Passwordless sudo, required by Ansible `become`. Protected by the CI/CD key, which lives only in the GitHub `dev` environment. | CI/CD SSH key |
 | `ops` | Troubleshooting only. Sudo scoped to: container observe/restart (`appctl`), read `.env` secrets, `fail2ban-client status`, unban, and bans in the 7-day `manual` jail (`sudo fail2ban-client set manual banip <IP>`). Nothing else. | Personal SSH key |
 | `node_exporter` | Dedicated no-login system account. Runs only the metrics daemon. No sudo, no shell. | — |
-| `promtail` | Dedicated no-login system account. Member of `adm` group for log read access. No sudo, no shell. | — |
+| `promtail` | Dedicated no-login system account on both servers: reads the journal (`systemd-journal`) and, on the app server, `/var/log/nginx` and fail2ban's log (`adm`). No sudo, no shell. | — |
 
 Emergency access without SSH is via the Akamai **LISH console** as `root` (password from the Terraform `root_password` variable).
 
@@ -260,14 +333,14 @@ X11Forwarding         no
 
 ### Brute Force Protection — Fail2ban
 
-Four jails are active on the app instance:
+Six jails are active on the app instance:
 
 | Jail | Watches | Threshold | Ban duration |
 | :--- | :--- | :--- | :--- |
 | `sshd` | SSH auth log | 3 failures in 10 min | 1 hour |
 | `nginx-4xx` | nginx access log | 20 × 4xx in 5 min | 1 hour |
 | `nginx-botsearch` | nginx access log | 2 hits to scanner paths | 24 hours |
-| `nginx-modsecurity` | ModSecurity audit log | 3 WAF rule triggers | 24 hours |
+| `nginx-modsecurity` | ModSecurity audit log (JSON, `client_ip`) | 3 flagged requests | 24 hours |
 | `nginx-auth-abuse` | nginx JSON access log | 15 sign-in calls (`/api/v1/auth/`) in 10 min | 24 hours |
 | `manual` | — (never matches) | bans added by hand | 7 days |
 
@@ -278,11 +351,11 @@ The nginx jails read log files, so they set `backend = auto`; the default `syste
 - **TLS 1.2 / 1.3 only** — HTTP permanently redirected to HTTPS (except the NodeBalancer health check, `/healthcheck/`)
 - **Let's Encrypt** certificates via Certbot with auto-renewal
 - **ModSecurity + OWASP Core Rule Set v4** — inspects every inbound request for SQLi, XSS, path traversal, RFI, and other OWASP Top 10 patterns
-- Currently in **DetectionOnly** mode (logs, does not block) — WAF audit log feeds Fail2ban and Loki
+- Currently in **DetectionOnly** mode (logs, does not block). Its audit log is JSON, one line per flagged request, with no request or response bodies (`SecAuditLogFormat JSON`, `SecAuditLogParts ABFHZ`), and feeds fail2ban and Loki
 
 ### Container Security — Rootless Podman
 
-Application containers run under the `myguy` user with no root involvement. If a container is compromised and an attacker escapes the container boundary, they land as the unprivileged `myguy` user — not root. `loginctl enable-linger` keeps the user session alive so containers restart on boot without root.
+Application containers run under the `myguy` user with no root involvement. If a container is compromised and an attacker escapes the container boundary, they land as the unprivileged `myguy` user — not root. `loginctl enable-linger` starts myguy's systemd at boot, and `podman-restart.service` (enabled by `deploy.yml`) starts every `restart: always` container, without root.
 
 ### Supply Chain — Cosign
 
@@ -293,6 +366,7 @@ Before every deployment, the CI/CD pipeline verifies the cryptographic signature
 | `myguy-api` |
 | `myguy-store-service` |
 | `myguy-chat-websocket-service` |
+| `myguy-proximity-service` |
 
 Deployment is aborted if any signature is missing or invalid.
 
@@ -300,11 +374,13 @@ Deployment is aborted if any signature is missing or invalid.
 
 Falco monitors system calls on the app instance in real time, detecting suspicious behaviour such as privilege escalation, unexpected file access, and container escape attempts. Counts are exported as Prometheus metrics (**Falco Security Alerts** dashboard). The events themselves go to the journal as JSON and on to Loki (*Defences* dashboard): critical ones alert in Telegram with the rule, process and container, and warnings are counted in the daily summary.
 
----
+</details>
 
-## Observability
+<details id="observability">
+<summary><b>Observability</b> — tracing, logs, metrics, alerts, security checks, dashboards</summary>
 
-MyGuy has **metrics, logs and alerting** via Prometheus + Loki + Grafana + Falco, and **distributed tracing** via OpenTelemetry + Jaeger.
+Metrics, logs and alerts: Prometheus, Loki, Grafana, Falco. Traces: OpenTelemetry and Jaeger. Everything runs on the monitoring server, which listens on its VPC address only and admits only the VPC.
+
 
 In production, all monitoring tools run on a dedicated server whose ports listen on its VPC address only and whose firewall admits only the VPC — not exposed to the public internet.
 
@@ -320,8 +396,6 @@ Tempo was used before but kept outgrowing its memory on the 1 GB monitoring serv
 | **Store Service** | Go SDK + `otelgin` middleware | `myguy-store-service` |
 | **Chat Service** | Node.js SDK + Express/HTTP instrumentation | `myguy-chat-service` |
 | **Proximity Service** | Go SDK + `otelgin` middleware | `myguy-proximity-service` |
-
-Services don't pass trace context to each other yet, so a call from the backend or store to proximity or chat shows as its own trace.
 
 Each service reads the standard `OTEL_EXPORTER_OTLP_ENDPOINT` from its environment (unset means `http://localhost:4318`):
 
@@ -340,7 +414,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
 - `prometheus-podman-exporter` (Quadlet, as `myguy`, 64 MB limit) on `:9882` exposes memory and CPU per container, read from myguy's Podman API socket; the firewall opens it to the monitoring server only
 - `falco` monitors system calls for suspicious runtime behaviour and exposes Prometheus metrics on `10.0.0.2:8765`
 - `promtail` ships to Loki on the monitoring instance:
-  - ModSecurity audit entries, each joined into one line, so one query sees the IP, request, response status and rules. Request and response bodies aren't logged (`SecAuditLogParts ABFHZ`), so no personal data from an API answer reaches Loki.
+  - the ModSecurity audit log: one JSON line per flagged request (client IP, request, response status, rules). Request and response bodies aren't logged (`SecAuditLogParts ABFHZ`), so no personal data from an API answer reaches Loki.
   - the nginx JSON access log (`/var/log/nginx/access.json.log`)
   - fail2ban's bans and unbans (`job="fail2ban"`, jail as a label)
   - every app container's output. Containers log to the systemd journal (`log_driver = "journald"`, set by `deploy.yml`), so logs survive container replacement; lines carrying sign-in codes are dropped before shipping.
@@ -359,7 +433,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
   - *Security checks stopped*: no heartbeat from the security checks for 20 minutes
 
   Messages are HTML: values that came from a request are escaped and shown as code, never as links. An unchanged alert repeats once a day, and a resolved one says so.
-- The **security checks** (`files/myguy_security.py`, installed as `myguy-security`, systemd timers) send the messages Grafana can't, because they combine several logs per IP. See the [Security runbook](#security-runbook).
+- The **security checks** (`files/myguy_security.py`, installed as `myguy-security`, systemd timers) send the messages Grafana can't, because they combine several logs per IP. See the [Security runbook](#runbook).
   - Every 5 minutes, an **Attack needs a look** message for each attacking IP that needs a decision:
     - a serious attack request (SQL injection, code execution, file inclusion, XSS, SSRF, Log4Shell) the app answered without an error
     - 5+ WAF-flagged requests that fail2ban hasn't banned after 5 minutes
@@ -424,7 +498,10 @@ Umami (session-accurate visitors, events, heatmaps) was removed to free memory o
 
 ---
 
-### Security runbook
+</details>
+
+<details id="runbook">
+<summary><b>Security runbook</b> — what each security message means and what to do</summary>
 
 What each security message means and what to do. Every message ends with its next step. To look into an IP:
 - **Grafana:** *Investigate IP* (SSH tunnel below).
@@ -442,7 +519,10 @@ What each security message means and what to do. Every message ends with its nex
 
 Unban: `ssh ops@<app IP> 'sudo fail2ban-client set <jail> unbanip <IP>'`.
 
-## Infrastructure & Deployment
+</details>
+
+<details id="infrastructure">
+<summary><b>Infrastructure & deployment</b> — CI/CD, secrets, servers, Terraform, Ansible</summary>
 
 The production infrastructure runs on Linode (Akamai Cloud), is provisioned with Terraform (HCP Terraform workspace `dev-myguy`), and is configured with Ansible. The domain's DNS `A` record must point at the **NodeBalancer** IP (Terraform output `nodebalancer_ipv4`), not an instance.
 
@@ -453,9 +533,9 @@ The production infrastructure runs on Linode (Akamai Cloud), is provisioned with
 | Trigger | What runs |
 | :--- | :--- |
 | **Pull request** | Commit lint → tests and coverage (all four services) · CodeQL |
-| **Push to `main`** | Tests and coverage → images built, **Cosign-signed**, pushed to Docker Hub → **automatic deploy** (`Run ansible`: scope `full` when Ansible provisioning files changed, i.e. anything in `configuration_management/` but `deploy.yml` and `templates/`; otherwise scope `app`). Release Please, SBOM, and Scorecard run alongside. |
+| **Push to `main`** | Release Please → the images that changed since the last successful run are built, **Cosign-signed** and pushed to Docker Hub → **automatic deploy** of what changed (`Run ansible`: scope `full` when Ansible provisioning files changed, i.e. anything in `configuration_management/` but `deploy.yml` and `templates/`; otherwise scope `app`). CodeQL, SBOM and Scorecard run alongside. |
 
-Each stage only runs if the previous one passed, so failing tests never reach production. Deploys are serialised (one at a time per environment).
+Tests run on the pull request; `main` only accepts branches that passed them and are up to date, so it isn't tested again. The deploy waits for Release Please and the image builds, so if one fails nothing is deployed (re-run the failed jobs). Deploys are serialised (one at a time per environment).
 
 | Workflow | When to run it manually |
 | :--- | :--- |
@@ -552,66 +632,10 @@ ansible-playbook deploy.yml -i inventory.ini \
 
 `deploy.yml` writes `OTEL_EXPORTER_OTLP_ENDPOINT=http://<monitoring VPC IP>:4318` into the app's `.env`, so traces go to Jaeger.
 
----
-
-## Quick Start (Local Development)
-
-The backend services run locally with Podman Compose using pre-built images from Docker Hub; the frontend runs with the Vite dev server.
-
-### Prerequisites
-- Podman & Podman Compose
-- Node.js 22+
-- Git
-
-### Running the Application
-
-1. **Clone the repository:**
-   ```sh
-   git clone <repository-url>
-   cd myguy
-   ```
-
-2. **Create a root `.env` file** in the project root:
-   ```env
-   JWT_SECRET=your-secret-key-here
-   DB_PASSWORD=mysecretpassword
-   INTERNAL_API_KEY=your-internal-api-key-here
-   # Optional: leave SMTP_HOST unset to log sign-in codes instead of emailing them
-   # SMTP_HOST=smtp.resend.com
-   # Optional: image tag to run (default: latest)
-   # IMAGE_TAG=latest
-   ```
-
-3. **Start the backend services** (also starts a local Jaeger from `docker-compose.override.yml`):
-   ```sh
-   podman compose up -d
-   ```
-
-4. **Start the frontend:**
-   ```sh
-   cd frontend
-   npm install
-   npm run dev
-   ```
-
-5. **Sign in:** open the frontend, enter any email, and read the code from the API logs:
-   ```sh
-   podman compose logs api | grep "login code"
-   ```
-
-6. **Access the application:**
-   - **Frontend:** http://localhost:5173
-   - **Backend API:** http://localhost:8080
-   - **Store Service:** http://localhost:8081
-   - **Chat Service:** http://localhost:8082
-   - **Traces (Jaeger):** http://localhost:16686
-   - **PostgreSQL:** `localhost:5433`
-
----
+</details>
 
 ## Documentation
 
-- **[Backend README](./backend/README.md)**
-- **[Store Service README](./store-service/README.md)**
-- **[Chat Service README](./chat-websocket-service/README.md)**
-- **[Frontend README](./frontend/README.md)**
+- [Backend](./backend/README.md) · [Store service](./store-service/README.md) · [Chat service](./chat-websocket-service/README.md) · [Proximity service](./proximity-service/README.md) · [Frontend](./frontend/README.md)
+- [Infrastructure (Terraform)](./infra/README.md) · Ansible playbooks: `configuration_management/` (see *Infrastructure & deployment* above)
+- IP geolocation by [DB-IP](https://db-ip.com) (CC BY 4.0), where countries are shown

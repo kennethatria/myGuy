@@ -20,10 +20,11 @@
       vars:
         promtail_loki_url: "http://{{ monitoring_vpc_ip }}:3100"
         promtail_scrape_configs: |
-          # ModSecurity's Serial audit log writes each flagged request as
-          # sections A-Z over ~30 lines: A has the client IP, B the request,
-          # F the response status, H the matched rules.  Joined into one
-          # entry here, so one query sees all of a request.
+          # ModSecurity's audit log: one JSON line per flagged request
+          # (client IP, request, status, rules; coraza.conf.j2).  It used to
+          # be ~30 lines per request, which a multiline stage here was meant
+          # to join; that stage sent nothing in production, so the format
+          # changed instead.
           - job_name: modsecurity
             static_configs:
               - targets:
@@ -31,11 +32,6 @@
                 labels:
                   job: modsecurity
                   __path__: /var/log/nginx/modsecurity_audit.log
-            pipeline_stages:
-              - multiline:
-                  firstline: '^---\w+---A--$'
-                  max_wait_time: 3s
-                  max_lines: 300
 
           # JSON access log written by nginx-common.conf.j2.  Fields are
           # parsed at query time (| json) so client IPs never become labels.

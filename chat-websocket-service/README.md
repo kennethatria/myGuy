@@ -150,12 +150,13 @@ A conversation is addressed by its context (`taskId`, `applicationId` or `itemId
 
 ### Internal (service-to-service, `X-Internal-API-Key: $INTERNAL_API_KEY`)
 -   `POST /api/v1/internal/booking-created` — from the store service.
--   `POST /api/v1/internal/task-message` — from the main API: `{ task_id, sender_id, recipient_id, content }`, stored as `system_alert`.
+-   `POST /api/v1/internal/task-message` — from the main API: `{ task_id, sender_id, recipient_id, content, metadata: { event }, unlock_contacts? }`, stored as `system_alert` (gig events: `application`, `accepted`, `declined`, `cancelled`, `done`, `not_done`, `completed`; unknown events are dropped). `unlock_contacts` records the pair as matched.
 -   `POST /api/v1/internal/store-message` — from store-service: `{ store_item_id, sender_id, recipient_id, content }`, stored as `system_alert` in that item's conversation (a listing made for someone's request).
+-   `POST /api/v1/internal/booking-status` — from store-service when a removed listing declines its waiting bookings; tells each buyer in chat.
 
 ## 9. Message Lifecycle
 
-1.  **Creation**: A client sends `message:send`. The server filters content, saves to the `messages` table, and emits `message:new` to the recipient's and the sender's personal rooms.
+1.  **Creation**: A client sends `message:send`. The server filters content, saves to the `messages` table, and emits `message:new` to the recipient's and the sender's personal rooms. Gig and marketplace chats are closed to typing until the pair is matched (the poster accepted, or the seller approved a booking): `sendMessage` refuses with `chat_locked`, and `messages:list` reports `locked`. Once the deal is done or closed, it refuses with `chat_ended`; the conversation stays readable and is listed last.
 2.  **Editing**: A client sends `message:edit`. The server verifies ownership, updates the record, and emits `message:edited`.
 3.  **Deletion**: A client sends `message:delete`. The server soft-deletes the message (replaces content with "[Message deleted]") and emits `message:deleted`.
 4.  **Auto-Deletion**: A daily cron job checks for old conversations tied to completed/inactive tasks and schedules them for permanent deletion, notifying users 30 days in advance.
