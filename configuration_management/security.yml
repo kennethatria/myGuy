@@ -122,6 +122,36 @@
             listen_address: 0.0.0.0
             prometheus_metrics_enabled: true
 
+    # Our own deploys tripped two rules on every run (Falco logs, 2026-10-09):
+    # Ansible's Python under sudo reads /etc/shadow ("Read sensitive file
+    # untrusted"), and its git module walks the OWASP CRS submodules through
+    # ../ paths ("Directory traversal monitored file read").  Only that chain
+    # in myguy's login session is excused; the same reads by anything else,
+    # ops included, still alert.  Validated with Falco's own rules before
+    # it's installed, so a mistake can't stop Falco starting.
+    - name: Write Falco local rules (deploy exceptions)
+      ansible.builtin.copy:
+        dest: /etc/falco/falco_rules.local.yaml
+        mode: "0644"
+        validate: falco -V /etc/falco/falco_rules.yaml -V %s
+        content: |
+          - macro: myguy_ansible
+            condition: >
+              (user.loginname = myguy and proc.aname = sudo and
+               (proc.name startswith python or proc.pname startswith python))
+
+          - rule: Read sensitive file untrusted
+            condition: and not myguy_ansible
+            override:
+              condition: append
+
+          - rule: Directory traversal monitored file read
+            condition: >
+              and not (myguy_ansible and
+                       fd.name startswith /etc/nginx/modsecurity/owasp-crs/)
+            override:
+              condition: append
+
     - name: Enable and start Falco service
       ansible.builtin.service:
         name: falco
