@@ -201,6 +201,9 @@
           [Container]
           ContainerName=podman-exporter
           Image=quay.io/navidys/prometheus-podman-exporter:v1.21.2
+          # The image's own user can't open myguy's socket; container root is
+          # myguy on the host (rootless), so this grants nothing more.
+          User=0
           PublishPort=9882:9882
           # %t is myguy's runtime directory
           Volume=%t/podman/podman.sock:/run/podman/podman.sock
@@ -211,6 +214,9 @@
 
           [Service]
           Restart=always
+          # Without a pause a failing start loops every second (seen: socket
+          # permission denied), burning the app server's only CPU.
+          RestartSec=30
           TimeoutStartSec=300
 
           [Install]
