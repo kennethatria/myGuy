@@ -215,6 +215,14 @@
           # below read files, so each sets backend = auto (without it they
           # never banned anyone).
           backend  = systemd
+          # Never ban ourselves: this server, the VPC (monitoring server) and
+          # the NodeBalancer, which every web request comes through.
+          ignoreip = 127.0.0.1/8 ::1 10.0.0.0/24 192.168.255.0/24
+
+          # Web jails ban with nginx-ban, not the firewall: web traffic
+          # reaches this server from the NodeBalancer, so the firewall never
+          # sees a visitor's IP (before 2026-10 web bans blocked nothing).
+          # nginx refuses banned IPs (444) within a minute.
 
           # SSH — key-only auth is enforced, so any failed attempt is either
           # a wrong username or connection probing. Ban quickly.
@@ -233,6 +241,7 @@
           filter   = nginx-4xx
           logpath  = /var/log/nginx/access.log
           backend  = auto
+          action   = nginx-ban
           maxretry = 20
           findtime = 300
           bantime  = 3600
@@ -243,6 +252,7 @@
           port     = http,https
           logpath  = /var/log/nginx/access.log
           backend  = auto
+          action   = nginx-ban
           maxretry = 2
           bantime  = 86400  ; 24 hours — these are deliberate scans
 
@@ -253,6 +263,7 @@
           filter   = nginx-modsecurity
           logpath  = /var/log/nginx/modsecurity_audit.log
           backend  = auto
+          action   = nginx-ban
           maxretry = 3
           bantime  = 86400  ; 24 hours — WAF hits are high-confidence signals
 
@@ -264,18 +275,37 @@
           filter   = nginx-auth-abuse
           logpath  = /var/log/nginx/access.json.log
           backend  = auto
+          action   = nginx-ban
           maxretry = 15
           findtime = 600
           bantime  = 86400
 
-          # Manual bans (fail2ban-client set manual banip <IP>), 7 days.
-          # Its filter never matches, so nothing is banned automatically.
-          [manual]
+          # Tripwire: paths this app never has (PHP, dot-files, WordPress,
+          # admin tools, the robots.txt-only trap) are asked for only by
+          # scanners.  One hit bans for 7 days, longer each time it returns.
+          [tripwire]
           enabled  = true
           port     = http,https
+          filter   = tripwire
+          logpath  = /var/log/nginx/access.json.log
+          backend  = auto
+          action   = nginx-ban
+          maxretry = 1
+          bantime  = 604800
+          bantime.increment = true
+          bantime.maxtime   = 2592000  ; at most 30 days
+
+          # Manual bans (fail2ban-client set manual banip <IP>), 7 days,
+          # for the site (nginx) and SSH (firewall).  Its filter never
+          # matches, so nothing is banned automatically.
+          [manual]
+          enabled  = true
+          port     = http,https,ssh
           filter   = manual
           logpath  = /var/log/nginx/access.json.log
           backend  = auto
+          action   = %(action_)s
+                     nginx-ban
           maxretry = 1
           bantime  = 604800
 
@@ -320,6 +350,122 @@
           # Never matches: this jail only holds bans added by hand.
           failregex = ^MANUAL-BAN-NEVER-IN-LOGS <HOST>$
           ignoreregex =
+
+    # Paths only scanners ask for (from 8 days of 404s, 2026-10).  Never
+    # /robots.txt, /sitemap.xml or /.well-known/: polite crawlers fetch those.
+    # /internal-archive/ is listed only as Disallow in robots.txt, so only
+    # crawlers that ignore it get there.  uri is the path without query.
+    - name: Write tripwire fail2ban filter
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/filter.d/tripwire.conf
+        mode: "0644"
+        content: |
+          [Definition]
+          failregex = ^\{"time":"[^"]*","remote_addr":"<HOST>","method":"[A-Z]*","uri":"(?:[^"]*\.php(?:/[^"]*)?|[^"]*/\.(?:env|git|svn|hg|aws|ssh|DS_Store)[^"]*|/(?:wp-|xmlrpc|phpmyadmin|pma/|cgi-bin/|actuator|containers/json|internal-archive)[^"]*)"
+          ignoreregex =
+
+    # Bans that work for web traffic.  Each jail keeps its banned IPs in
+    # /etc/nginx/banned/<jail>.conf; nginx reads the folder as a geo map
+    # (nginx-common.conf.j2) and refuses those IPs.  nginx-bans-sync.timer
+    # reloads nginx when a list changed, so bursts share one reload.
+    - name: Write the nginx-ban fail2ban action
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/action.d/nginx-ban.conf
+        mode: "0644"
+        content: |
+          [Definition]
+          actionstart = mkdir -p /etc/nginx/banned && touch <banfile>
+          actionstop = rm -f <banfile>
+          actionflush = : > <banfile>
+          actioncheck =
+          actionban = flock <banfile>.lock sh -c 'grep -qxF "<ip> 1;" <banfile> || echo "<ip> 1;" >> <banfile>'
+          actionunban = flock <banfile>.lock sh -c 'grep -vxF "<ip> 1;" <banfile> > <banfile>.tmp; mv <banfile>.tmp <banfile>'
+
+          [Init]
+          banfile = /etc/nginx/banned/<name>.conf
+
+    # Repeat offenders: bantime.increment needs bans remembered longer than
+    # the default day.
+    - name: Remember bans for 30 days
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/fail2ban.d/myguy.local
+        mode: "0644"
+        content: |
+          [DEFAULT]
+          dbpurgeage = 30d
+
+    - name: Create the nginx ban folder
+      ansible.builtin.file:
+        path: /etc/nginx/banned
+        state: directory
+        mode: "0755"
+
+    - name: Install the nginx ban sync
+      ansible.builtin.copy:
+        dest: /usr/local/bin/nginx-bans-sync
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          # Reloads nginx if fail2ban changed a ban list (/etc/nginx/banned)
+          # since the last reload.  Run every minute: bans arriving together
+          # share one reload, and a change made during a reload is caught
+          # the next minute (its time is after the stamp).
+          set -eu
+          stamp=/run/nginx-bans.stamp
+          if [ -e "$stamp" ] && [ -z "$(find /etc/nginx/banned -newer "$stamp" -print -quit)" ]; then
+            exit 0
+          fi
+          touch "$stamp.next"
+          nginx -t -q
+          systemctl reload nginx
+          mv "$stamp.next" "$stamp"
+
+    - name: Write the nginx ban sync units
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ item.key }}"
+        mode: "0644"
+        content: "{{ item.value }}"
+      loop: "{{ ban_sync_units | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      vars:
+        ban_sync_units:
+          nginx-bans-sync.service: |
+            [Unit]
+            Description=Reload nginx when fail2ban's ban lists changed
+            After=nginx.service
+
+            [Service]
+            Type=oneshot
+            ExecStart=/usr/local/bin/nginx-bans-sync
+          nginx-bans-sync.timer: |
+            [Unit]
+            Description=Apply fail2ban's web bans every minute
+
+            [Timer]
+            OnCalendar=minutely
+            AccuracySec=5s
+
+            [Install]
+            WantedBy=timers.target
+
+    - name: Start the nginx ban sync
+      ansible.builtin.systemd:
+        name: nginx-bans-sync.timer
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    # Every reload starts new workers; old ones keep serving open
+    # connections, and chat's websockets stay open for hours.  Bound it so
+    # reloads for bans don't pile up old workers (clients reconnect).
+    - name: Limit how long old nginx workers linger after a reload
+      ansible.builtin.lineinfile:
+        path: /etc/nginx/nginx.conf
+        regexp: '^worker_shutdown_timeout '
+        line: "worker_shutdown_timeout 5m;"
+        insertafter: '^pid '
+      notify: reload nginx
 
     - name: Enable and start fail2ban
       ansible.builtin.systemd:

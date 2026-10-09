@@ -3,6 +3,12 @@ server {
     server_name{% for name in ([domain] + redirect_domains) | unique %} {{ name }} www.{{ name }}{% endfor %};
     real_ip_header X-Forwarded-For;
 
+    # Banned by fail2ban (nginx-common.conf.j2): close without an answer,
+    # logged as 444.
+    if ($banned_ip) {
+        return 444;
+    }
+
     root {{ app_dir }}/frontend/dist;
     index index.html;
 

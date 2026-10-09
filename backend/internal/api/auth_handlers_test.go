@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -47,6 +49,7 @@ func setupAuthRouter(t *testing.T) (*gin.Engine, *capturingSender, *repositories
 	handler := NewHandler(authService, services.NewUserService(userRepo), nil, nil, jwt)
 
 	router := gin.New()
+	router.TrustedPlatform = ClientIPHeader
 	router.POST("/auth/request-code", handler.RequestLoginCode)
 	router.POST("/auth/verify-code", handler.VerifyLoginCode)
 	router.POST("/auth/complete-signup", handler.CompleteSignup)
@@ -57,6 +60,7 @@ func postJSON(router *gin.Engine, path string, body interface{}) (*httptest.Resp
 	payload, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewBuffer(payload))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ClientIPHeader, "203.0.113.7") // as nginx sets it
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -140,4 +144,33 @@ func TestAuthHandlers_Errors(t *testing.T) {
 		}
 		assert.Equal(t, http.StatusTooManyRequests, w.Code)
 	})
+}
+
+// Each sign-in step is logged with the address and the visitor's IP (from
+// nginx), so abuse can be traced between them; the code never is.
+func TestAuthHandlers_LogSignInEvents(t *testing.T) {
+	var logs bytes.Buffer
+	log.SetOutput(&logs)
+	defer log.SetOutput(os.Stderr)
+	router, sender, _, _ := setupAuthRouter(t)
+
+	postJSON(router, "/auth/request-code", gin.H{"email": "Jane@Example.com"})
+	code := sender.codes["jane@example.com"]
+	assert.Len(t, code, 6)
+	postJSON(router, "/auth/verify-code", gin.H{"email": "jane@example.com", "code": wrongCode(code)})
+	_, body := postJSON(router, "/auth/verify-code", gin.H{"email": "jane@example.com", "code": code})
+	postJSON(router, "/auth/complete-signup", gin.H{"signup_token": body["signup_token"], "full_name": "Jane Doe"})
+
+	out := logs.String()
+	for _, event := range []string{"code_sent", "wrong_code", "new_account", "signed_up"} {
+		assert.Contains(t, out, `auth event=`+event+` email="jane@example.com" ip=203.0.113.7`)
+	}
+	assert.NotContains(t, out, code, "codes are never logged")
+}
+
+func wrongCode(code string) string {
+	if code == "000000" {
+		return "111111"
+	}
+	return "000000"
 }

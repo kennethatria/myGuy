@@ -98,6 +98,8 @@ Sign-in is **passwordless**. One flow covers both login and sign-up:
 
 Codes are sent over SMTP with mandatory STARTTLS (production uses [Resend](https://resend.com) on port `2587`). When `SMTP_HOST` is unset — e.g. local development — the backend **logs the code instead of emailing it**.
 
+**Sign-in log (email ↔ IP).** Each step is logged with the address and the visitor's IP: `auth event=code_sent|limited|wrong_code|signed_in|new_account|signed_up|failed email="…" ip=…` (`internal/api/handlers.go`, `logAuthEvent`). The code itself is never logged. The IP comes from nginx's `X-Real-IP` (`TrustedPlatform`), so a visitor can't fake it with their own `X-Forwarded-For`. The lines go to Loki with the API's output (8 days, personal data: kept no longer). They show which addresses an IP tried, and from which IPs an address got codes.
+
 ### Gigs
 
 | Step | Poster | Person who applies |
@@ -333,7 +335,7 @@ X11Forwarding         no
 
 ### Brute Force Protection — Fail2ban
 
-Six jails are active on the app instance:
+Seven jails are active on the app instance. **Web bans are enforced by nginx, not the firewall:** web traffic reaches the server from the NodeBalancer, so the firewall never sees a visitor's IP (until October 2026 web bans blocked nothing; only SSH bans worked). The `nginx-ban` action keeps each jail's banned IPs in `/etc/nginx/banned/<jail>.conf`. nginx reads that folder as a `geo` map and closes connections from banned IPs (logged as `444`; the Defences dashboard counts them). `nginx-bans-sync.timer` reloads nginx within a minute of a change, so bursts share one reload. The `sshd` jail keeps the firewall. Never banned: the server itself, the VPC and the NodeBalancer range (`ignoreip`).
 
 | Jail | Watches | Threshold | Ban duration |
 | :--- | :--- | :--- | :--- |
@@ -342,7 +344,8 @@ Six jails are active on the app instance:
 | `nginx-botsearch` | nginx access log | 2 hits to scanner paths | 24 hours |
 | `nginx-modsecurity` | ModSecurity audit log (JSON, `client_ip`) | 3 flagged requests | 24 hours |
 | `nginx-auth-abuse` | nginx JSON access log | 15 sign-in calls (`/api/v1/auth/`) in 10 min | 24 hours |
-| `manual` | — (never matches) | bans added by hand | 7 days |
+| `tripwire` | nginx JSON access log | 1 request for a path only scanners ask for: PHP files, `.env`/`.git`/`.svn` files, WordPress, `xmlrpc`, `phpmyadmin`, `actuator`, `containers/json`, and `/internal-archive/` (listed only as `Disallow` in `robots.txt`) | 7 days, longer each time (up to 30) |
+| `manual` | — (never matches) | bans added by hand (site and SSH) | 7 days |
 
 The nginx jails read log files, so they set `backend = auto`; the default `systemd` backend reads only the journal (before this they never banned anyone). Sign-in is also rate limited in nginx: 10 requests a minute per IP, bursts of 5, then 429.
 
@@ -453,7 +456,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
     - any other user
   - At 08:00 Amsterdam time, the **daily summary** (last 24 h, compared with the day before):
     - health: uptime, certificate, disk, memory peak, server errors, deploys
-    - defences: WAF detections, bans by jail, top 3 IPs (with country), attacker countries, sign-in rate limits
+    - defences: WAF detections, bans by jail, top 3 IPs (with country), attacker countries, requests refused from banned IPs, sign-in: codes sent to how many addresses from how many IPs, sign-ins, wrong codes, and the most-codes address (masked, when 5+)
     - access: SSH logins, failed attempts, sudo by `ops`
     - Falco
     - visitors (and their countries) and sign-ups
@@ -461,6 +464,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
   - On Saturdays, also the **weekly summary** (last 7 days against the 7 before, added up from the saved daily ones), leaving the weekend to look into anything. It adds repeat offenders, the busiest day and attack types.
   - The daily numbers are kept for 15 days in `/var/lib/myguy-security/history.jsonl` (IPs included, about as long as Loki keeps them).
   - `myguy-security --dry-run daily` prints a summary instead of sending it.
+  - `investigate <email>` lists every sign-in step for an address and the IPs it came from (with a hint when many codes come from several IPs: email bombing). `investigate <IP>` also lists the addresses that IP tried. Telegram messages show addresses masked (`j***@example.com`).
 - Grafana is pre-provisioned with these dashboards:
   - **App Instance Metrics** / **Monitoring Instance Metrics** — CPU, memory and disk use now (green / amber / red) and over time, one dashboard per server; App Instance Metrics also shows memory and CPU per container
   - **Application Activities** — accounts, new sign-ups, people active in gigs and the marketplace, and gigs, listings, requests and bookings by status. Counts only: the backend (`:9464`) and store-service (`:9465`) publish them from their databases (`internal/metrics`), on ports nginx doesn't route and the firewall opens to the monitoring server alone; no names or emails leave the app server
@@ -470,7 +474,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
   - **Slow Requests** — requests over 0.5 s (count, newest list, slowest endpoints) and median / p95 / p99 response time, from nginx's `request_time` in the access log (8 days); malformed connections and the chat socket are left out
   - **Service Logs** — every service's output in one place: lines and errors per service, and a searchable log view (8-day retention)
   - **Investigate IP** — type an IP to see everything it did: requests by status, top paths, user agents, WAF entries in full, sign-in calls, fail2ban bans and SSH lines, and its country. Also shown: *Serious, answered* (attack requests the app didn't refuse) and *Signed in from this IP*, which warns that a ban may lock out real users.
-  - **Defences** — what the defences did: bans by jail, banned IPs, WAF and sign-in rate limits, the security checks' alerts, SSH logins on both servers, sudo by people, Falco events, deploys, and failed requests by country
+  - **Defences** — what the defences did: bans by jail, banned IPs, WAF and sign-in rate limits, the security checks' alerts, SSH logins on both servers, sudo by people, Falco events, deploys, failed requests by country, requests refused from banned IPs, most-targeted sign-in addresses and the sign-in steps
 
 Both Prometheus (`:9090`) and Grafana (`:3000`) are only reachable from within the VPC. To access them locally, SSH tunnel through the app instance as the `ops` user:
 
@@ -517,7 +521,7 @@ What each security message means and what to do. Every message ends with its nex
 | **Falco security alert** | A critical runtime event on the app server (rule, process, container). | *Defences*: Falco events, or `journalctl -u 'falco*'` on the app server. A shell in a container or an unexpected process writing to `/etc` needs a look. |
 | **Security checks stopped** | No heartbeat for 20 minutes, so attacks and logins aren't being reported. | On the monitoring server: `systemctl status myguy-security-check.timer` and `journalctl -u myguy-security-check`. |
 
-Unban: `ssh ops@<app IP> 'sudo fail2ban-client set <jail> unbanip <IP>'`.
+Bans take effect within a minute (nginx reloads when a ban list changes); a banned IP's requests show as `444` in *Investigate IP*. Unban: `ssh ops@<app IP> 'sudo fail2ban-client set <jail> unbanip <IP>'`.
 
 </details>
 

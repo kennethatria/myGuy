@@ -90,6 +90,8 @@ func main() {
 
 	// Setup router
 	r := gin.Default()
+	// The visitor's IP, from nginx (also in gin's request log)
+	r.TrustedPlatform = api.ClientIPHeader
 	r.Use(otelgin.Middleware("myguy-backend", otelgin.WithFilter(tracing.Traced)))
 
 	// Enable CORS

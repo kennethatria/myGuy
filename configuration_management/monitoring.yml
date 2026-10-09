@@ -4245,6 +4245,32 @@
                   "wrapLogMessage": true,
                   "sortOrder": "Descending"
                 }
+              },
+              {
+                "type": "logs",
+                "title": "Sign-in steps from this IP",
+                "gridPos": {
+                  "x": 0,
+                  "y": 40,
+                  "w": 24,
+                  "h": 8
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "description": "Which addresses this IP asked codes for, and what happened (backend sign-in log; never the code).",
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "{job=\"containers\", service=\"api\"} |= \"auth event=\" |~ `ip=${ip:regex}$`"
+                  }
+                ],
+                "options": {
+                  "showTime": true,
+                  "wrapLogMessage": true,
+                  "sortOrder": "Descending"
+                }
               }
             ]
           }
@@ -4322,8 +4348,8 @@
               },
               {
                 "type": "stat",
-                "title": "Unbans",
-                "description": "Bans that ran out.",
+                "title": "Refused (banned)",
+                "description": "Requests nginx refused because fail2ban banned the IP (logged as 444). Bans are enforced by nginx: web traffic comes through the NodeBalancer, so the firewall never sees visitors' IPs.",
                 "gridPos": {
                   "x": 4,
                   "y": 0,
@@ -4346,10 +4372,6 @@
                         {
                           "color": "green",
                           "value": null
-                        },
-                        {
-                          "color": "orange",
-                          "value": 1
                         }
                       ]
                     }
@@ -4368,7 +4390,7 @@
                   {
                     "refId": "A",
                     "queryType": "instant",
-                    "expr": "sum(count_over_time({job=\"fail2ban\"} |= \"] Unban \" [$__range])) or vector(0)"
+                    "expr": "sum(count_over_time({job=\"nginx_access\"} | json | status=\"444\" [$__range])) or vector(0)"
                   }
                 ]
               },
@@ -4930,6 +4952,123 @@
                     }
                   }
                 ]
+              },
+              {
+                "type": "table",
+                "title": "Most-targeted addresses",
+                "description": "Addresses sign-in codes were requested for (sent or rate-limited), from the backend's sign-in log. One address from many IPs: someone may be email-bombing it. Details: investigate <email> on the monitoring server.",
+                "gridPos": {
+                  "x": 0,
+                  "y": 45,
+                  "w": 12,
+                  "h": 9
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "decimals": 0
+                  },
+                  "overrides": [
+                    {
+                      "matcher": {
+                        "id": "byName",
+                        "options": "Codes"
+                      },
+                      "properties": [
+                        {
+                          "id": "custom.cellOptions",
+                          "value": {
+                            "type": "gauge",
+                            "mode": "basic",
+                            "valueDisplayMode": "text"
+                          }
+                        },
+                        {
+                          "id": "color",
+                          "value": {
+                            "mode": "fixed",
+                            "fixedColor": "blue"
+                          }
+                        },
+                        {
+                          "id": "custom.width",
+                          "value": 220
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "targets": [
+                  {
+                    "refId": "A",
+                    "queryType": "instant",
+                    "expr": "sort_desc(topk(15, sum by (email) (count_over_time({job=\"containers\", service=\"api\"} |= \"auth event=\" | regexp `event=(?P<event>code_sent|limited) email=\"(?P<email>[^\"]*)\"` | email != \"\" [$__range]))))"
+                  }
+                ],
+                "options": {
+                  "showHeader": true,
+                  "cellHeight": "sm",
+                  "sortBy": [
+                    {
+                      "displayName": "Codes",
+                      "desc": true
+                    }
+                  ]
+                },
+                "transformations": [
+                  {
+                    "id": "labelsToFields",
+                    "options": {
+                      "mode": "columns"
+                    }
+                  },
+                  {
+                    "id": "merge",
+                    "options": {}
+                  },
+                  {
+                    "id": "organize",
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {
+                        "email": "Address",
+                        "Value": "Codes",
+                        "Value #A": "Codes"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "logs",
+                "title": "Sign-in steps",
+                "gridPos": {
+                  "x": 12,
+                  "y": 45,
+                  "w": 12,
+                  "h": 9
+                },
+                "datasource": {
+                  "type": "loki",
+                  "uid": "loki"
+                },
+                "description": "Each sign-in step with its address and IP (backend; never the code): code_sent, limited, wrong_code, signed_in, new_account, signed_up, failed.",
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "{job=\"containers\", service=\"api\"} |= \"auth event=\""
+                  }
+                ],
+                "options": {
+                  "showTime": true,
+                  "wrapLogMessage": true,
+                  "sortOrder": "Descending"
+                }
               }
             ]
           }

@@ -333,6 +333,7 @@ class InvestigateTest(TempState):
         self.assertIn("rate-limited (429): 1", text)
         self.assertIn("WAF: 1 flagged (SQL injection 1) · serious answered without an error: 1", text)
         self.assertIn("banned now by nginx-modsecurity", text)
+        self.assertNotIn("Requests: none", text)
         self.assertIn(f"banip {ip}", text)
 
 
@@ -378,6 +379,68 @@ class CountryTest(TempState):
     def test_real_database(self):
         country = ms.country_lookup(os.environ["GEOIP_TEST_DB"])
         self.assertEqual((country("8.8.8.8"), country("10.0.0.5"), country("not-an-ip")), ("US", "", ""))
+
+
+def auth_line(event, email, ip):
+    """A line from the backend's sign-in log (logAuthEvent), as Loki has it."""
+    return f'2026/10/17 06:00:00 auth event={event} email="{email}" ip={ip}'
+
+
+class SignInTest(TempState):
+    def add(self, ts, event, email, ip):
+        self.src.add("containers", ts, auth_line(event, email, ip), service="api")
+
+    def test_parse_and_mask(self):
+        e = ms.parse_auth(1, auth_line("code_sent", "jane@example.com", "203.0.113.7"))
+        self.assertEqual((e["event"], e["email"], e["ip"]), ("code_sent", "jane@example.com", "203.0.113.7"))
+        self.assertIsNone(ms.parse_auth(1, '[GIN] 2026/10/17 | 200 | GET "/health"'))
+        self.assertEqual(ms.mask("jane@example.com"), "j***@example.com")
+
+    def test_ip_filter_is_exact(self):
+        self.add(NOW - MIN, "code_sent", "a@example.com", "203.0.113.70")
+        self.add(NOW - MIN, "code_sent", "b@example.com", "203.0.113.7")
+        self.assertEqual([e["email"] for e in ms.auth_events(self.src, NOW - DAY, NOW, ip="203.0.113.7")],
+                         ["b@example.com"])
+
+    def test_investigate_ip_lists_addresses_tried(self):
+        for i, who in enumerate(["a@example.com", "b@example.com", "a@example.com"]):
+            self.add(NOW - (i + 1) * MIN, "code_sent", who, "203.0.113.7")
+        out = []
+        ms.investigate(self.src, self.settings, "203.0.113.7", 24, NOW, out.append)
+        text = "\n".join(out)
+        self.assertIn("Sign-in addresses tried from this IP: 2", text)
+        self.assertIn("a@example.com", text)
+
+    def test_investigate_email(self):
+        for i in range(6):
+            self.add(NOW - (i + 1) * MIN, "code_sent" if i < 5 else "limited", "jane@example.com", f"203.0.113.{i % 3 + 1}")
+        out = []
+        ms.investigate_email(self.src, self.settings, "jane@example.com", 24, NOW, out.append)
+        text = "\n".join(out)
+        self.assertIn("Steps: code_sent 5, limited 1", text)
+        self.assertIn("From 3 IP(s)", text)
+        self.assertIn("email-bombing", text)
+
+    def test_sign_in_abuse_message_names_masked_addresses(self):
+        self.src.vectors.append(("/api/v1/auth/", [({"remote_addr": "198.51.100.2"}, 12)]))
+        for i, who in enumerate(["jane@example.com", "joe@example.org"]):
+            self.add(NOW - (i + 1) * MIN, "code_sent", who, "198.51.100.2")
+        ms.check(self.src, self.settings, {}, NOW, self.send)
+        self.assertIn("tried 2 address(es)", self.sent[0])
+        self.assertIn("<code>j***@example.com</code>", self.sent[0])
+        self.assertNotIn("jane@example.com", self.sent[0])
+
+    def test_daily_sign_in_and_refused(self):
+        self.src.vectors.append(('status="444"', [({}, 17)]))
+        for i in range(6):
+            self.add(NOW - (i + 1) * MIN, "code_sent", "jane@example.com", f"203.0.113.{i + 1}")
+        self.add(NOW - 30 * MIN, "signed_in", "joe@example.org", "198.51.100.9")
+        ms.daily(self.src, self.settings, {}, NOW, self.send)
+        msg = self.sent[0]
+        self.assertIn("Requests refused from banned IPs: 17", msg)
+        self.assertIn("codes sent to 1 address(es) from 6 IP(s) · 1 signed in (0 new) · 0 wrong codes", msg)
+        self.assertIn("most codes: <code>j***@example.com</code> ×6", msg)
+        self.assertNotIn("jane@example.com", msg)
 
 
 class SettingsTest(unittest.TestCase):
