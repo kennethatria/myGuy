@@ -413,6 +413,8 @@
       become: yes
 
     - name: Write Grafana alert rules and Telegram contact point
+      # A rule removed from this file stays in Grafana: list its uid under
+      # deleteRules too (the four there were retired in #203).
       # The bot token and chat id come from grafana.env (${...} below), so
       # no secret is in this file.  Without them the rules still show in
       # Grafana > Alerting, but nothing reaches Telegram.
@@ -422,6 +424,24 @@
         content: !unsafe |
           {
             "apiVersion": 1,
+            "deleteRules": [
+              {
+                "orgId": 1,
+                "uid": "attack-burst"
+              },
+              {
+                "orgId": 1,
+                "uid": "serious-attack"
+              },
+              {
+                "orgId": 1,
+                "uid": "sign-in-abuse"
+              },
+              {
+                "orgId": 1,
+                "uid": "falco-warning"
+              }
+            ],
             "contactPoints": [
               {
                 "orgId": 1,
