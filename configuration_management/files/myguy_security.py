@@ -753,17 +753,21 @@ def collect(src, settings_, state, start, end):
     return s
 
 
+def plural(n, one, many=None):
+    return f"{number(n)} {one if n == 1 else (many or one + 's')}"
+
+
 def attention(s):
-    """The short list at the bottom: anything you should look at."""
+    """The short list at the top: anything you should look at."""
     items = []
     if s.get("unknown_logins"):
-        items.append(f"{s['unknown_logins']} unexpected SSH login(s)")
+        items.append(plural(s["unknown_logins"], "unexpected SSH login"))
     if s.get("waf_succeeded"):
-        items.append(f"{s['waf_succeeded']} serious attack request(s) answered without an error")
+        items.append(plural(s["waf_succeeded"], "serious attack request") + " answered without an error")
     if s.get("attack_alerts"):
-        items.append(f"{s['attack_alerts']} attacking IP(s) needed a look (see the alerts)")
+        items.append(plural(s["attack_alerts"], "attacking IP") + " needed a look (see the alerts)")
     if s.get("falco_critical"):
-        items.append(f"{s['falco_critical']} critical Falco event(s)")
+        items.append(plural(s["falco_critical"], "critical Falco event"))
     # A minute or two is a deploy restarting things; Site down fires at 3
     if (s.get("outage_minutes") or 0) >= 3:
         items.append(f"site down ~{s['outage_minutes']} min")
@@ -776,102 +780,131 @@ def attention(s):
         if used >= 90:
             items.append(f"{host} memory peaked at {used}%")
     if (s.get("server_errors") or 0) > 20:
-        items.append(f"{s['server_errors']} server errors")
+        items.append(plural(s["server_errors"], "server error"))
+    if s.get("missing_days"):
+        items.append(plural(s["missing_days"], "day") + " with no daily summary (check the summary timer)")
     if s.get("unreadable"):
         items.append("couldn't read: " + ", ".join(s["unreadable"]))
     return items
 
 
-def format_summary(title, s, prev, days=1):
-    """Daily (days=1) or weekly summary text, comparing with prev."""
+# Jail names as the summaries show them
+JAIL_NAMES = {"nginx-modsecurity": "WAF", "nginx-4xx": "4xx", "nginx-botsearch": "botsearch",
+              "nginx-auth-abuse": "sign-in abuse"}
+
+
+def format_summary(title, s, prev, days=1, note=""):
+    """Daily (days=1) or weekly summary text, comparing with prev.  Built
+    for a phone: the verdict first, short lines, nothing for zeros."""
     p = prev or {}
-    per = "in 24 h" if days == 1 else "this week"
 
-    def by_host(values, unit="%"):
-        return " / ".join(f"{h} {v}{unit}" for h, v in sorted((values or {}).items())) or "—"
+    def by_host(values):
+        return ", ".join(f"{esc(h)} {v}%" for h, v in sorted((values or {}).items())) or "—"
 
-    lines = [f"🛡 <b>{esc(title)}</b>", "", "<b>Health</b>"]
-    uptime = s.get("uptime")
-    lines.append(f"  Site up {number(uptime)}%" + (f" (down ~{s['outage_minutes']} min)"
-                 if s.get("outage_minutes") else "")
-                 + (f" · certificate valid {s['cert_days']} days" if s.get("cert_days") is not None else ""))
-    lines.append(f"  Disk {by_host(s.get('disk'))} · memory peak {by_host(s.get('memory_peak'))}")
-    lines.append(f"  Server errors: {number(s.get('server_errors'))}{compare(s.get('server_errors'), p.get('server_errors'))}"
+    def counts(counter):
+        return ", ".join(f"{esc(k)} {n}" for k, n in sorted(counter.items(), key=lambda x: (-x[1], x[0])))
+
+    lines = [f"🛡 <b>{esc(title)}</b>"]
+    if note:
+        lines.append(f"<i>{esc(note)}</i>")
+    items = attention(s)
+    lines += ["", "⚠️ <b>Needs a look</b>"] + [f"• {esc(i)}" for i in items] if items else ["", "✅ <b>All clear</b>"]
+
+    lines += ["", "🩺 <b>Health</b>"]
+    lines.append(("Up —" if s.get("uptime") is None else f"Up {number(s['uptime'])}%")
+                 + (f" (down ~{s['outage_minutes']} min)" if s.get("outage_minutes") else "")
+                 + (f" · certificate {s['cert_days']} days" if s.get("cert_days") is not None else ""))
+    lines.append(f"Disk: {by_host(s.get('disk'))}")
+    lines.append(f"Memory peak: {by_host(s.get('memory_peak'))}")
+    lines.append(f"Server errors: {number(s.get('server_errors'))}{compare(s.get('server_errors'), p.get('server_errors'))}"
                  + (f" (top {code(s['top_error'], 40)})" if s.get("top_error") else ""))
-    deploys = s.get("deploys") or []
     if days == 1:
-        lines.append(f"  Deploys: {len(deploys)}" + (" · " + ", ".join(
-            f"{esc(t)} ({esc(rest.replace('scope=', '').replace('services=', ''))})" for t, rest in deploys[:3])
-            if deploys else ""))
+        times = [t for t, _ in s.get("deploys") or []]
+        lines.append(f"Deploys: {len(times)}" + (" (" + ", ".join(esc(t) for t in times[:4])
+                                                  + (", …" if len(times) > 4 else "") + ")" if times else ""))
     else:
-        lines.append(f"  Deploys: {s.get('deploy_count', 0)}{compare(s.get('deploy_count'), p.get('deploy_count'))}")
+        lines.append(f"Deploys: {s.get('deploy_count', 0)}{compare(s.get('deploy_count'), p.get('deploy_count'))}")
 
-    lines += ["", "<b>Defences</b>"]
-    lines.append(f"  WAF detections: {number(s.get('waf'))}{compare(s.get('waf'), p.get('waf'))}"
-                 + (f" from {number(s['waf_ips'])} IPs" if s.get("waf_ips") is not None else "")
-                 + f" · succeeded: {number(s.get('waf_succeeded'))}")
+    lines += ["", "👥 <b>Visitors</b>"]
+    signups = s.get("signups")
+    lines.append(f"~{number(s.get('visitors'))} real visitors{compare(s.get('visitors'), p.get('visitors'))}"
+                 + (f" · {plural(signups, 'sign-up')}{compare(signups, p.get('signups'))}" if signups is not None else ""))
+    if s.get("visitor_countries"):
+        lines.append("From: " + top_countries(Counter(s["visitor_countries"]), 5))
+    lines.append(f"Sign-in: {plural(s.get('code_requests') or 0, 'code request')}"
+                 f"{compare(s.get('code_requests'), p.get('code_requests'))}"
+                 + (f" · {number(s['auth_429'])} rate-limited" if s.get("auth_429") else ""))
+    si = s.get("sign_in") or {}
+    if any(si.values()):
+        signed_in = si.get("signed_in", 0) + si.get("signed_up", 0)
+        lines.append(f"Codes to {plural(s.get('sign_in_addresses') or 0, 'address', 'addresses')}"
+                     f" from {plural(s.get('sign_in_ips') or 0, 'IP')} · {number(signed_in)} signed in"
+                     + (f" ({number(si['signed_up'])} new)" if si.get("signed_up") else "")
+                     + (f" · {plural(si['wrong_code'], 'wrong code')}" if si.get("wrong_code") else ""))
+    if s.get("most_targeted"):
+        lines.append(f"Most codes: {code(s['most_targeted'][0], 40)} ×{s['most_targeted'][1]}"
+                     " (from several IPs, someone may be email-bombing it)")
+
+    lines += ["", "🧱 <b>Defences</b>"]
+    lines.append(f"WAF: {plural(s.get('waf') or 0, 'detection')}{compare(s.get('waf'), p.get('waf'))}"
+                 + (f" · {plural(s['waf_ips'], 'IP')}" if s.get("waf_ips") else "")
+                 + f" · {number(s.get('waf_succeeded'))} got through")
     bans = s.get("bans") or {}
-    lines.append(f"  Bans: {sum(bans.values())}{compare(sum(bans.values()), sum((p.get('bans') or {}).values()) if prev else None)}"
-                 + (" (" + ", ".join(f"{esc(j)} {n}" for j, n in sorted(bans.items(), key=lambda x: -x[1])) + ")"
-                    if bans else "") + f" · unbans: {number(s.get('unbans'))}")
-    if s.get("top_ips"):
-        lines.append("  Top IPs:")
-        for ip, hits, kind, banned, *rest in s["top_ips"]:
-            where = f" ({esc(rest[0])})" if rest and rest[0] else ""
-            lines.append(f"    {code(ip, 45)}{where} {hits} hits · {esc(kind)} · {'banned' if banned else 'not banned'}")
+    shown = Counter()
+    for jail, n in bans.items():
+        shown[JAIL_NAMES.get(jail, jail)] += n
+    lines.append(f"Bans: {number(sum(bans.values()))}"
+                 f"{compare(sum(bans.values()), sum((p.get('bans') or {}).values()) if prev else None)}"
+                 + (f" ({counts(shown)})" if shown else "")
+                 + (f" · {number(s['unbans'])} expired" if s.get("unbans") else ""))
+    if s.get("refused") is not None:
+        lines.append(f"Refused from banned IPs: {number(s['refused'])}{compare(s['refused'], p.get('refused'))}")
     if days > 1:
         if s.get("repeat_offenders"):
-            lines.append(f"  Repeat offenders: {len(s['repeat_offenders'])} IPs banned on 2+ days")
+            lines.append(f"Repeat offenders: {plural(len(s['repeat_offenders']), 'IP')} banned on 2+ days")
         if s.get("busiest_day"):
-            lines.append(f"  Busiest day: {esc(s['busiest_day'])}")
+            lines.append(f"Busiest day: {esc(s['busiest_day'])}")
         kinds = s.get("kinds") or {}
         if kinds:
             all_ = sum(kinds.values())
-            lines.append("  Attack types: " + ", ".join(
+            lines.append("Attack types: " + ", ".join(
                 f"{esc(k)} {round(100 * n / all_)}%" for k, n in sorted(kinds.items(), key=lambda x: -x[1])[:3]))
+    if s.get("top_ips"):
+        lines.append("Top IPs:")
+        for ip, hits, kind, banned, *rest in s["top_ips"]:
+            where = f" {esc(rest[0])}" if rest and rest[0] else ""
+            lines.append(f"• {code(ip, 45)}{where} · {plural(hits, 'hit')}, {esc(kind)}"
+                         f" · {'banned' if banned else 'not banned'}")
     if s.get("attacker_countries"):
-        lines.append("  Attacker countries (IPs): " + top_countries(Counter(s["attacker_countries"]), 5))
-    if s.get("refused") is not None:
-        lines.append(f"  Requests refused from banned IPs: {number(s.get('refused'))}"
-                     f"{compare(s.get('refused'), p.get('refused'))}")
-    lines.append(f"  Sign-in: {number(s.get('code_requests'))} code requests"
-                 f"{compare(s.get('code_requests'), p.get('code_requests'))} · {number(s.get('auth_429'))} rate-limited (429)")
-    si = s.get("sign_in") or {}
-    if si:
-        lines.append(f"    codes sent to {number(s.get('sign_in_addresses'))} address(es) from {number(s.get('sign_in_ips'))} IP(s)"
-                     f" · {number(si.get('signed_in', 0) + si.get('signed_up', 0))} signed in"
-                     f" ({number(si.get('signed_up'))} new) · {number(si.get('wrong_code'))} wrong codes")
-    if s.get("most_targeted"):
-        lines.append(f"    most codes: {code(s['most_targeted'][0], 40)} ×{s['most_targeted'][1]}"
-                     " (many from several IPs: someone may be email-bombing it)")
+        lines.append("Attackers from (IPs): " + top_countries(Counter(s["attacker_countries"]), 5))
 
-    lines += ["", "<b>Access</b>"]
-    logins = s.get("ssh_logins") or {}
-    lines.append("  SSH logins: " + (", ".join(f"{esc(k)} ×{v}" for k, v in sorted(logins.items())) or "none")
-                 + f" · unexpected: {number(s.get('unknown_logins'))}")
-    lines.append(f"  Failed SSH attempts: {number(s.get('ssh_failed'))}{compare(s.get('ssh_failed'), p.get('ssh_failed'))}"
-                 + (f" from {s['ssh_failed_ips']} IPs" if s.get("ssh_failed_ips") else ""))
-    lines.append(f"  sudo by ops: {number(s.get('ops_sudo'))}"
-                 + (" (" + ", ".join(code(c, 60) for c in s.get("ops_commands") or []) + ")"
-                    if s.get("ops_commands") else ""))
+    lines += ["", "🔑 <b>Access</b>"]
+    by_user = Counter()
+    for key, n in (s.get("ssh_logins") or {}).items():
+        user = key.split("@")[0]
+        by_user["CI deploys" if user == "myguy" else user] += n
+    lines.append("SSH logins: " + (counts(by_user) or "none")
+                 + (f" · ⚠️ {number(s['unknown_logins'])} unexpected" if s.get("unknown_logins") else ""))
+    lines.append(f"Failed SSH: {number(s.get('ssh_failed'))}{compare(s.get('ssh_failed'), p.get('ssh_failed'))}"
+                 + (f" from {plural(s['ssh_failed_ips'], 'IP')}" if s.get("ssh_failed_ips") else ""))
+    if s.get("ops_sudo"):
+        # "host: command"; the command alone says enough
+        top = [c.split(": ", 1)[-1] for c in s.get("ops_commands") or []][:2]
+        lines.append(f"sudo by ops: {number(s['ops_sudo'])}"
+                     + (" (top " + ", ".join(code(c, 40) for c in top) + ")" if top else ""))
 
-    lines += ["", "<b>Runtime (Falco)</b>"]
-    lines.append(f"  Critical: {number(s.get('falco_critical'))} · warnings: {number(s.get('falco_warnings'))}"
-                 f"{compare(s.get('falco_warnings'), p.get('falco_warnings'))}"
-                 + (" (" + ", ".join(code(r, 40) for r in s.get("falco_rules") or []) + ")"
-                    if s.get("falco_rules") else ""))
+    critical, warnings = s.get("falco_critical") or 0, s.get("falco_warnings") or 0
+    if critical or warnings:
+        lines += ["", "👁 <b>Falco</b>: " + " · ".join(
+                      ([plural(critical, "critical event")] if critical else [])
+                      + ([plural(warnings, "warning") + compare(warnings, p.get("falco_warnings"))] if warnings else []))
+                  + (" (" + ", ".join(code(r, 40) for r in s.get("falco_rules") or []) + ")"
+                     if s.get("falco_rules") else "")]
+    else:
+        lines += ["", "👁 <b>Falco</b>: nothing flagged"]
 
-    lines += ["", "<b>Visitors</b>"]
-    lines.append(f"  ~{number(s.get('visitors'))} real visitors{compare(s.get('visitors'), p.get('visitors'))}"
-                 f" · sign-ups {number(s.get('signups'))}{compare(s.get('signups'), p.get('signups'))}")
-    if s.get("visitor_countries"):
-        lines.append("  From: " + top_countries(Counter(s["visitor_countries"]), 5))
-
-    items = attention(s)
-    lines += ["", "<b>Needs attention:</b> " + ("nothing ✅" if not items else "")]
-    lines += [f"  • {esc(i)}" for i in items]
     if not prev:
-        lines.append(f"\n(Comparisons start {'tomorrow' if days == 1 else 'next week'}.)")
+        lines += ["", f"<i>Comparisons start {'tomorrow' if days == 1 else 'next week'}.</i>"]
     return "\n".join(lines)
 
 
@@ -921,8 +954,12 @@ def weekly(src, settings_, state, now, send, persist=True):
     days = [find(records, "daily", today - dt.timedelta(days=n)) for n in range(7)]
     have = [(today - dt.timedelta(days=n), d) for n, d in enumerate(days) if d]
     w = {"unreadable": []}
-    if len(have) < 7:
-        w["unreadable"].append(f"{7 - len(have)} day(s) with no daily summary")
+    # Days before the first saved summary are history still filling up,
+    # not a timer that failed
+    first = min((dt.date.fromisoformat(r["date"]) for r in records if r["kind"] == "daily"), default=today)
+    w["missing_days"] = sum(1 for n, d in enumerate(days) if not d and today - dt.timedelta(days=n) >= first)
+    covered = sum(1 for n in range(7) if today - dt.timedelta(days=n) >= first)
+    note = f"Covers {covered} of 7 days: summaries began {first:%a %d %b}." if covered < 7 else ""
     for key in ("server_errors", "waf", "waf_succeeded", "unbans", "code_requests", "auth_429", "refused",
                 "ssh_failed", "unknown_logins", "ops_sudo", "falco_critical", "falco_warnings",
                 "signups", "outage_minutes", "attack_alerts"):
@@ -969,7 +1006,7 @@ def weekly(src, settings_, state, now, send, persist=True):
     prev = find(records, "weekly", today - dt.timedelta(days=7))
     start = today - dt.timedelta(days=6)
     send(format_summary(f"MyGuy weekly summary: {start:%a %d %b} – {today:%a %d %b} (vs the week before)",
-                        w, prev, days=7))
+                        w, prev, days=7, note=note))
     if persist:
         records = [r for r in records if not (r["kind"] == "weekly" and r["date"] == today.isoformat())]
         records.append({"kind": "weekly", "date": today.isoformat(), "stats": w})

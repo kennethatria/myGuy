@@ -455,14 +455,14 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
     - anything on the monitoring server not coming through the app server
     - any other user
   - Every 5 minutes, **Ban may have hit a real user**: an automatic web ban (tripwire, WAF, 4xx, bot paths, sign-in abuse) of an IP someone signed in from in the last 8 days, probably shared (a mobile carrier, an office). It names the jail, the request that triggered it and the exact unban command. Other bans never send a message; they're counted in the summaries.
-  - At 08:00 Amsterdam time, the **daily summary** (last 24 h, compared with the day before):
+  - At 08:00 Amsterdam time, the **daily summary** (last 24 h, compared with the day before), laid out for a phone with short lines and no zero-only details:
+    - the verdict first: *Needs a look* with a list, or "All clear ✅" on a quiet day. If the summary doesn't come, monitoring is broken.
     - health: uptime, certificate, disk, memory peak, server errors, deploys
-    - defences: WAF detections, bans by jail, top 3 IPs (with country), attacker countries, requests refused from banned IPs, sign-in: codes sent to how many addresses from how many IPs, sign-ins, wrong codes, and the most-codes address (masked, when 5+)
-    - access: SSH logins, failed attempts, sudo by `ops`
+    - visitors (and their countries), sign-ups and sign-in: code requests, codes sent to how many addresses from how many IPs, sign-ins, wrong codes, and the most-codes address (masked, when 5+)
+    - defences: WAF detections, bans by jail, requests refused from banned IPs, top 3 IPs (with country), attacker countries
+    - access: SSH logins by user (`myguy` shows as CI deploys), failed attempts, sudo by `ops`
     - Falco
-    - visitors (and their countries) and sign-ups
-    - *Needs attention* last, which is "nothing ✅" on a quiet day. If the summary doesn't come, monitoring is broken.
-  - On Saturdays, also the **weekly summary** (last 7 days against the 7 before, added up from the saved daily ones), leaving the weekend to look into anything. It adds repeat offenders, the busiest day and attack types.
+  - On Saturdays, also the **weekly summary** (last 7 days against the 7 before, added up from the saved daily ones), leaving the weekend to look into anything. It adds repeat offenders, the busiest day and attack types. While the history is shorter than a week it says how many days it covers; a day missing after that is listed under *Needs a look* (the summary timer failed).
   - The daily numbers are kept for 15 days in `/var/lib/myguy-security/history.jsonl` (IPs included, about as long as Loki keeps them).
   - `myguy-security --dry-run daily` prints a summary instead of sending it.
   - `investigate <email>` lists every sign-in step for an address and the IPs it came from (with a hint when many codes come from several IPs: email bombing). `investigate <IP>` also lists the addresses that IP tried. Telegram messages show addresses masked (`j***@example.com`).
