@@ -66,6 +66,15 @@ export function statusIcon(c: { task_id?: number | null; item_id?: number | null
   return statusLabel(c) && c.state ? ICONS[c.state] ?? null : null
 }
 
+/**
+ * Whether the gig or item a conversation is about expired (its 24 h ran out
+ * with no reaction).  Such a conversation belongs under Done; a repost makes
+ * the post live again, and the conversation returns to Active.
+ */
+export function postExpired(c: { task_id?: number | null; item_id?: number | null; task_status?: string; item_status?: string }): boolean {
+  return (c.task_id ? c.task_status : c.item_id ? c.item_status : undefined) === 'expired'
+}
+
 /** Whether a state ends the conversation for a gig or an item. */
 export function endsConversation(kind: Kind | null, state?: string | null): boolean {
   return !!kind && !!state && ENDED[kind].has(state)

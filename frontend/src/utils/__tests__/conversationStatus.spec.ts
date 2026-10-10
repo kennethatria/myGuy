@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { statusLabel, endsConversation, stateFromMessage, timeAgo, statusIcon } from '../conversationStatus'
+import { statusLabel, endsConversation, stateFromMessage, timeAgo, statusIcon, postExpired } from '../conversationStatus'
 
 describe('conversationStatus', () => {
   it('names where a gig or a booking stands', () => {
@@ -43,5 +43,15 @@ describe('conversationStatus', () => {
     for (const state of ['application', 'accepted', 'done', 'not_done', 'completed', 'declined', 'cancelled']) expect(statusIcon({ task_id: 1, state })).not.toBeNull()
     for (const state of ['pending', 'approved', 'picked_up', 'item_received', 'completed', 'rejected', 'released']) expect(statusIcon({ item_id: 1, state })).not.toBeNull()
     expect(statusIcon({ task_id: 1, state: 'request_answered' })).toBeNull()
+  })
+
+  it('knows when the post a conversation is about expired', () => {
+    expect(postExpired({ task_id: 1, task_status: 'expired' })).toBe(true)
+    expect(postExpired({ item_id: 2, item_status: 'expired' })).toBe(true)
+    // Reposted, or never expired
+    expect(postExpired({ task_id: 1, task_status: 'open' })).toBe(false)
+    expect(postExpired({ item_id: 2, item_status: 'active' })).toBe(false)
+    // Not loaded yet
+    expect(postExpired({ item_id: 2 })).toBe(false)
   })
 })

@@ -172,5 +172,18 @@ describe('chat store', () => {
     await store.joinStoreConversation(8)
     expect(conversationKey(store.activeConversation!)).toBe('store:8:6')
   })
-})
 
+  it('orders conversations by latest message only, unread and ended ones included', () => {
+    const store = useChatStore()
+    const conv = (item_id: number, time: string, extra = {}) => ({
+      item_id, other_user_id: 2, other_user_name: 'b', last_message: '', last_message_time: time,
+      unread_count: 0, conversation_type: 'store' as const, ...extra
+    })
+    store.conversations = [
+      conv(1, '2026-10-10T08:00:00Z', { unread_count: 3, last_message_type: 'booking_request' }),
+      conv(2, '2026-10-10T10:00:00Z', { ended: true }),
+      conv(3, '2026-10-10T09:00:00Z')
+    ]
+    expect(store.sortedConversations.map(c => c.item_id)).toEqual([2, 3, 1])
+  })
+})
