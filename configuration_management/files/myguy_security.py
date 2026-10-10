@@ -534,25 +534,32 @@ def ssh_messages(src, settings_, state, now):
         seen[key] = ts
         host, user, ip = labels.get("host", "?"), m.group("user"), m.group("ip")
         in_deploy = any(begin - 2 * MIN <= ts <= end + 5 * MIN for begin, end, _ in windows)
-        why = None
+        why = short = None
         if user == "myguy":
             if not in_deploy:
+                short = "CI key outside a deploy"
                 why = ("the CI key (myguy) logged in while no deploy was running. If you didn't "
                        "run one by hand, rotate SSH_PRIVATE_KEY and check sudo use")
             elif host == "monitoring" and ip != settings_["app_vpc_ip"]:
+                short = "not through the app server"
                 why = "the monitoring server should only be reached through the app server"
         elif host == "monitoring":
             if ip != settings_["app_vpc_ip"]:
+                short = "not through the app server"
                 why = "the monitoring server should only be reached through the app server"
         elif user == "ops":
             if ip not in known_ips:
+                short = "ops from an IP not seen in 8 days"
                 why = ("ops logged in from an IP not seen in the last 8 days. If it wasn't you, "
                        "replace OPS_SSH_PUBLIC_KEY and check sudo use")
             known_ips[ip] = ts
         else:
+            short = "a user other than ops and myguy"
             why = f"no one but ops and myguy should log in (user {user})"
         if why:
             print(f"alert: ssh host={host} user={user} ip={ip}", flush=True)
+            state.setdefault("ssh_alerts", []).append(
+                {"at": now, "ts": ts, "host": host, "user": user, "ip": ip, "why": short})
             alerts.append(f"{esc(host)} · user {code(user, 30)} · from {place(settings_, ip)} · "
                           f"{local(ts)}\nwhy: {esc(why)}")
     state["ssh_since"], state["ssh_seen"], state["ops_ips"] = now, seen, known_ips
@@ -613,10 +620,14 @@ def check(src, settings_, state, now, send):
         send(message)
     for log in ("alert_log", "ssh_alert_log"):
         state[log] = [t for t in state.get(log, []) if now - t < HISTORY_DAYS * DAY]
+    state["ssh_alerts"] = [a for a in state.get("ssh_alerts", []) if now - a["at"] < HISTORY_DAYS * DAY]
     print(f"check ok: {len(messages)} message(s)", flush=True)
 
 
 # --- Summaries --------------------------------------------------------------
+
+DETAILS = 3          # lines of detail under one "Needs a look" item
+WHEN = "%a %H:%M"    # their time, Amsterdam
 
 VISITOR_QUERY = ('count by (remote_addr) (count_over_time({job="nginx_access"} | json '
                  '| uri =~ "/assets/.*[.]js|/(api/v1|store/api/v1|chat/api/v1)/.*" | status < 400 '
@@ -670,7 +681,10 @@ def collect(src, settings_, state, start, end):
         entries = [d for d in waf_entries(src, start, end) if d["flagged"]]
         s["waf"] = len(entries)
         s["waf_ips"] = len({d["ip"] for d in entries})
-        s["waf_succeeded"] = sum(1 for d in entries if d["serious"] and 0 < d["status"] < 400)
+        through = [d for d in entries if d["serious"] and 0 < d["status"] < 400]
+        s["waf_succeeded"] = len(through)
+        s["waf_succeeded_details"] = [[local(d["ts"], WHEN), d["ip"], country(d["ip"]), d["method"], d["path"],
+                                       d["status"], d["kinds"][0]] for d in through[-DETAILS:]]
         s["kinds"] = dict(Counter(d["kinds"][0] for d in entries))
         bans = [e for e in (parse_fail2ban(ts, l) for ts, _, l in
                 src.lines('{job="fail2ban"} |~ "Ban|Unban"', start, end)) if e]
@@ -720,6 +734,9 @@ def collect(src, settings_, state, start, end):
         s["ssh_failed_ips"] = len(failed_ips)
         attackers.update(failed_ips)
         s["unknown_logins"] = len([t for t in state.get("ssh_alert_log", []) if start <= t < end])
+        logins = [a for a in state.get("ssh_alerts", []) if start <= a["at"] < end]
+        s["unknown_login_details"] = [[local(a["ts"], WHEN), a["user"], a["host"], a["ip"], country(a["ip"]),
+                                       a["why"]] for a in logins[-DETAILS:]]
         commands = Counter()
         for _, labels, line in src.lines('{job="sudo"} |= "COMMAND="', start, end):
             m = SUDO.match(line)
@@ -730,7 +747,10 @@ def collect(src, settings_, state, start, end):
 
     def runtime():
         events = [e for e in (parse_falco(ts, l) for ts, _, l in src.lines('{job="falco"}', start, end)) if e]
-        s["falco_critical"] = sum(1 for e in events if e["priority"] in FALCO_CRITICAL)
+        critical = [e for e in events if e["priority"] in FALCO_CRITICAL]
+        s["falco_critical"] = len(critical)
+        s["falco_critical_details"] = [[local(e["ts"], WHEN), e["rule"], e["container"], e["process"]]
+                                       for e in critical[-DETAILS:]]
         warnings = Counter(e["rule"] for e in events if e["priority"] == "Warning")
         s["falco_warnings"] = sum(warnings.values())
         s["falco_rules"] = [r for r, _ in warnings.most_common(2)]
@@ -758,33 +778,50 @@ def plural(n, one, many=None):
 
 
 def attention(s):
-    """The short list at the top: anything you should look at."""
+    """The short list at the top: anything you should look at, each with
+    the lines that say what happened (so you don't have to go digging)."""
     items = []
+
+    def item(text, details=(), count=0):
+        lines = list(details)
+        if count > len(lines) and lines:
+            lines.append(f"… and {count - len(lines)} more")
+        items.append((esc(text), lines))
+
+    def where(ip, country):
+        return code(ip, 45) + (f" {esc(country)}" if country else "")
+
     if s.get("unknown_logins"):
-        items.append(plural(s["unknown_logins"], "unexpected SSH login"))
+        item(plural(s["unknown_logins"], "unexpected SSH login"),
+             [f"{esc(t)} · {code(f'{user}@{host}', 40)} from {where(ip, c)} · {esc(why)}"
+              for t, user, host, ip, c, why in s.get("unknown_login_details") or []], s["unknown_logins"])
     if s.get("waf_succeeded"):
-        items.append(plural(s["waf_succeeded"], "serious attack request") + " answered without an error")
+        item(plural(s["waf_succeeded"], "serious attack request") + " answered without an error",
+             [f"{esc(t)} · {where(ip, c)} · {code(f'{method} {path}', 50)} → {status} · {esc(kind)}"
+              for t, ip, c, method, path, status, kind in s.get("waf_succeeded_details") or []], s["waf_succeeded"])
     if s.get("attack_alerts"):
-        items.append(plural(s["attack_alerts"], "attacking IP") + " needed a look (see the alerts)")
+        item(plural(s["attack_alerts"], "attacking IP") + " needed a look (see the alerts)")
     if s.get("falco_critical"):
-        items.append(plural(s["falco_critical"], "critical Falco event"))
+        item(plural(s["falco_critical"], "critical Falco event"),
+             [f"{esc(t)} · {code(rule, 40)} in {code(container, 30)}" + (f" ({code(proc, 20)})" if proc else "")
+              for t, rule, container, proc in s.get("falco_critical_details") or []], s["falco_critical"])
     # A minute or two is a deploy restarting things; Site down fires at 3
     if (s.get("outage_minutes") or 0) >= 3:
-        items.append(f"site down ~{s['outage_minutes']} min")
+        item(f"site down ~{s['outage_minutes']} min")
     if s.get("cert_days") is not None and s["cert_days"] < 14:
-        items.append(f"certificate expires in {s['cert_days']} days")
+        item(f"certificate expires in {s['cert_days']} days")
     for host, used in (s.get("disk") or {}).items():
         if used >= 80:
-            items.append(f"{host} disk {used}%")
+            item(f"{host} disk {used}%")
     for host, used in (s.get("memory_peak") or {}).items():
         if used >= 90:
-            items.append(f"{host} memory peaked at {used}%")
+            item(f"{host} memory peaked at {used}%")
     if (s.get("server_errors") or 0) > 20:
-        items.append(plural(s["server_errors"], "server error"))
+        item(plural(s["server_errors"], "server error"))
     if s.get("missing_days"):
-        items.append(plural(s["missing_days"], "day") + " with no daily summary (check the summary timer)")
+        item(plural(s["missing_days"], "day") + " with no daily summary (check the summary timer)")
     if s.get("unreadable"):
-        items.append("couldn't read: " + ", ".join(s["unreadable"]))
+        item("couldn't read: " + ", ".join(s["unreadable"]))
     return items
 
 
@@ -808,7 +845,13 @@ def format_summary(title, s, prev, days=1, note=""):
     if note:
         lines.append(f"<i>{esc(note)}</i>")
     items = attention(s)
-    lines += ["", "⚠️ <b>Needs a look</b>"] + [f"• {esc(i)}" for i in items] if items else ["", "✅ <b>All clear</b>"]
+    if items:
+        lines += ["", "⚠️ <b>Needs a look</b>"]
+        for text, details in items:
+            lines.append(f"• {text}")
+            lines += [f"   ↳ {d}" for d in details]
+    else:
+        lines += ["", "✅ <b>All clear</b>"]
 
     lines += ["", "🩺 <b>Health</b>"]
     lines.append(("Up —" if s.get("uptime") is None else f"Up {number(s['uptime'])}%")
@@ -964,6 +1007,9 @@ def weekly(src, settings_, state, now, send, persist=True):
                 "ssh_failed", "unknown_logins", "ops_sudo", "falco_critical", "falco_warnings",
                 "signups", "outage_minutes", "attack_alerts"):
         w[key] = sum(d.get(key) or 0 for _, d in have)
+    for key in ("unknown_login_details", "waf_succeeded_details", "falco_critical_details"):
+        # Oldest first, the latest few
+        w[key] = [x for _, d in reversed(have) for x in d.get(key) or []][-DETAILS:]
     uptimes = [d["uptime"] for _, d in have if d.get("uptime") is not None]
     w["uptime"] = round(sum(uptimes) / len(uptimes), 2) if uptimes else None
     w["deploy_count"] = sum(len(d.get("deploys") or []) for _, d in have)

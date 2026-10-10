@@ -283,7 +283,29 @@ class SummaryTest(TempState):
         # The verdict comes first, before the sections
         self.assertLess(msg.index("⚠️ <b>Needs a look</b>"), msg.index("Health"))
         self.assertIn("• 1 unexpected SSH login\n", msg)
-        self.assertIn("• 1 serious attack request answered without an error", msg)
+        self.assertIn("• 1 serious attack request answered without an error\n"
+                      "   ↳ Sat 07:59 · <code>203.0.113.9</code> · <code>GET /api/v1/tasks</code> → 200 · SQL injection", msg)
+
+    def test_unexpected_login_details_come_from_the_check(self):
+        self.populate()
+        state = {}
+        self.src.add("ssh", NOW - 2 * MIN, "Accepted publickey for ops from 192.0.2.77 port 1 ssh2", host="app")
+        self.src.add("ssh", NOW - MIN, "Accepted publickey for myguy from 192.0.2.78 port 1 ssh2", host="monitoring")
+        ms.check(self.src, self.settings, state, NOW, self.send)
+        ms.daily(self.src, self.settings, state, NOW + MIN, self.send)
+        msg = self.sent[-1]
+        self.assertIn("• 2 unexpected SSH logins\n"
+                      "   ↳ Sat 07:58 · <code>ops@app</code> from <code>192.0.2.77</code> · ops from an IP not seen in 8 days\n"
+                      "   ↳ Sat 07:59 · <code>myguy@monitoring</code> from <code>192.0.2.78</code> · CI key outside a deploy\n", msg)
+        # The weekly carries them from the saved daily summary
+        ms.weekly(self.src, self.settings, state, NOW + MIN, self.send)
+        self.assertIn("↳ Sat 07:58 · <code>ops@app</code>", self.sent[-1])
+
+    def test_details_are_capped(self):
+        stats = {"unknown_logins": 5, "unknown_login_details": [
+            ["Sat 07:5%d" % i, "ops", "app", "192.0.2.%d" % i, "", "x"] for i in range(3)]}
+        text = ms.format_summary("t", stats, None)
+        self.assertIn("   ↳ … and 2 more\n", text)
 
     def test_unreadable_source_is_named(self):
         class Broken(FakeSources):

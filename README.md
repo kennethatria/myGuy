@@ -456,7 +456,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://10.0.0.3:4318
     - any other user
   - Every 5 minutes, **Ban may have hit a real user**: an automatic web ban (tripwire, WAF, 4xx, bot paths, sign-in abuse) of an IP someone signed in from in the last 8 days, probably shared (a mobile carrier, an office). It names the jail, the request that triggered it and the exact unban command. Other bans never send a message; they're counted in the summaries.
   - At 08:00 Amsterdam time, the **daily summary** (last 24 h, compared with the day before), laid out for a phone with short lines and no zero-only details:
-    - the verdict first: *Needs a look* with a list, or "All clear ✅" on a quiet day. If the summary doesn't come, monitoring is broken.
+    - the verdict first: *Needs a look* with a list, or "All clear ✅" on a quiet day. If the summary doesn't come, monitoring is broken. Unexpected SSH logins, serious requests that got through and critical Falco events each come with up to 3 detail lines (when, who or which IP and country, what, and why it was unexpected); the weekly repeats the latest ones.
     - health: uptime, certificate, disk, memory peak, server errors, deploys
     - visitors (and their countries), sign-ups and sign-in: code requests, codes sent to how many addresses from how many IPs, sign-ins, wrong codes, and the most-codes address (masked, when 5+)
     - defences: WAF detections, bans by jail, requests refused from banned IPs, top 3 IPs (with country), attacker countries
