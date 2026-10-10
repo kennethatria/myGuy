@@ -35,7 +35,7 @@
       @keydown.esc="closeDrawer"
     >
       <div class="drawer-header">
-        <router-link :to="{ name: 'dashboard' }" class="logo-link">
+        <router-link :to="{ name: 'dashboard' }" class="logo-link" @click="closeDrawer">
           <span class="logo-mark" aria-hidden="true">M</span>
           <span class="logo-text">MyGuy</span>
         </router-link>
@@ -51,6 +51,7 @@
                 class="nav-item"
                 :class="{ active: isActiveRoute(item) }"
                 :aria-current="isActiveRoute(item) ? 'page' : undefined"
+                @click="closeDrawer"
               >
                 <span class="nav-icon" aria-hidden="true" v-html="item.icon"></span>
                 <span class="nav-text">{{ item.text }}</span>
@@ -61,7 +62,7 @@
       </nav>
 
       <div class="drawer-footer">
-        <router-link :to="{ name: 'profile' }" class="user-section">
+        <router-link :to="{ name: 'profile' }" class="user-section" @click="closeDrawer">
           <span class="user-avatar" aria-hidden="true">{{ userInitial }}</span>
           <span class="user-info">
             <span class="user-name">{{ displayName }}</span>
@@ -166,7 +167,8 @@ const closeDrawer = () => {
   menuButton.value?.focus()
 }
 
-// Close the drawer once the user has picked a page
+// Any link in the drawer closes it, even the page you're already on (which
+// doesn't navigate); this also covers navigation from outside the drawer
 watch(() => route.fullPath, () => {
   isDrawerOpen.value = false
 })
