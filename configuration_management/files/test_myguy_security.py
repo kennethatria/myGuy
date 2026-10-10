@@ -259,16 +259,18 @@ class SummaryTest(TempState):
         ms.daily(self.src, self.settings, {}, NOW, self.send)
         msg = self.sent[0]
         self.assertIn("MyGuy daily summary: Sat 17 Oct", msg)
-        self.assertIn("Site up 100% · certificate valid 61 days", msg)
-        self.assertIn("WAF detections: 6 ↓ from 9 from 2 IPs", msg)
+        self.assertIn("✅ <b>All clear</b>", msg)
+        self.assertIn("Up 100% · certificate 61 days", msg)
+        self.assertIn("WAF: 6 detections ↓ from 9 · 2 IPs · 0 got through", msg)
         self.assertIn("~4 real visitors =", msg)
         self.assertIn("Server errors: 3 ↓ from 5", msg)
-        self.assertIn("<code>203.0.113.7</code> 5 hits · SQL injection · banned", msg)
-        self.assertIn("ops@app ×1", msg)
-        self.assertIn("Failed SSH attempts: 1", msg)
+        self.assertIn("• <code>203.0.113.7</code> · 5 hits, SQL injection · banned", msg)
+        self.assertIn("SSH logins: ops 1", msg)
+        self.assertIn("Failed SSH: 1 from 1 IP", msg)
         self.assertIn("sudo by ops: 1", msg)
-        self.assertIn("Deploys: 1", msg)
-        self.assertIn("Needs attention:</b> nothing ✅", msg)
+        self.assertIn("Deploys: 1 (03:00)", msg)
+        self.assertIn("Falco</b>: 1 warning", msg)
+        self.assertNotIn("critical", msg)
         saved = ms.load_history(self.settings)
         self.assertEqual([r["date"] for r in saved], ["2026-10-16", "2026-10-17"])
         self.assertEqual(saved[-1]["stats"]["banned_ips"], ["203.0.113.7"])
@@ -277,8 +279,33 @@ class SummaryTest(TempState):
         self.populate()
         self.src.add("modsecurity", NOW - MIN, waf_entry("203.0.113.9", status=200, entry="C1"))
         ms.daily(self.src, self.settings, {"ssh_alert_log": [NOW - MIN]}, NOW, self.send)
-        self.assertIn("1 unexpected SSH login(s)", self.sent[0])
-        self.assertIn("1 serious attack request(s) answered without an error", self.sent[0])
+        msg = self.sent[0]
+        # The verdict comes first, before the sections
+        self.assertLess(msg.index("⚠️ <b>Needs a look</b>"), msg.index("Health"))
+        self.assertIn("• 1 unexpected SSH login\n", msg)
+        self.assertIn("• 1 serious attack request answered without an error\n"
+                      "   ↳ Sat 07:59 · <code>203.0.113.9</code> · <code>GET /api/v1/tasks</code> → 200 · SQL injection", msg)
+
+    def test_unexpected_login_details_come_from_the_check(self):
+        self.populate()
+        state = {}
+        self.src.add("ssh", NOW - 2 * MIN, "Accepted publickey for ops from 192.0.2.77 port 1 ssh2", host="app")
+        self.src.add("ssh", NOW - MIN, "Accepted publickey for myguy from 192.0.2.78 port 1 ssh2", host="monitoring")
+        ms.check(self.src, self.settings, state, NOW, self.send)
+        ms.daily(self.src, self.settings, state, NOW + MIN, self.send)
+        msg = self.sent[-1]
+        self.assertIn("• 2 unexpected SSH logins\n"
+                      "   ↳ Sat 07:58 · <code>ops@app</code> from <code>192.0.2.77</code> · ops from an IP not seen in 8 days\n"
+                      "   ↳ Sat 07:59 · <code>myguy@monitoring</code> from <code>192.0.2.78</code> · CI key outside a deploy\n", msg)
+        # The weekly carries them from the saved daily summary
+        ms.weekly(self.src, self.settings, state, NOW + MIN, self.send)
+        self.assertIn("↳ Sat 07:58 · <code>ops@app</code>", self.sent[-1])
+
+    def test_details_are_capped(self):
+        stats = {"unknown_logins": 5, "unknown_login_details": [
+            ["Sat 07:5%d" % i, "ops", "app", "192.0.2.%d" % i, "", "x"] for i in range(3)]}
+        text = ms.format_summary("t", stats, None)
+        self.assertIn("   ↳ … and 2 more\n", text)
 
     def test_unreadable_source_is_named(self):
         class Broken(FakeSources):
@@ -302,9 +329,10 @@ class SummaryTest(TempState):
         ms.weekly(self.src, self.settings, {}, NOW, self.send)
         msg = self.sent[0]
         self.assertIn("weekly summary: Sun 11 Oct – Sat 17 Oct", msg)
-        self.assertIn("WAF detections: 91 ↑ from 50", msg)
+        self.assertIn("WAF: 91 detections ↑ from 50", msg)
         self.assertIn("Bans: 7", msg)
-        self.assertIn("Repeat offenders: 1 IPs", msg)
+        self.assertIn("Repeat offenders: 1 IP banned", msg)
+        self.assertNotIn("Covers", msg)
         self.assertIn("Busiest day: Sun (16 detections)", msg)
         self.assertIn("scanner 75%", msg)
         self.assertIn("Deploys: 7", msg)
@@ -315,7 +343,18 @@ class SummaryTest(TempState):
         self.assertEqual(dt.datetime.fromtimestamp(NOW / 1e9, ms.TZ).weekday(), 5)
         ms.daily(self.src, self.settings, {}, NOW, self.send)
         ms.weekly(self.src, self.settings, {}, NOW, self.send)
-        self.assertIn("6 day(s) with no daily summary", self.sent[1])
+        # A history still filling up is a note, not something to look at
+        self.assertIn("Covers 1 of 7 days: summaries began Sat 17 Oct.", self.sent[1])
+        self.assertIn("✅ <b>All clear</b>", self.sent[1])
+
+
+    def test_weekly_names_a_missing_day(self):
+        records = [{"kind": "daily", "date": (dt.date(2026, 10, 17) - dt.timedelta(days=n)).isoformat(),
+                    "stats": {"waf": 1}} for n in range(7) if n != 3]
+        ms.save_history(self.settings, records, dt.date(2026, 10, 17))
+        ms.weekly(self.src, self.settings, {}, NOW, self.send)
+        self.assertIn("• 1 day with no daily summary", self.sent[0])
+        self.assertNotIn("Covers", self.sent[0])
 
 
 class InvestigateTest(TempState):
@@ -360,11 +399,11 @@ class CountryTest(TempState):
         SummaryTest.populate(self)
         ms.daily(self.src, self.settings, {}, NOW, self.send)
         msg = self.sent[0]
-        self.assertIn("<code>203.0.113.7</code> (CN) 5 hits", msg)
-        self.assertIn("Attacker countries (IPs): CN 1, RU 1, US 1", msg)
+        self.assertIn("<code>203.0.113.7</code> CN · 5 hits", msg)
+        self.assertIn("Attackers from (IPs): CN 1, RU 1, US 1", msg)
         self.assertIn("From: NL 4", msg)
         ms.weekly(self.src, self.settings, {}, NOW, self.send)
-        self.assertIn("Attacker countries (IPs): CN 1, RU 1, US 1", self.sent[1])
+        self.assertIn("Attackers from (IPs): CN 1, RU 1, US 1", self.sent[1])
 
     def test_investigate_names_the_country(self):
         out = []
@@ -437,9 +476,9 @@ class SignInTest(TempState):
         self.add(NOW - 30 * MIN, "signed_in", "joe@example.org", "198.51.100.9")
         ms.daily(self.src, self.settings, {}, NOW, self.send)
         msg = self.sent[0]
-        self.assertIn("Requests refused from banned IPs: 17", msg)
-        self.assertIn("codes sent to 1 address(es) from 6 IP(s) · 1 signed in (0 new) · 0 wrong codes", msg)
-        self.assertIn("most codes: <code>j***@example.com</code> ×6", msg)
+        self.assertIn("Refused from banned IPs: 17", msg)
+        self.assertIn("Codes to 1 address from 6 IPs · 1 signed in\n", msg)
+        self.assertIn("Most codes: <code>j***@example.com</code> ×6", msg)
         self.assertNotIn("jane@example.com", msg)
 
 
