@@ -63,6 +63,9 @@ export interface ConversationSummary {
   item_title?: string
   task_description?: string
   task_status?: string
+  // The gig's or item's own status, filled in with its title ('expired'
+  // once its 24 h ran out with no reaction)
+  item_status?: string
   last_message: string
   last_message_type?: string
   last_message_time: string

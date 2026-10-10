@@ -14,6 +14,7 @@ export interface StoreItem {
   id: number;
   title: string;
   description?: string;
+  status?: string;
 }
 
 export const useContextStore = defineStore('context', () => {

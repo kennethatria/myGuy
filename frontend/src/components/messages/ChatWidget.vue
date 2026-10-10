@@ -45,11 +45,11 @@
           </button>
           <button
             role="tab"
-            :aria-selected="listTab === 'all'"
-            :class="['list-tab', { active: listTab === 'all' }]"
-            @click="listTab = 'all'"
+            :aria-selected="listTab === 'done'"
+            :class="['list-tab', { active: listTab === 'done' }]"
+            @click="listTab = 'done'"
           >
-            All
+            Done
           </button>
         </div>
 
@@ -64,7 +64,7 @@
             v-for="conversation in listed"
             :key="conversationKey(conversation) ?? undefined"
             type="button"
-            :class="['conversation-item', { ended: isEnded(conversation) }]"
+            :class="['conversation-item', { ended: isDone(conversation) }]"
             @click="chatStore.joinConversation(conversation)"
           >
             <span class="conversation-avatar" aria-hidden="true">{{ initialOf(conversation.other_user_name) }}</span>
@@ -74,13 +74,13 @@
                    where the deal stands, and the rating between you once given -->
               <span class="conversation-status">
                 <span class="conversation-who">{{ conversation.other_user_name }}</span>
-                <span v-if="isEnded(conversation)" class="status-chip expired">Expired</span>
-                <span v-if="statusLabel(conversation)" :class="['status-chip', statusIcon(conversation)?.tone]">
+                <span v-if="!isEnded(conversation) && postExpired(conversation)" class="status-chip">Expired</span>
+                <span v-else-if="statusLabel(conversation)" :class="['status-chip', statusIcon(conversation)?.tone]">
                   <i v-if="statusIcon(conversation)" :class="['fas', statusIcon(conversation)!.icon]" aria-hidden="true"></i>
                   {{ statusLabel(conversation) }}
                 </span>
                 <span v-else-if="!isEnded(conversation)" class="status-chip going">Active</span>
-                <span v-if="isEnded(conversation) && conversation.state_at" class="conversation-ago">{{ timeAgo(conversation.state_at) }}</span>
+                <span v-if="isDone(conversation) && conversation.state_at" class="conversation-ago">{{ timeAgo(conversation.state_at) }}</span>
                 <span v-if="ratingOf(conversation) !== null" class="conversation-rating">★ {{ formatRating(ratingOf(conversation)!) }}</span>
               </span>
             </span>
@@ -93,7 +93,9 @@
           </button>
 
           <p v-if="chatStore.conversations.length === 0" class="no-conversations">No conversations yet</p>
-          <p v-else-if="listed.length === 0" class="no-conversations">Nothing active right now</p>
+          <p v-else-if="listed.length === 0" class="no-conversations">
+            {{ listTab === 'active' ? 'Nothing active right now' : 'Nothing done yet' }}
+          </p>
         </div>
         <p class="list-footer">You can type once the poster or seller says yes</p>
       </template>
@@ -133,7 +135,7 @@ import { useRoute } from 'vue-router';
 import { actionBarHeight } from '@/composables/useActionBar';
 import { useChatStore, conversationKey } from '@/stores/chat';
 import { useReviewsStore } from '@/stores/reviews';
-import { statusLabel, statusIcon, timeAgo } from '@/utils/conversationStatus';
+import { statusLabel, statusIcon, timeAgo, postExpired } from '@/utils/conversationStatus';
 import { formatRating, type Interaction } from '@/utils/network';
 import type { ConversationSummary } from '@/stores/messages';
 import MessageThread from './MessageThread.vue';
@@ -147,11 +149,13 @@ function isEnded(conversation: ConversationSummary): boolean {
   return !!conversation.ended || chatStore.endedConversations.has(conversationKey(conversation) ?? '');
 }
 
-// Active: deals still under way. All (the default): everything, ended last.
-const listTab = ref<'active' | 'all'>('all');
-const activeCount = computed(() => chatStore.sortedConversations.filter(c => !isEnded(c)).length);
+// Done: the deal ended (completed, or closed without one) or the post
+// expired. Active (the default): everything else.
+const isDone = (conversation: ConversationSummary) => isEnded(conversation) || postExpired(conversation);
+const listTab = ref<'active' | 'done'>('active');
+const activeCount = computed(() => chatStore.sortedConversations.filter(c => !isDone(c)).length);
 const listed = computed(() =>
-  listTab.value === 'active' ? chatStore.sortedConversations.filter(c => !isEnded(c)) : chatStore.sortedConversations
+  chatStore.sortedConversations.filter(c => isDone(c) === (listTab.value === 'done'))
 );
 
 const titleOf = (c: ConversationSummary) =>
@@ -348,7 +352,7 @@ function sendMessage(content: string) {
   background: #F1F3F5;
 }
 
-/* Active / All */
+/* Active / Done */
 .list-tabs {
   flex: none;
   display: flex;

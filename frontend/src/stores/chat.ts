@@ -91,17 +91,11 @@ export const useChatStore = defineStore('chat', () => {
   // Computed
   // Conversations as the floating chat lists them: booking requests waiting
   // for an answer, then unread, then most recent
-  const sortedConversations = computed(() => [...conversations.value].sort((a, b) => {
-    // Ended ones (done or closed) go after everything still going on
-    const aEnded = !!a.ended || endedConversations.value.has(conversationKey(a) ?? '');
-    const bEnded = !!b.ended || endedConversations.value.has(conversationKey(b) ?? '');
-    if (aEnded !== bEnded) return aEnded ? 1 : -1;
-    const aBooking = !!a.item_id && a.last_message_type === 'booking_request' && a.unread_count > 0;
-    const bBooking = !!b.item_id && b.last_message_type === 'booking_request' && b.unread_count > 0;
-    if (aBooking !== bBooking) return aBooking ? -1 : 1;
-    if ((a.unread_count > 0) !== (b.unread_count > 0)) return a.unread_count > 0 ? -1 : 1;
-    return new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime();
-  }));
+  // Latest message first, sent or received; unread ones keep their dot but
+  // don't jump ahead (the Active and Done tabs split them)
+  const sortedConversations = computed(() => [...conversations.value].sort((a, b) =>
+    new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime()
+  ));
 
   const activeKey = computed(() => activeConversation.value ? conversationKey(activeConversation.value) : null);
   const activeLocked = computed(() => !!activeKey.value && lockedConversations.value.has(activeKey.value));
@@ -511,6 +505,7 @@ export const useChatStore = defineStore('chat', () => {
         const task = contextStore.getTaskById(conv.task_id);
         if (task) {
           conv.task_title = task.title;
+          conv.task_status = task.status;
         }
       }
 
@@ -519,6 +514,7 @@ export const useChatStore = defineStore('chat', () => {
         const item = contextStore.getItemById(conv.item_id);
         if (item) {
           conv.item_title = item.title;
+          conv.item_status = item.status;
         }
       }
     });
