@@ -380,8 +380,8 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
 
 .row-title {
   font-family: var(--font-hand);
-  font-size: 21px;
-  font-weight: 600;
+  font-size: 19px;
+  font-weight: 400; /* the font's only weight: a bolder one would be faked */
   line-height: 1.1;
 }
 
@@ -401,8 +401,8 @@ const open = (post: NearbyPost) => router.push(routeFor(post))
 .row-stamp {
   display: inline-block;
   font-family: var(--font-hand);
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 400;
   color: var(--stamp);
   transform: rotate(-2deg);
 }
