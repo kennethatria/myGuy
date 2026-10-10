@@ -18,6 +18,17 @@ var (
 type JWTAuthMiddleware struct {
 	secretKey  string
 	userRepo   repositories.UserRepository
+	blocked    func(userID uint) bool
+}
+
+// AccountUnavailable is the error code a blocked account's requests get (the
+// same in every service); the app signs out on it.
+const AccountUnavailable = "account_unavailable"
+
+// WithBlocked refuses sessions of accounts blocked() reports.
+func (m *JWTAuthMiddleware) WithBlocked(blocked func(userID uint) bool) *JWTAuthMiddleware {
+	m.blocked = blocked
+	return m
 }
 
 func NewJWTAuthMiddleware(secretKey string, userRepo repositories.UserRepository) *JWTAuthMiddleware {
@@ -71,6 +82,10 @@ func (m *JWTAuthMiddleware) AuthRequired() gin.HandlerFunc {
 		claims, err := m.ValidateToken(parts[1])
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		if m.blocked != nil && m.blocked(claims.UserID) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "this account isn't available", "code": AccountUnavailable})
 			return
 		}
 

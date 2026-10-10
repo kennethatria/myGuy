@@ -71,6 +71,10 @@ func (r *storeItemRepository) filtered(filter models.StoreItemFilter) *gorm.DB {
 		query = query.Where("seller_id <> ?", filter.ExcludeSellerID)
 	}
 
+	if len(filter.HiddenUserIDs) > 0 {
+		query = query.Where("seller_id NOT IN ?", filter.HiddenUserIDs)
+	}
+
 	if filter.RequestID > 0 {
 		query = query.Where("request_id = ?", filter.RequestID)
 	}

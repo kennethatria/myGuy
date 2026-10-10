@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -127,7 +128,7 @@ func TestRequestHandlers_Reads(t *testing.T) {
 	s.On("GetRequests", mock.MatchedBy(func(f models.ItemRequestFilter) bool {
 		live := time.Since(f.LiveAt) < time.Minute
 		f.LiveAt = time.Time{}
-		return live && f == models.ItemRequestFilter{Search: "printer", SortBy: "deadline", SortOrder: "asc", ExcludeRequesterID: 1, Page: 2, PerPage: 10}
+		return live && reflect.DeepEqual(f, models.ItemRequestFilter{Search: "printer", SortBy: "deadline", SortOrder: "asc", ExcludeRequesterID: 1, Page: 2, PerPage: 10})
 	})).
 		Return([]models.ItemRequest{{ID: 3}}, int64(11), nil)
 	s.On("GetRequest", uint(3)).Return(&models.ItemRequest{ID: 3}, nil)

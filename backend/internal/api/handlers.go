@@ -66,6 +66,12 @@ func (h *Handler) RequestLoginCode(c *gin.Context) {
 	}
 
 	err := h.authService.RequestCode(c.Request.Context(), req.Email)
+	if errors.Is(err, services.ErrBlocked) {
+		// Nothing was sent; answer as if it was, so a block isn't revealed
+		logAuthEvent(c, "blocked", req.Email)
+		c.JSON(http.StatusAccepted, gin.H{"message": "code sent"})
+		return
+	}
 	if errors.Is(err, services.ErrTooManyRequests) {
 		logAuthEvent(c, "limited", req.Email)
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
@@ -98,6 +104,11 @@ func (h *Handler) VerifyLoginCode(c *gin.Context) {
 	}
 
 	result, err := h.authService.VerifyCode(c.Request.Context(), req.Email, req.Code)
+	if errors.Is(err, services.ErrAccountUnavailable) {
+		logAuthEvent(c, "blocked", req.Email)
+		respondAccountUnavailable(c)
+		return
+	}
 	if errors.Is(err, services.ErrInvalidCode) {
 		logAuthEvent(c, "wrong_code", req.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -149,6 +160,10 @@ func (h *Handler) CompleteSignup(c *gin.Context) {
 	case errors.Is(err, services.ErrFullNameRequired):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	case errors.Is(err, services.ErrAccountUnavailable):
+		logAuthEvent(c, "blocked", email)
+		respondAccountUnavailable(c)
+		return
 	case errors.Is(err, services.ErrEmailExists):
 		c.JSON(http.StatusConflict, gin.H{"error": "an account already exists for this email, sign in instead"})
 		return
@@ -161,6 +176,13 @@ func (h *Handler) CompleteSignup(c *gin.Context) {
 
 	logAuthEvent(c, "signed_up", email)
 	h.respondWithSession(c, http.StatusCreated, user)
+}
+
+// respondAccountUnavailable answers a blocked person, with a code the app
+// recognises (it signs them out and says so).
+func respondAccountUnavailable(c *gin.Context) {
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+		"error": services.ErrAccountUnavailable.Error(), "code": middleware.AccountUnavailable})
 }
 
 func (h *Handler) respondWithSession(c *gin.Context, status int, user *models.UserResponse) {
@@ -340,6 +362,7 @@ func (h *Handler) ListTasks(c *gin.Context) {
 	// leaves the board even while an application waits for an answer
 	if _, own := filters["created_by"]; !own && filters["assigned_to"] == nil {
 		filters["deadline_after"] = time.Now().UTC()
+		filters["hide_blocked"] = time.Now().UTC()
 	}
 	
 	// The viewer's rough position ("lat,lng"), for distance sort and tags

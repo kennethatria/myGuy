@@ -265,6 +265,10 @@ export const useChatStore = defineStore('chat', () => {
       connected.value = false;
       console.log('WebSocket disconnected:', reason);
 
+      // The server drops a blocked account's sockets: check the session,
+      // which signs out if the account is no longer available
+      if (reason === 'io server disconnect') useAuthStore().checkAuth();
+
       // Mark as unavailable if disconnected by server or failed to connect
       if (reason === 'io server disconnect' || reason === 'transport close') {
         chatUnavailable.value = true;
@@ -273,6 +277,10 @@ export const useChatStore = defineStore('chat', () => {
     });
 
     socket.value.on('connect_error', (error: Error) => {
+      if (error.message === 'account_unavailable') {
+        useAuthStore().logout();
+        return;
+      }
       reconnectAttempts.value++;
       console.warn(`Chat connection attempt ${reconnectAttempts.value} failed:`, error.message);
       connectionError.value = error.message;
@@ -286,7 +294,7 @@ export const useChatStore = defineStore('chat', () => {
 
     socket.value.on('error', (error: Error & { code?: string; taskId?: number; itemId?: number; recipientId?: number }) => {
       // A message to a conversation that has ended: show it as ended
-      if (error?.code === 'chat_ended') {
+      if (error?.code === 'chat_ended' || error?.code === 'chat_flagged') {
         const key = conversationKey(error.itemId
           ? { item_id: Number(error.itemId), other_user_id: Number(error.recipientId) }
           : { task_id: Number(error.taskId), other_user_id: Number(error.recipientId) });

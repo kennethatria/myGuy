@@ -48,6 +48,7 @@ func main() {
 		&models.Application{},
 		&models.Review{},
 		&models.LoginCode{},
+		&models.BlockedEmail{},
 	)
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)
@@ -61,6 +62,9 @@ func main() {
 	applicationRepo := repositories.NewGormApplicationRepository(db)
 	reviewRepo := repositories.NewGormReviewRepository(db)
 	loginCodeRepo := repositories.NewGormLoginCodeRepository(db)
+	blockService := services.NewBlockService(repositories.NewGormBlockedEmailRepository(db))
+	// Blocks also run out on their own: reload them every minute
+	go blockService.RefreshEvery(context.Background(), time.Minute)
 
 	// Initialize services
 	userService := services.NewUserService(userRepo)
@@ -78,10 +82,10 @@ func main() {
 		go unlockMatchedChats(taskService, notifier)
 	}
 
-	authService := services.NewAuthService(userRepo, loginCodeRepo, newCodeSender(), os.Getenv("JWT_SECRET"))
+	authService := services.NewAuthService(userRepo, loginCodeRepo, newCodeSender(), os.Getenv("JWT_SECRET")).WithBlocks(blockService)
 
 	// Initialize JWT middleware
-	jwtMiddleware := middleware.NewJWTAuthMiddleware(os.Getenv("JWT_SECRET"))
+	jwtMiddleware := middleware.NewJWTAuthMiddleware(os.Getenv("JWT_SECRET")).WithBlocked(blockService.UserBlocked)
 	// Initialize handlers
 	handler := api.NewHandler(authService, userService, taskService, reviewService, jwtMiddleware)
 
@@ -122,6 +126,9 @@ func main() {
 	r.POST("/api/v1/auth/request-code", handler.RequestLoginCode)
 	r.POST("/api/v1/auth/verify-code", handler.VerifyLoginCode)
 	r.POST("/api/v1/auth/complete-signup", handler.CompleteSignup)
+	// Email blocks and the blocked accounts, for myguy-admin and the other
+	// services (INTERNAL_API_KEY; nginx never routes /internal here)
+	api.NewInternalHandler(blockService).Register(r, os.Getenv("INTERNAL_API_KEY"))
 	// Protected routes
 	auth := r.Group("/api/v1")
 	auth.Use(jwtMiddleware.AuthRequired())

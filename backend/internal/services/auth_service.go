@@ -39,12 +39,18 @@ type CodeSender interface {
 	SendLoginCode(ctx context.Context, email, code string) error
 }
 
+// EmailBlocks says whether an address is blocked (BlockService).
+type EmailBlocks interface {
+	IsBlocked(ctx context.Context, email string) (bool, error)
+}
+
 // AuthService implements passwordless sign-in with emailed one-time codes.
 // The same flow signs existing users in and lets new users sign up.
 type AuthService struct {
 	userRepo repositories.UserRepository
 	codeRepo repositories.LoginCodeRepository
 	sender   CodeSender
+	blocks   EmailBlocks
 	secret   []byte
 	now      func() time.Time
 }
@@ -57,6 +63,19 @@ func NewAuthService(userRepo repositories.UserRepository, codeRepo repositories.
 		secret:   []byte(secret),
 		now:      time.Now,
 	}
+}
+
+// WithBlocks keeps blocked addresses from signing in or up.
+func (s *AuthService) WithBlocks(blocks EmailBlocks) *AuthService {
+	s.blocks = blocks
+	return s
+}
+
+func (s *AuthService) blocked(ctx context.Context, email string) (bool, error) {
+	if s.blocks == nil {
+		return false, nil
+	}
+	return s.blocks.IsBlocked(ctx, email)
 }
 
 // VerifyResult is the outcome of a correct code: either an existing user, or
@@ -74,10 +93,17 @@ func NormalizeEmail(email string) string {
 }
 
 // RequestCode emails a fresh code to email, replacing any outstanding one.
-// It behaves the same whether or not an account exists.
+// It behaves the same whether or not an account exists.  A blocked address
+// gets ErrBlocked and no code; callers answer as if one was sent.
 func (s *AuthService) RequestCode(ctx context.Context, email string) error {
 	email = NormalizeEmail(email)
 	now := s.now()
+
+	if blocked, err := s.blocked(ctx, email); err != nil {
+		return err
+	} else if blocked {
+		return ErrBlocked
+	}
 
 	recent, err := s.codeRepo.CountSince(ctx, email, now.Add(-time.Hour))
 	if err != nil {
@@ -109,6 +135,13 @@ func (s *AuthService) RequestCode(ctx context.Context, email string) error {
 // consumes it on success.
 func (s *AuthService) VerifyCode(ctx context.Context, email, code string) (*VerifyResult, error) {
 	email = NormalizeEmail(email)
+
+	// A code sent before the block was made is no way in either
+	if blocked, err := s.blocked(ctx, email); err != nil {
+		return nil, err
+	} else if blocked {
+		return nil, ErrAccountUnavailable
+	}
 
 	loginCode, err := s.codeRepo.LatestActive(ctx, email, s.now())
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -153,6 +186,11 @@ func (s *AuthService) CompleteSignup(ctx context.Context, email, fullName string
 	fullName = strings.TrimSpace(fullName)
 	if fullName == "" {
 		return nil, ErrFullNameRequired
+	}
+	if blocked, err := s.blocked(ctx, email); err != nil {
+		return nil, err
+	} else if blocked {
+		return nil, ErrAccountUnavailable
 	}
 
 	if _, err := s.userRepo.GetByEmail(ctx, email); err == nil {

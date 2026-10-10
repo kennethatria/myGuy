@@ -16,6 +16,21 @@ import (
 // RequestHandler serves "wanted" notes: items people ask sellers for.
 type RequestHandler struct {
 	service services.RequestServiceInterface
+	hidden  func() []uint
+}
+
+// WithHidden leaves the requests of the accounts hidden() returns (blocked
+// ones) off the board.
+func (h *RequestHandler) WithHidden(hidden func() []uint) *RequestHandler {
+	h.hidden = hidden
+	return h
+}
+
+func hiddenUsers(hidden func() []uint) []uint {
+	if hidden == nil {
+		return nil
+	}
+	return hidden()
 }
 
 func NewRequestHandler(service services.RequestServiceInterface) *RequestHandler {
@@ -52,6 +67,7 @@ func (h *RequestHandler) GetRequests(c *gin.Context) {
 		// The board: a request past its 24 hours leaves it even while a
 		// listing made for it waits
 		LiveAt:    time.Now().UTC(),
+		HiddenUserIDs: hiddenUsers(h.hidden),
 		SortBy:    c.Query("sort_by"),
 		SortOrder: c.Query("sort_order"),
 		Page:      1,
