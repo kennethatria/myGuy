@@ -55,6 +55,8 @@ services:
       # Chat service integration for booking notifications
       - CHAT_API_URL=http://chat-websocket-service:8082/api/v1
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      # Accounts the backend blocked (refused, their posts hidden)
+      - BACKEND_INTERNAL_URL=http://api:8080
       # Rough locations of listings and requests; "false" turns distance
       # sorting off (rollback)
       - PROXIMITY_URL=http://proximity-service:8083
@@ -87,6 +89,8 @@ services:
       - STORE_API_URL=http://store-service:8081/api/v1
       # Internal API key for secure inter-service communication
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      # Accounts the backend blocked (refused, their chats closed)
+      - BACKEND_INTERNAL_URL=http://api:8080
       # Redis for horizontal scaling (optional - enables multi-instance mode)
       - REDIS_URL=redis://redis:6379/0
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}

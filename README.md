@@ -98,7 +98,15 @@ Sign-in is **passwordless**. One flow covers both login and sign-up:
 
 Codes are sent over SMTP with mandatory STARTTLS (production uses [Resend](https://resend.com) on port `2587`). When `SMTP_HOST` is unset — e.g. local development — the backend **logs the code instead of emailing it**.
 
-**Sign-in log (email ↔ IP).** Each step is logged with the address and the visitor's IP: `auth event=code_sent|limited|wrong_code|signed_in|new_account|signed_up|failed email="…" ip=…` (`internal/api/handlers.go`, `logAuthEvent`). The code itself is never logged. The IP comes from nginx's `X-Real-IP` (`TrustedPlatform`), so a visitor can't fake it with their own `X-Forwarded-For`. The lines go to Loki with the API's output (8 days, personal data: kept no longer). They show which addresses an IP tried, and from which IPs an address got codes.
+**Sign-in log (email ↔ IP).** Each step is logged with the address and the visitor's IP: `auth event=code_sent|limited|wrong_code|signed_in|new_account|signed_up|blocked|failed email="…" ip=…` (`internal/api/handlers.go`, `logAuthEvent`). The code itself is never logged. The IP comes from nginx's `X-Real-IP` (`TrustedPlatform`), so a visitor can't fake it with their own `X-Forwarded-For`. The lines go to Loki with the API's output (8 days, personal data: kept no longer). They show which addresses an IP tried, and from which IPs an address got codes.
+
+**Blocking an email.** An address that abuses the app can be blocked (by the address, so the same person can't sign up again with it):
+
+- **Sign-in:** asking for a code answers `202` as usual but sends nothing (`auth event=blocked`), so a block isn't revealed. A code sent before the block, and sign-up, are refused (`403`, `code: account_unavailable`).
+- **Sessions:** the backend keeps the blocked accounts in memory, reloaded every minute (timed blocks run out on their own). Store-service and chat read them from `GET /internal/v1/blocked-users` every minute (`BACKEND_INTERNAL_URL`). Every service then refuses those sessions (`401`, `code: account_unavailable`), and the app signs out on it. Chat also drops their sockets.
+- **Their posts:** their open gigs, listings and requests leave the boards and the radar. Nothing is deleted, so they come back when the block is lifted.
+- **People they were talking to:** each of their conversations gets a note, *"This account has been flagged for breaking the site rules."*, and closes to typing (listed with the ended ones). Unblocking posts *"This account is active again."* and reopens them. Chat's `account_notices` table makes each note go out once, whatever the number of chat instances or restarts.
+- **Endpoints** (backend, `X-Internal-API-Key: INTERNAL_API_KEY`; nginx never routes `/internal`): `POST /internal/v1/email-blocks` `{email, reason, days (0: for good), by}`, `DELETE /internal/v1/email-blocks/:email`, `GET /internal/v1/email-blocks[/:email]`, `GET /internal/v1/blocked-users`. Each block and unblock is logged (`block event=blocked|unblocked`).
 
 ### Gigs
 

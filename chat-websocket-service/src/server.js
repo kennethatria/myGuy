@@ -14,6 +14,7 @@ const validationService = require('./services/validationService');
 const { healthHandler } = require('./api/health');
 const messageService = require('./services/messageService');
 const schedulerService = require('./services/schedulerService');
+const blockService = require('./services/blockService');
 const { configureRedisAdapter, getRedisHealth } = require('./config/redis');
 
 // Initialize Express app
@@ -466,6 +467,10 @@ const startServer = async () => {
 
       // Initialize scheduler
       schedulerService.init();
+
+      // Accounts the backend blocked: refused, disconnected, partners told
+      blockService.attach({ io, messageService });
+      blockService.start();
     });
   } catch (error) {
     logger.error('Failed to start server:', error);
@@ -480,6 +485,7 @@ process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully');
   
   schedulerService.stop();
+  blockService.stop();
   
   httpServer.close(() => {
     logger.info('HTTP server closed');

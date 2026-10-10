@@ -76,6 +76,9 @@ export interface ConversationSummary {
   // When it got to that state (e.g. when the deal completed)
   state_at?: string | null
   ended?: boolean
+  // The other person's account was blocked for breaking the site rules:
+  // read-only while it lasts, listed under Done
+  flagged?: boolean
 }
 
 export const useMessagesStore = defineStore('messages', () => {

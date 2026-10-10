@@ -232,7 +232,7 @@ class SocketHandlers {
       }
 
     } catch (error) {
-      if (error.code === 'chat_locked' || error.code === 'chat_ended') {
+      if (error.code === 'chat_locked' || error.code === 'chat_ended' || error.code === 'chat_flagged') {
         return socket.emit('error', {
           message: error.message,
           code: error.code,

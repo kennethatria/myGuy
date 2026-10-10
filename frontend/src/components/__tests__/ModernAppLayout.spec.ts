@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import ModernAppLayout from '../ModernAppLayout.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const Page = { template: '<div />' }
 
@@ -59,6 +60,16 @@ describe('ModernAppLayout drawer', () => {
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('store')
     expect(isOpen(wrapper)).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('goes to sign-in when the session ends (a blocked account is signed out)', async () => {
+    const auth = useAuthStore()
+    auth.token = 'token'
+    const { wrapper, router } = await setUp('/tasks')
+    auth.logout()
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('login')
     wrapper.unmount()
   })
 })

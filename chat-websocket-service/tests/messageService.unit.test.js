@@ -205,6 +205,19 @@ describe('MessageService', () => {
       }
     });
 
+    it('closes chats with a blocked account both ways, but still posts notices', async () => {
+      const blockService = require('../src/services/blockService');
+      blockService.blocked = new Set([9]);
+      try {
+        answer(true);
+        await expect(send()).rejects.toMatchObject({ code: 'chat_flagged' });
+        await expect(send({ senderId: 9, recipientId: 2 })).rejects.toMatchObject({ code: 'chat_flagged' });
+        await expect(send({ senderId: 9, recipientId: 2, messageType: 'system_alert' })).resolves.toMatchObject({ id: 7 });
+      } finally {
+        blockService.blocked = new Set();
+      }
+    });
+
     it('reports a chat as ended to the app', async () => {
       db.query.mockResolvedValueOnce({ rows: [{ state: 'completed' }] });
       expect(await messageService.isChatEnded({ taskId: 1, userId: 2, otherUserId: 9 })).toBe(true);
@@ -286,6 +299,22 @@ describe('MessageService', () => {
       expect(db.query.mock.calls[0][0]).toContain('DISTINCT ON (context_type, context_id, other_user_id)');
       // And when it got there (for "Completed 3 d ago")
       expect(db.query.mock.calls[0][0]).toContain('AS state_at');
+    });
+
+    it('closes conversations with a blocked account while the block lasts', async () => {
+      const blockService = require('../src/services/blockService');
+      db.query.mockResolvedValue({ rows: [
+        { id: 1, task_id: 5, other_user_id: 3, context_type: 'task', state: 'accepted' },
+        { id: 2, task_id: 6, other_user_id: 4, context_type: 'task', state: 'accepted' }
+      ] });
+      blockService.blocked = new Set([3]);
+      try {
+        const result = await messageService.getUserConversations(10);
+        expect(result.map(r => [r.id, r.ended, r.flagged])).toEqual([[1, true, true], [2, false, false]]);
+        expect(require('../src/services/messageService').formatConversation(result[0]).flagged).toBe(true);
+      } finally {
+        blockService.blocked = new Set();
+      }
     });
 
     it('lists each conversation with where it stands and its last message type', () => {
