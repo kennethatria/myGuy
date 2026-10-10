@@ -134,14 +134,23 @@ jobs:
           fi
 
           # Every service must have an image under the current tag (a new
-          # release changes it from "latest"): build any that don't yet
+          # release changes it from "latest"): build any that don't yet.
+          # Only Docker Hub saying an image doesn't exist means "build it": a
+          # timeout or rate limit used to rebuild all four, and Docker Hub
+          # trouble in those builds then blocked a config-only deploy
+          # (2026-10-09).
           tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName' 2>/dev/null || echo latest)
           for service in $SERVICES; do
             [[ " $build " == *" $service "* ]] && continue
-            if ! docker manifest inspect "$REGISTRY/myguy-$service:$tag" >/dev/null 2>&1; then
-              echo "No $REGISTRY/myguy-$service:$tag yet; building it"
-              build="$build $service"
-              [[ $deploy == all || " $deploy " == *" $service "* ]] || deploy="$deploy $service"
+            image="$REGISTRY/myguy-$service:$tag"
+            if ! err=$(docker manifest inspect "$image" 2>&1 >/dev/null); then
+              if grep -qiE 'no such manifest|manifest unknown' <<<"$err"; then
+                echo "No $image yet; building it"
+                build="$build $service"
+                [[ $deploy == all || " $deploy " == *" $service "* ]] || deploy="$deploy $service"
+              else
+                echo "::warning::Couldn't check $image (${err:0:200}); assuming it exists"
+              fi
             fi
           done
 
