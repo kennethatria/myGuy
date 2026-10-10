@@ -26,7 +26,9 @@
     </header>
 
     <!-- The menu slides over the page on every screen size -->
-    <div v-if="isDrawerOpen" class="drawer-backdrop" @click="closeDrawer"></div>
+    <Transition name="backdrop">
+      <div v-if="isDrawerOpen" class="drawer-backdrop" @click="closeDrawer"></div>
+    </Transition>
     <aside
       id="app-drawer"
       class="drawer"
@@ -272,6 +274,20 @@ onMounted(async () => {
   background: rgba(17, 24, 39, 0.4);
 }
 
+/* The backdrop fades with the drawer instead of vanishing at once */
+.backdrop-enter-active {
+  transition: opacity 0.25s ease-out;
+}
+
+.backdrop-leave-active {
+  transition: opacity 0.4s ease-in-out;
+}
+
+.backdrop-enter-from,
+.backdrop-leave-to {
+  opacity: 0;
+}
+
 .drawer {
   position: fixed;
   top: 0;
@@ -285,19 +301,25 @@ onMounted(async () => {
   background: var(--surface);
   transform: translateX(-100%);
   visibility: hidden; /* out of the tab order and screen readers when shut */
-  transition: transform 0.25s ease, visibility 0s linear 0.25s;
+  box-shadow: 0 0 24px rgba(17, 24, 39, 0);
+  /* Closing glides out a little slower than opening, so a tap on an item
+     doesn't snap the menu away */
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.4s ease-in-out,
+    visibility 0s linear 0.4s;
 }
 
 .drawer.open {
   transform: translateX(0);
   visibility: visible;
   box-shadow: 0 0 24px rgba(17, 24, 39, 0.2);
-  transition: transform 0.25s ease;
+  transition: transform 0.25s cubic-bezier(0, 0, 0.2, 1), box-shadow 0.25s ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .drawer,
-  .drawer.open {
+  .drawer.open,
+  .backdrop-enter-active,
+  .backdrop-leave-active {
     transition: none;
   }
 }
