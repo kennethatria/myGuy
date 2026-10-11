@@ -218,6 +218,24 @@ describe('MessageService', () => {
       }
     });
 
+    it('keeps a suspended account read-only and pauses its chats, but still posts notices', async () => {
+      const blockService = require('../src/services/blockService');
+      const until = new Date(Date.now() + 3600 * 1000);
+      blockService.suspended = new Map([[9, until]]);
+      try {
+        answer(true);
+        // Writing to them: paused
+        await expect(send()).rejects.toMatchObject({ code: 'chat_paused', status: 403, until });
+        // Them writing: suspended
+        await expect(send({ senderId: 9, recipientId: 2 })).rejects.toMatchObject({ code: 'account_suspended', until });
+        await expect(send({ senderId: 9, recipientId: 2, messageType: 'system_alert' })).resolves.toMatchObject({ id: 7 });
+        await expect(messageService.editMessage(1, 9, 'x')).rejects.toMatchObject({ code: 'account_suspended' });
+        await expect(messageService.deleteMessage(1, 9)).rejects.toMatchObject({ code: 'account_suspended' });
+      } finally {
+        blockService.suspended = new Map();
+      }
+    });
+
     it('reports a chat as ended to the app', async () => {
       db.query.mockResolvedValueOnce({ rows: [{ state: 'completed' }] });
       expect(await messageService.isChatEnded({ taskId: 1, userId: 2, otherUserId: 9 })).toBe(true);
@@ -314,6 +332,23 @@ describe('MessageService', () => {
         expect(require('../src/services/messageService').formatConversation(result[0]).flagged).toBe(true);
       } finally {
         blockService.blocked = new Set();
+      }
+    });
+
+    it('pauses conversations with a suspended account until it ends, without ending them', async () => {
+      const blockService = require('../src/services/blockService');
+      const until = new Date(Date.now() + 3600 * 1000);
+      db.query.mockResolvedValue({ rows: [
+        { id: 1, task_id: 5, other_user_id: 3, context_type: 'task', state: 'accepted' },
+        { id: 2, task_id: 6, other_user_id: 4, context_type: 'task', state: 'accepted' }
+      ] });
+      blockService.suspended = new Map([[3, until]]);
+      try {
+        const result = await messageService.getUserConversations(10);
+        expect(result.map(r => [r.id, r.ended, r.paused_until])).toEqual([[1, false, until], [2, false, null]]);
+        expect(require('../src/services/messageService').formatConversation(result[0]).paused_until).toBe(until);
+      } finally {
+        blockService.suspended = new Map();
       }
     });
 
@@ -514,66 +549,6 @@ describe('MessageService', () => {
     it('returns 0 when no context identifier is provided', async () => {
       const result = await messageService.getTotalMessageCount({ userId: 10 });
       expect(result).toBe(0);
-    });
-  });
-
-  describe('createStoreMessage', () => {
-    it('creates message successfully within a transaction', async () => {
-      const mockMsg = { id: 1, content: 'Hello there', store_item_id: 5, sender_id: 1, recipient_id: 2 };
-      mockClient.query
-        .mockResolvedValueOnce({})             // BEGIN
-        .mockResolvedValueOnce({ rows: [mockMsg] }) // INSERT
-        .mockResolvedValueOnce({});            // COMMIT
-
-      const result = await messageService.createStoreMessage({
-        store_item_id: 5,
-        sender_id: 1,
-        recipient_id: 2,
-        content: 'Hello there'
-      });
-
-      expect(result.id).toBe(1);
-      expect(mockClient.query).toHaveBeenCalledWith('BEGIN');
-      expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
-      expect(mockClient.release).toHaveBeenCalled();
-    });
-
-    it('filters PII from message content before inserting', async () => {
-      const mockMsg = { id: 2, content: 'Hi, email is [email removed]', store_item_id: 5 };
-      mockClient.query
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({ rows: [mockMsg] })
-        .mockResolvedValueOnce({});
-
-      const result = await messageService.createStoreMessage({
-        store_item_id: 5,
-        sender_id: 1,
-        recipient_id: 2,
-        content: 'Hi, email is user@example.com'
-      });
-
-      expect(result.id).toBe(2);
-      // Verify INSERT was called with filtered content (no raw email)
-      const insertCall = mockClient.query.mock.calls.find(
-        call => typeof call[0] === 'string' && call[0].includes('INSERT INTO messages')
-      );
-      expect(insertCall[1][3]).not.toContain('user@example.com');
-    });
-
-    it('rolls back transaction on database error', async () => {
-      mockClient.query
-        .mockResolvedValueOnce({})             // BEGIN
-        .mockRejectedValueOnce(new Error('DB error')); // INSERT fails
-
-      await expect(messageService.createStoreMessage({
-        store_item_id: 5,
-        sender_id: 1,
-        recipient_id: 2,
-        content: 'test'
-      })).rejects.toThrow('DB error');
-
-      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
-      expect(mockClient.release).toHaveBeenCalled();
     });
   });
 

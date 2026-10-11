@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import config from '@/config'
 import { useAuthStore } from './auth'
+import type { SuspensionMark } from '@/utils/suspension'
 
 interface User {
   id: number
@@ -12,6 +13,7 @@ interface User {
   averageRating?: number
   created_at?: string
   createdAt?: string // Keep both for compatibility
+  suspension?: SuspensionMark
 }
 
 export const useUsersStore = defineStore('users', () => {
@@ -66,7 +68,8 @@ export const useUsersStore = defineStore('users', () => {
           bio: userData.bio,
           averageRating: userData.average_rating || userData.averageRating,
           created_at: userData.created_at || userData.createdAt,
-          createdAt: userData.created_at || userData.createdAt
+          createdAt: userData.created_at || userData.createdAt,
+          suspension: userData.suspension
         };
 
         // Cache for future use

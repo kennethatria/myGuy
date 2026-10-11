@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import config from '@/config'
 import { useUserStore } from './user'
+import type { SuspensionMark } from '@/utils/suspension'
 
 interface User {
   id: number
@@ -12,6 +13,8 @@ interface User {
   bio?: string
   averageRating?: number
   createdAt: string
+  // Suspended: read-only until suspension.until
+  suspension?: SuspensionMark
 }
 
 // The API sends snake_case (full_name, average_rating); the app reads camelCase.

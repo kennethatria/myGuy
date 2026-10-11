@@ -74,7 +74,9 @@
                    where the deal stands, and the rating between you once given -->
               <span class="conversation-status">
                 <span class="conversation-who">{{ conversation.other_user_name }}</span>
-                <span v-if="!isEnded(conversation) && postExpired(conversation)" class="status-chip">Expired</span>
+                <span v-if="conversation.flagged" class="status-chip stopped">Flagged</span>
+                <span v-else-if="!isEnded(conversation) && isPaused(conversation)" class="status-chip waiting">Paused</span>
+                <span v-else-if="!isEnded(conversation) && postExpired(conversation)" class="status-chip">Expired</span>
                 <span v-else-if="statusLabel(conversation)" :class="['status-chip', statusIcon(conversation)?.tone]">
                   <i v-if="statusIcon(conversation)" :class="['fas', statusIcon(conversation)!.icon]" aria-hidden="true"></i>
                   {{ statusLabel(conversation) }}
@@ -116,6 +118,7 @@
           :has-more="chatStore.activeHasMoreMessages"
           :locked="chatStore.activeLocked"
           :ended="chatStore.activeEnded"
+          :paused-until="chatStore.activePausedUntil"
           @send-message="sendMessage"
           @edit-message="chatStore.editMessage"
           @delete-message="chatStore.deleteMessage"
@@ -136,6 +139,7 @@ import { actionBarHeight } from '@/composables/useActionBar';
 import { useChatStore, conversationKey } from '@/stores/chat';
 import { useReviewsStore } from '@/stores/reviews';
 import { statusLabel, statusIcon, timeAgo, postExpired } from '@/utils/conversationStatus';
+import { suspendedNow } from '@/utils/suspension';
 import { formatRating, type Interaction } from '@/utils/network';
 import type { ConversationSummary } from '@/stores/messages';
 import MessageThread from './MessageThread.vue';
@@ -151,6 +155,9 @@ function isEnded(conversation: ConversationSummary): boolean {
 
 // Done: the deal ended (completed, or closed without one) or the post
 // expired. Active (the default): everything else.
+// The other account is suspended: still Active, nobody types until then
+const isPaused = (conversation: ConversationSummary) =>
+  suspendedNow(chatStore.pausedConversations.get(conversationKey(conversation) ?? ''));
 const isDone = (conversation: ConversationSummary) => isEnded(conversation) || postExpired(conversation);
 const listTab = ref<'active' | 'done'>('active');
 const activeCount = computed(() => chatStore.sortedConversations.filter(c => !isDone(c)).length);

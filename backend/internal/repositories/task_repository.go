@@ -146,9 +146,10 @@ func (r *GormTaskRepository) buildTaskQuery(ctx context.Context, filters map[str
 		case "assigned_to":
 			query = query.Where("assigned_to = ?", value)
 		case "hide_blocked":
-			// value is now: gigs by accounts blocked at that time stay
-			// off the boards (they come back if the block is lifted)
-			query = query.Where("created_by NOT IN (?)", blockedUserIDs(r.db, value))
+			// value is now: gigs by accounts blocked or suspended at that
+			// time stay off the boards (they come back when it's lifted)
+			query = query.Where("created_by NOT IN (?)", blockedUserIDs(r.db, value)).
+				Where("created_by NOT IN (?)", suspendedUserIDs(r.db, value))
 		}
 		// Anything else (pagination, sorting, unknown keys) is not a
 		// filter; keys are never used as column names.

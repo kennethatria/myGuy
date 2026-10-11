@@ -18,6 +18,7 @@ var (
 type JWTAuthMiddleware struct {
 	secretKey string
 	blocked   func(userID uint) bool
+	suspended func(userID uint) (time.Time, bool)
 }
 
 // AccountUnavailable is the error code a blocked account's requests get, in
@@ -29,6 +30,22 @@ const AccountUnavailable = "account_unavailable"
 func (m *JWTAuthMiddleware) WithBlocked(blocked func(userID uint) bool) *JWTAuthMiddleware {
 	m.blocked = blocked
 	return m
+}
+
+// AccountSuspended is the error code a suspended account gets for anything
+// that changes data, in every service; the app shows the suspension.
+const AccountSuspended = "account_suspended"
+
+// WithSuspended makes accounts suspended() reports read-only: they can look
+// (GET), but every other request is refused with the date it ends.
+func (m *JWTAuthMiddleware) WithSuspended(suspended func(userID uint) (time.Time, bool)) *JWTAuthMiddleware {
+	m.suspended = suspended
+	return m
+}
+
+// ReadOnly reports whether a request only reads.
+func ReadOnly(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
 }
 
 func NewJWTAuthMiddleware(secretKey string) *JWTAuthMiddleware {
@@ -149,6 +166,14 @@ func (m *JWTAuthMiddleware) AuthRequired() gin.HandlerFunc {
 		if m.blocked != nil && m.blocked(claims.UserID) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "this account isn't available", "code": AccountUnavailable})
 			return
+		}
+		if m.suspended != nil && !ReadOnly(c.Request.Method) {
+			if until, ok := m.suspended(claims.UserID); ok {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+					"error": "your account is suspended until " + until.UTC().Format("Mon 2 Jan 15:04 MST"),
+					"code":  AccountSuspended, "until": until.UTC()})
+				return
+			}
 		}
 
 		c.Set("userID", claims.UserID)

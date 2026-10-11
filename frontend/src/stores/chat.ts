@@ -64,6 +64,8 @@ export const useChatStore = defineStore('chat', () => {
   const lockedConversations = ref<Set<string>>(new Set());
   // Conversations whose deal is done or closed: readable, not writable
   const endedConversations = ref<Set<string>>(new Set());
+  // Conversations with a suspended account: nobody types until the date
+  const pausedConversations = ref<Map<string, string>>(new Map());
   // All maps below are keyed by conversationKey().
   const messages = ref<Map<string, Message[]>>(new Map());
   const typingUsers = ref<Map<string, TypingUser[]>>(new Map());
@@ -100,6 +102,7 @@ export const useChatStore = defineStore('chat', () => {
   const activeKey = computed(() => activeConversation.value ? conversationKey(activeConversation.value) : null);
   const activeLocked = computed(() => !!activeKey.value && lockedConversations.value.has(activeKey.value));
   const activeEnded = computed(() => !!activeKey.value && endedConversations.value.has(activeKey.value));
+  const activePausedUntil = computed(() => (activeKey.value && pausedConversations.value.get(activeKey.value)) || null);
 
   const totalUnreadCount = computed(() =>
     conversations.value.reduce((total, conv) => total + (Number(conv.unread_count) || 0), 0)
@@ -286,7 +289,20 @@ export const useChatStore = defineStore('chat', () => {
       }
     });
 
-    socket.value.on('error', (error: Error & { code?: string; taskId?: number; itemId?: number; recipientId?: number }) => {
+    socket.value.on('error', (error: Error & { code?: string; until?: string; taskId?: number; itemId?: number; recipientId?: number }) => {
+      // Suspended since signing in: load the suspension, the app shows it
+      if (error?.code === 'account_suspended') {
+        useAuthStore().checkAuth();
+        return;
+      }
+      // The other account is suspended: paused until then
+      if (error?.code === 'chat_paused') {
+        const key = conversationKey(error.itemId
+          ? { item_id: Number(error.itemId), other_user_id: Number(error.recipientId) }
+          : { task_id: Number(error.taskId), other_user_id: Number(error.recipientId) });
+        if (key && error.until) setPaused(key, error.until);
+        return;
+      }
       // A message to a conversation that has ended: show it as ended
       if (error?.code === 'chat_ended' || error?.code === 'chat_flagged') {
         const key = conversationKey(error.itemId
@@ -363,6 +379,10 @@ export const useChatStore = defineStore('chat', () => {
       const conv = findConversation(key);
       if (conv) Object.assign(conv, { state, state_at: message.created_at, ended });
     }
+
+    // The other account was suspended, or that's over
+    if (message.metadata?.notice === 'account_suspended') setPaused(key, message.metadata.until ?? null);
+    if (message.metadata?.notice === 'account_restored') setPaused(key, null);
 
     // Append only to an already-loaded thread; an unloaded one fetches its
     // full history when opened. The same message can arrive twice (e.g.
@@ -447,7 +467,10 @@ export const useChatStore = defineStore('chat', () => {
   function handleConversationsList(convs: ConversationSummary[]) {
     for (const conv of convs) {
       const key = conversationKey(conv);
-      if (key) setEnded(key, !!conv.ended);
+      if (key) {
+        setEnded(key, !!conv.ended);
+        setPaused(key, conv.paused_until ?? null);
+      }
     }
     conversations.value = convs.map(conv => ({ ...conv, unread_count: Number(conv.unread_count) || 0 }));
 
@@ -571,6 +594,13 @@ export const useChatStore = defineStore('chat', () => {
     const next = new Set(endedConversations.value);
     if (ended) next.add(key); else next.delete(key);
     endedConversations.value = next;
+  }
+
+  function setPaused(key: string, until: string | null) {
+    if ((pausedConversations.value.get(key) ?? null) === until) return;
+    const next = new Map(pausedConversations.value);
+    if (until) next.set(key, until); else next.delete(key);
+    pausedConversations.value = next;
   }
 
   function setLocked(key: string, locked: boolean) {
@@ -953,7 +983,9 @@ export const useChatStore = defineStore('chat', () => {
     activeHasMoreMessages,
     activeLocked,
     activeEnded,
+    activePausedUntil,
     endedConversations,
+    pausedConversations,
     
     // Store message methods
     getStoreMessages,

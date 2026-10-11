@@ -42,7 +42,7 @@
           @booking-action="handleBookingAction"
         />
         <div v-else-if="isNote(message)" class="thread-note">
-          {{ message.content }}
+          {{ noticeText(message) }}
           <span class="thread-note-time">{{ formatTime(message.created_at) }}</span>
         </div>
         <BookingMessageBubble
@@ -74,9 +74,11 @@
     </div>
     
     <!-- Message Input: a gig chat opens once the poster accepts. Until then,
-         and once the deal has ended, a strip says why instead -->
-    <p v-if="ended || locked" class="message-closed" role="status">
+         once the deal has ended, and while either account is suspended, a
+         strip says why instead -->
+    <p v-if="ended || locked || closedNote" class="message-closed" role="status">
       <template v-if="ended">This conversation has ended. You can still read it{{ hasReviewStep ? ' and leave your review above' : '' }}.</template>
+      <template v-else-if="closedNote">{{ closedNote }}</template>
       <template v-else>{{ lockedNote }}</template>
     </p>
     <div v-else class="message-input-container">
@@ -107,6 +109,7 @@ import TaskEventMessage from './TaskEventMessage.vue';
 import RequestOfferMessage from './RequestOfferMessage.vue';
 import BookingStepMessage from './BookingStepMessage.vue';
 import type { Message, ConversationSummary, BookingAction } from '@/stores/messages';
+import { formatUntil, noticeText, suspendedNow } from '@/utils/suspension';
 
 const props = defineProps<{
   conversation: ConversationSummary;
@@ -118,6 +121,8 @@ const props = defineProps<{
   locked?: boolean;
   // The deal is done or closed: readable, not writable
   ended?: boolean;
+  // The other account is suspended until then: nobody types meanwhile
+  pausedUntil?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -147,6 +152,16 @@ const latestEventId = computed(() => {
 // A completed deal still offers its review in the conversation
 const hasReviewStep = computed(() => props.messages.some(m =>
   m.metadata?.event === 'completed' || m.message_type === 'booking_completed'));
+
+// Paused while either of us is suspended (mine first: it's what I can act on)
+const closedNote = computed(() => {
+  const mine = authStore.user?.suspension?.until;
+  if (suspendedNow(mine)) return `Your account is suspended until ${formatUntil(mine!)}. You can read, but not write.`;
+  if (suspendedNow(props.pausedUntil)) {
+    return `Paused until ${formatUntil(props.pausedUntil!)}: this account is suspended for breaking the site rules.`;
+  }
+  return '';
+});
 
 // Before a match, the poster or seller is the one who can open the chat
 const lockedNote = computed(() => {

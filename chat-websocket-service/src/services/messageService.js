@@ -82,6 +82,29 @@ function chatFlaggedError() {
   return error;
 }
 
+// A suspended account is read-only until its suspension ends: it can't
+// write, and its conversations are paused (both ways) meanwhile.
+function accountSuspendedError(until) {
+  const error = new Error(`Your account is suspended until ${until.toISOString()}.`);
+  error.status = 403;
+  error.code = 'account_suspended';
+  error.until = until;
+  return error;
+}
+
+function chatPausedError(until) {
+  const error = new Error('This conversation is paused: the account is suspended for breaking the site rules.');
+  error.status = 403;
+  error.code = 'chat_paused';
+  error.until = until;
+  return error;
+}
+
+function assertNotSuspended(userId) {
+  const until = blockService.suspendedUntil(userId);
+  if (until) throw accountSuspendedError(until);
+}
+
 function chatEndedError() {
   const error = new Error('This conversation has ended.');
   error.status = 403;
@@ -191,6 +214,11 @@ class MessageService {
       if (!messageType && (blockService.isBlocked(senderId) || blockService.isBlocked(recipientId))) {
         throw chatFlaggedError();
       }
+      if (!messageType) {
+        assertNotSuspended(senderId);
+        const pausedUntil = blockService.suspendedUntil(recipientId);
+        if (pausedUntil) throw chatPausedError(pausedUntil);
+      }
       // ...and no longer once the deal is done or closed (read-only history)
       if ((taskId || storeItemId) && !messageType &&
           (await this.conversationState(client, { taskId, storeItemId, userA: senderId, userB: recipientId })).ended) {
@@ -245,6 +273,7 @@ class MessageService {
    */
   async editMessage(messageId, userId, newContent) {
     assertMessageLength(newContent);
+    assertNotSuspended(userId);
     const client = await db.getClient();
 
     try {
@@ -298,6 +327,7 @@ class MessageService {
    * Soft delete a message
    */
   async deleteMessage(messageId, userId) {
+    assertNotSuspended(userId);
     const query = `
       UPDATE messages 
       SET is_deleted = true, 
@@ -458,8 +488,10 @@ class MessageService {
     return result.rows.map(row => {
       // A conversation with a blocked account is closed while the block
       // lasts (listed with the ended ones), and opens again when it's lifted
+      // A suspended one is paused until the date it ends
       const flagged = blockService.isBlocked(row.other_user_id);
-      return { ...row, ended: flagged || hasEnded(row.context_type, row.state), flagged };
+      const pausedUntil = flagged ? null : blockService.suspendedUntil(row.other_user_id);
+      return { ...row, ended: flagged || hasEnded(row.context_type, row.state), flagged, paused_until: pausedUntil };
     });
   }
 
@@ -617,47 +649,6 @@ class MessageService {
   }
 
   /**
-   * Create a new store message
-   */
-  async createStoreMessage({ store_item_id, sender_id, recipient_id, content }) {
-    const client = await db.getClient();
-
-    try {
-      await client.query('BEGIN');
-
-      // Filter content
-      const { filtered, hasRemovedContent } = filterContent(content);
-
-      // Store message in unified messages table
-      const messageQuery = `
-        INSERT INTO messages (store_item_id, sender_id, recipient_id, content, message_type, created_at)
-        VALUES ($1, $2, $3, $4, 'store', NOW())
-        RETURNING *
-      `;
-
-      const messageResult = await client.query(messageQuery, [
-        store_item_id,
-        sender_id,
-        recipient_id,
-        filtered
-      ]);
-
-      await client.query('COMMIT');
-
-      const message = messageResult.rows[0];
-      message.hasRemovedContent = hasRemovedContent;
-
-      return message;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      logger.error('Error creating store message:', error);
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
    * Get user's message count for a specific store item
    */
   async getUserStoreMessageCount(itemId, userId) {
@@ -758,6 +749,8 @@ function formatConversation(conv) {
     ended: !!conv.ended,
     // The other person's account is blocked: read-only, listed under Done
     flagged: !!conv.flagged,
+    // The other person's account is suspended: no typing until then
+    paused_until: conv.paused_until ?? null,
     conversation_type: conv.task_id ? 'task'
       : conv.application_id ? 'application'
         : conv.store_item_id ? 'store' : 'unknown'

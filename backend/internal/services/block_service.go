@@ -146,11 +146,17 @@ func (s *BlockService) Refresh(ctx context.Context) error {
 // RefreshEvery keeps the blocked accounts current until ctx ends.  A failed
 // refresh keeps the last set (blocks stay in force) and is logged.
 func (s *BlockService) RefreshEvery(ctx context.Context, interval time.Duration) {
+	refreshEvery(ctx, interval, "blocked accounts", s.Refresh)
+}
+
+// refreshEvery runs refresh now and every interval until ctx ends; a failed
+// run keeps what was loaded (restrictions stay in force) and is logged.
+func refreshEvery(ctx context.Context, interval time.Duration, what string, refresh func(context.Context) error) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		if err := s.Refresh(ctx); err != nil {
-			log.Printf("blocked accounts: refresh failed: %v", err)
+		if err := refresh(ctx); err != nil {
+			log.Printf("%s: refresh failed: %v", what, err)
 		}
 		select {
 		case <-ctx.Done():

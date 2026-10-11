@@ -76,15 +76,20 @@
     </aside>
 
     <main :class="['main-content', { 'has-chat-button': !route.meta.hideChatButton }]">
+      <p v-if="suspendedUntil" class="suspension-banner" role="status">
+        Your account is suspended until {{ formatUntil(suspendedUntil) }} for breaking the site rules.
+        You can look around, but not post, book or message.
+      </p>
       <router-view />
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute, type RouteLocationRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { formatUntil, suspendedNow } from '@/utils/suspension'
 
 const router = useRouter()
 const route = useRoute()
@@ -180,6 +185,21 @@ watch(() => route.fullPath, () => {
 watch(() => authStore.token, (token) => {
   if (!token) router.push({ name: 'login' })
 })
+
+// Suspended: read-only until the date, said on every page; when it's over,
+// the account is reloaded and the banner goes
+const suspendedUntil = computed(() => {
+  const until = authStore.user?.suspension?.until
+  return suspendedNow(until) ? until! : null
+})
+let suspensionTimer: ReturnType<typeof setTimeout> | undefined
+watch(suspendedUntil, (until) => {
+  clearTimeout(suspensionTimer)
+  if (!until) return
+  const wait = Math.min(new Date(until).getTime() - Date.now() + 1000, 2 ** 31 - 1)
+  suspensionTimer = setTimeout(() => authStore.checkAuth(), wait)
+}, { immediate: true })
+onUnmounted(() => clearTimeout(suspensionTimer))
 
 const handleSignOut = async () => {
   try {
@@ -489,6 +509,15 @@ onMounted(async () => {
 }
 
 /* Page */
+.suspension-banner {
+  margin: 0;
+  padding: 10px 16px;
+  background: #FEE2E2;
+  color: #B91C1C;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
 .main-content {
   flex: 1;
   overflow-y: auto;

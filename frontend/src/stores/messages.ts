@@ -35,6 +35,10 @@ export interface Message {
     buyer_review?: string
     seller_rating?: number
     seller_review?: string
+    // Notices about the other account (account_flagged, account_suspended
+    // until a date, account_restored)
+    notice?: string
+    until?: string
   }
   is_read: boolean
   read_at?: string
@@ -82,6 +86,8 @@ export interface ConversationSummary {
   // The other person's account was blocked for breaking the site rules:
   // read-only while it lasts, listed under Done
   flagged?: boolean
+  // ...or is suspended: nobody can type until then (still Active)
+  paused_until?: string | null
 }
 
 export const useMessagesStore = defineStore('messages', () => {

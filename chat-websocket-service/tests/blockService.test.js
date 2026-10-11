@@ -3,34 +3,37 @@ jest.mock('../src/utils/logger', () => ({ debug: jest.fn(), info: jest.fn(), war
 
 const jwt = require('jsonwebtoken');
 const blockService = require('../src/services/blockService');
-const { BlockService, NOTICES } = blockService;
+const { BlockService, NOTICES, noticeText } = blockService;
 const { authenticateSocket, authenticateHTTP, ACCOUNT_UNAVAILABLE } = require('../src/middleware/auth');
 
-// Fake account_notices: which accounts' partners were told
-function fakeNotices(flaggedAlready = []) {
-  const flagged = new Set(flaggedAlready);
+// Fake account_notices: what each account's partners were last told
+function fakeNotices(told = {}) {
+  const state = new Map(Object.entries(told).map(([id, s]) => [parseInt(id), s]));
   return {
-    flagged,
-    query: jest.fn(async (sql, [ids]) => {
+    state,
+    query: jest.fn(async (sql, [ids, states]) => {
       if (sql.includes('INSERT INTO account_notices')) {
-        const claimed = ids.filter(id => !flagged.has(id));
-        claimed.forEach(id => flagged.add(id));
-        return { rows: claimed.map(user_id => ({ user_id })) };
+        const changed = ids.map((id, i) => [id, states[i]]).filter(([id, s]) => state.get(id) !== s);
+        changed.forEach(([id, s]) => state.set(id, s));
+        return { rows: changed.map(([user_id, s]) => ({ user_id, state: s })) };
       }
-      const lifted = [...flagged].filter(id => !ids.includes(id));
-      lifted.forEach(id => flagged.delete(id));
+      const lifted = [...state].filter(([id, s]) => s !== 'active' && !ids.includes(id)).map(([id]) => id);
+      lifted.forEach(id => state.set(id, 'active'));
       return { rows: lifted.map(user_id => ({ user_id })) };
     })
   };
 }
 
-function setUp(responses, flaggedAlready) {
+const UNTIL = '2026-10-14T12:00:00.000Z';
+
+// Each response: blocked ids, or { user_ids, suspended }, or an Error
+function setUp(responses, told) {
   const http = { get: jest.fn() };
   for (const r of responses) {
     if (r instanceof Error) http.get.mockRejectedValueOnce(r);
-    else http.get.mockResolvedValueOnce({ data: { user_ids: r } });
+    else http.get.mockResolvedValueOnce({ data: Array.isArray(r) ? { user_ids: r } : r });
   }
-  const database = fakeNotices(flaggedAlready);
+  const database = fakeNotices(told);
   const service = new BlockService({ url: 'http://api:8080', key: 'k', http, database });
   const sockets = { disconnectSockets: jest.fn() };
   const emit = jest.fn();
@@ -43,6 +46,7 @@ function setUp(responses, flaggedAlready) {
     sendMessage: jest.fn(async m => ({ id: 1, ...m }))
   };
   service.attach({ io, messageService });
+  service.now = () => new Date('2026-10-11T12:00:00Z');
   return { service, http, database, io, sockets, emit, messageService };
 }
 
@@ -77,18 +81,72 @@ describe('BlockService', () => {
   });
 
   it('a restart doesn\'t tell partners again', async () => {
-    const { service, messageService } = setUp([[7]], [7]);
+    const { service, messageService } = setUp([[7]], { 7: 'flagged' });
     await service.refresh();
     expect(messageService.sendMessage).not.toHaveBeenCalled();
     expect(service.isBlocked(7)).toBe(true);
   });
 
   it('says so when the block is lifted', async () => {
-    const { service, messageService } = setUp([[]], [7]);
+    const { service, messageService } = setUp([[]], { 7: 'flagged' });
     await service.refresh();
     expect(service.isBlocked(7)).toBe(false);
     expect(messageService.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
       senderId: 7, content: NOTICES.account_restored, metadata: { notice: 'account_restored' }
+    }));
+  });
+
+  it('keeps a suspended account signed in, and tells its partners until when', async () => {
+    const { service, sockets, messageService } = setUp([
+      { user_ids: [], suspended: [{ user_id: 7, until: UNTIL }] },
+      { user_ids: [], suspended: [{ user_id: 7, until: UNTIL }] }
+    ]);
+    await service.refresh();
+    expect(service.isBlocked(7)).toBe(false);
+    expect(service.suspendedUntil(7)).toEqual(new Date(UNTIL));
+    expect(service.suspendedUntil(8)).toBeNull();
+    expect(sockets.disconnectSockets).not.toHaveBeenCalled();
+    expect(messageService.sendMessage).toHaveBeenCalledTimes(2);
+    expect(messageService.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      senderId: 7, recipientId: 2, messageType: 'system_alert',
+      content: 'This account is suspended until Wed 14 Oct, 12:00 UTC for breaking the site rules.',
+      metadata: { notice: 'account_suspended', until: UNTIL }
+    }));
+
+    await service.refresh(); // the same suspension: told once
+    expect(messageService.sendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('a suspension that runs out stops counting before the next refresh', () => {
+    const { service } = setUp([]);
+    service.suspended = new Map([[7, new Date(UNTIL)]]);
+    service.now = () => new Date(UNTIL);
+    expect(service.suspendedUntil(7)).toBeNull();
+    expect(service.states().size).toBe(0);
+  });
+
+  it('says so when a suspension is over, and a new one is a new notice', async () => {
+    const later = '2026-10-20T00:00:00.000Z';
+    const { service, messageService } = setUp([
+      { user_ids: [], suspended: [] },
+      { user_ids: [], suspended: [{ user_id: 7, until: later }] }
+    ], { 7: `suspended:${UNTIL}` });
+    await service.refresh();
+    expect(messageService.sendMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      content: NOTICES.account_restored, metadata: { notice: 'account_restored' }
+    }));
+    await service.refresh();
+    expect(messageService.sendMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      metadata: { notice: 'account_suspended', until: later }
+    }));
+  });
+
+  it('a block outranks a suspension', async () => {
+    const { service, messageService, sockets } = setUp([{ user_ids: [7], suspended: [{ user_id: 7, until: UNTIL }] }]);
+    await service.refresh();
+    expect(sockets.disconnectSockets).toHaveBeenCalled();
+    expect(messageService.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: { notice: 'account_flagged' }
     }));
   });
 
@@ -127,5 +185,13 @@ describe('auth refuses blocked accounts', () => {
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: ACCOUNT_UNAVAILABLE }));
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('noticeText', () => {
+  it('dates a suspension in UTC', () => {
+    expect(noticeText('account_suspended', UNTIL)).toBe(
+      'This account is suspended until Wed 14 Oct, 12:00 UTC for breaking the site rules.');
+    expect(noticeText('account_flagged')).toBe(NOTICES.account_flagged);
   });
 });
