@@ -84,10 +84,10 @@ app.post('/api/v1/store-messages', mockAuth, async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
-    const message = await messageService.createStoreMessage({
-      store_item_id: parseInt(store_item_id),
-      sender_id: senderId,
-      recipient_id: parseInt(recipient_id),
+    const message = await messageService.sendMessage({
+      storeItemId: parseInt(store_item_id),
+      senderId,
+      recipientId: parseInt(recipient_id),
       content: content.trim()
     });
     
@@ -595,7 +595,7 @@ describe('Store Messages API', () => {
       };
       
       // Mock the HTTP API response
-      jest.spyOn(messageService, 'createStoreMessage').mockResolvedValue(mockCreatedMessage);
+      jest.spyOn(messageService, 'sendMessage').mockResolvedValue(mockCreatedMessage);
       jest.spyOn(messageService, 'getUserStoreMessageCount').mockResolvedValue(0);
       jest.spyOn(messageService, 'getMessageLimit').mockResolvedValue(3);
       
@@ -680,7 +680,7 @@ describe('Store Messages API', () => {
         recipient: { id: buyerId, username: 'buyer1' }
       };
       
-      jest.spyOn(messageService, 'createStoreMessage').mockResolvedValue(mockReplyMessage);
+      jest.spyOn(messageService, 'sendMessage').mockResolvedValue(mockReplyMessage);
       
       const sellerToken = jwt.sign({ id: sellerId, username: 'seller1' }, 'test-secret');
       

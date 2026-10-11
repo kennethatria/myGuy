@@ -36,23 +36,27 @@ func setupBlockingApp(t *testing.T) *blockingApp {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Task{}, &models.Application{}, &models.LoginCode{}, &models.BlockedEmail{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Task{}, &models.Application{}, &models.LoginCode{}, &models.BlockedEmail{}, &models.AccountSuspension{}); err != nil {
 		t.Fatal(err)
 	}
 	userRepo := repositories.NewGormUserRepository(db)
 	blocks := services.NewBlockService(repositories.NewGormBlockedEmailRepository(db))
+	suspensions := services.NewSuspensionService(repositories.NewGormSuspensionRepository(db), userRepo, blocks)
 	sender := &capturingSender{codes: map[string]string{}}
-	jwt := middleware.NewJWTAuthMiddleware("test-secret").WithBlocked(blocks.UserBlocked)
+	jwt := middleware.NewJWTAuthMiddleware("test-secret").WithBlocked(blocks.UserBlocked).WithSuspended(suspensions.SuspendedUntil)
 	auth := services.NewAuthService(userRepo, repositories.NewGormLoginCodeRepository(db), sender, "test-secret").WithBlocks(blocks)
 	tasks := services.NewTaskService(repositories.NewGormTaskRepository(db), repositories.NewGormApplicationRepository(db), nil)
-	handler := NewHandler(auth, services.NewUserService(userRepo), tasks, nil, jwt)
+	handler := NewHandler(auth, services.NewUserService(userRepo), tasks, nil, jwt).WithSuspensions(suspensions)
 
 	router := gin.New()
 	router.POST("/auth/request-code", handler.RequestLoginCode)
 	router.POST("/auth/verify-code", handler.VerifyLoginCode)
 	protected := router.Group("/api/v1", jwt.AuthRequired())
 	protected.GET("/tasks", handler.ListTasks)
-	NewInternalHandler(blocks).Register(router, testInternalKey)
+	protected.POST("/tasks", handler.CreateTask)
+	protected.GET("/users/:id", handler.GetUserByID)
+	protected.GET("/profile", handler.GetProfile)
+	NewInternalHandler(blocks, suspensions).Register(router, testInternalKey)
 	return &blockingApp{router: router, db: db, sender: sender, jwt: jwt}
 }
 
@@ -94,7 +98,7 @@ func TestInternalRoutesNeedTheKey(t *testing.T) {
 	}
 	// No key configured: nothing gets in, not even an empty key
 	router := gin.New()
-	NewInternalHandler(nil).Register(router, "")
+	NewInternalHandler(nil, nil).Register(router, "")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/internal/v1/blocked-users", nil))
 	assert.Equal(t, http.StatusUnauthorized, w.Code)

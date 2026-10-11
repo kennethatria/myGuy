@@ -151,6 +151,8 @@ app.post('/api/v1/tasks/:taskId/messages', authenticateHTTP, async (req, res) =>
     
     res.status(201).json(formattedMessage);
   } catch (error) {
+    // Refusals written for people (locked, ended, flagged, paused, suspended)
+    if (error.status === 403) return res.status(403).json({ error: error.message, code: error.code, until: error.until });
     logger.error('Error sending task message:', error);
     res.status(500).json({ error: 'Failed to send task message' });
   }
@@ -278,6 +280,8 @@ app.post('/api/v1/applications/:applicationId/messages', authenticateHTTP, async
     // Return message with IDs only - frontend fetches usernames separately
     res.status(201).json(formattedMessage);
   } catch (error) {
+    // Refusals written for people (locked, ended, flagged, paused, suspended)
+    if (error.status === 403) return res.status(403).json({ error: error.message, code: error.code, until: error.until });
     logger.error('Error sending application message:', error);
     res.status(500).json({ error: 'Failed to send application message' });
   }
@@ -357,10 +361,11 @@ app.post('/api/v1/store-messages', authenticateHTTP, async (req, res) => {
     }
 
     // Message limits removed - unlimited messaging allowed
-    const message = await messageService.createStoreMessage({
-      store_item_id: parseInt(store_item_id),
-      sender_id: senderId,
-      recipient_id: parseInt(recipient_id),
+    // The same checks as the socket: matched, not ended, nobody restricted
+    const message = await messageService.sendMessage({
+      storeItemId: parseInt(store_item_id),
+      senderId,
+      recipientId: parseInt(recipient_id),
       content: content.trim()
     });
 
@@ -392,6 +397,8 @@ app.post('/api/v1/store-messages', authenticateHTTP, async (req, res) => {
     
     res.status(201).json(formattedMessage);
   } catch (error) {
+    // Refusals written for people (locked, ended, flagged, paused, suspended)
+    if (error.status === 403) return res.status(403).json({ error: error.message, code: error.code, until: error.until });
     logger.error('Error creating store message:', error);
     res.status(500).json({ error: 'Failed to send message' });
   }

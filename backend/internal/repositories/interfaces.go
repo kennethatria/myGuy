@@ -33,6 +33,13 @@ type BlockedEmailRepository interface {
 	ActiveUserIDs(ctx context.Context, now time.Time) ([]uint, error)
 }
 
+type SuspensionRepository interface {
+	Create(ctx context.Context, s *models.AccountSuspension) error
+	ForUser(ctx context.Context, userID uint) ([]models.AccountSuspension, error)
+	Lift(ctx context.Context, userID uint, now time.Time) (bool, error)
+	Active(ctx context.Context, now time.Time) ([]models.AccountSuspension, error)
+}
+
 type TaskRepository interface {
 	Create(ctx context.Context, task *models.Task) error
 	GetByID(ctx context.Context, id uint) (*models.Task, error)

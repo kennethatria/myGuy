@@ -22,6 +22,7 @@ type Handler struct {
 	taskService    *services.TaskService
 	reviewService  *services.ReviewService
 	authMiddleware *middleware.JWTAuthMiddleware
+	suspensions    *services.SuspensionService
 }
 
 func NewHandler(
@@ -38,6 +39,30 @@ func NewHandler(
 		reviewService:  reviewService,
 		authMiddleware: authMiddleware,
 	}
+}
+
+// WithSuspensions shows suspensions on profiles.
+func (h *Handler) WithSuspensions(s *services.SuspensionService) *Handler {
+	h.suspensions = s
+	return h
+}
+
+// profile is a user with the suspension mark everyone sees on it.
+type profile struct {
+	*models.UserResponse
+	Suspension *services.SuspensionMark `json:"suspension,omitempty"`
+}
+
+func (h *Handler) withMark(c *gin.Context, user *models.UserResponse) profile {
+	out := profile{UserResponse: user}
+	if h.suspensions != nil {
+		mark, err := h.suspensions.Mark(c.Request.Context(), user.ID)
+		if err != nil {
+			log.Printf("suspension mark for user %d: %v", user.ID, err) // the profile still shows
+		}
+		out.Suspension = mark
+	}
+	return out
 }
 
 // ClientIPHeader carries the visitor's IP: nginx sets it from the
@@ -691,7 +716,7 @@ func (h *Handler) GetUserByID(c *gin.Context) {
 		user.PhoneNumber = ""
 	}
 
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, h.withMark(c, user))
 }
 
 // Profile edits change the display name and bio only. The email is the
@@ -710,7 +735,7 @@ func (h *Handler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, h.withMark(c, user))
 }
 
 func (h *Handler) UpdateProfile(c *gin.Context) {

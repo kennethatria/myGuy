@@ -90,15 +90,15 @@ func main() {
 	blocks := blocklist.New(os.Getenv("BACKEND_INTERNAL_URL"), os.Getenv("INTERNAL_API_KEY"))
 	go blocks.RefreshEvery(context.Background(), time.Minute)
 
-	storeHandler := handlers.NewStoreHandler(storeService).WithHidden(blocks.IDs)
-	requestHandler := handlers.NewRequestHandler(requestService).WithHidden(blocks.IDs)
+	storeHandler := handlers.NewStoreHandler(storeService).WithHidden(blocks.Hidden)
+	requestHandler := handlers.NewRequestHandler(requestService).WithHidden(blocks.Hidden)
 
 	// Initialize middleware
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		log.Fatal("JWT_SECRET environment variable is required")
 	}
-	jwtMiddleware := middleware.NewJWTAuthMiddleware(jwtSecret, userRepo).WithBlocked(blocks.Blocked)
+	jwtMiddleware := middleware.NewJWTAuthMiddleware(jwtSecret, userRepo).WithBlocked(blocks.Blocked).WithSuspended(blocks.SuspendedUntil)
 
 	// Marketplace counts for Prometheus, on a port of their own
 	metrics.Serve(":9465", db)

@@ -232,10 +232,11 @@ class SocketHandlers {
       }
 
     } catch (error) {
-      if (error.code === 'chat_locked' || error.code === 'chat_ended' || error.code === 'chat_flagged') {
+      if (['chat_locked', 'chat_ended', 'chat_flagged', 'chat_paused', 'account_suspended'].includes(error.code)) {
         return socket.emit('error', {
           message: error.message,
           code: error.code,
+          until: error.until,
           taskId: data?.taskId,
           itemId: data?.itemId,
           recipientId: data?.recipientId
@@ -265,7 +266,7 @@ class SocketHandlers {
 
     } catch (error) {
       logger.error('Error editing message:', error);
-      socket.emit('error', { message: error.message || 'Failed to edit message' });
+      socket.emit('error', { message: error.message || 'Failed to edit message', code: error.code, until: error.until });
     }
   }
 
@@ -280,7 +281,7 @@ class SocketHandlers {
 
     } catch (error) {
       logger.error('Error deleting message:', error);
-      socket.emit('error', { message: error.message || 'Failed to delete message' });
+      socket.emit('error', { message: error.message || 'Failed to delete message', code: error.code, until: error.until });
     }
   }
 

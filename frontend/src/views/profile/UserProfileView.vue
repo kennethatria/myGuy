@@ -17,6 +17,9 @@
           <div class="card mb-4">
             <h2>{{ user.fullName || user.username }}</h2>
             <p class="text-muted">@{{ user.username }}</p>
+            <p v-if="suspensionMark" class="suspension-mark" role="note">
+              <i class="fas fa-triangle-exclamation" aria-hidden="true"></i> {{ suspensionMark }}
+            </p>
             
             <div class="rating-summary mt-4">
               <h4>User Rating</h4>
@@ -64,6 +67,7 @@ import { format } from 'date-fns'
 import { useUsersStore } from '@/stores/users'
 import { useReviewsStore, type Review } from '@/stores/reviews'
 import ReviewList from '@/components/ReviewList.vue'
+import { markText, type SuspensionMark } from '@/utils/suspension'
 
 interface User {
   id: number
@@ -73,6 +77,7 @@ interface User {
   bio?: string
   averageRating?: number
   created_at?: string
+  suspension?: SuspensionMark
 }
 
 
@@ -88,6 +93,9 @@ const error = ref('')
 const reviewsError = ref<string | null>(null)
 
 const userId = computed(() => Number(route.params.id))
+
+// Suspended now, or in the last 90 days: everyone sees it
+const suspensionMark = computed(() => markText(user.value?.suspension))
 
 // One rating from everything others said: task reviews and store ratings
 const averageRating = computed(() => reviewsStore.calculateAverageRating(reviews.value))
@@ -148,6 +156,18 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.suspension-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #FEE2E2;
+  color: #B91C1C;
+  font-size: 0.85rem;
+}
+
 .container {
   max-width: 1200px;
   margin: 0 auto;

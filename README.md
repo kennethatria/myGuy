@@ -108,6 +108,15 @@ Codes are sent over SMTP with mandatory STARTTLS (production uses [Resend](https
 - **People they were talking to:** each of their conversations gets a note, *"This account has been flagged for breaking the site rules."*, and closes to typing (listed with the ended ones). Unblocking posts *"This account is active again."* and reopens them. Chat's `account_notices` table makes each note go out once, whatever the number of chat instances or restarts.
 - **Endpoints** (backend, `X-Internal-API-Key: INTERNAL_API_KEY`; nginx never routes `/internal`): `POST /internal/v1/email-blocks` `{email, reason, days (0: for good), by}`, `DELETE /internal/v1/email-blocks/:email`, `GET /internal/v1/email-blocks[/:email]`, `GET /internal/v1/blocked-users`. Each block and unblock is logged (`block event=blocked|unblocked`).
 
+**Suspending an account.** A lighter, temporary step than a block, by account (it must exist):
+
+- **Read-only:** the person can sign in and look around, but every service refuses anything that changes data (`403`, `code: account_suspended`, with `until`): posting, applying, booking, reviewing, messaging, editing. The app shows a banner with the end date, and their chats say they can read but not write.
+- **Their posts** leave the boards and the radar until it ends, like a block's.
+- **People they were talking to** get a note in each conversation, *"This account is suspended until Wed 14 Oct, 14:00 for breaking the site rules."* (the app shows the date in each viewer's time), and the conversation is **paused** both ways (`chat_paused`; still listed as Active, marked *Paused*). When it ends: *"This account is active again."* Chat's `account_notices` records what each account's partners were last told (`flagged`, `suspended:<end>`, `active`), so each note goes out once.
+- **Their profile** says *"Suspended until …"* while it lasts, then *"Suspended in October 2026"* for 90 days.
+- **Length:** each suspension in a row is longer: 12 hours, then 1 day, 2 days, and a week from the fourth on. The row resets after 90 days without one. A length can be given instead (12, 24, 48 or 168 hours). Unsuspending ends it early but it still counts. A block outranks a suspension (a blocked address can't be suspended).
+- **Endpoints** (backend, internal key): `POST /internal/v1/suspensions` `{email, hours (0: the next length), reason, by}`, `DELETE /internal/v1/suspensions/:email`, `GET /internal/v1/suspensions/:email` (`suspended`, `until`, `in_row`, `next_hours`). `GET /internal/v1/blocked-users` also lists `suspended` (`user_id`, `until`) for store-service and chat. Logged as `suspension event=suspended|lifted`. Suspensions are kept (`account_suspensions`): they set the next length and the profile mark.
+
 ### Gigs
 
 | Step | Poster | Person who applies |

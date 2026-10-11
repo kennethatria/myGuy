@@ -49,6 +49,7 @@ func main() {
 		&models.Review{},
 		&models.LoginCode{},
 		&models.BlockedEmail{},
+		&models.AccountSuspension{},
 	)
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)
@@ -65,6 +66,10 @@ func main() {
 	blockService := services.NewBlockService(repositories.NewGormBlockedEmailRepository(db))
 	// Blocks also run out on their own: reload them every minute
 	go blockService.RefreshEvery(context.Background(), time.Minute)
+
+	// Suspended accounts are read-only; suspensions end on their own too
+	suspensionService := services.NewSuspensionService(repositories.NewGormSuspensionRepository(db), userRepo, blockService)
+	go suspensionService.RefreshEvery(context.Background(), time.Minute)
 
 	// Initialize services
 	userService := services.NewUserService(userRepo)
@@ -85,9 +90,11 @@ func main() {
 	authService := services.NewAuthService(userRepo, loginCodeRepo, newCodeSender(), os.Getenv("JWT_SECRET")).WithBlocks(blockService)
 
 	// Initialize JWT middleware
-	jwtMiddleware := middleware.NewJWTAuthMiddleware(os.Getenv("JWT_SECRET")).WithBlocked(blockService.UserBlocked)
+	jwtMiddleware := middleware.NewJWTAuthMiddleware(os.Getenv("JWT_SECRET")).WithBlocked(blockService.UserBlocked).
+		WithSuspended(suspensionService.SuspendedUntil)
 	// Initialize handlers
-	handler := api.NewHandler(authService, userService, taskService, reviewService, jwtMiddleware)
+	handler := api.NewHandler(authService, userService, taskService, reviewService, jwtMiddleware).
+		WithSuspensions(suspensionService)
 
 	// Account and gig counts for Prometheus, on a port of their own
 	metrics.Serve(":9464", db)
@@ -126,9 +133,10 @@ func main() {
 	r.POST("/api/v1/auth/request-code", handler.RequestLoginCode)
 	r.POST("/api/v1/auth/verify-code", handler.VerifyLoginCode)
 	r.POST("/api/v1/auth/complete-signup", handler.CompleteSignup)
-	// Email blocks and the blocked accounts, for myguy-admin and the other
-	// services (INTERNAL_API_KEY; nginx never routes /internal here)
-	api.NewInternalHandler(blockService).Register(r, os.Getenv("INTERNAL_API_KEY"))
+	// Email blocks, suspensions and the restricted accounts, for myguy-admin
+	// and the other services (INTERNAL_API_KEY; nginx never routes /internal
+	// here)
+	api.NewInternalHandler(blockService, suspensionService).Register(r, os.Getenv("INTERNAL_API_KEY"))
 	// Protected routes
 	auth := r.Group("/api/v1")
 	auth.Use(jwtMiddleware.AuthRequired())

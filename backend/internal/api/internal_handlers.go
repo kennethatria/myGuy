@@ -16,11 +16,12 @@ import (
 // from myguy-admin on the server, never from browsers (nginx routes only
 // /api/v1 here, and every call needs INTERNAL_API_KEY).
 type InternalHandler struct {
-	blocks *services.BlockService
+	blocks      *services.BlockService
+	suspensions *services.SuspensionService
 }
 
-func NewInternalHandler(blocks *services.BlockService) *InternalHandler {
-	return &InternalHandler{blocks: blocks}
+func NewInternalHandler(blocks *services.BlockService, suspensions *services.SuspensionService) *InternalHandler {
+	return &InternalHandler{blocks: blocks, suspensions: suspensions}
 }
 
 // InternalKeyRequired admits requests carrying key in X-Internal-API-Key.
@@ -120,9 +121,80 @@ func (h *InternalHandler) ListEmailBlocks(c *gin.Context) {
 }
 
 // BlockedUsers: GET /internal/v1/blocked-users, the accounts store-service
-// and chat refuse (they poll it).
+// and chat refuse (user_ids) or keep read-only (suspended); they poll it.
 func (h *InternalHandler) BlockedUsers(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"user_ids": h.blocks.BlockedUserIDs()})
+	c.JSON(http.StatusOK, gin.H{"user_ids": h.blocks.BlockedUserIDs(), "suspended": h.suspensions.SuspendedUsers()})
+}
+
+type suspendRequest struct {
+	Email  string `json:"email" binding:"required"`
+	Hours  int    `json:"hours"` // 0: the next step on the ladder
+	Reason string `json:"reason"`
+	By     string `json:"by"`
+}
+
+type suspensionResponse struct {
+	Email     string     `json:"email"`
+	Suspended bool       `json:"suspended"`
+	Until     *time.Time `json:"until,omitempty"`
+	Reason    string     `json:"reason,omitempty"`
+	Hours     int        `json:"hours,omitempty"`
+	Step      int        `json:"step,omitempty"`       // this one's place in a row
+	InRow     int        `json:"in_row"`               // suspensions in a row so far
+	NextHours int        `json:"next_hours,omitempty"` // what a bare suspend gives now
+}
+
+func hours(d time.Duration) int { return int(d / time.Hour) }
+
+// Suspend: POST /internal/v1/suspensions {email, hours (0: the ladder), reason, by}.
+func (h *InternalHandler) Suspend(c *gin.Context) {
+	var req suspendRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Hours < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	s, err := h.suspensions.Suspend(c.Request.Context(), req.Email, time.Duration(req.Hours)*time.Hour, req.Reason, req.By)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	length := s.EndsAt.Sub(s.StartsAt)
+	log.Printf("suspension event=suspended email=%q user=%d hours=%d step=%d by=%q", s.Email, s.UserID, hours(length), s.Step, req.By)
+	until := s.EndsAt
+	c.JSON(http.StatusOK, suspensionResponse{Email: s.Email, Suspended: true, Until: &until, Reason: s.Reason,
+		Hours: hours(length), Step: s.Step, InRow: s.Step})
+}
+
+// Unsuspend: DELETE /internal/v1/suspensions/:email.
+func (h *InternalHandler) Unsuspend(c *gin.Context) {
+	email := services.NormalizeEmail(c.Param("email"))
+	lifted, err := h.suspensions.Unsuspend(c.Request.Context(), email)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	if !lifted {
+		c.JSON(http.StatusNotFound, gin.H{"error": "that account isn't suspended"})
+		return
+	}
+	log.Printf("suspension event=lifted email=%q", email)
+	c.JSON(http.StatusOK, suspensionResponse{Email: email})
+}
+
+// SuspensionStatus: GET /internal/v1/suspensions/:email.
+func (h *InternalHandler) SuspensionStatus(c *gin.Context) {
+	email := services.NormalizeEmail(c.Param("email"))
+	status, err := h.suspensions.Status(c.Request.Context(), email)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	out := suspensionResponse{Email: email, InRow: status.InRow, NextHours: hours(status.Next)}
+	if a := status.Active; a != nil {
+		end := a.End()
+		out.Suspended, out.Until, out.Reason = true, &end, a.Reason
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 // Register adds the internal routes to r under key.
@@ -134,4 +206,7 @@ func (h *InternalHandler) Register(r gin.IRouter, key string) {
 	internal.GET("/email-blocks/:email", h.EmailBlockStatus)
 	internal.DELETE("/email-blocks/:email", h.UnblockEmail)
 	internal.GET("/blocked-users", h.BlockedUsers)
+	internal.POST("/suspensions", h.Suspend)
+	internal.GET("/suspensions/:email", h.SuspensionStatus)
+	internal.DELETE("/suspensions/:email", h.Unsuspend)
 }

@@ -36,6 +36,21 @@ describe('ChatWidget list', () => {
     expect(titles(wrapper)).toEqual(['Item 4', 'Item 1'])
   })
 
+  it('keeps a chat with a suspended account Active, marked Paused, and a blocked one Done, marked Flagged', async () => {
+    const chat = useChatStore()
+    chat.conversations = [
+      conv(5, '2026-10-10T12:00:00Z', { state: 'approved' }),
+      conv(6, '2026-10-10T13:00:00Z', { other_user_id: 3, flagged: true, ended: true })
+    ]
+    chat.pausedConversations = new Map([['store:5:2', new Date(Date.now() + 3600_000).toISOString()]])
+    const wrapper = show()
+    expect(titles(wrapper)).toEqual(['Item 5'])
+    expect(wrapper.find('.status-chip').text()).toBe('Paused')
+    await wrapper.findAll('[role="tab"]')[1].trigger('click')
+    expect(titles(wrapper)).toEqual(['Item 6'])
+    expect(wrapper.find('.status-chip').text()).toBe('Flagged')
+  })
+
   it('lists ended deals and expired posts under Done, with what happened', async () => {
     const wrapper = show()
     await wrapper.findAll('[role="tab"]')[1].trigger('click')

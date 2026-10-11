@@ -1,7 +1,7 @@
-// Package blocklist keeps the accounts the backend has blocked (by email),
-// read from its GET /internal/v1/blocked-users every minute.  The backend
-// owns blocks; this service only refuses those accounts and hides their
-// listings and requests.
+// Package blocklist keeps the accounts the backend has blocked (by email) or
+// suspended, read from its GET /internal/v1/blocked-users every minute.  The
+// backend owns both; this service refuses blocked accounts, keeps suspended
+// ones read-only, and hides both's listings and requests.
 package blocklist
 
 import (
@@ -19,8 +19,11 @@ type List struct {
 	key    string
 	client *http.Client
 
-	mu  sync.RWMutex
-	ids map[uint]bool
+	now func() time.Time
+
+	mu        sync.RWMutex
+	ids       map[uint]bool
+	suspended map[uint]time.Time
 }
 
 // New reads from backendURL (e.g. http://api:8080) with INTERNAL_API_KEY.
@@ -32,7 +35,7 @@ func New(backendURL, key string) *List {
 		return nil
 	}
 	return &List{url: backendURL + "/internal/v1/blocked-users", key: key,
-		client: &http.Client{Timeout: 10 * time.Second}, ids: map[uint]bool{}}
+		client: &http.Client{Timeout: 10 * time.Second}, now: time.Now, ids: map[uint]bool{}, suspended: map[uint]time.Time{}}
 }
 
 // Blocked reports whether an account is blocked.
@@ -45,16 +48,37 @@ func (l *List) Blocked(id uint) bool {
 	return l.ids[id]
 }
 
-// IDs returns the blocked accounts (to leave their posts off the boards).
-func (l *List) IDs() []uint {
+// SuspendedUntil reports whether an account is suspended, and until when.
+func (l *List) SuspendedUntil(id uint) (time.Time, bool) {
+	if l == nil {
+		return time.Time{}, false
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	until, ok := l.suspended[id]
+	if !ok || !until.After(l.now()) {
+		return time.Time{}, false // or ran out since the last refresh
+	}
+	return until, true
+}
+
+// Hidden returns the blocked and suspended accounts (to leave their posts
+// off the boards).
+func (l *List) Hidden() []uint {
 	if l == nil {
 		return nil
 	}
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	ids := make([]uint, 0, len(l.ids))
+	ids := make([]uint, 0, len(l.ids)+len(l.suspended))
 	for id := range l.ids {
 		ids = append(ids, id)
+	}
+	now := l.now()
+	for id, until := range l.suspended {
+		if until.After(now) && !l.ids[id] {
+			ids = append(ids, id)
+		}
 	}
 	return ids
 }
@@ -75,7 +99,11 @@ func (l *List) Refresh(ctx context.Context) error {
 		return fmt.Errorf("blocked users: status %d", resp.StatusCode)
 	}
 	var body struct {
-		UserIDs []uint `json:"user_ids"`
+		UserIDs   []uint `json:"user_ids"`
+		Suspended []struct {
+			UserID uint      `json:"user_id"`
+			Until  time.Time `json:"until"`
+		} `json:"suspended"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return err
@@ -84,8 +112,12 @@ func (l *List) Refresh(ctx context.Context) error {
 	for _, id := range body.UserIDs {
 		ids[id] = true
 	}
+	suspended := make(map[uint]time.Time, len(body.Suspended))
+	for _, s := range body.Suspended {
+		suspended[s.UserID] = s.Until
+	}
 	l.mu.Lock()
-	l.ids = ids
+	l.ids, l.suspended = ids, suspended
 	l.mu.Unlock()
 	return nil
 }
