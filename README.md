@@ -531,7 +531,7 @@ What each security message means and what to do. Every message ends with its nex
 - **Terminal:** on the monitoring server (`ssh -J ops@<app IP> ops@10.0.0.3`), run `investigate <IP> [--hours 48]`.
 - **Telegram:** `/investigate <IP|email> [hours]` in your private chat with the bot (below).
 
-**Acting from Telegram.** The admin bot (`files/myguy_bot.py`, `myguy-bot.service` on the monitoring server) takes commands in **your private chat with the bot** and obeys only the account in `TELEGRAM_ADMIN_USER_ID`. Open the bot in Telegram (tap its name on an alert, then **Message**) and send `/start` once. Alerts and summaries stay in the monitoring channel; commands can't go there, because a channel post carries no sender to check.
+**Acting from Telegram.** The admin bot (`files/myguy_bot.py`, `myguy-bot.service` on the monitoring server) takes commands in **your private chat with the bot** and obeys only the account in `TELEGRAM_ADMIN_USER_ID`. Find the bot in Telegram (the channel's **Administrators** list, since it posts the alerts, or **@BotFather** → `/mybots`), open a chat with it and send `/start` once. Alerts and summaries stay in the monitoring channel; commands can't go there, because a channel post carries no sender to check.
 
 | Command | Does |
 | :--- | :--- |
