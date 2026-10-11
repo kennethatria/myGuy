@@ -2,7 +2,8 @@ import unittest
 
 import myguy_bot as mb
 
-CHAT, ADMIN, OTHER = -100123, 42, 7
+ADMIN, OTHER, CHANNEL = 42, 7, -100123
+CHAT = ADMIN  # a private chat's id is the other person's user id
 
 
 class FakeTelegram:
@@ -31,7 +32,7 @@ class BotTest(unittest.TestCase):
             self.commands.append(command)
             return self.answer
 
-        self.bot = mb.Bot({"chat": CHAT, "admin": ADMIN}, self.tg, admin,
+        self.bot = mb.Bot({"admin": ADMIN}, self.tg, admin,
                           investigator=lambda target, hours: f"report for {target} {hours}",
                           now=lambda: self.clock)
 
@@ -43,9 +44,12 @@ class BotTest(unittest.TestCase):
         self.bot.handle({"callback_query": {"id": "q", "data": data, "from": {"id": user},
                                             "message": {"message_id": 99, "chat": {"id": CHAT}}}})
 
-    def test_only_the_admin_in_the_group(self):
-        self.message("/ban 1.1.1.1", user=OTHER)
-        self.message("/ban 1.1.1.1", chat=12345)
+    def test_only_the_admin_in_their_private_chat(self):
+        self.message("/ban 1.1.1.1", user=OTHER)              # someone else
+        self.message("/ban 1.1.1.1", user=OTHER, chat=OTHER)  # in their own chat with the bot
+        self.message("/ban 1.1.1.1", chat=CHANNEL)            # in a group or channel
+        # A channel post has no sender at all
+        self.bot.handle({"channel_post": {"message_id": 5, "text": "/ban 1.1.1.1", "chat": {"id": CHANNEL}}})
         self.message("hello")
         self.assertEqual(self.tg.calls, [])
         self.assertEqual(self.commands, [])
@@ -180,7 +184,7 @@ class SettingsTest(unittest.TestCase):
     def test_key_comes_from_systemd_credentials(self):
         s = mb.settings({"TELEGRAM_CHAT_ID": "-100123", "TELEGRAM_ADMIN_USER_ID": "42",
                          "CREDENTIALS_DIRECTORY": "/run/credentials/myguy-bot.service"})
-        self.assertEqual((s["chat"], s["admin"]), (-100123, 42))
+        self.assertEqual(s["admin"], 42)
         self.assertEqual(s["key"], "/run/credentials/myguy-bot.service/admin-key")
 
     def test_no_admin_obeys_nobody(self):
