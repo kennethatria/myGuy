@@ -90,6 +90,7 @@ def settings():
         "prometheus": values.get("PROMETHEUS_URL", "http://127.0.0.1:9090"),
         "app_ssh_host": values.get("APP_SSH_HOST", "<app IP>"),
         "app_vpc_ip": values.get("APP_VPC_IP", "10.0.0.2"),
+        "monitoring_vpc_ip": values.get("MONITORING_VPC_IP", "10.0.0.3"),
         "state_dir": values.get("STATE_DIRECTORY", "/var/lib/myguy-security"),
         "geoip_db": values.get("GEOIP_DB", "/var/lib/geoip/country.mmdb"),
         "telegram_token": values.get("TELEGRAM_BOT_TOKEN", ""),
@@ -518,6 +519,8 @@ def attack_messages(src, settings_, state, now):
 def ssh_messages(src, settings_, state, now):
     """Logins nobody expected:
       myguy (the CI key) outside a deploy, on either server;
+      myguy-bot (the Telegram bot's key) on the app server from anywhere but
+      the monitoring server, or on the monitoring server at all;
       on the monitoring server, anything not from the app server (ProxyJump);
       ops on the app server from an IP not seen in the last 8 days;
       any other user."""
@@ -543,6 +546,11 @@ def ssh_messages(src, settings_, state, now):
             elif host == "monitoring" and ip != settings_["app_vpc_ip"]:
                 short = "not through the app server"
                 why = "the monitoring server should only be reached through the app server"
+        elif user == "myguy-bot":
+            if host != "app" or ip != settings_["monitoring_vpc_ip"]:
+                short = "bot key not from the monitoring server"
+                why = ("the Telegram bot's key (myguy-bot) is only used from the monitoring server "
+                       "to the app server; if this wasn't it, remove the key from myguy-bot's authorized_keys")
         elif host == "monitoring":
             if ip != settings_["app_vpc_ip"]:
                 short = "not through the app server"
@@ -555,7 +563,7 @@ def ssh_messages(src, settings_, state, now):
             known_ips[ip] = ts
         else:
             short = "a user other than ops and myguy"
-            why = f"no one but ops and myguy should log in (user {user})"
+            why = f"no one but ops, myguy and myguy-bot should log in (user {user})"
         if why:
             print(f"alert: ssh host={host} user={user} ip={ip}", flush=True)
             state.setdefault("ssh_alerts", []).append(
@@ -628,6 +636,8 @@ def check(src, settings_, state, now, send):
 
 DETAILS = 3          # lines of detail under one "Needs a look" item
 WHEN = "%a %H:%M"    # their time, Amsterdam
+
+ADMIN_EVENT = re.compile(r"admin event=(?P<action>\w+) target=(?P<target>\S+).* ok=(?P<ok>\w+)")
 
 VISITOR_QUERY = ('count by (remote_addr) (count_over_time({job="nginx_access"} | json '
                  '| uri =~ "/assets/.*[.]js|/(api/v1|store/api/v1|chat/api/v1)/.*" | status < 400 '
@@ -744,6 +754,14 @@ def collect(src, settings_, state, start, end):
                 commands[f"{labels.get('host', '?')}: {m.group('command').strip()}"] += 1
         s["ops_sudo"] = sum(commands.values())
         s["ops_commands"] = [c for c, _ in commands.most_common(3)]
+        # Bans, blocks and suspensions done through myguy-admin (Telegram or SSH)
+        done = [m.groupdict() for m in (ADMIN_EVENT.search(line) for _, _, line in
+                src.lines('{job="admin"} |= "admin event="', start, end)) if m]
+        done = [d for d in done if d["action"] in ("ban", "unban", "block", "unblock", "suspend", "unsuspend")
+                and d["ok"] == "true"]
+        s["admin_actions"] = len(done)
+        s["admin_details"] = [f"{d['action']} {mask(d['target']) if '@' in d['target'] else d['target']}"
+                              for d in done[-3:]]
 
     def runtime():
         events = [e for e in (parse_falco(ts, l) for ts, _, l in src.lines('{job="falco"}', start, end)) if e]
@@ -925,11 +943,15 @@ def format_summary(title, s, prev, days=1, note=""):
     by_user = Counter()
     for key, n in (s.get("ssh_logins") or {}).items():
         user = key.split("@")[0]
-        by_user["CI deploys" if user == "myguy" else user] += n
+        by_user["CI deploys" if user == "myguy" else "bot" if user == "myguy-bot" else user] += n
     lines.append("SSH logins: " + (counts(by_user) or "none")
                  + (f" · ⚠️ {number(s['unknown_logins'])} unexpected" if s.get("unknown_logins") else ""))
     lines.append(f"Failed SSH: {number(s.get('ssh_failed'))}{compare(s.get('ssh_failed'), p.get('ssh_failed'))}"
                  + (f" from {plural(s['ssh_failed_ips'], 'IP')}" if s.get("ssh_failed_ips") else ""))
+    if s.get("admin_actions"):
+        lines.append(f"Admin actions: {number(s['admin_actions'])}"
+                     + (" (" + ", ".join(code(d, 50) for d in s.get("admin_details") or []) + ")"
+                        if s.get("admin_details") else ""))
     if s.get("ops_sudo"):
         # "host: command"; the command alone says enough
         top = [c.split(": ", 1)[-1] for c in s.get("ops_commands") or []][:2]
@@ -1004,7 +1026,7 @@ def weekly(src, settings_, state, now, send, persist=True):
     covered = sum(1 for n in range(7) if today - dt.timedelta(days=n) >= first)
     note = f"Covers {covered} of 7 days: summaries began {first:%a %d %b}." if covered < 7 else ""
     for key in ("server_errors", "waf", "waf_succeeded", "unbans", "code_requests", "auth_429", "refused",
-                "ssh_failed", "unknown_logins", "ops_sudo", "falco_critical", "falco_warnings",
+                "ssh_failed", "unknown_logins", "ops_sudo", "admin_actions", "falco_critical", "falco_warnings",
                 "signups", "outage_minutes", "attack_alerts"):
         w[key] = sum(d.get(key) or 0 for _, d in have)
     for key in ("unknown_login_details", "waf_succeeded_details", "falco_critical_details"):

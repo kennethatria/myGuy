@@ -5477,6 +5477,118 @@
       loop: [myguy-security-check.timer, myguy-security-summary.timer]
       become: yes
 
+    # --- Telegram admin bot (files/myguy_bot.py) ---
+    # Reads the alerts group with the alerts' token and obeys one person
+    # (TELEGRAM_ADMIN_USER_ID): /ban, /unban, /block, /unblock, /status,
+    # /investigate.  Actions run on the app server through myguy-admin, over
+    # SSH with a key made here that can run nothing else (security.yml
+    # authorizes it there).  The token never goes to the app server.
+
+    - name: Create the bot's user
+      ansible.builtin.user:
+        name: myguy-bot
+        system: yes
+        shell: /usr/sbin/nologin
+        create_home: no
+        state: present
+      become: yes
+
+    - name: Install the Telegram admin bot
+      ansible.builtin.copy:
+        src: "files/{{ item }}"
+        dest: "/usr/local/lib/myguy-bot/{{ item }}"
+        mode: "0644"
+      loop: [myguy_bot.py, myguy_admin.py]  # the bot checks commands with myguy-admin's rules
+      register: bot_code
+      become: yes
+
+    - name: Create the bot's settings directory
+      ansible.builtin.file:
+        path: /etc/myguy-bot
+        state: directory
+        mode: "0755"
+      become: yes
+
+    # Kept by root; systemd hands the bot a copy (LoadCredential)
+    - name: Create the bot's SSH key for myguy-admin on the app server
+      ansible.builtin.command:
+        cmd: ssh-keygen -t ed25519 -N "" -C myguy-bot -f /etc/myguy-bot/id_ed25519
+        creates: /etc/myguy-bot/id_ed25519
+      become: yes
+
+    - name: Read the app server's SSH host key
+      ansible.builtin.slurp:
+        src: /etc/ssh/ssh_host_ed25519_key.pub
+      delegate_to: "{{ groups['app'][0] }}"
+      register: app_host_key
+      become: yes
+
+    # The bot connects only to a host key it was given, never one it's shown
+    - name: Trust the app server's host key for the bot
+      ansible.builtin.copy:
+        dest: /etc/myguy-bot/known_hosts
+        mode: "0644"
+        content: "{{ instance_vpc_ip }} {{ (app_host_key.content | b64decode).split()[:2] | join(' ') }}\n"
+      register: bot_known_hosts
+      become: yes
+
+    - name: Write the bot's settings
+      ansible.builtin.copy:
+        dest: /etc/myguy-bot/bot.env
+        mode: "0600"
+        content: |
+          TELEGRAM_ADMIN_USER_ID={{ telegram_admin_user_id | default('') }}
+          ADMIN_KNOWN_HOSTS=/etc/myguy-bot/known_hosts
+      register: bot_env
+      no_log: true
+      become: yes
+
+    - name: Write the bot's systemd unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/myguy-bot.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=MyGuy Telegram admin bot (ban, unban, block, unblock)
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          ExecStart=/usr/bin/python3 /usr/local/lib/myguy-bot/myguy_bot.py
+          EnvironmentFile=/etc/myguy-security/settings.env
+          EnvironmentFile=-/etc/myguy-security/telegram.env
+          EnvironmentFile=-/etc/myguy-bot/bot.env
+          LoadCredential=admin-key:/etc/myguy-bot/id_ed25519
+          User=myguy-bot
+          StateDirectory=myguy-bot
+          Environment=HOME=/var/lib/myguy-bot
+          SyslogIdentifier=myguy-bot
+          NoNewPrivileges=yes
+          ProtectSystem=strict
+          ProtectHome=yes
+          PrivateTmp=yes
+          MemoryMax=128M
+          Restart=always
+          RestartSec=10
+
+          [Install]
+          WantedBy=multi-user.target
+      register: bot_unit
+      become: yes
+
+    - name: Start the Telegram admin bot
+      ansible.builtin.systemd:
+        name: myguy-bot
+        enabled: yes
+        state: "{{ 'restarted' if (bot_code.changed or bot_known_hosts.changed or bot_env.changed or bot_unit.changed) else 'started' }}"
+        daemon_reload: yes
+      become: yes
+
+    - name: Warn when the bot has nobody to obey
+      ansible.builtin.debug:
+        msg: "TELEGRAM_ADMIN_USER_ID is not set: the Telegram admin bot runs but obeys nobody."
+      when: not (telegram_admin_user_id | default(''))
+
     # GF_SECURITY_ADMIN_PASSWORD only applies when Grafana creates its
     # database; resetting keeps the secret authoritative after that too.
     - name: Set the Grafana admin password from the secret

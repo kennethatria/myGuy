@@ -495,3 +495,60 @@
         enabled: yes
         state: restarted
         daemon_reload: yes
+
+    # --- Telegram admin actions (files/myguy_admin.py) ---
+    # The Telegram bot on the monitoring server (myguy-bot) bans and unbans
+    # IPs by running myguy-admin here over SSH.  Its key (made on the
+    # monitoring server by monitoring.yml) can run nothing else: the forced
+    # command hands what it sent to myguy-admin as one argument, which checks
+    # every word, after a fixed --bot that refuses block and unblock (sudoers
+    # pins it too).  Blocking an email is done by hand here:
+    # `sudo myguy-admin block EMAIL [DAYS] [REASON]`.  Logged as
+    # `admin event=... by=telegram|ssh:USER` (Loki job="admin").
+
+    - name: Install myguy-admin
+      ansible.builtin.copy:
+        src: files/myguy_admin.py
+        dest: /usr/local/bin/myguy-admin
+        mode: "0755"
+        owner: root
+        group: root
+
+    - name: Create the myguy-bot user (the bot's key logs in as it)
+      ansible.builtin.user:
+        name: myguy-bot
+        system: yes
+        shell: /bin/sh        # sshd runs the forced command with it
+        home: /home/myguy-bot
+        create_home: yes
+        password: "!"         # locked: key only
+        state: present
+
+    - name: Let myguy-bot run myguy-admin, and nothing else, as root
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/myguy-bot
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+        content: |
+          Defaults:myguy-bot !requiretty
+          myguy-bot ALL=(root) NOPASSWD: /usr/local/bin/myguy-admin --bot *
+
+    - name: Read the bot's public key from the monitoring server
+      ansible.builtin.slurp:
+        src: /etc/myguy-bot/id_ed25519.pub
+      delegate_to: "{{ groups['monitoring'][0] }}"
+      register: bot_public_key
+      failed_when: false
+
+    - name: Authorize the bot's key for myguy-admin only, from the monitoring server
+      ansible.posix.authorized_key:
+        user: myguy-bot
+        key: "{{ bot_public_key.content | b64decode }}"
+        key_options: 'restrict,from="{{ monitoring_vpc_ip }}",command="sudo -n /usr/local/bin/myguy-admin --bot \"$SSH_ORIGINAL_COMMAND\""'
+        exclusive: yes
+      when: bot_public_key.content is defined
+
+    - name: Say when the bot's key isn't there yet
+      ansible.builtin.debug:
+        msg: "The monitoring server has no bot key yet (run monitoring.yml first): Telegram admin commands won't work until the next full deploy."
+      when: bot_public_key.content is not defined

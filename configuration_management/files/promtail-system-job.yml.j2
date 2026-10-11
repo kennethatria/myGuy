@@ -32,6 +32,12 @@
       regex: 'myguy-security'
       replacement: security-checks
       target_label: job
+    # Telegram admin actions: myguy-admin on the app server (what was done)
+    # and the bot on the monitoring server (who asked, what it ignored)
+    - source_labels: ['__journal_syslog_identifier']
+      regex: 'myguy-admin|myguy-bot'
+      replacement: admin
+      target_label: job
     - source_labels: ['job']
       regex: '.+'
       action: keep
