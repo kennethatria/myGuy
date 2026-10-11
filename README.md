@@ -109,6 +109,20 @@ Codes are sent over SMTP with mandatory STARTTLS (production uses [Resend](https
 - **How:** by hand, on the app server (never from Telegram): `sudo myguy-admin block <email> [days] [reason]` (no days: for good), `sudo myguy-admin unblock <email>`, `sudo myguy-admin status <email>`, `sudo myguy-admin blocked`. It checks the arguments, calls the endpoints below with the key from `/opt/myguy/.env`, and logs `admin event=block … by=ssh:<user>` (Loki `job="admin"`).
 - **Endpoints** (backend, `X-Internal-API-Key: INTERNAL_API_KEY`; nginx never routes `/internal`, and refuses chat's `/chat/api/v1/internal/` with `404`): `POST /internal/v1/email-blocks` `{email, reason, days (0: for good), by}`, `DELETE /internal/v1/email-blocks/:email`, `GET /internal/v1/email-blocks[/:email]`, `GET /internal/v1/blocked-users`. Each block and unblock is logged (`block event=blocked|unblocked`).
 
+**Rate limits per account.** Each service caps how often one account does the things abuse would use, counted in memory (one instance each; a restart forgets the counts):
+
+| Service | Action | Limit |
+| :--- | :--- | :--- |
+| backend | post a gig (`POST /tasks`) | 10 an hour |
+| backend | apply (`POST /tasks/:id/apply`) | 30 an hour |
+| store-service | post a listing or request (`POST /items`, `POST /requests`) | 10 an hour, together |
+| store-service | book (`POST /items/:id/booking-request`) | 30 an hour |
+| chat | people's own messages (socket and REST; not events or notices) | 20 a minute and 300 an hour |
+
+Over a limit, the request is refused with `429`, `code: rate_limited`, `retry_after` (seconds, also `Retry-After`) and *"You're doing that a lot. Try again in 12 minutes."*, which the app shows. A refused try doesn't count. Reposting isn't limited. The first refusal of a run is logged as `limit event=hit action=… user=<id> username="…" email="…"` (`internal/ratelimit` in the backend and store-service, `utils/accountLimit.js` in chat), for the accounts to review below. Sign-in has its own limit per IP in nginx.
+
+**Accounts to review.** The security checks point at accounts, they never act on them: one that **signed in from an IP fail2ban banned** (that day or the day before; sign-ins now log `user="<username>"`), went **over a limit twice or more**, or is one of **three or more new accounts from one IP**. They're listed with their username and masked email under *Needs a look* in the daily summary, and in full (up to 30) with the bot's `/caught [hours]` (`myguy-security caught`). You decide: `/suspend`, or a block over SSH.
+
 **Suspending an account.** A lighter, temporary step than a block, by account (it must exist):
 
 - **Read-only:** the person can sign in and look around, but every service refuses anything that changes data (`403`, `code: account_suspended`, with `until`): posting, applying, booking, reviewing, messaging, editing. The app shows a banner with the end date, and their chats say they can read but not write.
@@ -542,6 +556,7 @@ What each security message means and what to do. Every message ends with its nex
 | `/unsuspend <email>` | Ends it early (it still counts towards the next) |
 | `/status <email>`, `/blocked` | Whether an address is blocked or suspended (and how many in a row); the blocks in force |
 | `/investigate <IP\|email> [hours]` | The same report as `investigate` |
+| `/caught [hours]` | The accounts to review (see *Accounts to review*): username, masked email, why |
 
 Blocking an email is never done from Telegram: it's a deliberate step over SSH on the app server (*Blocking an email*). Changes ask you to **Confirm** (2 minutes). The bot deletes your command once read (bots may in a private chat), so a full address doesn't stay on your phone. Replies mask addresses.
 - **How it reaches the app server:** over the VPC as `myguy-bot`, with a key made on the monitoring server. `security.yml` authorizes the key `restrict,from="10.0.0.3",command="sudo -n /usr/local/bin/myguy-admin --bot \"$SSH_ORIGINAL_COMMAND\""`, so it can run `myguy-admin` and nothing else; `--bot` (pinned in its sudoers rule too) refuses `block` and `unblock`. That command checks every word (public IPs only, never the NodeBalancer or VPC; plain email addresses; days 0–3650; a short plain reason) before calling `fail2ban-client` or the backend's `/internal/v1/email-blocks`. The Telegram token never goes to the app server.

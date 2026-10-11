@@ -54,6 +54,9 @@ export const useChatStore = defineStore('chat', () => {
   const connected = ref(false);
   const chatUnavailable = ref(false);
   const connectionError = ref<string | null>(null);
+  // Why the last message wasn't sent, while it matters (over the limit)
+  const sendNotice = ref<string | null>(null);
+  let sendNoticeTimer: ReturnType<typeof setTimeout> | undefined;
   const reconnectAttempts = ref(0);
   const conversations = ref<ConversationSummary[]>([]);
   const activeConversation = ref<ConversationSummary | null>(null);
@@ -289,7 +292,14 @@ export const useChatStore = defineStore('chat', () => {
       }
     });
 
-    socket.value.on('error', (error: Error & { code?: string; until?: string; taskId?: number; itemId?: number; recipientId?: number }) => {
+    socket.value.on('error', (error: Error & { code?: string; until?: string; retryAfter?: number; taskId?: number; itemId?: number; recipientId?: number }) => {
+      // Too many messages: say so until they can send again
+      if (error?.code === 'rate_limited') {
+        sendNotice.value = error.message;
+        clearTimeout(sendNoticeTimer);
+        sendNoticeTimer = setTimeout(() => { sendNotice.value = null; }, (error.retryAfter ?? 60) * 1000);
+        return;
+      }
       // Suspended since signing in: load the suspension, the app shows it
       if (error?.code === 'account_suspended') {
         useAuthStore().checkAuth();
@@ -330,7 +340,10 @@ export const useChatStore = defineStore('chat', () => {
     
     // Message events. The server delivers these only to the two participants.
     socket.value.on('message:new', receiveMessage);
-    socket.value.on('message:sent', receiveMessage);
+    socket.value.on('message:sent', (message: Message) => {
+      sendNotice.value = null;
+      receiveMessage(message);
+    });
     socket.value.on('message:edited', handleMessageEdited);
     socket.value.on('message:updated', handleMessageUpdated);
     socket.value.on('message:deleted', handleMessageDeleted);
@@ -965,6 +978,7 @@ export const useChatStore = defineStore('chat', () => {
     connected,
     chatUnavailable,
     connectionError,
+    sendNotice,
     reconnectAttempts,
     conversations,
     activeConversation,

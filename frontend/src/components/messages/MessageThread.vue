@@ -82,6 +82,7 @@
       <template v-else>{{ lockedNote }}</template>
     </p>
     <div v-else class="message-input-container">
+      <p v-if="notice" class="send-notice" role="alert">{{ notice }}</p>
       <form @submit.prevent="sendMessage" class="message-form">
         <input
           v-model="messageText"
@@ -123,6 +124,8 @@ const props = defineProps<{
   ended?: boolean;
   // The other account is suspended until then: nobody types meanwhile
   pausedUntil?: string | null;
+  // Why the last message wasn't sent (e.g. too many at once)
+  notice?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -540,6 +543,13 @@ watch(() => props.messages.length, () => {
 }
 
 /* Closed to typing: the reason, in a strip where you'd type */
+.send-notice {
+  margin: 0 0 8px;
+  color: #B91C1C;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .message-closed {
   flex: none;
   margin: 0;

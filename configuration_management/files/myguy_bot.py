@@ -16,6 +16,7 @@ commands and button taps are ignored.
   /status EMAIL    blocked? suspended?
   /blocked         the blocks in force
   /investigate IP|EMAIL [HOURS]
+  /caught [HOURS]  the accounts the defences point at
   /help
 
 Blocking an email is done by hand over SSH on the app server
@@ -58,6 +59,7 @@ HELP = """<b>Admin commands</b>
 /status EMAIL: blocked? suspended?
 /blocked: blocks in force
 /investigate IP|EMAIL [HOURS]
+/caught [HOURS]: accounts the defences point at (banned IP, over a limit, many sign-ups)
 Changes ask you to confirm. Blocking an email is done over SSH on the app server."""
 
 
@@ -114,8 +116,10 @@ def admin_over_ssh(s):
 
 
 def investigate(target, hours):
-    """myguy-security's investigate report, as plain text."""
-    args = ["/usr/local/bin/myguy-security", "investigate", target] + (["--hours", str(hours)] if hours else [])
+    """myguy-security's investigate report (or, for target "caught", the
+    accounts to review), as plain text."""
+    args = ["/usr/local/bin/myguy-security"] + (["caught"] if target == "caught" else ["investigate", target]) \
+        + (["--hours", str(hours)] if hours else [])
     result = subprocess.run(args, capture_output=True, text=True, timeout=120)
     return (result.stdout or result.stderr).strip() or "(nothing)"
 
@@ -161,6 +165,8 @@ class Bot:
             return self.say(HELP)
         if name == "investigate":
             return self.on_investigate(rest)
+        if name == "caught":
+            return self.on_caught(rest)
         try:
             action, args = parse(" ".join([name] + rest), bot=True)
         except Refused as e:
@@ -197,6 +203,17 @@ class Bot:
             text = self.describe(action, args, result)
         self.tg.call("editMessageText", chat_id=chat_id, message_id=message_id, text=text, parse_mode="HTML")
 
+    def on_caught(self, rest):
+        if len(rest) > 1 or (rest and not rest[0].isdigit()):
+            return self.say("⚠️ usage: /caught [HOURS]")
+        self.report("caught", int(rest[0]) if rest else None)
+
+    def report(self, target, hours):
+        report = self.investigate(target, hours)
+        if len(report) > INVESTIGATE_MAX:
+            report = report[:INVESTIGATE_MAX] + "\n… (cut: run it on the monitoring server for all of it)"
+        self.say(f"<pre>{esc(report)}</pre>")
+
     def on_investigate(self, rest):
         if not rest or len(rest) > 2 or (len(rest) == 2 and not rest[1].isdigit()):
             return self.say("⚠️ usage: /investigate IP|EMAIL [HOURS]")
@@ -208,10 +225,7 @@ class Bot:
                 target = parse(f"status {target}")[1]["email"]
             except Refused:
                 return self.say("⚠️ not an IP or an email address")
-        report = self.investigate(target, int(rest[1]) if len(rest) == 2 else None)
-        if len(report) > INVESTIGATE_MAX:
-            report = report[:INVESTIGATE_MAX] + "\n… (cut: run investigate on the monitoring server for all of it)"
-        self.say(f"<pre>{esc(report)}</pre>")
+        self.report(target, int(rest[1]) if len(rest) == 2 else None)
 
     @staticmethod
     def question(action, args):

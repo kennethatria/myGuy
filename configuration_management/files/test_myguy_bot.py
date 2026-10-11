@@ -174,6 +174,14 @@ class BotTest(unittest.TestCase):
         self.message("/investigate rm -rf")
         self.assertIn("⚠️", self.tg.sent()[-1])
 
+    def test_caught(self):
+        self.message("/caught")
+        self.assertIn("<pre>report for caught None</pre>", self.tg.sent()[-1])
+        self.message("/caught 48")
+        self.assertIn("report for caught 48", self.tg.sent()[-1])
+        self.message("/caught everything")
+        self.assertIn("⚠️ usage: /caught [HOURS]", self.tg.sent()[-1])
+
     def test_untrusted_text_is_escaped(self):
         self.bot.investigate = lambda target, hours: "<script>"
         self.message("/investigate 1.1.1.1")

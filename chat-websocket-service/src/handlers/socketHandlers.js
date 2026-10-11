@@ -196,7 +196,8 @@ class SocketHandlers {
         storeItemId: itemId,
         senderId: socket.userId,
         recipientId,
-        content
+        content,
+        sender: { username: socket.username, email: socket.userEmail }
       });
 
       // Get user information for formatting
@@ -232,11 +233,12 @@ class SocketHandlers {
       }
 
     } catch (error) {
-      if (['chat_locked', 'chat_ended', 'chat_flagged', 'chat_paused', 'account_suspended'].includes(error.code)) {
+      if (['chat_locked', 'chat_ended', 'chat_flagged', 'chat_paused', 'account_suspended', 'rate_limited'].includes(error.code)) {
         return socket.emit('error', {
           message: error.message,
           code: error.code,
           until: error.until,
+          retryAfter: error.retryAfter,
           taskId: data?.taskId,
           itemId: data?.itemId,
           recipientId: data?.recipientId

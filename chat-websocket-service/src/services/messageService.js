@@ -2,6 +2,7 @@ const db = require('../config/database');
 const { filterContent } = require('../utils/contentFilter');
 const logger = require('../utils/logger');
 const blockService = require('./blockService');
+const { messageLimit } = require('../utils/accountLimit');
 
 /**
  * SQL filter selecting one conversation: its context (task, application or
@@ -197,8 +198,11 @@ class MessageService {
   /**
    * Send a new message
    */
-  async sendMessage({ taskId, applicationId, storeItemId, senderId, recipientId, content, messageType, metadata }) {
+  async sendMessage({ taskId, applicationId, storeItemId, senderId, recipientId, content, messageType, metadata, sender }) {
     assertMessageLength(content);
+    // People's own messages are limited (events and notices aren't); sender
+    // ({ username, email }) names them in the log
+    if (!messageType) messageLimit.check(senderId, sender);
     const client = await db.getClient();
 
     try {
