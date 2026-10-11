@@ -5392,6 +5392,7 @@
         content: |
           TELEGRAM_BOT_TOKEN={{ telegram_bot_token | default('') }}
           TELEGRAM_CHAT_ID={{ telegram_chat_id | default('') }}
+          TELEGRAM_ADMIN_USER_ID={{ telegram_admin_user_id | default('') }}
       no_log: true
       become: yes
 

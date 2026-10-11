@@ -51,6 +51,7 @@ func main() {
 		&models.LoginCode{},
 		&models.BlockedEmail{},
 		&models.AccountSuspension{},
+		&models.CodePause{},
 	)
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)
@@ -88,7 +89,10 @@ func main() {
 		go unlockMatchedChats(taskService, notifier)
 	}
 
-	authService := services.NewAuthService(userRepo, loginCodeRepo, newCodeSender(), os.Getenv("JWT_SECRET")).WithBlocks(blockService)
+	// Codes paused for an address someone is flooding (email bombing)
+	codePauses := services.NewCodePauseService(repositories.NewGormCodePauseRepository(db))
+	authService := services.NewAuthService(userRepo, loginCodeRepo, newCodeSender(), os.Getenv("JWT_SECRET")).
+		WithBlocks(blockService).WithPauses(codePauses)
 
 	// Initialize JWT middleware
 	jwtMiddleware := middleware.NewJWTAuthMiddleware(os.Getenv("JWT_SECRET")).WithBlocked(blockService.UserBlocked).
@@ -137,7 +141,7 @@ func main() {
 	// Email blocks, suspensions and the restricted accounts, for myguy-admin
 	// and the other services (INTERNAL_API_KEY; nginx never routes /internal
 	// here)
-	api.NewInternalHandler(blockService, suspensionService).Register(r, os.Getenv("INTERNAL_API_KEY"))
+	api.NewInternalHandler(blockService, suspensionService).WithPauses(codePauses).Register(r, os.Getenv("INTERNAL_API_KEY"))
 	// How often one account may post gigs and apply (429 rate_limited over it)
 	limits := ratelimit.New(map[string][]ratelimit.Rule{
 		"post":  {{Limit: 10, Per: time.Hour}},

@@ -21,6 +21,9 @@ blocking an email is done by hand, over SSH here:
   suspend EMAIL [LENGTH] [REASON]  read-only for 12h, 1d, 2d or 1w; none:
                                the next on the ladder (12h, 1d, 2d, 1w)
   unsuspend EMAIL
+  pause EMAIL [HOURS]          no sign-in codes to it for HOURS (default 24,
+                               at most 72): an address being email-bombed
+  unpause EMAIL
   status EMAIL                 blocked? suspended?
   blocked                      the blocks in force
 
@@ -123,7 +126,14 @@ def parse(command, bot=False):
             raise Refused("a suspension lasts 12h, 1d, 2d or 1w (none: the next on the ladder)")
         args["reason"] = reason_arg(more)
         return action, args
-    if action in ("unblock", "unsuspend", "status"):
+    if action == "pause":
+        if not 1 <= len(rest) <= 2:
+            raise Refused("usage: pause EMAIL [HOURS]")
+        hours = rest[1] if len(rest) == 2 else "24"
+        if not hours.isdigit() or not 1 <= int(hours) <= 72:
+            raise Refused("a pause lasts 1 to 72 hours")
+        return action, {"email": email_arg(rest[0]), "hours": int(hours)}
+    if action in ("unblock", "unsuspend", "unpause", "status"):
         if len(rest) != 1:
             raise Refused(f"usage: {action} EMAIL")
         return action, {"email": email_arg(rest[0])}
@@ -192,12 +202,18 @@ def run(action, args, f2b=fail2ban, call=backend, by="telegram"):
         status, body = call("POST", "/suspensions", {**args, "by": by})
     elif action == "unsuspend":
         status, body = call("DELETE", "/suspensions/" + urllib.parse.quote(args["email"]))
+    elif action == "pause":
+        status, body = call("POST", "/code-pauses", {**args, "by": by})
+    elif action == "unpause":
+        status, body = call("DELETE", "/code-pauses/" + urllib.parse.quote(args["email"]))
     elif action == "status":
         status, body = call("GET", "/email-blocks/" + urllib.parse.quote(args["email"]))
         if status < 400:
             # No account (only an address) has no suspension to show
             s_status, suspension = call("GET", "/suspensions/" + urllib.parse.quote(args["email"]))
-            body = {**body, "suspension": suspension if s_status < 400 else None}
+            p_status, pause = call("GET", "/code-pauses/" + urllib.parse.quote(args["email"]))
+            body = {**body, "suspension": suspension if s_status < 400 else None,
+                    "codes_paused_until": pause.get("until") if p_status < 400 and pause.get("paused") else None}
     else:
         status, body = call("GET", "/email-blocks")
     if status >= 400:
@@ -219,7 +235,7 @@ def valid_ip(text):
         return False
 
 
-CHANGES = {"ban", "unban", "block", "unblock", "suspend", "unsuspend"}
+CHANGES = {"ban", "unban", "block", "unblock", "suspend", "unsuspend", "pause", "unpause"}
 
 
 def main(argv=None):
@@ -238,6 +254,7 @@ def main(argv=None):
     if action in CHANGES or not result["ok"]:
         target = args.get("ip") or args.get("email") or command[:80]
         extra = (f" days={args['days']}" if action == "block"
+                 else f" hours={args['hours']}" if action == "pause"
                  else f" hours={result.get('hours', args['hours'])}" if action == "suspend" and result["ok"] else "")
         syslog.syslog(f"admin event={action} target={target}{extra} ok={str(result['ok']).lower()} by={by}")
     print(json.dumps(result))

@@ -36,7 +36,7 @@ func setupBlockingApp(t *testing.T) *blockingApp {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Task{}, &models.Application{}, &models.LoginCode{}, &models.BlockedEmail{}, &models.AccountSuspension{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Task{}, &models.Application{}, &models.LoginCode{}, &models.BlockedEmail{}, &models.AccountSuspension{}, &models.CodePause{}); err != nil {
 		t.Fatal(err)
 	}
 	userRepo := repositories.NewGormUserRepository(db)
@@ -44,7 +44,9 @@ func setupBlockingApp(t *testing.T) *blockingApp {
 	suspensions := services.NewSuspensionService(repositories.NewGormSuspensionRepository(db), userRepo, blocks)
 	sender := &capturingSender{codes: map[string]string{}}
 	jwt := middleware.NewJWTAuthMiddleware("test-secret").WithBlocked(blocks.UserBlocked).WithSuspended(suspensions.SuspendedUntil)
-	auth := services.NewAuthService(userRepo, repositories.NewGormLoginCodeRepository(db), sender, "test-secret").WithBlocks(blocks)
+	pauses := services.NewCodePauseService(repositories.NewGormCodePauseRepository(db))
+	auth := services.NewAuthService(userRepo, repositories.NewGormLoginCodeRepository(db), sender, "test-secret").
+		WithBlocks(blocks).WithPauses(pauses)
 	tasks := services.NewTaskService(repositories.NewGormTaskRepository(db), repositories.NewGormApplicationRepository(db), nil)
 	handler := NewHandler(auth, services.NewUserService(userRepo), tasks, nil, jwt).WithSuspensions(suspensions)
 
@@ -56,7 +58,7 @@ func setupBlockingApp(t *testing.T) *blockingApp {
 	protected.POST("/tasks", handler.CreateTask)
 	protected.GET("/users/:id", handler.GetUserByID)
 	protected.GET("/profile", handler.GetProfile)
-	NewInternalHandler(blocks, suspensions).Register(router, testInternalKey)
+	NewInternalHandler(blocks, suspensions).WithPauses(pauses).Register(router, testInternalKey)
 	return &blockingApp{router: router, db: db, sender: sender, jwt: jwt}
 }
 

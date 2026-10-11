@@ -18,10 +18,17 @@ import (
 type InternalHandler struct {
 	blocks      *services.BlockService
 	suspensions *services.SuspensionService
+	pauses      *services.CodePauseService
 }
 
 func NewInternalHandler(blocks *services.BlockService, suspensions *services.SuspensionService) *InternalHandler {
 	return &InternalHandler{blocks: blocks, suspensions: suspensions}
+}
+
+// WithPauses serves /internal/v1/code-pauses.
+func (h *InternalHandler) WithPauses(pauses *services.CodePauseService) *InternalHandler {
+	h.pauses = pauses
+	return h
 }
 
 // InternalKeyRequired admits requests carrying key in X-Internal-API-Key.
@@ -206,7 +213,71 @@ func (h *InternalHandler) Register(r gin.IRouter, key string) {
 	internal.GET("/email-blocks/:email", h.EmailBlockStatus)
 	internal.DELETE("/email-blocks/:email", h.UnblockEmail)
 	internal.GET("/blocked-users", h.BlockedUsers)
+	if h.pauses != nil {
+		internal.POST("/code-pauses", h.PauseCodes)
+		internal.GET("/code-pauses/:email", h.CodePauseStatus)
+		internal.DELETE("/code-pauses/:email", h.UnpauseCodes)
+	}
 	internal.POST("/suspensions", h.Suspend)
 	internal.GET("/suspensions/:email", h.SuspensionStatus)
 	internal.DELETE("/suspensions/:email", h.Unsuspend)
+}
+
+type pauseRequest struct {
+	Email string `json:"email" binding:"required"`
+	Hours int    `json:"hours"` // 1 to 72
+	By    string `json:"by"`
+}
+
+type pauseResponse struct {
+	Email  string     `json:"email"`
+	Paused bool       `json:"paused"`
+	Until  *time.Time `json:"until,omitempty"`
+}
+
+// PauseCodes: POST /internal/v1/code-pauses {email, hours, by}.
+func (h *InternalHandler) PauseCodes(c *gin.Context) {
+	var req pauseRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	p, err := h.pauses.Pause(c.Request.Context(), req.Email, time.Duration(req.Hours)*time.Hour, req.By)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	log.Printf("codes event=paused email=%q hours=%d by=%q", p.Email, req.Hours, req.By)
+	c.JSON(http.StatusOK, pauseResponse{Email: p.Email, Paused: true, Until: &p.Until})
+}
+
+// UnpauseCodes: DELETE /internal/v1/code-pauses/:email.
+func (h *InternalHandler) UnpauseCodes(c *gin.Context) {
+	email := services.NormalizeEmail(c.Param("email"))
+	removed, err := h.pauses.Unpause(c.Request.Context(), email)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	if !removed {
+		c.JSON(http.StatusNotFound, gin.H{"error": "codes to that address aren't paused"})
+		return
+	}
+	log.Printf("codes event=unpaused email=%q", email)
+	c.JSON(http.StatusOK, pauseResponse{Email: email})
+}
+
+// CodePauseStatus: GET /internal/v1/code-pauses/:email.
+func (h *InternalHandler) CodePauseStatus(c *gin.Context) {
+	email := services.NormalizeEmail(c.Param("email"))
+	p, err := h.pauses.Status(c.Request.Context(), email)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	out := pauseResponse{Email: email}
+	if p != nil {
+		out.Paused, out.Until = true, &p.Until
+	}
+	c.JSON(http.StatusOK, out)
 }

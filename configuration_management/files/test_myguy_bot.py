@@ -95,6 +95,19 @@ class BotTest(unittest.TestCase):
         self.assertIn("1 week, 4th in a row", self.tg.sent()[-1])
         self.assertIn("consider a block", self.tg.sent()[-1])
 
+    def test_pause_codes(self):
+        self.message("/pause Jane@Example.com 6")
+        self.assertIn("Stop sign-in codes to <code>j***@example.com</code> for 6 hours?", self.tg.sent()[-1])
+        self.answer = {"ok": True, "paused": True, "until": "2026-10-11T18:00:00Z"}
+        self.press("ok")
+        self.assertEqual(self.commands, ["pause jane@example.com 6"])
+        self.assertIn("⏸ No sign-in codes to <code>j***@example.com</code> until 2026-10-11 18:00 UTC", self.tg.sent()[-1])
+        self.message("/unpause jane@example.com")
+        self.answer = {"ok": True}
+        self.press("ok")
+        self.assertEqual(self.commands[-1], "unpause jane@example.com")
+        self.assertIn("✅ Sign-in codes go to", self.tg.sent()[-1])
+
     def test_unsuspend(self):
         self.message("/unsuspend jane@example.com")
         self.assertIn("Lift the suspension of <code>j***@example.com</code>?", self.tg.sent()[-1])

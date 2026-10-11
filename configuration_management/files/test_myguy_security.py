@@ -676,6 +676,47 @@ class NowTest(TempState):
         self.assertIn("1 sign-in email couldn't be sent (check SMTP; those people can't sign in)", self.sent[0])
 
 
+class BombingTest(TempState):
+    def request(self, minutes_ago, event, ip, email="jane@example.com"):
+        self.src.add("containers", NOW - minutes_ago * MIN, auth_line(event, email, ip), service="api")
+
+    def flood(self):
+        for i in range(7):
+            self.request(50 - i, "code_sent" if i < 5 else "limited", f"203.0.113.{i % 4 + 1}")
+
+    def test_flood_from_several_ips_alerts_once(self):
+        self.flood()
+        for i in range(6):  # many codes, but one IP: not bombing
+            self.request(40 - i, "code_sent", "198.51.100.1", "solo@example.com")
+        dms, state = [], {}
+        ms.check(self.src, self.settings, state, NOW, self.send, dms.append)
+        channel = [m for m in self.sent if "email bombing" in m]
+        self.assertEqual(len(channel), 1)
+        self.assertIn("<code>j***@example.com</code> · 7 code requests from 4 IPs in the last hour", channel[0])
+        self.assertIn("The full address and the /pause command are in your chat with the bot.", channel[0])
+        self.assertNotIn("jane@example.com", channel[0])
+        self.assertNotIn("s***@example.com", channel[0])
+        self.assertEqual(len(dms), 1)
+        self.assertIn("<code>/pause jane@example.com</code>", dms[0])
+        self.assertNotIn("jane@example.com", json.dumps(state), "the state holds no address")
+
+        self.sent.clear()
+        ms.check(self.src, self.settings, state, NOW + 10 * MIN, self.send, dms.append)
+        self.assertFalse([m for m in self.sent if "email bombing" in m], "told once")
+
+    def test_already_paused_is_left(self):
+        self.flood()
+        self.request(1, "paused", "203.0.113.9")
+        ms.check(self.src, self.settings, {}, NOW, self.send)
+        self.assertFalse([m for m in self.sent if "email bombing" in m])
+
+    def test_without_the_admin_chat_points_to_investigate(self):
+        self.flood()
+        ms.check(self.src, self.settings, {}, NOW, self.send)
+        msg = [m for m in self.sent if "email bombing" in m][0]
+        self.assertIn("investigate &lt;email&gt;", msg)
+
+
 class BannedUserTest(TempState):
     """A ban that may have locked a real person out is the one ban worth a message."""
 
