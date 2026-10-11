@@ -16,7 +16,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/api
 
 # Use a smaller image for running
-FROM alpine:latest
+FROM alpine:3.24
 
 WORKDIR /app
 

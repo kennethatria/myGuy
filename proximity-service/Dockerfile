@@ -8,7 +8,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o main cmd/api/main.go
 
-FROM alpine:latest
+FROM alpine:3.24
 
 RUN apk --no-cache add ca-certificates && adduser -D -u 10001 app
 
