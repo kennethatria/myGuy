@@ -190,6 +190,26 @@ class BotTest(unittest.TestCase):
         self.message("/now please")
         self.assertIn("⚠️ usage: /now", self.tg.sent()[-1])
 
+    def test_errors_and_slow(self):
+        self.message("/errors")
+        self.assertIn("<pre>report for errors</pre>", self.tg.sent()[-1])
+        self.message("/slow 6")
+        self.assertIn("<pre>report for slow --hours 6</pre>", self.tg.sent()[-1])
+        self.message("/errors lots")
+        self.assertIn("⚠️ usage: /errors [HOURS]", self.tg.sent()[-1])
+
+    def test_bans(self):
+        self.answer = {"ok": True, "jails": {"sshd": ["1.1.1.1", "2.2.2.2"], "nginx-4xx": ["3.3.3.3"], "manual": []}}
+        self.message("/bans")
+        self.assertEqual(self.commands, ["bans"])
+        text = self.tg.sent()[-1]
+        self.assertIn("<b>Banned now</b>: 3 IPs", text)
+        self.assertIn("• sshd (2): <code>1.1.1.1</code>, <code>2.2.2.2</code>", text)
+        self.assertNotIn("manual", text)
+        self.answer = {"ok": True, "jails": {"manual": []}}
+        self.message("/bans")
+        self.assertIn("No IP is banned right now.", self.tg.sent()[-1])
+
     def test_menu_is_for_the_admin_only(self):
         mb.set_menu(self.tg, ADMIN)
         method, params = self.tg.calls[-1]

@@ -19,6 +19,9 @@ commands and button taps are ignored.
   /caught [HOURS]  the accounts the defences point at
   /health          is everything OK right now
   /now             what's happening in the app right now
+  /errors [HOURS]  which API calls failed, by endpoint (default 1 h)
+  /slow [HOURS]    the slowest API endpoints (default 1 h)
+  /bans            every IP banned now, by jail
   /help
 
 The command menu (the / button) is set by the bot itself at start, for
@@ -59,6 +62,9 @@ INVESTIGATE_MAX = 3500     # characters of a report in one message
 MENU = [
     ("health", "Is everything OK right now"),
     ("now", "What's happening in the app right now"),
+    ("errors", "Failed API calls: /errors [hours]"),
+    ("slow", "Slowest endpoints: /slow [hours]"),
+    ("bans", "IPs banned now, by jail"),
     ("caught", "Accounts to review: /caught [hours]"),
     ("investigate", "Report: /investigate IP|EMAIL [hours]"),
     ("status", "Blocked or suspended? /status EMAIL"),
@@ -81,7 +87,10 @@ HELP = """<b>Admin commands</b>
 /investigate IP|EMAIL [HOURS]
 /caught [HOURS]: accounts the defences point at (banned IP, over a limit, many sign-ups)
 /health: site, containers, servers, last deploy, errors, right now
-/now: posts up, today's sign-ins and visitors
+/now: posts up, deals and sign-ins today, visitors
+/errors [HOURS]: failed API calls by endpoint
+/slow [HOURS]: slowest API endpoints
+/bans: IPs banned now, by jail
 Changes ask you to confirm. Blocking an email is done over SSH on the app server."""
 
 
@@ -189,6 +198,10 @@ class Bot:
             return self.on_caught(rest)
         if name in ("health", "now"):
             return self.report([name]) if not rest else self.say(f"⚠️ usage: /{name}")
+        if name in ("errors", "slow"):
+            if len(rest) > 1 or (rest and not rest[0].isdigit()):
+                return self.say(f"⚠️ usage: /{name} [HOURS]")
+            return self.report([name] + (["--hours", rest[0]] if rest else []))
         try:
             action, args = parse(" ".join([name] + rest), bot=True)
         except Refused as e:
@@ -274,6 +287,15 @@ class Bot:
             jails = result.get("jails") or []
             return (f"<code>{esc(args['ip'])}</code> is banned in: {esc(', '.join(jails))}" if jails
                     else f"<code>{esc(args['ip'])}</code> isn't banned.")
+        if action == "bans":
+            jails = {j: ips for j, ips in (result.get("jails") or {}).items() if ips}
+            if not jails:
+                return "No IP is banned right now."
+            lines = [f"<b>Banned now</b>: {sum(len(i) for i in jails.values())} IPs"]
+            for jail, ips in sorted(jails.items(), key=lambda x: -len(x[1])):
+                shown = ", ".join(f"<code>{esc(ip)}</code>" for ip in ips[:8])
+                lines.append(f"• {esc(jail)} ({len(ips)}): {shown}" + (" …" if len(ips) > 8 else ""))
+            return "\n".join(lines)
         if action == "blocked":
             blocks = result.get("blocks") or []
             if not blocks:

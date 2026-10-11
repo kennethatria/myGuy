@@ -79,6 +79,15 @@ class RunTest(unittest.TestCase):
             ("GET", "/suspensions/a%40b.com", None),
             ("GET", "/email-blocks", None)])
 
+    def test_bans_lists_every_jail(self):
+        self.assertEqual(ma.parse("bans", bot=True), ("bans", {}))
+        with self.assertRaises(ma.Refused):
+            ma.parse("bans 1.1.1.1")
+        result = ma.run("bans", {}, f2b=lambda *a: (self.f2b_calls.append(a),
+                                                    "[{'sshd': ['1.1.1.1']}, {'manual': []}]")[1])
+        self.assertEqual(self.f2b_calls, [("banned",)])
+        self.assertEqual(result, {"ok": True, "jails": {"sshd": ["1.1.1.1"], "manual": []}})
+
     def test_suspensions_call_the_backend(self):
         ma.run("suspend", {"email": "a@b.com", "hours": 0, "reason": "spam"}, call=self.call(body={"suspended": True}))
         ma.run("unsuspend", {"email": "a+x@b.com"}, call=self.call())
