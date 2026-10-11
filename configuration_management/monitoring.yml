@@ -32,7 +32,8 @@
         exec: --config /etc/jaeger/jaeger.yml
       - name: prometheus
         memory: 256m
-        image: docker.io/prom/prometheus:latest
+        # Pinned to what ran on 2026-10-11; upgrade on purpose
+        image: docker.io/prom/prometheus:v3.15.0
         ports: ["{{ vpc_ip }}:9090:9090"]
         volumes:
           # The directory, not the file: Ansible replaces prometheus.yml
@@ -50,7 +51,9 @@
         # Its alerting engine (rules every minute) needs more than 256 MB;
         # at 256 MB it was killed in a loop.
         memory: 384m
-        image: docker.io/grafana/grafana:latest
+        # Pinned to what ran on 2026-10-11 (the message templates use its
+        # tz/date functions); upgrade on purpose
+        image: docker.io/grafana/grafana:13.2.3
         ports: ["{{ vpc_ip }}:3000:3000"]
         volumes:
           - /etc/grafana/provisioning:/etc/grafana/provisioning:ro
