@@ -291,12 +291,14 @@ class SummaryTest(TempState):
     def test_telegram_admin_actions(self):
         self.populate()
         for line in ("admin event=ban target=1.1.1.1 ok=true by=telegram",
-                     "admin event=block target=jane@example.com days=0 ok=true by=telegram",
+                     "admin event=block target=jane@example.com days=0 ok=true by=ssh:ops",
+                     "admin event=suspend target=bob@example.com hours=12 ok=true by=telegram",
                      "admin event=refused target=ban 10.0.0.2 ok=false by=telegram"):
             self.src.add("admin", NOW - 30 * MIN, line, host="app")
         ms.daily(self.src, self.settings, {}, NOW, self.send)
         msg = self.sent[0]
-        self.assertIn("Admin actions: 2 (<code>ban 1.1.1.1</code>, <code>block j***@example.com</code>)", msg)
+        self.assertIn("Admin actions: 3 (<code>ban 1.1.1.1</code>, <code>block j***@example.com</code>, "
+                      "<code>suspend b***@example.com</code>)", msg)
         self.assertNotIn("jane@example.com", msg)
 
     def test_needs_attention(self):

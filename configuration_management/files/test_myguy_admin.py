@@ -12,6 +12,12 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(ma.parse("block jane@example.com 30 spam, fake listings"),
                          ("block", {"email": "jane@example.com", "days": 30, "reason": "spam, fake listings"}))
         self.assertEqual(ma.parse("blocked"), ("blocked", {}))
+        self.assertEqual(ma.parse("suspend Jane@Example.com"),
+                         ("suspend", {"email": "jane@example.com", "hours": 0, "reason": ""}))
+        self.assertEqual(ma.parse("suspend jane@example.com 1W spam again"),
+                         ("suspend", {"email": "jane@example.com", "hours": 168, "reason": "spam again"}))
+        self.assertEqual(ma.parse("suspend jane@example.com fake listings")[1]["hours"], 0)
+        self.assertEqual(ma.parse("unsuspend jane@example.com"), ("unsuspend", {"email": "jane@example.com"}))
 
     def test_refuses_what_isnt_allowed(self):
         for command in [
@@ -20,6 +26,8 @@ class ParseTest(unittest.TestCase):
             "ban 10.0.0.3", "ban 192.168.255.4", "ban 127.0.0.1", "ban 172.16.0.1",
             "block", "block nope", "block a@b.com 99999", "block a@b.com 7 $(reboot)", "block a@b.com 7 `id`",
             "block a@b.com 7 <b>x</b>", "unblock", "status a@b.com extra", "blocked please",
+            "suspend", "suspend nope", "suspend a@b.com 3d", "suspend a@b.com 5", "suspend a@b.com 1w $(id)",
+            "unsuspend", "unsuspend a@b.com extra",
         ]:
             with self.assertRaises(ma.Refused, msg=command):
                 ma.parse(command)
@@ -30,6 +38,7 @@ class ParseTest(unittest.TestCase):
                 ma.parse(command, bot=True)
         self.assertEqual(ma.parse("status a@b.com", bot=True), ("status", {"email": "a@b.com"}))
         self.assertEqual(ma.parse("ban 1.1.1.1", bot=True), ("ban", {"ip": "1.1.1.1"}))
+        self.assertEqual(ma.parse("suspend a@b.com 1d", bot=True)[0], "suspend", "the bot may suspend")
 
     def test_reason_length(self):
         with self.assertRaises(ma.Refused):
@@ -67,7 +76,25 @@ class RunTest(unittest.TestCase):
             ("POST", "/email-blocks", {"email": "a@b.com", "days": 0, "reason": "spam", "by": "telegram"}),
             ("DELETE", "/email-blocks/a%2Bx%40b.com", None),
             ("GET", "/email-blocks/a%40b.com", None),
+            ("GET", "/suspensions/a%40b.com", None),
             ("GET", "/email-blocks", None)])
+
+    def test_suspensions_call_the_backend(self):
+        ma.run("suspend", {"email": "a@b.com", "hours": 0, "reason": "spam"}, call=self.call(body={"suspended": True}))
+        ma.run("unsuspend", {"email": "a+x@b.com"}, call=self.call())
+        self.assertEqual(self.http_calls, [
+            ("POST", "/suspensions", {"email": "a@b.com", "hours": 0, "reason": "spam", "by": "telegram"}),
+            ("DELETE", "/suspensions/a%2Bx%40b.com", None)])
+
+    def test_status_shows_block_and_suspension(self):
+        answers = iter([(200, {"blocked": False}), (200, {"suspended": True, "in_row": 2})])
+        result = ma.run("status", {"email": "a@b.com"}, call=lambda *a: (self.http_calls.append(a), next(answers))[1])
+        self.assertEqual(result, {"ok": True, "blocked": False, "suspension": {"suspended": True, "in_row": 2}})
+        self.assertEqual([c[1] for c in self.http_calls], ["/email-blocks/a%40b.com", "/suspensions/a%40b.com"])
+        # An address with no account has no suspension
+        answers = iter([(200, {"blocked": True}), (400, {"error": "no account uses that address"})])
+        result = ma.run("status", {"email": "a@b.com"}, call=lambda *a: next(answers))
+        self.assertEqual(result, {"ok": True, "blocked": True, "suspension": None})
 
     def test_backend_refusal_is_passed_on(self):
         result = ma.run("unblock", {"email": "a@b.com"}, call=self.call(404, {"error": "that address isn't blocked"}))

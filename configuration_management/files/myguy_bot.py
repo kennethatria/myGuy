@@ -9,7 +9,10 @@ and button taps are ignored.
   /ban IP          ban for 7 days (fail2ban's manual jail)
   /unban IP        lift every ban on the IP
   /ipstatus IP     the jails that have it banned
-  /status EMAIL    whether it's blocked
+  /suspend EMAIL [12h|1d|2d|1w] [REASON]   read-only for a while (none:
+                   the next on the ladder: 12h, 1d, 2d, 1w)
+  /unsuspend EMAIL
+  /status EMAIL    blocked? suspended?
   /blocked         the blocks in force
   /investigate IP|EMAIL [HOURS]
   /help
@@ -17,7 +20,7 @@ and button taps are ignored.
 Blocking an email is done by hand over SSH on the app server
 (`sudo myguy-admin block EMAIL`), never from here.
 
-Changes (ban, unban) ask first: Confirm or Cancel, valid for
+Changes (ban, unban, suspend, unsuspend) ask first: Confirm or Cancel, valid for
 2 minutes.  Your command message is deleted once read (the bot must be a
 group admin allowed to delete messages), so a full address doesn't stay in
 the group; replies mask emails (j***@example.com).
@@ -43,13 +46,15 @@ from myguy_admin import Refused, parse  # noqa: E402  same checks as the app ser
 
 CONFIRM_FOR = 120          # seconds a Confirm button stays valid
 POLL_TIMEOUT = 50          # long poll; Telegram answers sooner on news
-CHANGES = {"ban", "unban"}
+CHANGES = {"ban", "unban", "suspend", "unsuspend"}
 INVESTIGATE_MAX = 3500     # characters of investigate output in one message
 HELP = """<b>Admin commands</b>
 /ban IP: ban for 7 days
 /unban IP: lift every ban on it
 /ipstatus IP: where it's banned
-/status EMAIL: whether it's blocked
+/suspend EMAIL [12h|1d|2d|1w] [REASON]: read-only (no length: the next on the ladder, 12h → 1d → 2d → 1w)
+/unsuspend EMAIL
+/status EMAIL: blocked? suspended?
 /blocked: blocks in force
 /investigate IP|EMAIL [HOURS]
 Changes ask you to confirm. Blocking an email is done over SSH on the app server."""
@@ -211,7 +216,14 @@ class Bot:
     def question(action, args):
         if action == "ban":
             return f"Ban <code>{esc(args['ip'])}</code> for 7 days?"
-        return f"Lift every ban on <code>{esc(args['ip'])}</code>?"
+        if action == "unban":
+            return f"Lift every ban on <code>{esc(args['ip'])}</code>?"
+        who = f"<code>{esc(mask(args['email']))}</code>"
+        if action == "suspend":
+            how = f"for {LENGTH_NAMES[args['hours']]}" if args["hours"] else "for the next length on the ladder"
+            why = f" (reason: {esc(args['reason'])})" if args.get("reason") else ""
+            return f"Suspend {who} {how}{why}?"
+        return f"Lift the suspension of {who}?"
 
     @staticmethod
     def describe(action, args, result):
@@ -232,13 +244,42 @@ class Bot:
             return "<b>Blocked</b>\n" + "\n".join(
                 f"• <code>{esc(mask(b['email']))}</code> {until(b)}" for b in blocks[:30])
         who = f"<code>{esc(mask(args['email']))}</code>"
-        return f"{who} is blocked {until(result)}." if result.get("blocked") else f"{who} isn't blocked."
+        if action == "suspend":
+            step = result.get("step") or 1
+            text = (f"⏸ Suspended {who} until {esc((result.get('until') or '')[:16].replace('T', ' '))} UTC "
+                    f"({LENGTH_NAMES.get(result.get('hours'), str(result.get('hours')) + ' hours')}, {ordinal(step)} in a row). "
+                    "Read-only; their partners are told within a minute.")
+            if step >= 4:
+                text += "\nThat's 4 or more in a row: consider a block (over SSH on the app server)."
+            return text
+        if action == "unsuspend":
+            return f"✅ Lifted the suspension of {who}. It still counts towards the next one."
+        lines = [f"{who} is blocked {until(result)}." if result.get("blocked") else f"{who} isn't blocked."]
+        s = result.get("suspension")
+        if s and s.get("suspended"):
+            lines.append(f"Suspended until {esc((s.get('until') or '')[:16].replace('T', ' '))} UTC"
+                         + (f" ({esc(s['reason'])})" if s.get("reason") else "") + f", {ordinal(s.get('in_row') or 1)} in a row.")
+        elif s:
+            nxt = LENGTH_NAMES.get(s.get("next_hours"), "12 hours")
+            lines.append(f"Not suspended ({s.get('in_row') or 0} in a row; the next would be {nxt}).")
+        return "\n".join(lines)
 
 
 def command_for(action, args):
     """The myguy-admin command, from the checked values (never raw input)."""
+    if action == "suspend":
+        length = HOUR_TOKENS[args["hours"]] if args["hours"] else ""
+        return " ".join(w for w in (action, args["email"], length, args["reason"]) if w)
     target = args.get("ip") or args.get("email")
     return f"{action} {target}" if target else action
+
+
+LENGTH_NAMES = {12: "12 hours", 24: "1 day", 48: "2 days", 168: "1 week"}
+HOUR_TOKENS = {12: "12h", 24: "1d", 48: "2d", 168: "1w"}
+
+
+def ordinal(n):
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
 def until(block):

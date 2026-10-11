@@ -17,7 +17,10 @@ blocking an email is done by hand, over SSH here:
   ipstatus IP                  the jails that have it banned
   block EMAIL [DAYS] [REASON]  DAYS 0 or none: for good
   unblock EMAIL
-  status EMAIL
+  suspend EMAIL [LENGTH] [REASON]  read-only for 12h, 1d, 2d or 1w; none:
+                               the next on the ladder (12h, 1d, 2d, 1w)
+  unsuspend EMAIL
+  status EMAIL                 blocked? suspended?
   blocked                      the blocks in force
 
 Prints one JSON object ({"ok": true, ...} or {"ok": false, "error": ...})
@@ -47,6 +50,8 @@ REASON_MAX = 200
 PROTECTED_NETS = [ipaddress.ip_network(n) for n in ("192.168.255.0/24", "10.0.0.0/24")]
 EMAIL = re.compile(r"^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24}$")
 REASON = re.compile(r"^[\w .,:;!?'()/#&+-]*$")
+# Suspension lengths, in hours (the backend accepts exactly these)
+LENGTHS = {"12h": 12, "1d": 24, "24h": 24, "2d": 48, "48h": 48, "1w": 168, "7d": 168}
 
 
 class Refused(Exception):
@@ -105,7 +110,19 @@ def parse(command, bot=False):
             more = more[1:]
         args["reason"] = reason_arg(more)
         return action, args
-    if action in ("unblock", "status"):
+    if action == "suspend":
+        if not rest:
+            raise Refused("usage: suspend EMAIL [12h|1d|2d|1w] [REASON]")
+        args = {"email": email_arg(rest[0]), "hours": 0, "reason": ""}
+        more = rest[1:]
+        if more and more[0].lower() in LENGTHS:
+            args["hours"] = LENGTHS[more[0].lower()]
+            more = more[1:]
+        elif more and re.fullmatch(r"\d+[hdw]?", more[0].lower()):
+            raise Refused("a suspension lasts 12h, 1d, 2d or 1w (none: the next on the ladder)")
+        args["reason"] = reason_arg(more)
+        return action, args
+    if action in ("unblock", "unsuspend", "status"):
         if len(rest) != 1:
             raise Refused(f"usage: {action} EMAIL")
         return action, {"email": email_arg(rest[0])}
@@ -163,8 +180,16 @@ def run(action, args, f2b=fail2ban, call=backend, by="telegram"):
         status, body = call("POST", "/email-blocks", {**args, "by": by})
     elif action == "unblock":
         status, body = call("DELETE", "/email-blocks/" + urllib.parse.quote(args["email"]))
+    elif action == "suspend":
+        status, body = call("POST", "/suspensions", {**args, "by": by})
+    elif action == "unsuspend":
+        status, body = call("DELETE", "/suspensions/" + urllib.parse.quote(args["email"]))
     elif action == "status":
         status, body = call("GET", "/email-blocks/" + urllib.parse.quote(args["email"]))
+        if status < 400:
+            # No account (only an address) has no suspension to show
+            s_status, suspension = call("GET", "/suspensions/" + urllib.parse.quote(args["email"]))
+            body = {**body, "suspension": suspension if s_status < 400 else None}
     else:
         status, body = call("GET", "/email-blocks")
     if status >= 400:
@@ -172,7 +197,7 @@ def run(action, args, f2b=fail2ban, call=backend, by="telegram"):
     return {"ok": True, **body}
 
 
-CHANGES = {"ban", "unban", "block", "unblock"}
+CHANGES = {"ban", "unban", "block", "unblock", "suspend", "unsuspend"}
 
 
 def main(argv=None):
@@ -190,7 +215,8 @@ def main(argv=None):
         result, action, args = {"ok": False, "error": f"failed: {e}"[:300]}, "failed", {}
     if action in CHANGES or not result["ok"]:
         target = args.get("ip") or args.get("email") or command[:80]
-        extra = f" days={args['days']}" if action == "block" else ""
+        extra = (f" days={args['days']}" if action == "block"
+                 else f" hours={result.get('hours', args['hours'])}" if action == "suspend" and result["ok"] else "")
         syslog.syslog(f"admin event={action} target={target}{extra} ok={str(result['ok']).lower()} by={by}")
     print(json.dumps(result))
     return 0 if result["ok"] else 1

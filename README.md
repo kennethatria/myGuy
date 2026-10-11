@@ -529,12 +529,14 @@ What each security message means and what to do. Every message ends with its nex
 | `/ban <IP>` | Bans for 7 days (fail2ban's `manual` jail; nginx refuses it within a minute) |
 | `/unban <IP>` | Lifts every ban on it, automatic ones too |
 | `/ipstatus <IP>` | Which jails have it banned |
-| `/status <email>`, `/blocked` | Whether an address is blocked; the blocks in force |
+| `/suspend <email> [12h\|1d\|2d\|1w] [reason]` | Makes the account read-only (see *Suspending an account*). No length: the next on the ladder, 12 h → 1 d → 2 d → 1 w; from the 4th in a row it suggests a block |
+| `/unsuspend <email>` | Ends it early (it still counts towards the next) |
+| `/status <email>`, `/blocked` | Whether an address is blocked or suspended (and how many in a row); the blocks in force |
 | `/investigate <IP\|email> [hours]` | The same report as `investigate` |
 
 Blocking an email is never done from Telegram: it's a deliberate step over SSH on the app server (*Blocking an email*). Changes ask you to **Confirm** (2 minutes). The bot deletes your command once read, so a full address doesn't stay in the group; that needs the bot to be a **group admin allowed to delete messages**. Replies mask addresses.
 - **How it reaches the app server:** over the VPC as `myguy-bot`, with a key made on the monitoring server. `security.yml` authorizes the key `restrict,from="10.0.0.3",command="sudo -n /usr/local/bin/myguy-admin --bot \"$SSH_ORIGINAL_COMMAND\""`, so it can run `myguy-admin` and nothing else; `--bot` (pinned in its sudoers rule too) refuses `block` and `unblock`. That command checks every word (public IPs only, never the NodeBalancer or VPC; plain email addresses; days 0–3650; a short plain reason) before calling `fail2ban-client` or the backend's `/internal/v1/email-blocks`. The Telegram token never goes to the app server.
-- **Audit:** `myguy-admin` logs `admin event=ban|unban|block|unblock|refused|failed target=… by=telegram|ssh:<user>`, and the bot logs what it ignored (`bot event=ignored user=…`), both in Loki as `job="admin"`. The daily summary counts the actions under Access. A `myguy-bot` SSH login from anywhere but the monitoring server, or onto the monitoring server, is an unexpected SSH login.
+- **Audit:** `myguy-admin` logs `admin event=ban|unban|block|unblock|suspend|unsuspend|refused|failed target=… by=telegram|ssh:<user>`, and the bot logs what it ignored (`bot event=ignored user=…`), both in Loki as `job="admin"`. The daily summary counts the actions under Access. A `myguy-bot` SSH login from anywhere but the monitoring server, or onto the monitoring server, is an unexpected SSH login.
 
 | Message | What it means | What to do |
 | :--- | :--- | :--- |

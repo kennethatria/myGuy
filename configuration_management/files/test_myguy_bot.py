@@ -70,6 +70,44 @@ class BotTest(unittest.TestCase):
             self.assertIn("over SSH on the app server", text)
             self.assertNotIn("jane@example.com", text)
 
+    def test_suspend_asks_then_says_how_long(self):
+        self.message("/suspend Jane@Example.com spam again")
+        question = self.tg.sent()[-1]
+        self.assertIn("Suspend <code>j***@example.com</code> for the next length on the ladder (reason: spam again)?", question)
+        self.assertEqual(self.commands, [])
+        self.answer = {"ok": True, "until": "2026-10-12T00:00:00Z", "hours": 12, "step": 1}
+        self.press("ok")
+        self.assertEqual(self.commands, ["suspend jane@example.com spam again"])
+        self.assertIn("⏸ Suspended <code>j***@example.com</code> until 2026-10-12 00:00 UTC (12 hours, 1st in a row)",
+                      self.tg.sent()[-1])
+        self.assertNotIn("consider a block", self.tg.sent()[-1])
+
+    def test_suspend_with_a_length_and_the_fourth_suggests_a_block(self):
+        self.message("/suspend jane@example.com 1w")
+        self.assertIn("for 1 week?", self.tg.sent()[-1])
+        self.answer = {"ok": True, "until": "2026-10-18T12:00:00Z", "hours": 168, "step": 4}
+        self.press("ok")
+        self.assertEqual(self.commands, ["suspend jane@example.com 1w"])
+        self.assertIn("1 week, 4th in a row", self.tg.sent()[-1])
+        self.assertIn("consider a block", self.tg.sent()[-1])
+
+    def test_unsuspend(self):
+        self.message("/unsuspend jane@example.com")
+        self.assertIn("Lift the suspension of <code>j***@example.com</code>?", self.tg.sent()[-1])
+        self.answer = {"ok": True}
+        self.press("ok")
+        self.assertEqual(self.commands, ["unsuspend jane@example.com"])
+        self.assertIn("✅ Lifted the suspension", self.tg.sent()[-1])
+
+    def test_status_shows_a_suspension(self):
+        self.answer = {"ok": True, "blocked": False,
+                       "suspension": {"suspended": True, "until": "2026-10-12T00:00:00Z", "reason": "spam", "in_row": 2}}
+        self.message("/status jane@example.com")
+        self.assertIn("isn't blocked.\nSuspended until 2026-10-12 00:00 UTC (spam), 2nd in a row.", self.tg.sent()[-1])
+        self.answer = {"ok": True, "blocked": False, "suspension": {"suspended": False, "in_row": 1, "next_hours": 24}}
+        self.message("/status jane@example.com")
+        self.assertIn("Not suspended (1 in a row; the next would be 1 day).", self.tg.sent()[-1])
+
     def test_status_masks_the_email(self):
         self.answer = {"ok": True, "blocked": True, "until": None, "reason": "spam"}
         self.message("/status Jane@Example.com")

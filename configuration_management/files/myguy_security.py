@@ -754,10 +754,11 @@ def collect(src, settings_, state, start, end):
                 commands[f"{labels.get('host', '?')}: {m.group('command').strip()}"] += 1
         s["ops_sudo"] = sum(commands.values())
         s["ops_commands"] = [c for c, _ in commands.most_common(3)]
-        # Bans, unbans and blocks done through the Telegram bot (myguy-admin)
+        # Bans, blocks and suspensions done through myguy-admin (Telegram or SSH)
         done = [m.groupdict() for m in (ADMIN_EVENT.search(line) for _, _, line in
                 src.lines('{job="admin"} |= "admin event="', start, end)) if m]
-        done = [d for d in done if d["action"] in ("ban", "unban", "block", "unblock") and d["ok"] == "true"]
+        done = [d for d in done if d["action"] in ("ban", "unban", "block", "unblock", "suspend", "unsuspend")
+                and d["ok"] == "true"]
         s["admin_actions"] = len(done)
         s["admin_details"] = [f"{d['action']} {mask(d['target']) if '@' in d['target'] else d['target']}"
                               for d in done[-3:]]
