@@ -3,10 +3,14 @@
 email.  The only thing the Telegram bot (myguy-bot on the monitoring server)
 can run here: its SSH key is restricted to
 
-    command="sudo -n /usr/local/bin/myguy-admin \"$SSH_ORIGINAL_COMMAND\""
+    command="sudo -n /usr/local/bin/myguy-admin --bot \"$SSH_ORIGINAL_COMMAND\""
 
 so whatever the bot sends arrives as ONE argument, which is split and
-checked here word by word.  Nothing reaches a shell.
+checked here word by word.  Nothing reaches a shell.  `--bot` (fixed by that
+forced command and by the bot's sudoers rule) leaves out block and unblock:
+blocking an email is done by hand, over SSH here:
+
+    sudo myguy-admin block EMAIL [DAYS] [REASON]
 
   ban IP                       7 days in fail2ban's manual jail
   unban IP                     out of every jail (automatic bans too)
@@ -17,13 +21,14 @@ checked here word by word.  Nothing reaches a shell.
   blocked                      the blocks in force
 
 Prints one JSON object ({"ok": true, ...} or {"ok": false, "error": ...})
-and logs each change as `admin event=... by=telegram` (journal → Loki,
-job="admin").  Runs as root through sudo: fail2ban's socket and the .env
+and logs each change as `admin event=... by=telegram|ssh:USER` (journal →
+Loki, job="admin").  Runs as root through sudo: fail2ban's socket and the .env
 holding INTERNAL_API_KEY are root's.
 """
 
 import ipaddress
 import json
+import os
 import re
 import subprocess
 import sys
@@ -78,12 +83,14 @@ def reason_arg(words):
     return reason
 
 
-def parse(command):
+def parse(command, bot=False):
     """(action, args) from the one-line command, or Refused."""
     words = command.split()
     if not words:
         raise Refused("no command")
     action, rest = words[0].lower(), words[1:]
+    if bot and action in ("block", "unblock"):  # a deliberate step, over SSH
+        raise Refused(f"{action} is done over SSH on the app server: sudo myguy-admin {action} EMAIL")
     if action in ("ban", "unban", "ipstatus"):
         if len(rest) != 1:
             raise Refused(f"usage: {action} IP")
@@ -140,7 +147,7 @@ def fail2ban(*args):
     return result.stdout.strip()
 
 
-def run(action, args, f2b=fail2ban, call=backend):
+def run(action, args, f2b=fail2ban, call=backend, by="telegram"):
     """The result as a dict for the bot."""
     if action == "ban":
         f2b("set", "manual", "banip", args["ip"])
@@ -153,7 +160,7 @@ def run(action, args, f2b=fail2ban, call=backend):
         jails = re.findall(r"'([\w-]+)'", f2b("banned", args["ip"]))
         return {"ok": True, "ip": args["ip"], "jails": jails}
     if action == "block":
-        status, body = call("POST", "/email-blocks", {**args, "by": "telegram"})
+        status, body = call("POST", "/email-blocks", {**args, "by": by})
     elif action == "unblock":
         status, body = call("DELETE", "/email-blocks/" + urllib.parse.quote(args["email"]))
     elif action == "status":
@@ -170,11 +177,13 @@ CHANGES = {"ban", "unban", "block", "unblock"}
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    command = " ".join(argv)
+    bot = argv[:1] == ["--bot"]
+    command = " ".join(argv[1:] if bot else argv)
+    by = "telegram" if bot else "ssh:" + (os.environ.get("SUDO_USER") or "root")
     syslog.openlog("myguy-admin")
     try:
-        action, args = parse(command)
-        result = run(action, args)
+        action, args = parse(command, bot=bot)
+        result = run(action, args, by=by)
     except Refused as e:
         result, action, args = {"ok": False, "error": str(e)}, "refused", {}
     except Exception as e:  # noqa: BLE001
@@ -182,7 +191,7 @@ def main(argv=None):
     if action in CHANGES or not result["ok"]:
         target = args.get("ip") or args.get("email") or command[:80]
         extra = f" days={args['days']}" if action == "block" else ""
-        syslog.syslog(f"admin event={action} target={target}{extra} ok={str(result['ok']).lower()} by=telegram")
+        syslog.syslog(f"admin event={action} target={target}{extra} ok={str(result['ok']).lower()} by={by}")
     print(json.dumps(result))
     return 0 if result["ok"] else 1
 

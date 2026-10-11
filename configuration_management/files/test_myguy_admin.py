@@ -24,6 +24,13 @@ class ParseTest(unittest.TestCase):
             with self.assertRaises(ma.Refused, msg=command):
                 ma.parse(command)
 
+    def test_the_bot_cant_block(self):
+        for command in ["block a@b.com", "unblock a@b.com", "BLOCK a@b.com 7 spam"]:
+            with self.assertRaisesRegex(ma.Refused, "over SSH", msg=command):
+                ma.parse(command, bot=True)
+        self.assertEqual(ma.parse("status a@b.com", bot=True), ("status", {"email": "a@b.com"}))
+        self.assertEqual(ma.parse("ban 1.1.1.1", bot=True), ("ban", {"ip": "1.1.1.1"}))
+
     def test_reason_length(self):
         with self.assertRaises(ma.Refused):
             ma.parse("block a@b.com 1 " + "x" * 201)
@@ -74,6 +81,26 @@ class RunTest(unittest.TestCase):
             code = ma.main(["ban 10.0.0.2"])
         self.assertEqual(code, 1)
         self.assertFalse(__import__("json").loads(out.getvalue())["ok"])
+
+    def test_main_with_bot_refuses_block(self):
+        import io
+        import contextlib
+        from unittest import mock
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), mock.patch.object(ma, "run") as run:
+            code = ma.main(["--bot", "block a@b.com"])
+        self.assertEqual(code, 1)
+        run.assert_not_called()
+        self.assertIn("over SSH", __import__("json").loads(out.getvalue())["error"])
+
+    def test_main_over_ssh_says_who(self):
+        import io
+        import contextlib
+        from unittest import mock
+        with contextlib.redirect_stdout(io.StringIO()), mock.patch.dict("os.environ", {"SUDO_USER": "myguy"}), \
+                mock.patch.object(ma, "run", return_value={"ok": True}) as run, mock.patch.object(ma.syslog, "syslog"):
+            ma.main(["block", "a@b.com", "7", "spam"])
+        run.assert_called_once_with("block", {"email": "a@b.com", "days": 7, "reason": "spam"}, by="ssh:myguy")
 
 
 class KeyTest(unittest.TestCase):

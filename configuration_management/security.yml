@@ -497,11 +497,14 @@
         daemon_reload: yes
 
     # --- Telegram admin actions (files/myguy_admin.py) ---
-    # The Telegram bot on the monitoring server (myguy-bot) bans, unbans and
-    # blocks emails by running myguy-admin here over SSH.  Its key (made on
-    # the monitoring server by monitoring.yml) can run nothing else: the
-    # forced command hands what it sent to myguy-admin as one argument, which
-    # checks every word.  Logged as `admin event=...` (Loki job="admin").
+    # The Telegram bot on the monitoring server (myguy-bot) bans and unbans
+    # IPs by running myguy-admin here over SSH.  Its key (made on the
+    # monitoring server by monitoring.yml) can run nothing else: the forced
+    # command hands what it sent to myguy-admin as one argument, which checks
+    # every word, after a fixed --bot that refuses block and unblock (sudoers
+    # pins it too).  Blocking an email is done by hand here:
+    # `sudo myguy-admin block EMAIL [DAYS] [REASON]`.  Logged as
+    # `admin event=... by=telegram|ssh:USER` (Loki job="admin").
 
     - name: Install myguy-admin
       ansible.builtin.copy:
@@ -528,7 +531,7 @@
         validate: /usr/sbin/visudo -cf %s
         content: |
           Defaults:myguy-bot !requiretty
-          myguy-bot ALL=(root) NOPASSWD: /usr/local/bin/myguy-admin *
+          myguy-bot ALL=(root) NOPASSWD: /usr/local/bin/myguy-admin --bot *
 
     - name: Read the bot's public key from the monitoring server
       ansible.builtin.slurp:
@@ -541,7 +544,7 @@
       ansible.posix.authorized_key:
         user: myguy-bot
         key: "{{ bot_public_key.content | b64decode }}"
-        key_options: 'restrict,from="{{ monitoring_vpc_ip }}",command="sudo -n /usr/local/bin/myguy-admin \"$SSH_ORIGINAL_COMMAND\""'
+        key_options: 'restrict,from="{{ monitoring_vpc_ip }}",command="sudo -n /usr/local/bin/myguy-admin --bot \"$SSH_ORIGINAL_COMMAND\""'
         exclusive: yes
       when: bot_public_key.content is defined
 

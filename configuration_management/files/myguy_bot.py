@@ -9,20 +9,22 @@ and button taps are ignored.
   /ban IP          ban for 7 days (fail2ban's manual jail)
   /unban IP        lift every ban on the IP
   /ipstatus IP     the jails that have it banned
-  /block EMAIL [DAYS] [REASON]   block an account (no DAYS: for good)
-  /unblock EMAIL
-  /status EMAIL
+  /status EMAIL    whether it's blocked
   /blocked         the blocks in force
   /investigate IP|EMAIL [HOURS]
   /help
 
-Changes (ban, unban, block, unblock) ask first: Confirm or Cancel, valid for
+Blocking an email is done by hand over SSH on the app server
+(`sudo myguy-admin block EMAIL`), never from here.
+
+Changes (ban, unban) ask first: Confirm or Cancel, valid for
 2 minutes.  Your command message is deleted once read (the bot must be a
 group admin allowed to delete messages), so a full address doesn't stay in
 the group; replies mask emails (j***@example.com).
 
 The actions run on the app server through `myguy-admin` over SSH, with a
-key that can run nothing else (see myguy_admin.py).
+key that can run nothing else, and not block or unblock (myguy_admin.py,
+`--bot`).
 """
 
 import html
@@ -41,18 +43,16 @@ from myguy_admin import Refused, parse  # noqa: E402  same checks as the app ser
 
 CONFIRM_FOR = 120          # seconds a Confirm button stays valid
 POLL_TIMEOUT = 50          # long poll; Telegram answers sooner on news
-CHANGES = {"ban", "unban", "block", "unblock"}
+CHANGES = {"ban", "unban"}
 INVESTIGATE_MAX = 3500     # characters of investigate output in one message
 HELP = """<b>Admin commands</b>
 /ban IP: ban for 7 days
 /unban IP: lift every ban on it
 /ipstatus IP: where it's banned
-/block EMAIL [DAYS] [REASON]: block an account (no days: for good)
-/unblock EMAIL
-/status EMAIL
+/status EMAIL: whether it's blocked
 /blocked: blocks in force
 /investigate IP|EMAIL [HOURS]
-Changes ask you to confirm."""
+Changes ask you to confirm. Blocking an email is done over SSH on the app server."""
 
 
 def esc(value):
@@ -156,7 +156,7 @@ class Bot:
         if name == "investigate":
             return self.on_investigate(rest)
         try:
-            action, args = parse(" ".join([name] + rest))
+            action, args = parse(" ".join([name] + rest), bot=True)
         except Refused as e:
             return self.say(f"⚠️ {esc(e)}")
         command = command_for(action, args)
@@ -211,13 +211,7 @@ class Bot:
     def question(action, args):
         if action == "ban":
             return f"Ban <code>{esc(args['ip'])}</code> for 7 days?"
-        if action == "unban":
-            return f"Lift every ban on <code>{esc(args['ip'])}</code>?"
-        how = f"for {args['days']} days" if args.get("days") else "for good"
-        if action == "block":
-            why = f" (reason: {esc(args['reason'])})" if args.get("reason") else ""
-            return f"Block <code>{esc(mask(args['email']))}</code> {how}{why}?"
-        return f"Unblock <code>{esc(mask(args['email']))}</code>?"
+        return f"Lift every ban on <code>{esc(args['ip'])}</code>?"
 
     @staticmethod
     def describe(action, args, result):
@@ -238,17 +232,11 @@ class Bot:
             return "<b>Blocked</b>\n" + "\n".join(
                 f"• <code>{esc(mask(b['email']))}</code> {until(b)}" for b in blocks[:30])
         who = f"<code>{esc(mask(args['email']))}</code>"
-        if action == "block":
-            return f"⛔ Blocked {who} {until(result)}. Their sessions end within a minute."
-        if action == "unblock":
-            return f"✅ Unblocked {who}."
         return f"{who} is blocked {until(result)}." if result.get("blocked") else f"{who} isn't blocked."
 
 
 def command_for(action, args):
     """The myguy-admin command, from the checked values (never raw input)."""
-    if action == "block":
-        return " ".join(str(w) for w in (action, args["email"], args["days"], args["reason"]) if w != "").strip()
     target = args.get("ip") or args.get("email")
     return f"{action} {target}" if target else action
 

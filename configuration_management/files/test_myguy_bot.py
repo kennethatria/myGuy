@@ -51,17 +51,30 @@ class BotTest(unittest.TestCase):
         self.assertEqual(self.commands, [])
 
     def test_changes_ask_first_and_delete_the_command(self):
-        self.message("/block@MyGuyBot Jane@Example.com 30 spam")
+        self.message("/ban@MyGuyBot 1.1.1.1")
         self.assertEqual(self.tg.calls[0], ("deleteMessage", {"chat_id": CHAT, "message_id": 5}))
         self.assertEqual(self.commands, [], "nothing happens before Confirm")
-        question = self.tg.sent()[-1]
-        self.assertIn("Block <code>j***@example.com</code> for 30 days (reason: spam)?", question)
-        self.assertNotIn("jane@example.com", question)
+        self.assertIn("Ban <code>1.1.1.1</code> for 7 days?", self.tg.sent()[-1])
 
-        self.answer = {"ok": True, "until": "2026-11-10T12:00:00Z"}
+        self.answer = {"ok": True, "ip": "1.1.1.1", "days": 7}
         self.press("ok")
-        self.assertEqual(self.commands, ["block jane@example.com 30 spam"])
-        self.assertIn("⛔ Blocked <code>j***@example.com</code> until 2026-11-10", self.tg.sent()[-1])
+        self.assertEqual(self.commands, ["ban 1.1.1.1"])
+        self.assertIn("🚫 Banned <code>1.1.1.1</code> for 7 days.", self.tg.sent()[-1])
+
+    def test_blocking_is_not_done_from_telegram(self):
+        self.message("/block jane@example.com 30 spam")
+        self.message("/unblock jane@example.com")
+        self.assertEqual(self.commands, [])
+        self.assertEqual(self.tg.buttons(), [])
+        for text in self.tg.sent():
+            self.assertIn("over SSH on the app server", text)
+            self.assertNotIn("jane@example.com", text)
+
+    def test_status_masks_the_email(self):
+        self.answer = {"ok": True, "blocked": True, "until": None, "reason": "spam"}
+        self.message("/status Jane@Example.com")
+        self.assertEqual(self.commands, ["status jane@example.com"])
+        self.assertIn("<code>j***@example.com</code> is blocked for good (spam).", self.tg.sent()[-1])
 
     def test_cancel(self):
         self.message("/ban 1.1.1.1")
@@ -101,15 +114,15 @@ class BotTest(unittest.TestCase):
 
     def test_bad_input_is_refused_before_ssh(self):
         self.message("/ban 10.0.0.2")
-        self.message("/block not-an-email")
+        self.message("/status not-an-email")
         self.assertEqual(self.commands, [])
         self.assertTrue(all(t.startswith("⚠️") for t in self.tg.sent()))
 
     def test_failure_is_shown(self):
-        self.answer = {"ok": False, "error": "that address isn't blocked"}
-        self.message("/unblock jane@example.com")
+        self.answer = {"ok": False, "error": "1.1.1.1 is not banned"}
+        self.message("/unban 1.1.1.1")
         self.press("ok")
-        self.assertIn("❌ that address isn&#x27;t blocked", self.tg.sent()[-1].replace("'", "&#x27;"))
+        self.assertIn("❌ 1.1.1.1 is not banned", self.tg.sent()[-1])
 
     def test_investigate(self):
         self.message("/investigate 1.1.1.1 48")
