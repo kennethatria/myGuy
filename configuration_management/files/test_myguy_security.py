@@ -296,7 +296,7 @@ class SummaryTest(TempState):
             self.src.add("admin", NOW - 30 * MIN, line, host="app")
         ms.daily(self.src, self.settings, {}, NOW, self.send)
         msg = self.sent[0]
-        self.assertIn("Telegram admin actions: 2 (<code>ban 1.1.1.1</code>, <code>block j***@example.com</code>)", msg)
+        self.assertIn("Admin actions: 2 (<code>ban 1.1.1.1</code>, <code>block j***@example.com</code>)", msg)
         self.assertNotIn("jane@example.com", msg)
 
     def test_needs_attention(self):

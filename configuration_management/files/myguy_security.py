@@ -948,7 +948,7 @@ def format_summary(title, s, prev, days=1, note=""):
     lines.append(f"Failed SSH: {number(s.get('ssh_failed'))}{compare(s.get('ssh_failed'), p.get('ssh_failed'))}"
                  + (f" from {plural(s['ssh_failed_ips'], 'IP')}" if s.get("ssh_failed_ips") else ""))
     if s.get("admin_actions"):
-        lines.append(f"Telegram admin actions: {number(s['admin_actions'])}"
+        lines.append(f"Admin actions: {number(s['admin_actions'])}"
                      + (" (" + ", ".join(code(d, 50) for d in s.get("admin_details") or []) + ")"
                         if s.get("admin_details") else ""))
     if s.get("ops_sudo"):
