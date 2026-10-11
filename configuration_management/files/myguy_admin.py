@@ -30,7 +30,6 @@ Loki, job="admin").  Runs as root through sudo: fail2ban's socket and the .env
 holding INTERNAL_API_KEY are root's.
 """
 
-import ast
 import ipaddress
 import json
 import os
@@ -175,10 +174,11 @@ def run(action, args, f2b=fail2ban, call=backend, by="telegram"):
         f2b("unban", args["ip"])
         return {"ok": True, "ip": args["ip"]}
     if action == "bans":
-        # fail2ban prints [{'sshd': ['1.2.3.4']}, {'manual': []}, ...]
+        # `status` ("`- Jail list:\tsshd, manual") then each jail's status
+        # ("`- Banned IP list:\t1.2.3.4 5.6.7.8"): the long-standing output
         jails = {}
-        for entry in ast.literal_eval(f2b("banned") or "[]"):
-            jails.update({str(j): [str(ip) for ip in ips] for j, ips in entry.items()})
+        for jail in status_field(f2b("status"), "Jail list").replace(",", " ").split():
+            jails[jail] = [ip for ip in status_field(f2b("status", jail), "Banned IP list").split() if valid_ip(ip)]
         return {"ok": True, "jails": jails}
     if action == "ipstatus":
         # fail2ban prints the jails holding the IP, e.g. [['tripwire']]
@@ -203,6 +203,20 @@ def run(action, args, f2b=fail2ban, call=backend, by="telegram"):
     if status >= 400:
         return {"ok": False, "error": body.get("error") or f"backend answered {status}"}
     return {"ok": True, **body}
+
+
+def status_field(text, name):
+    """One "name:\tvalue" line of fail2ban-client status output ("" if none)."""
+    m = re.search(rf"{re.escape(name)}:\s*(.*)$", text, re.MULTILINE)
+    return m.group(1).strip() if m else ""
+
+
+def valid_ip(text):
+    try:
+        ipaddress.ip_address(text)
+        return True
+    except ValueError:
+        return False
 
 
 CHANGES = {"ban", "unban", "block", "unblock", "suspend", "unsuspend"}
