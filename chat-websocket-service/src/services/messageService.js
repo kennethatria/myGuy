@@ -1,6 +1,7 @@
 const db = require('../config/database');
 const { filterContent } = require('../utils/contentFilter');
 const logger = require('../utils/logger');
+const blockService = require('./blockService');
 
 /**
  * SQL filter selecting one conversation: its context (task, application or
@@ -70,6 +71,15 @@ const ENDED_STATES = {
 
 function hasEnded(contextType, state) {
   return !!state && !!ENDED_STATES[contextType]?.has(state);
+}
+
+// A blocked account's conversations close to typing (both ways) while the
+// block lasts; the notices say why.
+function chatFlaggedError() {
+  const error = new Error('This conversation is closed: the account was flagged for breaking the site rules.');
+  error.status = 403;
+  error.code = 'chat_flagged';
+  return error;
 }
 
 function chatEndedError() {
@@ -177,6 +187,9 @@ class MessageService {
       if ((taskId || storeItemId) && !messageType &&
           !(await this.contactsUnlocked(client, { taskId, storeItemId, senderId, recipientId }))) {
         throw chatLockedError(storeItemId);
+      }
+      if (!messageType && (blockService.isBlocked(senderId) || blockService.isBlocked(recipientId))) {
+        throw chatFlaggedError();
       }
       // ...and no longer once the deal is done or closed (read-only history)
       if ((taskId || storeItemId) && !messageType &&
@@ -442,7 +455,12 @@ class MessageService {
     `;
 
     const result = await db.query(query, [userId]);
-    return result.rows.map(row => ({ ...row, ended: hasEnded(row.context_type, row.state) }));
+    return result.rows.map(row => {
+      // A conversation with a blocked account is closed while the block
+      // lasts (listed with the ended ones), and opens again when it's lifted
+      const flagged = blockService.isBlocked(row.other_user_id);
+      return { ...row, ended: flagged || hasEnded(row.context_type, row.state), flagged };
+    });
   }
 
   /**
@@ -738,6 +756,8 @@ function formatConversation(conv) {
     state: conv.state ?? null,
     state_at: conv.state_at ?? null,
     ended: !!conv.ended,
+    // The other person's account is blocked: read-only, listed under Done
+    flagged: !!conv.flagged,
     conversation_type: conv.task_id ? 'task'
       : conv.application_id ? 'application'
         : conv.store_item_id ? 'store' : 'unknown'

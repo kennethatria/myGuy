@@ -129,6 +129,8 @@ type ItemRequestFilter struct {
 	Search             string
 	Status             string
 	ExcludeRequesterID uint
+	// HiddenUserIDs leaves out requests by blocked accounts
+	HiddenUserIDs      []uint
 	// LiveAt, when set, keeps only requests whose deadline is after it
 	LiveAt             time.Time
 	SortBy             string
@@ -181,6 +183,8 @@ type StoreItemFilter struct {
 	SellerID    uint
 	// ExcludeSellerID leaves out one seller's listings (the viewer's own)
 	ExcludeSellerID uint
+	// HiddenUserIDs leaves out listings by blocked accounts
+	HiddenUserIDs []uint
 	// RequestID keeps only listings made for one request
 	RequestID   uint
 	Status      string

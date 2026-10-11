@@ -25,6 +25,14 @@ type LoginCodeRepository interface {
 	CountSince(ctx context.Context, email string, since time.Time) (int64, error)
 }
 
+type BlockedEmailRepository interface {
+	Save(ctx context.Context, block *models.BlockedEmail) error
+	Delete(ctx context.Context, email string) (bool, error)
+	Get(ctx context.Context, email string) (*models.BlockedEmail, error)
+	ListActive(ctx context.Context, now time.Time) ([]models.BlockedEmail, error)
+	ActiveUserIDs(ctx context.Context, now time.Time) ([]uint, error)
+}
+
 type TaskRepository interface {
 	Create(ctx context.Context, task *models.Task) error
 	GetByID(ctx context.Context, id uint) (*models.Task, error)

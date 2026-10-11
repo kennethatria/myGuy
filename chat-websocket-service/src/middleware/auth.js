@@ -1,5 +1,10 @@
 const jwt = require('jsonwebtoken');
 const logger = require('../utils/logger');
+const blockService = require('../services/blockService');
+
+// The error code a blocked account's requests get, in every service; the app
+// signs out on it.
+const ACCOUNT_UNAVAILABLE = 'account_unavailable';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -34,6 +39,9 @@ const authenticateSocket = async (socket, next) => {
     const decoded = verifyToken(token);
     if (!decoded) {
       return next(new Error('Invalid authentication token'));
+    }
+    if (blockService.isBlocked(decoded.user_id)) {
+      return next(new Error(ACCOUNT_UNAVAILABLE));
     }
 
     // Attach user info to socket
@@ -71,6 +79,9 @@ const authenticateHTTP = (req, res, next) => {
     if (!decoded) {
       return res.status(401).json({ error: 'Invalid token' });
     }
+    if (blockService.isBlocked(decoded.user_id)) {
+      return res.status(401).json({ error: "This account isn't available", code: ACCOUNT_UNAVAILABLE });
+    }
 
     req.user = {
       id: decoded.user_id,
@@ -86,6 +97,7 @@ const authenticateHTTP = (req, res, next) => {
 };
 
 module.exports = {
+  ACCOUNT_UNAVAILABLE,
   verifyToken,
   authenticateSocket,
   authenticateHTTP

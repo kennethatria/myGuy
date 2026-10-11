@@ -19,6 +19,7 @@ func setupTestDB() (*gorm.DB, error) {
 		&models.Application{},
 		&models.Review{},
 		&models.LoginCode{},
+		&models.BlockedEmail{},
 	)
 	if err != nil {
 		return nil, err

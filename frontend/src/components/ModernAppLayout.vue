@@ -175,6 +175,12 @@ watch(() => route.fullPath, () => {
   isDrawerOpen.value = false
 })
 
+// Signed out while here (a blocked account's session is refused): back to
+// sign-in
+watch(() => authStore.token, (token) => {
+  if (!token) router.push({ name: 'login' })
+})
+
 const handleSignOut = async () => {
   try {
     authStore.logout()

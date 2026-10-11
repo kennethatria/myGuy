@@ -74,6 +74,9 @@ func (r *itemRequestRepository) filtered(filter models.ItemRequestFilter) *gorm.
 	if filter.ExcludeRequesterID > 0 {
 		query = query.Where("requester_id <> ?", filter.ExcludeRequesterID)
 	}
+	if len(filter.HiddenUserIDs) > 0 {
+		query = query.Where("requester_id NOT IN ?", filter.HiddenUserIDs)
+	}
 	if !filter.LiveAt.IsZero() {
 		query = query.Where("deadline > ?", filter.LiveAt)
 	}

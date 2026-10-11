@@ -25,6 +25,14 @@ import (
 
 type StoreHandler struct {
 	service services.StoreServiceInterface
+	hidden  func() []uint
+}
+
+// WithHidden leaves the listings of the accounts hidden() returns (blocked
+// ones) off the board.
+func (h *StoreHandler) WithHidden(hidden func() []uint) *StoreHandler {
+	h.hidden = hidden
+	return h
 }
 
 func NewStoreHandler(service services.StoreServiceInterface) *StoreHandler {
@@ -208,6 +216,7 @@ func (h *StoreHandler) GetItems(c *gin.Context) {
 		// The board: a listing past its 24 hours leaves it even while a
 		// booking waits for the seller's answer in chat
 		LiveAt:    time.Now().UTC(),
+		HiddenUserIDs: hiddenUsers(h.hidden),
 		SortBy:    c.Query("sort_by"),
 		SortOrder: c.Query("sort_order"),
 		Page:      1,
