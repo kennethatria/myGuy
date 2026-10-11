@@ -83,10 +83,15 @@ class RunTest(unittest.TestCase):
         self.assertEqual(ma.parse("bans", bot=True), ("bans", {}))
         with self.assertRaises(ma.Refused):
             ma.parse("bans 1.1.1.1")
-        result = ma.run("bans", {}, f2b=lambda *a: (self.f2b_calls.append(a),
-                                                    "[{'sshd': ['1.1.1.1']}, {'manual': []}]")[1])
-        self.assertEqual(self.f2b_calls, [("banned",)])
-        self.assertEqual(result, {"ok": True, "jails": {"sshd": ["1.1.1.1"], "manual": []}})
+        answers = {
+            ("status",): "Status\n|- Number of jail:\t2\n`- Jail list:\tsshd, manual",
+            ("status", "sshd"): ("Status for the jail: sshd\n|- Filter\n|  `- Total failed:\t9\n`- Actions\n"
+                                 "   |- Currently banned:\t2\n   `- Banned IP list:\t1.1.1.1 2001:db8::1"),
+            ("status", "manual"): "Status for the jail: manual\n`- Actions\n   `- Banned IP list:\t",
+        }
+        result = ma.run("bans", {}, f2b=lambda *a: (self.f2b_calls.append(a), answers[a])[1])
+        self.assertEqual(self.f2b_calls, [("status",), ("status", "sshd"), ("status", "manual")])
+        self.assertEqual(result, {"ok": True, "jails": {"sshd": ["1.1.1.1", "2001:db8::1"], "manual": []}})
 
     def test_suspensions_call_the_backend(self):
         ma.run("suspend", {"email": "a@b.com", "hours": 0, "reason": "spam"}, call=self.call(body={"suspended": True}))
