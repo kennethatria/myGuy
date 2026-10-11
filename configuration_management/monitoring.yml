@@ -5479,8 +5479,9 @@
 
     # --- Telegram admin bot (files/myguy_bot.py) ---
     # Reads the alerts group with the alerts' token and obeys one person
-    # (TELEGRAM_ADMIN_USER_ID): /ban, /unban, /block, /unblock, /status,
-    # /investigate.  Actions run on the app server through myguy-admin, over
+    # (TELEGRAM_ADMIN_USER_ID): /ban, /unban, /suspend, /unsuspend, /status,
+    # /investigate (blocking is by hand over SSH on the app server).  Actions
+    # run on the app server through myguy-admin, over
     # SSH with a key made here that can run nothing else (security.yml
     # authorizes it there).  The token never goes to the app server.
 
@@ -5493,6 +5494,14 @@
         state: present
       become: yes
 
+    - name: Create the bot's code and settings directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: [/usr/local/lib/myguy-bot, /etc/myguy-bot]
+      become: yes
+
     - name: Install the Telegram admin bot
       ansible.builtin.copy:
         src: "files/{{ item }}"
@@ -5500,13 +5509,6 @@
         mode: "0644"
       loop: [myguy_bot.py, myguy_admin.py]  # the bot checks commands with myguy-admin's rules
       register: bot_code
-      become: yes
-
-    - name: Create the bot's settings directory
-      ansible.builtin.file:
-        path: /etc/myguy-bot
-        state: directory
-        mode: "0755"
       become: yes
 
     # Kept by root; systemd hands the bot a copy (LoadCredential)
@@ -5549,7 +5551,7 @@
         mode: "0644"
         content: |
           [Unit]
-          Description=MyGuy Telegram admin bot (ban, unban, block, unblock)
+          Description=MyGuy Telegram admin bot (ban, unban, suspend, unsuspend)
           After=network-online.target
           Wants=network-online.target
 
