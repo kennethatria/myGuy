@@ -59,7 +59,8 @@ class FakeSources:
 class TempState(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
-        self.settings = {"state_dir": self.dir.name, "app_ssh_host": "172.0.0.1", "app_vpc_ip": "10.0.0.2"}
+        self.settings = {"state_dir": self.dir.name, "app_ssh_host": "172.0.0.1", "app_vpc_ip": "10.0.0.2",
+                         "monitoring_vpc_ip": "10.0.0.3"}
         self.sent = []
         self.src = FakeSources()
 
@@ -218,6 +219,18 @@ class SshTest(TempState):
         self.assertIn("<code>198.51.100.9</code>", self.sent[0])
         self.assertNotIn("10.0.0.2</code>", self.sent[0])
 
+    def test_bot_key_only_from_the_monitoring_server(self):
+        self.login(NOW - 3 * MIN, "myguy-bot", "10.0.0.3", host="app")
+        self.check()
+        self.assertEqual(self.sent, [], "the bot doing its job")
+        self.login(NOW - 2 * MIN, "myguy-bot", "198.51.100.9", host="app")
+        self.login(NOW - 1 * MIN, "myguy-bot", "10.0.0.2", host="monitoring")
+        self.check(NOW + MIN)
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn("<code>198.51.100.9</code>", self.sent[0])
+        self.assertIn("myguy-bot", self.sent[0])
+        self.assertEqual(self.sent[0].count("why:"), 2)
+
     def test_lines_seen_twice_alert_once(self):
         self.login(NOW - 1 * MIN, "root", "198.51.100.9")
         state = self.check()
@@ -274,6 +287,17 @@ class SummaryTest(TempState):
         saved = ms.load_history(self.settings)
         self.assertEqual([r["date"] for r in saved], ["2026-10-16", "2026-10-17"])
         self.assertEqual(saved[-1]["stats"]["banned_ips"], ["203.0.113.7"])
+
+    def test_telegram_admin_actions(self):
+        self.populate()
+        for line in ("admin event=ban target=1.1.1.1 ok=true by=telegram",
+                     "admin event=block target=jane@example.com days=0 ok=true by=telegram",
+                     "admin event=refused target=ban 10.0.0.2 ok=false by=telegram"):
+            self.src.add("admin", NOW - 30 * MIN, line, host="app")
+        ms.daily(self.src, self.settings, {}, NOW, self.send)
+        msg = self.sent[0]
+        self.assertIn("Telegram admin actions: 2 (<code>ban 1.1.1.1</code>, <code>block j***@example.com</code>)", msg)
+        self.assertNotIn("jane@example.com", msg)
 
     def test_needs_attention(self):
         self.populate()

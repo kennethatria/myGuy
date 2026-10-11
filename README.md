@@ -519,6 +519,22 @@ Umami (session-accurate visitors, events, heatmaps) was removed to free memory o
 What each security message means and what to do. Every message ends with its next step. To look into an IP:
 - **Grafana:** *Investigate IP* (SSH tunnel below).
 - **Terminal:** on the monitoring server (`ssh -J ops@<app IP> ops@10.0.0.3`), run `investigate <IP> [--hours 48]`.
+- **Telegram:** `/investigate <IP|email> [hours]` in the alerts group (below).
+
+**Acting from Telegram.** The admin bot (`files/myguy_bot.py`, `myguy-bot.service` on the monitoring server) reads the alerts group and obeys only the account in `TELEGRAM_ADMIN_USER_ID`:
+
+| Command | Does |
+| :--- | :--- |
+| `/ban <IP>` | Bans for 7 days (fail2ban's `manual` jail; nginx refuses it within a minute) |
+| `/unban <IP>` | Lifts every ban on it, automatic ones too |
+| `/ipstatus <IP>` | Which jails have it banned |
+| `/block <email> [days] [reason]` | Blocks the account (no days: for good); see *Blocking an email* |
+| `/unblock <email>`, `/status <email>`, `/blocked` | Lift, check, list blocks |
+| `/investigate <IP\|email> [hours]` | The same report as `investigate` |
+
+Changes ask you to **Confirm** (2 minutes). The bot deletes your command once read, so a full address doesn't stay in the group; that needs the bot to be a **group admin allowed to delete messages**. Replies mask addresses.
+- **How it reaches the app server:** over the VPC as `myguy-bot`, with a key made on the monitoring server. `security.yml` authorizes the key `restrict,from="10.0.0.3",command="sudo -n /usr/local/bin/myguy-admin \"$SSH_ORIGINAL_COMMAND\""`, so it can run `myguy-admin` and nothing else. That command checks every word (public IPs only, never the NodeBalancer or VPC; plain email addresses; days 0–3650; a short plain reason) before calling `fail2ban-client` or the backend's `/internal/v1/email-blocks`. The Telegram token never goes to the app server.
+- **Audit:** `myguy-admin` logs `admin event=ban|unban|block|unblock|refused|failed target=… by=telegram`, and the bot logs what it ignored (`bot event=ignored user=…`), both in Loki as `job="admin"`. The daily summary counts the actions under Access. A `myguy-bot` SSH login from anywhere but the monitoring server, or onto the monitoring server, is an unexpected SSH login.
 
 | Message | What it means | What to do |
 | :--- | :--- | :--- |
@@ -532,7 +548,7 @@ What each security message means and what to do. Every message ends with its nex
 | **Ban may have hit a real user** | An automatic ban caught an IP someone signed in from recently, probably shared, so a real person may be locked out (for a week, if it was the tripwire). | `investigate <IP>`: if the requests around the ban look like normal use, unban with the command in the message. If a real request tripped the tripwire, remove that path from the `tripwire` filter (`security.yml`). |
 | *A real user says the site won't load* | Their IP may be banned (tripwire, WAF, 4xx), for example a shared mobile IP someone else used for scanning. Banned IPs get no answer at all. | Ask for their IP (or `investigate <their email>` for the IP they sign in from), then `investigate <IP>`: fail2ban shows which jail banned it and the requests show `444`. Unban below; if a tripwire path caught real use, remove that path from the `tripwire` filter (`security.yml`). |
 
-Bans take effect within a minute (nginx reloads when a ban list changes); a banned IP's requests show as `444` in *Investigate IP*. Unban: `ssh ops@<app IP> 'sudo fail2ban-client set <jail> unbanip <IP>'`.
+Bans take effect within a minute (nginx reloads when a ban list changes); a banned IP's requests show as `444` in *Investigate IP*. Unban: `/unban <IP>` in Telegram, or `ssh ops@<app IP> 'sudo fail2ban-client set <jail> unbanip <IP>'`.
 
 </details>
 
