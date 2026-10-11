@@ -572,6 +572,67 @@ class AccountsTest(TempState):
         self.assertNotIn("bob@example.com", msg)
 
 
+class NowTest(TempState):
+    def text(self, fn):
+        out = []
+        fn(self.src, NOW, out.append)
+        return "\n".join(out)
+
+    def test_health(self):
+        v = self.src.vectors
+        v.append(("probe_success", [({"instance": "https://akalimu.com/"}, 1), ({"instance": "https://akalimu.com/health"}, 0)]))
+        v.append(("probe_duration_seconds", [({"instance": "https://akalimu.com/"}, 0.21)]))
+        v.append(("probe_ssl_earliest_cert_expiry", [({}, 40.6)]))
+        v.append(("podman_container_state", [({"name": "myguy_api_1"}, 2), ({"name": "myguy_chat_1"}, 5)]))
+        v.append(("podman_container_started_seconds", [({"name": "myguy_api_1"}, NOW / 1e9 - 600),
+                                                       ({"name": "myguy_chat_1"}, NOW / 1e9 - 3 * 86400)]))
+        v.append(("node_cpu_seconds_total", [({"instance": "app"}, 12)]))
+        v.append(("node_memory_MemAvailable_bytes", [({"instance": "app"}, 61), ({"instance": "monitoring"}, 80)]))
+        v.append(("node_filesystem_avail_bytes", [({"instance": "app"}, 45)]))
+        v.append(("status >= 500", [({}, 3)]))
+        self.src.add("deploy", NOW - 2 * HOUR, "start run=123 scope=app")
+        self.src.add("deploy", NOW - 2 * HOUR + 5 * MIN, "end run=123")
+        text = self.text(ms.health_now)
+        self.assertIn("Site https://akalimu.com/: up, answered in 210 ms", text)
+        self.assertIn("Site https://akalimu.com/health: DOWN", text)
+        self.assertIn("Certificate: 40 days left", text)
+        self.assertIn("✓ myguy_api_1: running, started 10 min ago (restarted in the last hour)", text)
+        self.assertIn("✗ myguy_chat_1: exited, started 3 d ago", text)
+        self.assertIn("Server app: CPU 12%, memory 61%, disk 45%", text)
+        self.assertIn("Server monitoring: CPU —, memory 80%, disk —", text)
+        self.assertIn("Server errors (5xx), last hour: 3", text)
+        self.assertIn("Last deploy: ", text)
+        self.assertIn("(2 h ago) scope=app", text)
+
+    def test_health_says_what_it_couldnt_read(self):
+        def down(*_):
+            raise OSError("connection refused")
+        self.src.prom_vector = down
+        text = self.text(ms.health_now)
+        self.assertIn("Site: couldn't read (connection refused)", text)
+        self.assertIn("Last deploy: none in 8 days", text, "Loki parts still show")
+
+    def test_now(self):
+        v = self.src.vectors
+        for needle, n in (('myguy_gigs{status="open"}', 4), ('myguy_listings{status="active"}', 7),
+                          ('myguy_requests{status="active"}', 2), ('myguy_applications{status="pending"}', 3),
+                          ('myguy_bookings{status="pending"}', 1), ("max(myguy_accounts)", 120),
+                          ("myguy_gig_active_accounts_7d", 18)):
+            v.append((needle, [({}, n)]))
+        v.append(("[1h]", [({"remote_addr": f"192.0.2.{i}"}, 1) for i in range(5)]))
+        v.append(("[8h]", [({"remote_addr": f"192.0.2.{i}"}, 1) for i in range(40)]))
+        for event, who in (("signed_in", "a"), ("signed_up", "b"), ("code_sent", "a"), ("code_sent", "b")):
+            self.src.add("containers", NOW - HOUR, auth_line(event, f"{who}@example.com", "198.51.100.4"), service="api")
+        self.src.add("containers", NOW - HOUR, limit_line("post", 3, "bob", "bob@example.com"), service="api")
+        text = self.text(ms.app_now)
+        self.assertIn("Up: 4 gigs, 7 listings, 2 requests", text)
+        self.assertIn("Waiting: 3 applications, 1 bookings", text)
+        self.assertIn("Accounts: 120, 18 active in gigs this week", text)
+        self.assertIn("Today: 2 sign-ins (1 new accounts), 2 codes sent", text)
+        self.assertIn("Visitors: ~5 in the last hour, ~40 today", text)
+        self.assertIn("Over a rate limit today: 1 time(s) (/caught)", text)
+
+
 class BannedUserTest(TempState):
     """A ban that may have locked a real person out is the one ban worth a message."""
 
