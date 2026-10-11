@@ -604,6 +604,36 @@ class NowTest(TempState):
         self.assertIn("Last deploy: ", text)
         self.assertIn("(2 h ago) scope=app", text)
 
+    def test_health_counts_sign_in_emails(self):
+        self.src.add("containers", NOW - HOUR, auth_line("code_sent", "a@example.com", "198.51.100.4"), service="api")
+        self.src.add("containers", NOW - HOUR, "[mailer] sending login code failed: dial tcp: timeout", service="api")
+        self.assertIn("Sign-in emails today: 1 sent, ⚠️ 1 failed", self.text(ms.health_now))
+
+    def test_errors_by_endpoint(self):
+        self.src.vectors.append(("status >= 500", [
+            ({"method": "GET", "uri": "/api/v1/tasks/12", "status": "500"}, 3),
+            ({"method": "GET", "uri": "/api/v1/tasks/40", "status": "500"}, 2),
+            ({"method": "POST", "uri": "/store/api/v1/items", "status": "502"}, 1)]))
+        out = []
+        ms.errors_report(self.src, 1, NOW, out.append)
+        text = "\n".join(out)
+        self.assertIn("Server errors (5xx): 6", text)
+        self.assertIn("      5  500  GET /api/v1/tasks/:id", text)
+        self.assertIn("      1  502  POST /store/api/v1/items", text)
+
+    def test_slowest_endpoints(self):
+        self.src.vectors.append(("quantile_over_time", [
+            ({"method": "GET", "uri": "/api/v1/tasks/1"}, 0.9), ({"method": "GET", "uri": "/api/v1/tasks/2"}, 1.4),
+            ({"method": "GET", "uri": "/api/v1/profile"}, 0.05), ({"method": "POST", "uri": "/api/v1/rare"}, 9)]))
+        self.src.vectors.append(("count_over_time", [
+            ({"method": "GET", "uri": "/api/v1/tasks/1"}, 4), ({"method": "GET", "uri": "/api/v1/tasks/2"}, 3),
+            ({"method": "GET", "uri": "/api/v1/profile"}, 50), ({"method": "POST", "uri": "/api/v1/rare"}, 1)]))
+        out = []
+        ms.slow_report(self.src, 1, NOW, out.append)
+        lines = [l.strip() for l in out[2:]]
+        self.assertEqual(lines, ["1400 ms      7 calls  GET /api/v1/tasks/:id", "50 ms     50 calls  GET /api/v1/profile"],
+                         "ids folded (the slowest, calls added up); too few calls left out")
+
     def test_health_says_what_it_couldnt_read(self):
         def down(*_):
             raise OSError("connection refused")
@@ -631,6 +661,19 @@ class NowTest(TempState):
         self.assertIn("Today: 2 sign-ins (1 new accounts), 2 codes sent", text)
         self.assertIn("Visitors: ~5 in the last hour, ~40 today", text)
         self.assertIn("Over a rate limit today: 1 time(s) (/caught)", text)
+
+    def test_deals_today(self):
+        for needle, n in (('myguy_gigs{status="completed"}) - ', 2), ('myguy_bookings{status="completed"}) - ', 1),
+                          ('myguy_gigs{status="expired"}) - ', -1)):
+            self.src.vectors.append((needle, [({}, n)]))
+        text = self.text(ms.app_now)
+        self.assertIn("Deals today: 2 gigs completed, 1 sales completed, 0 bookings approved", text)
+        self.assertIn("Expired today with no reaction: 0 gigs", text, "reposts can make it negative: shown as 0")
+
+    def test_daily_flags_sign_in_emails_that_failed(self):
+        self.src.add("containers", NOW - HOUR, "[mailer] sending login code failed: auth", service="api")
+        ms.daily(self.src, self.settings, {}, NOW, self.send)
+        self.assertIn("1 sign-in email couldn't be sent (check SMTP; those people can't sign in)", self.sent[0])
 
 
 class BannedUserTest(TempState):

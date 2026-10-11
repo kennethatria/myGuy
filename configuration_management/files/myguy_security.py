@@ -777,6 +777,7 @@ def collect(src, settings_, state, start, end):
         top = Counter(e["email"] for e in sent).most_common(1)
         # Only worth naming when far above a real sign-in (1-2 codes)
         s["most_targeted"] = [mask(top[0][0]), top[0][1]] if top and top[0][1] >= 5 else None
+        s["mail_failed"] = mail_failures(src, start, end)
 
     def access():
         logins, failed_ips, failed = Counter(), set(), 0
@@ -872,6 +873,8 @@ def attention(s):
         item(plural(s["waf_succeeded"], "serious attack request") + " answered without an error",
              [f"{esc(t)} · {where(ip, c)} · {code(f'{method} {path}', 50)} → {status} · {esc(kind)}"
               for t, ip, c, method, path, status, kind in s.get("waf_succeeded_details") or []], s["waf_succeeded"])
+    if s.get("mail_failed"):
+        item(plural(s["mail_failed"], "sign-in email") + " couldn't be sent (check SMTP; those people can't sign in)")
     if s.get("review"):
         item(plural(s["review"], "account") + " to review (/caught for all)",
              [f"{esc(user) or '—'} ({code(email, 40)}) · {esc(why)}" for user, email, why in s.get("review_details") or []],
@@ -1214,6 +1217,22 @@ def investigate(src, settings_, ip, hours, now, out=print):
     out(f"Grafana: Investigate IP dashboard, ip = {ip}")
 
 
+# Sign-in emails the backend couldn't send (internal/mailer: Background)
+MAIL_FAILED_QUERY = '{job="containers", service="api"} |= "[mailer] sending login code failed"'
+# API calls in nginx's access log (the app's three services)
+API_URIS = 'uri=~"/(api/v1|store/api/v1|chat/api/v1)/.*"'
+ID_SEGMENT = re.compile(r"/\d+(?=/|$)")
+
+
+def route(method, uri):
+    """'GET /api/v1/tasks/:id': ids folded, so one endpoint is one line."""
+    return f"{method} {ID_SEGMENT.sub('/:id', uri)}".strip()
+
+
+def mail_failures(src, start, end):
+    return len(src.lines(MAIL_FAILED_QUERY, start, end))
+
+
 # Container states (prometheus-podman-exporter's podman_container_state)
 CONTAINER_STATES = {0: "created", 1: "initialized", 2: "running", 3: "stopped", 4: "paused", 5: "exited",
                     6: "removing", 7: "stopping"}
@@ -1285,7 +1304,11 @@ def health_now(src, now, out=print):
 
     def recent():
         errors = src.loki_vector('sum(count_over_time({job="nginx_access"} | json | status >= 500 [1h]))', now)
-        out(f"Server errors (5xx), last hour: {int(total(errors))}")
+        out(f"Server errors (5xx), last hour: {int(total(errors))} (/errors for which)")
+        midnight = start_of_day(now)
+        sent = sum(1 for e in auth_events(src, midnight, now) if e["event"] == "code_sent")
+        failed = mail_failures(src, midnight, now)
+        out(f"Sign-in emails today: {sent} sent" + (f", ⚠️ {failed} failed (nobody gets those codes)" if failed else ", none failed"))
         windows = deploy_windows(src, now - 8 * DAY, now)
         if windows:
             began, ended, rest = windows[-1]
@@ -1298,11 +1321,16 @@ def health_now(src, now, out=print):
         part(name, fn)
 
 
+def start_of_day(now):
+    """Midnight in Amsterdam, as Loki time."""
+    return int(dt.datetime.fromtimestamp(now / 1e9, TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+               .timestamp()) * 10**9
+
+
 def app_now(src, now, out=print):
-    """What's happening in the app right now (the bot's /now): posts up, and
-    today's sign-ins and visitors, as plain text."""
-    midnight = int(dt.datetime.fromtimestamp(now / 1e9, TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-                   .timestamp()) * 10**9
+    """What's happening in the app right now (the bot's /now): posts up,
+    deals today, and today's sign-ins and visitors, as plain text."""
+    midnight = start_of_day(now)
     out(f"The app now ({local(now, '%a %H:%M')} Amsterdam)")
 
     def part(name, fn):
@@ -1323,6 +1351,20 @@ def app_now(src, now, out=print):
         if accounts:
             out(f"Accounts: {int(total(accounts))}" + (f", {int(total(active))} active in gigs this week" if active else ""))
 
+    def deals():
+        # Change since midnight in the status counts (net: a repost moves a
+        # gig from expired back to open)
+        hours = max(1, (now - midnight) // HOUR)
+
+        def today(metric, status):
+            expr = f'sum({metric}{{status="{status}"}}) - sum({metric}{{status="{status}"}} offset {hours}h)'
+            return max(0, int(total(src.prom_vector(expr, now))))
+        out(f"Deals today: {today('myguy_gigs', 'completed')} gigs completed, "
+            f"{today('myguy_bookings', 'completed')} sales completed, "
+            f"{today('myguy_bookings', 'approved')} bookings approved")
+        out(f"Expired today with no reaction: {today('myguy_gigs', 'expired')} gigs, "
+            f"{today('myguy_listings', 'expired')} listings, {today('myguy_requests', 'expired')} requests")
+
     def today():
         events = Counter(e["event"] for e in auth_events(src, midnight, now))
         out(f"Today: {events.get('signed_in', 0) + events.get('signed_up', 0)} sign-ins"
@@ -1334,8 +1376,51 @@ def app_now(src, now, out=print):
         if limited:
             out(f"Over a rate limit today: {len(limited)} time(s) (/caught)")
 
-    for name, fn in (("Posts", posts), ("Today", today)):
+    for name, fn in (("Posts", posts), ("Deals", deals), ("Today", today)):
         part(name, fn)
+
+
+def errors_report(src, hours, now, out=print):
+    """Which API calls failed (5xx) and which were refused (4xx), by
+    endpoint, as plain text (the bot's /errors)."""
+    span = f"{hours}h"
+    out(f"Errors (last {hours} h)")
+    for label, cond in (("Server errors (5xx)", "status >= 500"), ("Refused (4xx, not 401/404)",
+                                                                   "status >= 400 | status < 500 | status != 401 | status != 404")):
+        rows = src.loki_vector(f'sum by (method, uri, status) (count_over_time({{job="nginx_access"}} | json '
+                               f'| {API_URIS} | {cond} [{span}]))', now)
+        by = Counter()
+        for m, v in rows:
+            by[(route(m.get("method", ""), m.get("uri", "")), m.get("status", "?"))] += int(v)
+        out("")
+        out(f"{label}: {sum(by.values())}")
+        for (where, status), n in by.most_common(8):
+            out(f"  {n:5}  {status}  {where}")
+    out("")
+    out("A request in detail: Grafana, Service Logs (or Jaeger for its trace).")
+
+
+def slow_report(src, hours, now, out=print):
+    """The slowest API endpoints (95th percentile, at least 5 calls), as
+    plain text (the bot's /slow)."""
+    span = f"{hours}h"
+    q = f'{{job="nginx_access"}} | json | {API_URIS}'
+    p95 = src.loki_vector(f'quantile_over_time(0.95, {q} | unwrap request_time | __error__="" [{span}]) by (method, uri)', now)
+    calls = src.loki_vector(f'sum by (method, uri) (count_over_time({q} [{span}]))', now)
+    count, slowest = Counter(), {}
+    for m, v in calls:
+        count[route(m.get("method", ""), m.get("uri", ""))] += int(v)
+    for m, v in p95:
+        r_ = route(m.get("method", ""), m.get("uri", ""))
+        slowest[r_] = max(slowest.get(r_, 0), v)  # ids folded: the slowest one's
+    ranked = sorted(((t, r_) for r_, t in slowest.items() if count[r_] >= 5), reverse=True)
+    out(f"Slowest API endpoints (last {hours} h, 95% answered within)")
+    out("")
+    if not ranked:
+        out("Not enough calls to say.")
+        return
+    for t, r_ in ranked[:8]:
+        out(f"  {round(1000 * t):6} ms  {count[r_]:5} calls  {r_}")
 
 
 def caught(src, hours, now, out=print):
@@ -1426,6 +1511,9 @@ def main(argv=None):
     inv.add_argument("--hours", type=int, default=24, help="how far back (at most 192, Loki's 8 days)")
     sub.add_parser("health", help="is everything OK right now")
     sub.add_parser("now", help="what's happening in the app right now")
+    for name, what in (("errors", "which API calls failed, by endpoint"), ("slow", "the slowest API endpoints")):
+        p_ = sub.add_parser(name, help=what)
+        p_.add_argument("--hours", type=int, default=1, help="how far back (at most 192)")
     cau = sub.add_parser("caught", help="the accounts the defences point at, to review")
     cau.add_argument("--hours", type=int, default=24, help="how far back (at most 192, Loki's 8 days)")
     args = parser.parse_args(argv)
@@ -1440,6 +1528,9 @@ def main(argv=None):
         return 0
     if args.command == "now":
         app_now(src, now)
+        return 0
+    if args.command in ("errors", "slow"):
+        (errors_report if args.command == "errors" else slow_report)(src, max(1, min(args.hours, 192)), now)
         return 0
     if args.command == "caught":
         caught(src, max(1, min(args.hours, 192)), now)

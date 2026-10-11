@@ -15,6 +15,7 @@ blocking an email is done by hand, over SSH here:
   ban IP                       7 days in fail2ban's manual jail
   unban IP                     out of every jail (automatic bans too)
   ipstatus IP                  the jails that have it banned
+  bans                         every IP banned now, by jail
   block EMAIL [DAYS] [REASON]  DAYS 0 or none: for good
   unblock EMAIL
   suspend EMAIL [LENGTH] [REASON]  read-only for 12h, 1d, 2d or 1w; none:
@@ -29,6 +30,7 @@ Loki, job="admin").  Runs as root through sudo: fail2ban's socket and the .env
 holding INTERNAL_API_KEY are root's.
 """
 
+import ast
 import ipaddress
 import json
 import os
@@ -126,9 +128,9 @@ def parse(command, bot=False):
         if len(rest) != 1:
             raise Refused(f"usage: {action} EMAIL")
         return action, {"email": email_arg(rest[0])}
-    if action == "blocked":
+    if action in ("blocked", "bans"):
         if rest:
-            raise Refused("usage: blocked")
+            raise Refused(f"usage: {action}")
         return action, {}
     raise Refused(f"unknown command: {action[:30]}")
 
@@ -172,6 +174,12 @@ def run(action, args, f2b=fail2ban, call=backend, by="telegram"):
     if action == "unban":
         f2b("unban", args["ip"])
         return {"ok": True, "ip": args["ip"]}
+    if action == "bans":
+        # fail2ban prints [{'sshd': ['1.2.3.4']}, {'manual': []}, ...]
+        jails = {}
+        for entry in ast.literal_eval(f2b("banned") or "[]"):
+            jails.update({str(j): [str(ip) for ip in ips] for j, ips in entry.items()})
+        return {"ok": True, "jails": jails}
     if action == "ipstatus":
         # fail2ban prints the jails holding the IP, e.g. [['tripwire']]
         jails = re.findall(r"'([\w-]+)'", f2b("banned", args["ip"]))
