@@ -186,9 +186,19 @@ SSH_ACCEPTED = re.compile(r"Accepted (?P<method>\S+) for (?P<user>\S+) from (?P<
 SSH_FAILED = re.compile(r"Invalid user|Failed \S+ for|\[preauth\]")
 SSH_ADDRESS = re.compile(r"(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F]*:[0-9a-fA-F:]+) port \d+")
 SUDO = re.compile(r"^\s*(?P<user>\S+) : .*?COMMAND=(?P<command>.*)$")
-# The backend's sign-in log (internal/api/handlers.go logAuthEvent)
-AUTH = re.compile(r'auth event=(?P<event>\S+) email="(?P<email>[^"]*)" ip=(?P<ip>\S+)')
+# The backend's sign-in log (internal/api/handlers.go logAuthEvent; a
+# session started also names the account: user="...")
+AUTH = re.compile(r'auth event=(?P<event>\S+) email="(?P<email>[^"]*)" ip=(?P<ip>\S+)(?: user="(?P<user>[^"]*)")?')
 AUTH_QUERY = '{job="containers", service="api"} |= "auth event="'
+# An account over a rate limit (ratelimit packages, chat utils/rateLimit.js):
+# one line per run of refused requests
+LIMIT = re.compile(r'limit event=hit action=(?P<action>\w+) user=(?P<id>\d+) '
+                   r'username="(?P<user>[^"]*)" email="(?P<email>[^"]*)"')
+LIMIT_QUERY = '{job="containers"} |= "limit event=hit"'
+# Accounts to review: over a limit this often, or this many new accounts
+# from one IP
+LIMIT_RUNS = 2
+SIGNUPS_PER_IP = 3
 
 DEPLOY = re.compile(r"^(?P<what>start|end) run=(?P<run>\S+)(?P<rest>.*)$")
 
@@ -244,7 +254,8 @@ def parse_fail2ban(ts, line):
 def parse_auth(ts, line):
     m = AUTH.search(line)
     ip = valid_ip(m.group("ip")) if m else None
-    return {"ts": ts, "event": m.group("event"), "email": m.group("email"), "ip": ip} if ip else None
+    return {"ts": ts, "event": m.group("event"), "email": m.group("email"), "ip": ip,
+            "user": m.group("user") or ""} if ip else None
 
 
 def auth_events(src, start, end, ip=None, email=None):
@@ -256,6 +267,45 @@ def auth_events(src, start, end, ip=None, email=None):
     events = [e for e in (parse_auth(ts, l) for ts, _, l in src.lines(query, start, end)) if e]
     # |= matched a prefix (ip=1.2.3.4 in ip=1.2.3.45): keep exact ones
     return [e for e in events if (not ip or e["ip"] == ip) and (not email or e["email"] == email)]
+
+
+def accounts_to_review(src, start, end):
+    """Accounts the defences point at, newest reason first: signed in from
+    an IP fail2ban banned (that day or the one before), over a rate limit
+    LIMIT_RUNS+ times, or one of SIGNUPS_PER_IP+ new accounts from one IP.
+    Nothing is done to them: you decide (/suspend, or a block over SSH)."""
+    accounts = {}
+
+    def account(email, user):
+        a = accounts.setdefault(email, {"email": email, "user": "", "reasons": []})
+        a["user"] = a["user"] or user
+        return a
+
+    banned = {e["ip"] for e in (parse_fail2ban(ts, l) for ts, _, l in
+              src.lines('{job="fail2ban"} |= "] Ban "', start - DAY, end)) if e}
+    sessions = [e for e in auth_events(src, start, end) if e["event"] in ("signed_in", "signed_up")]
+    for ip in sorted({e["ip"] for e in sessions} & banned):
+        for email in sorted({e["email"] for e in sessions if e["ip"] == ip}):
+            user = next((e["user"] for e in sessions if e["email"] == email and e["user"]), "")
+            account(email, user)["reasons"].append(f"signed in from banned IP {ip}")
+
+    hits = [m.groupdict() for m in (LIMIT.search(l) for _, _, l in src.lines(LIMIT_QUERY, start, end)) if m]
+    for email in sorted({h["email"] for h in hits if h["email"]}):
+        mine = [h for h in hits if h["email"] == email]
+        if len(mine) >= LIMIT_RUNS:
+            actions = Counter(h["action"] for h in mine)
+            account(email, next((h["user"] for h in mine if h["user"]), ""))["reasons"].append(
+                f"over the limit {len(mine)}× (" + ", ".join(f"{a} {n}" for a, n in actions.most_common()) + ")")
+
+    signups = defaultdict(list)
+    for e in sessions:
+        if e["event"] == "signed_up":
+            signups[e["ip"]].append(e)
+    for ip, new in sorted(signups.items()):
+        if len(new) >= SIGNUPS_PER_IP:
+            for e in new:
+                account(e["email"], e["user"])["reasons"].append(f"one of {len(new)} new accounts from {ip}")
+    return sorted(accounts.values(), key=lambda a: (-len(a["reasons"]), a["user"] or a["email"]))
 
 
 def mask(email):
@@ -763,6 +813,11 @@ def collect(src, settings_, state, start, end):
         s["admin_details"] = [f"{d['action']} {mask(d['target']) if '@' in d['target'] else d['target']}"
                               for d in done[-3:]]
 
+    def accounts():
+        review = accounts_to_review(src, start, end)
+        s["review"] = len(review)
+        s["review_details"] = [[a["user"], mask(a["email"]), "; ".join(a["reasons"])] for a in review[:DETAILS]]
+
     def runtime():
         events = [e for e in (parse_falco(ts, l) for ts, _, l in src.lines('{job="falco"}', start, end)) if e]
         critical = [e for e in events if e["priority"] in FALCO_CRITICAL]
@@ -782,7 +837,7 @@ def collect(src, settings_, state, start, end):
         s["signups"] = max(0, int(total(accounts))) if accounts else None
 
     for name, fn in (("health", health), ("server errors", errors), ("deploys", deploys),
-                     ("defences", defences), ("sign-in", sign_in), ("access", access), ("Falco", runtime),
+                     ("defences", defences), ("sign-in", sign_in), ("access", access), ("accounts", accounts), ("Falco", runtime),
                      ("visitors", visitors)):
         section(name, fn)
     # Distinct IPs per country (an IP counts once however much it did)
@@ -817,6 +872,10 @@ def attention(s):
         item(plural(s["waf_succeeded"], "serious attack request") + " answered without an error",
              [f"{esc(t)} · {where(ip, c)} · {code(f'{method} {path}', 50)} → {status} · {esc(kind)}"
               for t, ip, c, method, path, status, kind in s.get("waf_succeeded_details") or []], s["waf_succeeded"])
+    if s.get("review"):
+        item(plural(s["review"], "account") + " to review (/caught for all)",
+             [f"{esc(user) or '—'} ({code(email, 40)}) · {esc(why)}" for user, email, why in s.get("review_details") or []],
+             s["review"])
     if s.get("attack_alerts"):
         item(plural(s["attack_alerts"], "attacking IP") + " needed a look (see the alerts)")
     if s.get("falco_critical"):
@@ -1155,6 +1214,25 @@ def investigate(src, settings_, ip, hours, now, out=print):
     out(f"Grafana: Investigate IP dashboard, ip = {ip}")
 
 
+def caught(src, hours, now, out=print):
+    """The accounts to review, as plain text (the bot's /caught)."""
+    review = accounts_to_review(src, now - hours * HOUR, now)
+    out(f"Accounts to review (last {hours} h)")
+    out("")
+    if not review:
+        out("None: no account signed in from a banned IP, went over a limit"
+            f" {LIMIT_RUNS}+ times, or came with {SIGNUPS_PER_IP}+ others from one IP.")
+        return
+    for a in review[:30]:
+        out(f"{a['user'] or '(no name seen)'} · {mask(a['email'])}")
+        for why in a["reasons"]:
+            out(f"  - {why}")
+    if len(review) > 30:
+        out(f"… and {len(review) - 30} more")
+    out("")
+    out("Act: /suspend EMAIL, or block over SSH on the app server. Details: /investigate EMAIL")
+
+
 def investigate_email(src, settings_, email, hours, now, out=print):
     """Every sign-in step for one address: which IPs, how many codes."""
     events = auth_events(src, now - hours * HOUR, now, email=email)
@@ -1222,12 +1300,18 @@ def main(argv=None):
     inv = sub.add_parser("investigate", help="everything one IP did, or every sign-in step for an email")
     inv.add_argument("ip", metavar="IP_OR_EMAIL")
     inv.add_argument("--hours", type=int, default=24, help="how far back (at most 192, Loki's 8 days)")
+    cau = sub.add_parser("caught", help="the accounts the defences point at, to review")
+    cau.add_argument("--hours", type=int, default=24, help="how far back (at most 192, Loki's 8 days)")
     args = parser.parse_args(argv)
 
     settings_ = settings()
     settings_["country"] = country_lookup(settings_["geoip_db"])
     src = Sources(settings_["loki"], settings_["prometheus"])
     now = int(dt.datetime.now(dt.timezone.utc).timestamp()) * 10**9
+
+    if args.command == "caught":
+        caught(src, max(1, min(args.hours, 192)), now)
+        return 0
 
     if args.command == "investigate":
         hours = max(1, min(args.hours, 192))

@@ -131,7 +131,8 @@ app.post('/api/v1/tasks/:taskId/messages', authenticateHTTP, async (req, res) =>
       taskId,
       senderId,
       recipientId: parseInt(recipient_id),
-      content: content.trim()
+      content: content.trim(),
+      sender: req.user
     });
 
     // Format message with sender/recipient IDs only
@@ -151,8 +152,10 @@ app.post('/api/v1/tasks/:taskId/messages', authenticateHTTP, async (req, res) =>
     
     res.status(201).json(formattedMessage);
   } catch (error) {
-    // Refusals written for people (locked, ended, flagged, paused, suspended)
-    if (error.status === 403) return res.status(403).json({ error: error.message, code: error.code, until: error.until });
+    // Refusals written for people (locked, ended, flagged, paused, suspended, over the limit)
+    if (error.status === 403 || error.status === 429) {
+      return res.status(error.status).json({ error: error.message, code: error.code, until: error.until, retry_after: error.retryAfter });
+    }
     logger.error('Error sending task message:', error);
     res.status(500).json({ error: 'Failed to send task message' });
   }
@@ -249,7 +252,8 @@ app.post('/api/v1/applications/:applicationId/messages', authenticateHTTP, async
       applicationId,
       senderId,
       recipientId,
-      content: content.trim()
+      content: content.trim(),
+      sender: req.user
     });
 
     // Format message with sender/recipient IDs only
@@ -280,8 +284,10 @@ app.post('/api/v1/applications/:applicationId/messages', authenticateHTTP, async
     // Return message with IDs only - frontend fetches usernames separately
     res.status(201).json(formattedMessage);
   } catch (error) {
-    // Refusals written for people (locked, ended, flagged, paused, suspended)
-    if (error.status === 403) return res.status(403).json({ error: error.message, code: error.code, until: error.until });
+    // Refusals written for people (locked, ended, flagged, paused, suspended, over the limit)
+    if (error.status === 403 || error.status === 429) {
+      return res.status(error.status).json({ error: error.message, code: error.code, until: error.until, retry_after: error.retryAfter });
+    }
     logger.error('Error sending application message:', error);
     res.status(500).json({ error: 'Failed to send application message' });
   }
@@ -366,7 +372,8 @@ app.post('/api/v1/store-messages', authenticateHTTP, async (req, res) => {
       storeItemId: parseInt(store_item_id),
       senderId,
       recipientId: parseInt(recipient_id),
-      content: content.trim()
+      content: content.trim(),
+      sender: req.user
     });
 
     // Format message with sender/recipient IDs only
@@ -397,8 +404,10 @@ app.post('/api/v1/store-messages', authenticateHTTP, async (req, res) => {
     
     res.status(201).json(formattedMessage);
   } catch (error) {
-    // Refusals written for people (locked, ended, flagged, paused, suspended)
-    if (error.status === 403) return res.status(403).json({ error: error.message, code: error.code, until: error.until });
+    // Refusals written for people (locked, ended, flagged, paused, suspended, over the limit)
+    if (error.status === 403 || error.status === 429) {
+      return res.status(error.status).json({ error: error.message, code: error.code, until: error.until, retry_after: error.retryAfter });
+    }
     logger.error('Error creating store message:', error);
     res.status(500).json({ error: 'Failed to send message' });
   }

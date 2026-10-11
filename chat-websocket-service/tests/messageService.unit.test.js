@@ -236,6 +236,19 @@ describe('MessageService', () => {
       }
     });
 
+    it('limits people\'s own messages, but not events and notices', async () => {
+      const { messageLimit } = require('../src/utils/accountLimit');
+      const take = jest.spyOn(messageLimit, 'take').mockReturnValue(30 * 1000);
+      try {
+        answer(true);
+        await expect(send({ sender: { username: 'jane' } })).rejects.toMatchObject({ code: 'rate_limited', status: 429, retryAfter: 30 });
+        await expect(send({ messageType: 'system_alert' })).resolves.toMatchObject({ id: 7 });
+        expect(take).toHaveBeenCalledTimes(1);
+      } finally {
+        take.mockRestore();
+      }
+    });
+
     it('reports a chat as ended to the app', async () => {
       db.query.mockResolvedValueOnce({ rows: [{ state: 'completed' }] });
       expect(await messageService.isChatEnded({ taskId: 1, userId: 2, otherUserId: 9 })).toBe(true);

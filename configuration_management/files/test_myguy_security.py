@@ -8,7 +8,7 @@ import unittest
 
 import myguy_security as ms
 
-MIN, DAY = ms.MIN, ms.DAY
+MIN, HOUR, DAY = ms.MIN, ms.HOUR, ms.DAY
 # Sat 17 Oct 2026, 08:00 in Amsterdam (06:00 UTC)
 NOW = int(dt.datetime(2026, 10, 17, 6, 0, tzinfo=dt.timezone.utc).timestamp()) * 10**9
 
@@ -506,6 +506,70 @@ class SignInTest(TempState):
         self.assertIn("Codes to 1 address from 6 IPs · 1 signed in\n", msg)
         self.assertIn("Most codes: <code>j***@example.com</code> ×6", msg)
         self.assertNotIn("jane@example.com", msg)
+
+
+def limit_line(action, user_id, username, email):
+    """A rate-limit refusal as the services log it (ratelimit packages)."""
+    return f'2026/10/17 06:00:00 limit event=hit action={action} user={user_id} username="{username}" email="{email}"'
+
+
+class AccountsTest(TempState):
+    def auth(self, ts, event, email, ip, user=""):
+        line = auth_line(event, email, ip) + (f' user="{user}"' if user else "")
+        self.src.add("containers", ts, line, service="api")
+
+    def limit(self, ts, action, user_id, username, email, service="api"):
+        self.src.add("containers", ts, limit_line(action, user_id, username, email), service=service)
+
+    def test_parse_names_who_signed_in(self):
+        e = ms.parse_auth(1, auth_line("signed_in", "jane@example.com", "203.0.113.7") + ' user="jane"')
+        self.assertEqual((e["event"], e["ip"], e["user"]), ("signed_in", "203.0.113.7", "jane"))
+        self.assertEqual(ms.parse_auth(1, auth_line("code_sent", "a@b.com", "203.0.113.7"))["user"], "")
+
+    def test_accounts_to_review(self):
+        # Signed in from an IP that was banned the day before
+        self.src.add("fail2ban", NOW - 30 * HOUR, "NOTICE  [nginx-4xx] Ban 203.0.113.7", jail="nginx-4xx")
+        self.auth(NOW - HOUR, "signed_in", "jane@example.com", "203.0.113.7", "jane")
+        self.auth(NOW - HOUR, "code_sent", "kim@example.com", "203.0.113.7")  # no session: not listed
+        self.auth(NOW - HOUR, "signed_in", "ok@example.com", "198.51.100.9", "ok")
+        # Over a limit twice (two services), and once (not listed)
+        self.limit(NOW - 3 * HOUR, "post", 12, "bob", "bob@example.com")
+        self.limit(NOW - 2 * HOUR, "message", 12, "bob", "bob@example.com", service="chat-websocket-service")
+        self.limit(NOW - 2 * HOUR, "message", 13, "ann", "ann@example.com", service="chat-websocket-service")
+        # Three new accounts from one IP
+        for i, who in enumerate(["x1", "x2", "x3"]):
+            self.auth(NOW - (i + 1) * MIN, "signed_up", f"{who}@example.com", "192.0.2.5", who)
+
+        review = ms.accounts_to_review(self.src, NOW - DAY, NOW)
+        by = {a["email"]: a for a in review}
+        self.assertEqual(set(by), {"jane@example.com", "bob@example.com",
+                                   "x1@example.com", "x2@example.com", "x3@example.com"})
+        self.assertEqual(by["jane@example.com"]["user"], "jane")
+        self.assertEqual(by["jane@example.com"]["reasons"], ["signed in from banned IP 203.0.113.7"])
+        self.assertEqual(by["bob@example.com"]["reasons"], ["over the limit 2× (post 1, message 1)"])
+        self.assertEqual(by["x2@example.com"]["reasons"], ["one of 3 new accounts from 192.0.2.5"])
+
+        out = []
+        ms.caught(self.src, 24, NOW, out.append)
+        text = "\n".join(out)
+        self.assertIn("jane · j***@example.com\n  - signed in from banned IP 203.0.113.7", text)
+        self.assertIn("bob · b***@example.com", text)
+        self.assertNotIn("jane@example.com", text)
+
+    def test_nobody_to_review(self):
+        out = []
+        ms.caught(self.src, 24, NOW, out.append)
+        self.assertIn("None:", "\n".join(out))
+
+    def test_daily_lists_accounts_to_review(self):
+        self.limit(NOW - 3 * HOUR, "post", 12, "bob<b>", "bob@example.com")
+        self.limit(NOW - 2 * HOUR, "book", 12, "bob<b>", "bob@example.com")
+        ms.daily(self.src, self.settings, {}, NOW, self.send)
+        msg = self.sent[0]
+        self.assertIn("Needs a look", msg)
+        self.assertIn("1 account to review (/caught for all)", msg)
+        self.assertIn("↳ bob&lt;b&gt; (<code>b***@example.com</code>) · over the limit 2× (post 1, book 1)", msg)
+        self.assertNotIn("bob@example.com", msg)
 
 
 class BannedUserTest(TempState):

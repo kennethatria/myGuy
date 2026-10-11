@@ -8,6 +8,7 @@ import (
 
 	"store-service/internal/api/handlers"
 	"store-service/internal/blocklist"
+	"store-service/internal/ratelimit"
 	"store-service/internal/media"
 	"store-service/internal/metrics"
 	"store-service/internal/middleware"
@@ -130,6 +131,12 @@ func main() {
 	{
 		// Every route needs a signed-in user: listings and requests name
 		// their sellers and requesters, which shouldn't be scrapeable
+		// How often one account may post listings and requests, and book
+		// (429 rate_limited over it)
+		limits := ratelimit.New(map[string][]ratelimit.Rule{
+			"post": {{Limit: 10, Per: time.Hour}},
+			"book": {{Limit: 30, Per: time.Hour}},
+		})
 		auth := api.Group("/")
 		auth.Use(jwtMiddleware.AuthRequired())
 		{
@@ -141,13 +148,13 @@ func main() {
 			auth.GET("/requests/:id/listings", requestHandler.GetRequestListings)
 
 			// Item management
-			auth.POST("/items", storeHandler.CreateItem)
+			auth.POST("/items", limits.Middleware("post"), storeHandler.CreateItem)
 			auth.PUT("/items/:id", storeHandler.UpdateItem)
 			auth.DELETE("/items/:id", storeHandler.DeleteItem)
 			auth.POST("/items/:id/repost", storeHandler.RepostItem)
 
 			// Requests ("wanted" notes)
-			auth.POST("/requests", requestHandler.CreateRequest)
+			auth.POST("/requests", limits.Middleware("post"), requestHandler.CreateRequest)
 			auth.POST("/requests/:id/repost", requestHandler.RepostRequest)
 			auth.PUT("/requests/:id", requestHandler.UpdateRequest)
 			auth.DELETE("/requests/:id", requestHandler.DeleteRequest)
@@ -156,7 +163,7 @@ func main() {
 			// Bidding
 
 			// Booking requests
-			auth.POST("/items/:id/booking-request", storeHandler.CreateBookingRequest)
+			auth.POST("/items/:id/booking-request", limits.Middleware("book"), storeHandler.CreateBookingRequest)
 			auth.GET("/items/:id/booking-request", storeHandler.GetBookingRequest)
 			auth.GET("/items/:id/booking-requests", storeHandler.GetAllBookingRequests)
 			auth.POST("/booking-requests/:requestId/approve", storeHandler.ApproveBookingRequest)

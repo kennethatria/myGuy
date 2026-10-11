@@ -77,6 +77,12 @@ func logAuthEvent(c *gin.Context, event, email string) {
 	log.Printf("auth event=%s email=%q ip=%s", event, services.NormalizeEmail(email), c.ClientIP())
 }
 
+// logSignedIn is logAuthEvent for a session started, with the account's
+// username, so the security checks can name who signed in from where.
+func logSignedIn(c *gin.Context, event, email, username string) {
+	log.Printf("auth event=%s email=%q ip=%s user=%q", event, services.NormalizeEmail(email), c.ClientIP(), username)
+}
+
 type requestCodeRequest struct {
 	Email string `json:"email" binding:"required,email"`
 }
@@ -157,7 +163,7 @@ func (h *Handler) VerifyLoginCode(c *gin.Context) {
 		return
 	}
 
-	logAuthEvent(c, "signed_in", req.Email)
+	logSignedIn(c, "signed_in", req.Email, result.User.Username)
 	h.respondWithSession(c, http.StatusOK, result.User)
 }
 
@@ -199,7 +205,7 @@ func (h *Handler) CompleteSignup(c *gin.Context) {
 		return
 	}
 
-	logAuthEvent(c, "signed_up", email)
+	logSignedIn(c, "signed_up", email, user.Username)
 	h.respondWithSession(c, http.StatusCreated, user)
 }
 

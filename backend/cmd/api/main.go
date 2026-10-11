@@ -15,6 +15,7 @@ import (
 	"myguy/internal/api"
 	"myguy/internal/chatnotify"
 	"myguy/internal/proximity"
+	"myguy/internal/ratelimit"
 	"myguy/internal/mailer"
 	"myguy/internal/metrics"
 	"myguy/internal/middleware"
@@ -137,18 +138,23 @@ func main() {
 	// and the other services (INTERNAL_API_KEY; nginx never routes /internal
 	// here)
 	api.NewInternalHandler(blockService, suspensionService).Register(r, os.Getenv("INTERNAL_API_KEY"))
+	// How often one account may post gigs and apply (429 rate_limited over it)
+	limits := ratelimit.New(map[string][]ratelimit.Rule{
+		"post":  {{Limit: 10, Per: time.Hour}},
+		"apply": {{Limit: 30, Per: time.Hour}},
+	})
 	// Protected routes
 	auth := r.Group("/api/v1")
 	auth.Use(jwtMiddleware.AuthRequired())
 	{
 		// Task routes
-		auth.POST("/tasks", handler.CreateTask)
+		auth.POST("/tasks", limits.Middleware("post"), handler.CreateTask)
 		auth.GET("/tasks", handler.ListTasks)
 		auth.GET("/tasks/:id", handler.GetTask)
 		auth.PUT("/tasks/:id", handler.UpdateTask)
 		auth.PATCH("/tasks/:id/status", handler.UpdateTaskStatus)
 		auth.DELETE("/tasks/:id", handler.DeleteTask)
-		auth.POST("/tasks/:id/apply", handler.ApplyForTask)
+		auth.POST("/tasks/:id/apply", limits.Middleware("apply"), handler.ApplyForTask)
 		auth.GET("/tasks/:id/applications", handler.GetTaskApplications)
 		auth.PATCH("/tasks/:id/applications/:applicationId", handler.RespondToApplication)
 

@@ -53,6 +53,12 @@ describe('MessageThread', () => {
     expect(show({ messages: [notice] }).find('.thread-note').text()).toContain(formatUntil(until))
   })
 
+  it('says why a message wasn\'t sent, above the box', () => {
+    const wrapper = show({ notice: "You're doing that a lot. Try again in a minute." })
+    expect(wrapper.find('.message-input').exists()).toBe(true)
+    expect(wrapper.find('[role="alert"]').text()).toBe("You're doing that a lot. Try again in a minute.")
+  })
+
   it('keeps the message box while it is going on', () => {
     const wrapper = show({ ended: false })
     expect(wrapper.find('.message-input').exists()).toBe(true)

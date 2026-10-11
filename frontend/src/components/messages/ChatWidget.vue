@@ -119,6 +119,7 @@
           :locked="chatStore.activeLocked"
           :ended="chatStore.activeEnded"
           :paused-until="chatStore.activePausedUntil"
+          :notice="chatStore.sendNotice"
           @send-message="sendMessage"
           @edit-message="chatStore.editMessage"
           @delete-message="chatStore.deleteMessage"

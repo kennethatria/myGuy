@@ -49,6 +49,7 @@ const authenticateSocket = async (socket, next) => {
     socket.token = token; // for calls to other services on the user's behalf
     socket.userEmail = decoded.email;
     socket.userName = decoded.name;
+    socket.username = decoded.username;
     
     logger.info('Socket authenticated', { userId: socket.userId, socketId: socket.id });
     
@@ -86,7 +87,8 @@ const authenticateHTTP = (req, res, next) => {
     req.user = {
       id: decoded.user_id,
       email: decoded.email,
-      name: decoded.name
+      name: decoded.name,
+      username: decoded.username
     };
     
     next();
