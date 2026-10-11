@@ -1214,6 +1214,130 @@ def investigate(src, settings_, ip, hours, now, out=print):
     out(f"Grafana: Investigate IP dashboard, ip = {ip}")
 
 
+# Container states (prometheus-podman-exporter's podman_container_state)
+CONTAINER_STATES = {0: "created", 1: "initialized", 2: "running", 3: "stopped", 4: "paused", 5: "exited",
+                    6: "removing", 7: "stopping"}
+
+
+def ago(seconds):
+    seconds = max(0, int(seconds))
+    if seconds < HOUR // 10**9:
+        return f"{seconds // 60} min ago"
+    if seconds < DAY // 10**9:
+        return f"{seconds // 3600} h ago"
+    return f"{seconds // 86400} d ago"
+
+
+def health_now(src, now, out=print):
+    """Is everything OK right now (the bot's /health), as plain text.  A
+    part that can't be read says so; the rest still shows."""
+    out(f"Health now ({local(now, '%a %H:%M')} Amsterdam)")
+
+    def part(name, fn):
+        try:
+            fn()
+        except Exception as e:  # noqa: BLE001
+            out(f"{name}: couldn't read ({str(e)[:60]})")
+
+    def site():
+        up = src.prom_vector('probe_success{job="site"}', now)
+        seconds = src.prom_vector('probe_duration_seconds{job="site"}', now)
+        took = {m.get("instance"): v for m, v in seconds}
+        for m, v in sorted(up, key=lambda x: x[0].get("instance", "")):
+            where = m.get("instance", "?")
+            out(f"Site {where}: {'up' if v else 'DOWN'}"
+                + (f", answered in {round(1000 * took[where])} ms" if where in took else ""))
+        if not up:
+            out("Site: no probe data")
+        cert = src.prom_vector('min((probe_ssl_earliest_cert_expiry{job="site"} - time()) / 86400)', now)
+        if cert:
+            out(f"Certificate: {int(total(cert))} days left")
+
+    def containers():
+        states = src.prom_vector("podman_container_state", now)
+        started = {m.get("name"): v for m, v in src.prom_vector("podman_container_started_seconds", now)}
+        if not states:
+            out("Containers: no data")
+            return
+        out("Containers:")
+        for m, v in sorted(states, key=lambda x: x[0].get("name", "")):
+            name = m.get("name", "?")
+            state = CONTAINER_STATES.get(int(v), f"state {int(v)}")
+            since = started.get(name)
+            fresh = since and now / 1e9 - since < HOUR // 10**9
+            out(f"  {'✓' if state == 'running' else '✗'} {name}: {state}"
+                + (f", started {ago(now / 1e9 - since)}" if since else "")
+                + (" (restarted in the last hour)" if fresh else ""))
+
+    def servers():
+        cpu = {m.get("instance"): v for m, v in src.prom_vector(
+            'round(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))))', now)}
+        memory = {m.get("instance"): v for m, v in src.prom_vector(
+            'round(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))', now)}
+        disk = {m.get("instance"): v for m, v in src.prom_vector(
+            'round(max by (instance) (100 * (1 - node_filesystem_avail_bytes{mountpoint="/"} '
+            '/ node_filesystem_size_bytes{mountpoint="/"})))', now)}
+        for host in sorted(set(cpu) | set(memory) | set(disk)):
+            shown = lambda d: f"{int(d[host])}%" if host in d else "—"  # noqa: E731
+            out(f"Server {host}: CPU {shown(cpu)}, memory {shown(memory)}, disk {shown(disk)}")
+        if not (cpu or memory or disk):
+            out("Servers: no data")
+
+    def recent():
+        errors = src.loki_vector('sum(count_over_time({job="nginx_access"} | json | status >= 500 [1h]))', now)
+        out(f"Server errors (5xx), last hour: {int(total(errors))}")
+        windows = deploy_windows(src, now - 8 * DAY, now)
+        if windows:
+            began, ended, rest = windows[-1]
+            out(f"Last deploy: {local(began, '%a %H:%M')} ({ago((now - began) / 1e9)})"
+                + (f" {rest}" if rest else "") + (", still running" if ended > now else ""))
+        else:
+            out("Last deploy: none in 8 days")
+
+    for name, fn in (("Site", site), ("Containers", containers), ("Servers", servers), ("Recent", recent)):
+        part(name, fn)
+
+
+def app_now(src, now, out=print):
+    """What's happening in the app right now (the bot's /now): posts up, and
+    today's sign-ins and visitors, as plain text."""
+    midnight = int(dt.datetime.fromtimestamp(now / 1e9, TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+                   .timestamp()) * 10**9
+    out(f"The app now ({local(now, '%a %H:%M')} Amsterdam)")
+
+    def part(name, fn):
+        try:
+            fn()
+        except Exception as e:  # noqa: BLE001
+            out(f"{name}: couldn't read ({str(e)[:60]})")
+
+    def posts():
+        def count(metric, status):
+            return int(total(src.prom_vector(f'sum({metric}{{status="{status}"}})', now)))
+        out(f"Up: {count('myguy_gigs', 'open')} gigs, {count('myguy_listings', 'active')} listings, "
+            f"{count('myguy_requests', 'active')} requests")
+        out(f"Waiting: {count('myguy_applications', 'pending')} applications, "
+            f"{count('myguy_bookings', 'pending')} bookings")
+        accounts = src.prom_vector("max(myguy_accounts)", now)
+        active = src.prom_vector("max(myguy_gig_active_accounts_7d)", now)
+        if accounts:
+            out(f"Accounts: {int(total(accounts))}" + (f", {int(total(active))} active in gigs this week" if active else ""))
+
+    def today():
+        events = Counter(e["event"] for e in auth_events(src, midnight, now))
+        out(f"Today: {events.get('signed_in', 0) + events.get('signed_up', 0)} sign-ins"
+            f" ({events.get('signed_up', 0)} new accounts), {events.get('code_sent', 0)} codes sent")
+        hour = len(src.loki_vector(VISITOR_QUERY % "1h", now))
+        day = len(src.loki_vector(VISITOR_QUERY % f"{max(1, (now - midnight) // HOUR)}h", now))
+        out(f"Visitors: ~{hour} in the last hour, ~{day} today")
+        limited = src.lines(LIMIT_QUERY, midnight, now)
+        if limited:
+            out(f"Over a rate limit today: {len(limited)} time(s) (/caught)")
+
+    for name, fn in (("Posts", posts), ("Today", today)):
+        part(name, fn)
+
+
 def caught(src, hours, now, out=print):
     """The accounts to review, as plain text (the bot's /caught)."""
     review = accounts_to_review(src, now - hours * HOUR, now)
@@ -1300,6 +1424,8 @@ def main(argv=None):
     inv = sub.add_parser("investigate", help="everything one IP did, or every sign-in step for an email")
     inv.add_argument("ip", metavar="IP_OR_EMAIL")
     inv.add_argument("--hours", type=int, default=24, help="how far back (at most 192, Loki's 8 days)")
+    sub.add_parser("health", help="is everything OK right now")
+    sub.add_parser("now", help="what's happening in the app right now")
     cau = sub.add_parser("caught", help="the accounts the defences point at, to review")
     cau.add_argument("--hours", type=int, default=24, help="how far back (at most 192, Loki's 8 days)")
     args = parser.parse_args(argv)
@@ -1309,6 +1435,12 @@ def main(argv=None):
     src = Sources(settings_["loki"], settings_["prometheus"])
     now = int(dt.datetime.now(dt.timezone.utc).timestamp()) * 10**9
 
+    if args.command == "health":
+        health_now(src, now)
+        return 0
+    if args.command == "now":
+        app_now(src, now)
+        return 0
     if args.command == "caught":
         caught(src, max(1, min(args.hours, 192)), now)
         return 0

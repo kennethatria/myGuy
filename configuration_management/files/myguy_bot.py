@@ -17,7 +17,12 @@ commands and button taps are ignored.
   /blocked         the blocks in force
   /investigate IP|EMAIL [HOURS]
   /caught [HOURS]  the accounts the defences point at
+  /health          is everything OK right now
+  /now             what's happening in the app right now
   /help
+
+The command menu (the / button) is set by the bot itself at start, for
+your chat only, so it stays in step with these and nobody else sees it.
 
 Blocking an email is done by hand over SSH on the app server
 (`sudo myguy-admin block EMAIL`), never from here.
@@ -49,7 +54,22 @@ from myguy_admin import Refused, parse  # noqa: E402  same checks as the app ser
 CONFIRM_FOR = 120          # seconds a Confirm button stays valid
 POLL_TIMEOUT = 50          # long poll; Telegram answers sooner on news
 CHANGES = {"ban", "unban", "suspend", "unsuspend"}
-INVESTIGATE_MAX = 3500     # characters of investigate output in one message
+INVESTIGATE_MAX = 3500     # characters of a report in one message
+# The command menu, set for the admin's chat only (setMyCommands)
+MENU = [
+    ("health", "Is everything OK right now"),
+    ("now", "What's happening in the app right now"),
+    ("caught", "Accounts to review: /caught [hours]"),
+    ("investigate", "Report: /investigate IP|EMAIL [hours]"),
+    ("status", "Blocked or suspended? /status EMAIL"),
+    ("suspend", "Read-only: /suspend EMAIL [12h|1d|2d|1w] [reason]"),
+    ("unsuspend", "Lift a suspension: /unsuspend EMAIL"),
+    ("ipstatus", "Where an IP is banned: /ipstatus IP"),
+    ("ban", "Ban an IP for 7 days: /ban IP"),
+    ("unban", "Lift every ban on an IP: /unban IP"),
+    ("blocked", "Blocks in force"),
+    ("help", "The admin commands"),
+]
 HELP = """<b>Admin commands</b>
 /ban IP: ban for 7 days
 /unban IP: lift every ban on it
@@ -60,6 +80,8 @@ HELP = """<b>Admin commands</b>
 /blocked: blocks in force
 /investigate IP|EMAIL [HOURS]
 /caught [HOURS]: accounts the defences point at (banned IP, over a limit, many sign-ups)
+/health: site, containers, servers, last deploy, errors, right now
+/now: posts up, today's sign-ins and visitors
 Changes ask you to confirm. Blocking an email is done over SSH on the app server."""
 
 
@@ -115,20 +137,18 @@ def admin_over_ssh(s):
     return run
 
 
-def investigate(target, hours):
-    """myguy-security's investigate report (or, for target "caught", the
-    accounts to review), as plain text."""
-    args = ["/usr/local/bin/myguy-security"] + (["caught"] if target == "caught" else ["investigate", target]) \
-        + (["--hours", str(hours)] if hours else [])
-    result = subprocess.run(args, capture_output=True, text=True, timeout=120)
+def security(args):
+    """A myguy-security report (investigate, caught, health, now) as plain
+    text; args are checked by the bot first."""
+    result = subprocess.run(["/usr/local/bin/myguy-security", *args], capture_output=True, text=True, timeout=120)
     return (result.stdout or result.stderr).strip() or "(nothing)"
 
 
 # --- The bot ----------------------------------------------------------------------
 
 class Bot:
-    def __init__(self, s, telegram, admin, investigator=investigate, now=time.time):
-        self.s, self.tg, self.admin, self.investigate, self.now = s, telegram, admin, investigator, now
+    def __init__(self, s, telegram, admin, reports=security, now=time.time):
+        self.s, self.tg, self.admin, self.reports, self.now = s, telegram, admin, reports, now
         self.pending = {}  # token -> (action, args, command, asked at); full emails stay in memory
 
     def say(self, text, **extra):
@@ -167,6 +187,8 @@ class Bot:
             return self.on_investigate(rest)
         if name == "caught":
             return self.on_caught(rest)
+        if name in ("health", "now"):
+            return self.report([name]) if not rest else self.say(f"⚠️ usage: /{name}")
         try:
             action, args = parse(" ".join([name] + rest), bot=True)
         except Refused as e:
@@ -206,10 +228,10 @@ class Bot:
     def on_caught(self, rest):
         if len(rest) > 1 or (rest and not rest[0].isdigit()):
             return self.say("⚠️ usage: /caught [HOURS]")
-        self.report("caught", int(rest[0]) if rest else None)
+        self.report(["caught"] + (["--hours", rest[0]] if rest else []))
 
-    def report(self, target, hours):
-        report = self.investigate(target, hours)
+    def report(self, args):
+        report = self.reports(args)
         if len(report) > INVESTIGATE_MAX:
             report = report[:INVESTIGATE_MAX] + "\n… (cut: run it on the monitoring server for all of it)"
         self.say(f"<pre>{esc(report)}</pre>")
@@ -225,7 +247,7 @@ class Bot:
                 target = parse(f"status {target}")[1]["email"]
             except Refused:
                 return self.say("⚠️ not an IP or an email address")
-        self.report(target, int(rest[1]) if len(rest) == 2 else None)
+        self.report(["investigate", target] + (["--hours", rest[1]] if len(rest) == 2 else []))
 
     @staticmethod
     def question(action, args):
@@ -319,6 +341,15 @@ def save_offset(path, offset):
     os.replace(path + ".tmp", path)
 
 
+def set_menu(tg, admin):
+    """The / menu, in the admin's chat only; a failure just leaves it as it was."""
+    try:
+        tg.call("setMyCommands", commands=[{"command": c, "description": d} for c, d in MENU],
+                scope={"type": "chat", "chat_id": admin})
+    except Exception as e:  # noqa: BLE001
+        print(f"myguy-bot: couldn't set the command menu: {e}", flush=True)
+
+
 def main():
     s = settings()
     missing = [k for k in ("token", "admin", "app", "key") if not s[k]]
@@ -327,6 +358,7 @@ def main():
         while True:  # stay up quietly so systemd doesn't restart-loop
             time.sleep(3600)
     tg = Telegram(s["token"])
+    set_menu(tg, s["admin"])
     bot = Bot(s, tg, admin_over_ssh(s))
     offset_file = os.path.join(s["state"], "offset")
     offset = load_offset(offset_file)

@@ -33,7 +33,7 @@ class BotTest(unittest.TestCase):
             return self.answer
 
         self.bot = mb.Bot({"admin": ADMIN}, self.tg, admin,
-                          investigator=lambda target, hours: f"report for {target} {hours}",
+                          reports=lambda args: "report for " + " ".join(args),
                           now=lambda: self.clock)
 
     def message(self, text, user=ADMIN, chat=CHAT):
@@ -168,22 +168,37 @@ class BotTest(unittest.TestCase):
 
     def test_investigate(self):
         self.message("/investigate 1.1.1.1 48")
-        self.assertIn("<pre>report for 1.1.1.1 48</pre>", self.tg.sent()[-1])
+        self.assertIn("<pre>report for investigate 1.1.1.1 --hours 48</pre>", self.tg.sent()[-1])
         self.message("/investigate Jane@Example.com")
-        self.assertIn("report for jane@example.com None", self.tg.sent()[-1])
+        self.assertIn("<pre>report for investigate jane@example.com</pre>", self.tg.sent()[-1])
         self.message("/investigate rm -rf")
         self.assertIn("⚠️", self.tg.sent()[-1])
 
     def test_caught(self):
         self.message("/caught")
-        self.assertIn("<pre>report for caught None</pre>", self.tg.sent()[-1])
+        self.assertIn("<pre>report for caught</pre>", self.tg.sent()[-1])
         self.message("/caught 48")
-        self.assertIn("report for caught 48", self.tg.sent()[-1])
+        self.assertIn("<pre>report for caught --hours 48</pre>", self.tg.sent()[-1])
         self.message("/caught everything")
         self.assertIn("⚠️ usage: /caught [HOURS]", self.tg.sent()[-1])
 
+    def test_health_and_now(self):
+        self.message("/health")
+        self.assertIn("<pre>report for health</pre>", self.tg.sent()[-1])
+        self.message("/now")
+        self.assertIn("<pre>report for now</pre>", self.tg.sent()[-1])
+        self.message("/now please")
+        self.assertIn("⚠️ usage: /now", self.tg.sent()[-1])
+
+    def test_menu_is_for_the_admin_only(self):
+        mb.set_menu(self.tg, ADMIN)
+        method, params = self.tg.calls[-1]
+        self.assertEqual(method, "setMyCommands")
+        self.assertEqual(params["scope"], {"type": "chat", "chat_id": ADMIN})
+        self.assertIn({"command": "health", "description": "Is everything OK right now"}, params["commands"])
+
     def test_untrusted_text_is_escaped(self):
-        self.bot.investigate = lambda target, hours: "<script>"
+        self.bot.reports = lambda args: "<script>"
         self.message("/investigate 1.1.1.1")
         self.assertIn("&lt;script&gt;", self.tg.sent()[-1])
 
