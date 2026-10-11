@@ -529,9 +529,9 @@ Umami (session-accurate visitors, events, heatmaps) was removed to free memory o
 What each security message means and what to do. Every message ends with its next step. To look into an IP:
 - **Grafana:** *Investigate IP* (SSH tunnel below).
 - **Terminal:** on the monitoring server (`ssh -J ops@<app IP> ops@10.0.0.3`), run `investigate <IP> [--hours 48]`.
-- **Telegram:** `/investigate <IP|email> [hours]` in the alerts group (below).
+- **Telegram:** `/investigate <IP|email> [hours]` in your private chat with the bot (below).
 
-**Acting from Telegram.** The admin bot (`files/myguy_bot.py`, `myguy-bot.service` on the monitoring server) reads the alerts group and obeys only the account in `TELEGRAM_ADMIN_USER_ID`:
+**Acting from Telegram.** The admin bot (`files/myguy_bot.py`, `myguy-bot.service` on the monitoring server) takes commands in **your private chat with the bot** and obeys only the account in `TELEGRAM_ADMIN_USER_ID`. Find the bot in Telegram (the channel's **Administrators** list, since it posts the alerts, or **@BotFather** → `/mybots`), open a chat with it and send `/start` once. Alerts and summaries stay in the monitoring channel; commands can't go there, because a channel post carries no sender to check.
 
 | Command | Does |
 | :--- | :--- |
@@ -543,7 +543,7 @@ What each security message means and what to do. Every message ends with its nex
 | `/status <email>`, `/blocked` | Whether an address is blocked or suspended (and how many in a row); the blocks in force |
 | `/investigate <IP\|email> [hours]` | The same report as `investigate` |
 
-Blocking an email is never done from Telegram: it's a deliberate step over SSH on the app server (*Blocking an email*). Changes ask you to **Confirm** (2 minutes). The bot deletes your command once read, so a full address doesn't stay in the group; that needs the bot to be a **group admin allowed to delete messages**. Replies mask addresses.
+Blocking an email is never done from Telegram: it's a deliberate step over SSH on the app server (*Blocking an email*). Changes ask you to **Confirm** (2 minutes). The bot deletes your command once read (bots may in a private chat), so a full address doesn't stay on your phone. Replies mask addresses.
 - **How it reaches the app server:** over the VPC as `myguy-bot`, with a key made on the monitoring server. `security.yml` authorizes the key `restrict,from="10.0.0.3",command="sudo -n /usr/local/bin/myguy-admin --bot \"$SSH_ORIGINAL_COMMAND\""`, so it can run `myguy-admin` and nothing else; `--bot` (pinned in its sudoers rule too) refuses `block` and `unblock`. That command checks every word (public IPs only, never the NodeBalancer or VPC; plain email addresses; days 0–3650; a short plain reason) before calling `fail2ban-client` or the backend's `/internal/v1/email-blocks`. The Telegram token never goes to the app server.
 - **Audit:** `myguy-admin` logs `admin event=ban|unban|block|unblock|suspend|unsuspend|refused|failed target=… by=telegram|ssh:<user>`, and the bot logs what it ignored (`bot event=ignored user=…`), both in Loki as `job="admin"`. The daily summary counts the actions under Access. A `myguy-bot` SSH login from anywhere but the monitoring server, or onto the monitoring server, is an unexpected SSH login.
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """MyGuy's Telegram admin bot, on the monitoring server (myguy-bot.service).
 
-Reads the alerts group with the alerts' own bot token (long polling: it
-asks Telegram, nothing connects to it) and obeys ONE person, the Telegram
-user TELEGRAM_ADMIN_USER_ID, in that group only.  Everyone else's commands
-and button taps are ignored.
+Uses the alerts' own bot token (long polling: it asks Telegram, nothing
+connects to it) and obeys ONE person, the Telegram user
+TELEGRAM_ADMIN_USER_ID, in their private chat with the bot only (the alerts
+go to a channel, whose posts carry no sender to check).  Everyone else's
+commands and button taps are ignored.
 
   /ban IP          ban for 7 days (fail2ban's manual jail)
   /unban IP        lift every ban on the IP
@@ -22,8 +23,8 @@ Blocking an email is done by hand over SSH on the app server
 
 Changes (ban, unban, suspend, unsuspend) ask first: Confirm or Cancel, valid for
 2 minutes.  Your command message is deleted once read (the bot must be a
-group admin allowed to delete messages), so a full address doesn't stay in
-the group; replies mask emails (j***@example.com).
+chat; bots may delete incoming messages there), so a full address doesn't
+stay on your phone; replies mask emails (j***@example.com).
 
 The actions run on the app server through `myguy-admin` over SSH, with a
 key that can run nothing else, and not block or unblock (myguy_admin.py,
@@ -73,7 +74,6 @@ def settings(env=os.environ):
     creds = env.get("CREDENTIALS_DIRECTORY", "")
     return {
         "token": env.get("TELEGRAM_BOT_TOKEN", ""),
-        "chat": int(env.get("TELEGRAM_CHAT_ID") or 0),
         "admin": int(env.get("TELEGRAM_ADMIN_USER_ID") or 0),
         "app": env.get("APP_VPC_IP", ""),
         "key": os.path.join(creds, "admin-key") if creds else env.get("ADMIN_SSH_KEY", ""),
@@ -128,11 +128,12 @@ class Bot:
         self.pending = {}  # token -> (action, args, command, asked at); full emails stay in memory
 
     def say(self, text, **extra):
-        return self.tg.call("sendMessage", chat_id=self.s["chat"], text=text, parse_mode="HTML",
+        return self.tg.call("sendMessage", chat_id=self.s["admin"], text=text, parse_mode="HTML",
                             disable_web_page_preview="true", **extra)
 
     def allowed(self, chat_id, user_id):
-        return bool(self.s["admin"]) and chat_id == self.s["chat"] and user_id == self.s["admin"]
+        # A private chat's id is the other person's user id
+        return bool(self.s["admin"]) and chat_id == self.s["admin"] and user_id == self.s["admin"]
 
     def handle(self, update):
         if "callback_query" in update:
@@ -146,7 +147,7 @@ class Bot:
             print(f"bot event=ignored user={user_id} chat={chat_id}", flush=True)
             return
         try:
-            # Read: take the full address out of the group
+            # Read: take the full address out of the chat
             self.tg.call("deleteMessage", chat_id=chat_id, message_id=message["message_id"])
         except Exception as e:  # noqa: BLE001  not an admin, or too old
             print(f"bot: couldn't delete the command: {e}", flush=True)
@@ -306,7 +307,7 @@ def save_offset(path, offset):
 
 def main():
     s = settings()
-    missing = [k for k in ("token", "chat", "admin", "app", "key") if not s[k]]
+    missing = [k for k in ("token", "admin", "app", "key") if not s[k]]
     if missing:
         print(f"myguy-bot: not configured ({', '.join(missing)} missing); idle", flush=True)
         while True:  # stay up quietly so systemd doesn't restart-loop

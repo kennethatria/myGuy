@@ -5478,7 +5478,7 @@
       become: yes
 
     # --- Telegram admin bot (files/myguy_bot.py) ---
-    # Reads the alerts group with the alerts' token and obeys one person
+    # Uses the alerts' token and obeys one person, in their private chat with it
     # (TELEGRAM_ADMIN_USER_ID): /ban, /unban, /suspend, /unsuspend, /status,
     # /investigate (blocking is by hand over SSH on the app server).  Actions
     # run on the app server through myguy-admin, over
