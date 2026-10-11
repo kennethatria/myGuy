@@ -107,6 +107,8 @@ func main() {
 	// Setup routes
 
 	router := gin.Default()
+	// The visitor's IP, from nginx (also in gin's request log)
+	middleware.TrustNginx(router)
 	router.Use(otelgin.Middleware("myguy-store-service", otelgin.WithFilter(tracing.Traced)))
 	
 	// Serve static files for uploaded images
