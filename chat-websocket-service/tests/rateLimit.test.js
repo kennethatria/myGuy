@@ -16,6 +16,15 @@ describe('apiRateLimit', () => {
     expect(requestKey({ headers: {}, ip: '10.0.0.2' })).toBe('ip:10.0.0.2');
   });
 
+  it('takes the IP from nginx\'s X-Real-IP, and only on requests from nginx', () => {
+    const fromNginx = { socket: { remoteAddress: '127.0.0.1' }, headers: { 'x-real-ip': '203.0.113.7', 'x-forwarded-for': '6.6.6.6' } };
+    expect(requestKey(fromNginx)).toBe('ip:203.0.113.7');
+    // Straight to the service (not through nginx): its header isn't trusted
+    expect(requestKey({ socket: { remoteAddress: '198.51.100.2' }, headers: { 'x-real-ip': '203.0.113.7' } })).toBe('ip:198.51.100.2');
+    // Not an IP: ignored
+    expect(requestKey({ socket: { remoteAddress: '127.0.0.1' }, headers: { 'x-real-ip': 'nonsense' } })).toBe('ip:127.0.0.1');
+  });
+
   it('answers 429 once a user exceeds the limit, without affecting others', async () => {
     const app = express();
     app.use(apiRateLimit);

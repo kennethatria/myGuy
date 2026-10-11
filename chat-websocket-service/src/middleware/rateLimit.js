@@ -1,11 +1,12 @@
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { verifyToken } = require('./auth');
+const { clientIp } = require('../utils/clientIp');
 
 /**
  * Who a request counts against: the signed-in user when the request carries
- * a valid session token, otherwise the client IP. Keying by user keeps one
- * person from exhausting a limit shared by everyone behind the same proxy
- * (nginx forwards from one address).
+ * a valid session token, otherwise the visitor's IP from nginx (every
+ * request reaches us from nginx's own address). Keying by user keeps one
+ * person from exhausting a limit shared by everyone behind the same network.
  */
 function requestKey(req) {
   const header = req.headers.authorization || '';
@@ -13,7 +14,7 @@ function requestKey(req) {
     const claims = verifyToken(header.slice(7));
     if (claims && claims.user_id) return `user:${claims.user_id}`;
   }
-  return `ip:${ipKeyGenerator(req.ip || '')}`;
+  return `ip:${ipKeyGenerator(clientIp(req))}`;
 }
 
 /**
