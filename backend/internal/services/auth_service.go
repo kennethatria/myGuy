@@ -44,6 +44,16 @@ type EmailBlocks interface {
 	IsBlocked(ctx context.Context, email string) (bool, error)
 }
 
+// CodePauses says whether codes to an address are paused (CodePauseService).
+type CodePauses interface {
+	IsPaused(ctx context.Context, email string) (bool, error)
+}
+
+// ErrCodesPaused: codes to the address are paused (email bombing).  Asking
+// for one answers as if it was sent: whoever floods the address learns
+// nothing, and its owner gets no more mail.
+var ErrCodesPaused = errors.New("codes to this address are paused")
+
 // AuthService implements passwordless sign-in with emailed one-time codes.
 // The same flow signs existing users in and lets new users sign up.
 type AuthService struct {
@@ -51,6 +61,7 @@ type AuthService struct {
 	codeRepo repositories.LoginCodeRepository
 	sender   CodeSender
 	blocks   EmailBlocks
+	pauses   CodePauses
 	secret   []byte
 	now      func() time.Time
 }
@@ -68,6 +79,12 @@ func NewAuthService(userRepo repositories.UserRepository, codeRepo repositories.
 // WithBlocks keeps blocked addresses from signing in or up.
 func (s *AuthService) WithBlocks(blocks EmailBlocks) *AuthService {
 	s.blocks = blocks
+	return s
+}
+
+// WithPauses stops codes to paused addresses.
+func (s *AuthService) WithPauses(pauses CodePauses) *AuthService {
+	s.pauses = pauses
 	return s
 }
 
@@ -103,6 +120,13 @@ func (s *AuthService) RequestCode(ctx context.Context, email string) error {
 		return err
 	} else if blocked {
 		return ErrBlocked
+	}
+	if s.pauses != nil {
+		if paused, err := s.pauses.IsPaused(ctx, email); err != nil {
+			return err
+		} else if paused {
+			return ErrCodesPaused
+		}
 	}
 
 	recent, err := s.codeRepo.CountSince(ctx, email, now.Add(-time.Hour))

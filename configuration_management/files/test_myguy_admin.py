@@ -77,6 +77,7 @@ class RunTest(unittest.TestCase):
             ("DELETE", "/email-blocks/a%2Bx%40b.com", None),
             ("GET", "/email-blocks/a%40b.com", None),
             ("GET", "/suspensions/a%40b.com", None),
+            ("GET", "/code-pauses/a%40b.com", None),
             ("GET", "/email-blocks", None)])
 
     def test_bans_lists_every_jail(self):
@@ -101,14 +102,29 @@ class RunTest(unittest.TestCase):
             ("DELETE", "/suspensions/a%2Bx%40b.com", None)])
 
     def test_status_shows_block_and_suspension(self):
-        answers = iter([(200, {"blocked": False}), (200, {"suspended": True, "in_row": 2})])
+        answers = iter([(200, {"blocked": False}), (200, {"suspended": True, "in_row": 2}),
+                        (200, {"paused": True, "until": "2026-10-12T10:00:00Z"})])
         result = ma.run("status", {"email": "a@b.com"}, call=lambda *a: (self.http_calls.append(a), next(answers))[1])
-        self.assertEqual(result, {"ok": True, "blocked": False, "suspension": {"suspended": True, "in_row": 2}})
-        self.assertEqual([c[1] for c in self.http_calls], ["/email-blocks/a%40b.com", "/suspensions/a%40b.com"])
-        # An address with no account has no suspension
-        answers = iter([(200, {"blocked": True}), (400, {"error": "no account uses that address"})])
+        self.assertEqual(result, {"ok": True, "blocked": False, "suspension": {"suspended": True, "in_row": 2},
+                                  "codes_paused_until": "2026-10-12T10:00:00Z"})
+        self.assertEqual([c[1] for c in self.http_calls],
+                         ["/email-blocks/a%40b.com", "/suspensions/a%40b.com", "/code-pauses/a%40b.com"])
+        # An address with no account has no suspension; not paused
+        answers = iter([(200, {"blocked": True}), (400, {"error": "no account uses that address"}), (200, {"paused": False})])
         result = ma.run("status", {"email": "a@b.com"}, call=lambda *a: next(answers))
-        self.assertEqual(result, {"ok": True, "blocked": True, "suspension": None})
+        self.assertEqual(result, {"ok": True, "blocked": True, "suspension": None, "codes_paused_until": None})
+
+    def test_pause_codes(self):
+        self.assertEqual(ma.parse("pause Jane@Example.com"), ("pause", {"email": "jane@example.com", "hours": 24}))
+        self.assertEqual(ma.parse("pause jane@example.com 6", bot=True)[1]["hours"], 6)
+        for command in ["pause", "pause jane@example.com 0", "pause jane@example.com 73", "pause jane@example.com 2h",
+                        "pause jane@example.com 6 extra", "unpause"]:
+            with self.assertRaises(ma.Refused, msg=command):
+                ma.parse(command)
+        ma.run("pause", {"email": "a@b.com", "hours": 6}, call=self.call(body={"paused": True}))
+        ma.run("unpause", {"email": "a@b.com"}, call=self.call())
+        self.assertEqual(self.http_calls, [("POST", "/code-pauses", {"email": "a@b.com", "hours": 6, "by": "telegram"}),
+                                           ("DELETE", "/code-pauses/a%40b.com", None)])
 
     def test_backend_refusal_is_passed_on(self):
         result = ma.run("unblock", {"email": "a@b.com"}, call=self.call(404, {"error": "that address isn't blocked"}))

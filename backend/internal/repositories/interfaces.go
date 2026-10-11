@@ -33,6 +33,12 @@ type BlockedEmailRepository interface {
 	ActiveUserIDs(ctx context.Context, now time.Time) ([]uint, error)
 }
 
+type CodePauseRepository interface {
+	Save(ctx context.Context, p *models.CodePause) error
+	Delete(ctx context.Context, email string) (bool, error)
+	Get(ctx context.Context, email string) (*models.CodePause, error)
+}
+
 type SuspensionRepository interface {
 	Create(ctx context.Context, s *models.AccountSuspension) error
 	ForUser(ctx context.Context, userID uint) ([]models.AccountSuspension, error)

@@ -17,7 +17,7 @@ var userFacing = []error{
 	ErrApplicationNotFound, ErrApplicationNotPending, ErrOwnTask, ErrAlreadyApplied, ErrTaskWasAssigned,
 	ErrHeadlineRequired, ErrBodyRequired, ErrHeadlineTooLong, ErrBodyTooLong, ErrMessageTooLong, ErrContactDetails,
 	ErrInvalidEmail, ErrInvalidDays, ErrAccountUnavailable,
-	ErrNoAccount, ErrAlreadySuspended, ErrSuspendBlocked, ErrInvalidLength,
+	ErrNoAccount, ErrAlreadySuspended, ErrSuspendBlocked, ErrInvalidLength, ErrInvalidPause,
 	proximity.ErrInvalidLocation,
 }
 

@@ -25,6 +25,7 @@ environment, or from /etc/myguy-security/settings.env when unset.
 
 import argparse
 import datetime as dt
+import hashlib
 import html
 import ipaddress
 import json
@@ -95,6 +96,8 @@ def settings():
         "geoip_db": values.get("GEOIP_DB", "/var/lib/geoip/country.mmdb"),
         "telegram_token": values.get("TELEGRAM_BOT_TOKEN", ""),
         "telegram_chat": values.get("TELEGRAM_CHAT_ID", ""),
+        # Your private chat with the bot (a private chat's id is your user id)
+        "telegram_admin": values.get("TELEGRAM_ADMIN_USER_ID", ""),
     }
 
 
@@ -671,9 +674,48 @@ def ban_messages(src, settings_, state, now):
     return [f"⚠️ <b>Ban may have hit a real user</b> ({len(alerts)})\n\n" + "\n\n".join(alerts)]
 
 
-def check(src, settings_, state, now, send):
+# Email bombing: this many code requests for one address, from this many
+# IPs, in an hour (the backend sends at most 5 an hour; the rest are
+# "limited").  Told once per address per BOMBING_QUIET.
+BOMBING_CODES, BOMBING_IPS, BOMBING_QUIET = 5, 3, 6 * HOUR
+
+
+def bombing_messages(src, settings_, state, now, send_admin=None):
+    """Someone flooding an address with sign-in codes, from several IPs: its
+    owner gets the mail, and so does the sender's reputation.  The channel
+    gets the masked address; your private chat with the bot the full one,
+    with the /pause command to copy.  An address already paused is left."""
+    requests = defaultdict(list)
+    for e in auth_events(src, now - HOUR, now):
+        if e["event"] in ("code_sent", "limited", "paused"):
+            requests[e["email"]].append(e)
+    seen = {k: t for k, t in state.get("bombing_seen", {}).items() if now - t < BOMBING_QUIET}
+    alerts = []
+    for email, events in sorted(requests.items()):
+        # A hash, so the state file holds no address
+        key = hashlib.sha256(email.encode()).hexdigest()[:16]
+        ips = {e["ip"] for e in events}
+        if len(events) < BOMBING_CODES or len(ips) < BOMBING_IPS or key in seen or events[-1]["event"] == "paused":
+            continue
+        seen[key] = now
+        what = f"{len(events)} code requests from {len(ips)} IPs in the last hour"
+        print(f"alert: email-bombing address={mask(email)} requests={len(events)} ips={len(ips)}", flush=True)
+        alerts.append(f"{code(mask(email), 40)} · {what}")
+        if send_admin:
+            send_admin(f"📧 <b>Possible email bombing</b>: <code>{esc(email)}</code>, {what}.\n"
+                       f"To stop codes to it for 24 h, send: <code>/pause {esc(email)}</code>")
+    state["bombing_seen"] = seen
+    if not alerts:
+        return []
+    return ["📧 <b>Possible email bombing</b>\n" + "\n".join(alerts)
+            + "\nSomeone may be flooding these addresses with sign-in codes (the backend sends at most 5 an hour each)."
+            + ("\nThe full address and the /pause command are in your chat with the bot." if send_admin
+               else f"\nNext: {code('investigate <email>', 40)} on the monitoring server, then /pause EMAIL in the bot.")]
+
+
+def check(src, settings_, state, now, send, send_admin=None):
     messages = (attack_messages(src, settings_, state, now) + ssh_messages(src, settings_, state, now)
-                + ban_messages(src, settings_, state, now))
+                + ban_messages(src, settings_, state, now) + bombing_messages(src, settings_, state, now, send_admin))
     for message in messages:
         send(message)
     for log in ("alert_log", "ssh_alert_log"):
@@ -1482,17 +1524,20 @@ def save_state(settings_, state):
     os.replace(path + ".tmp", path)
 
 
-def telegram(settings_, dry_run):
+def telegram(settings_, dry_run, chat=None):
+    """A sender to the channel, or to chat (your private chat with the bot)."""
+    chat = chat or settings_["telegram_chat"]
+
     def send(text):
         if len(text) > 4000:
             text = text[:text.rfind("\n", 0, 3900)] + "\n… (cut short: see the dashboards)"
-        if dry_run or not (settings_["telegram_token"] and settings_["telegram_chat"]):
+        if dry_run or not (settings_["telegram_token"] and chat):
             print(text, flush=True)
             if not dry_run:
                 print("(Telegram isn't configured: printed instead)", file=sys.stderr)
             return
         data = urllib.parse.urlencode({
-            "chat_id": settings_["telegram_chat"], "text": text,
+            "chat_id": chat, "text": text,
             "parse_mode": "HTML", "disable_web_page_preview": "true"}).encode()
         url = f"https://api.telegram.org/bot{settings_['telegram_token']}/sendMessage"
         with urllib.request.urlopen(url, data=data, timeout=30) as r:
@@ -1550,7 +1595,8 @@ def main(argv=None):
     send = telegram(settings_, args.dry_run)
     state = load_state(settings_)
     if args.command == "check":
-        check(src, settings_, state, now, send)
+        admin = settings_["telegram_admin"]
+        check(src, settings_, state, now, send, telegram(settings_, args.dry_run, chat=admin) if admin else None)
         # Only the check saves state: a summary running at the same time
         # would otherwise overwrite what the check just recorded
         if not args.dry_run:

@@ -13,6 +13,9 @@ commands and button taps are ignored.
   /suspend EMAIL [12h|1d|2d|1w] [REASON]   read-only for a while (none:
                    the next on the ladder: 12h, 1d, 2d, 1w)
   /unsuspend EMAIL
+  /pause EMAIL [HOURS]   no sign-in codes to an address being email-bombed
+                   (default 24 h, at most 72)
+  /unpause EMAIL
   /status EMAIL    blocked? suspended?
   /blocked         the blocks in force
   /investigate IP|EMAIL [HOURS]
@@ -56,7 +59,7 @@ from myguy_admin import Refused, parse  # noqa: E402  same checks as the app ser
 
 CONFIRM_FOR = 120          # seconds a Confirm button stays valid
 POLL_TIMEOUT = 50          # long poll; Telegram answers sooner on news
-CHANGES = {"ban", "unban", "suspend", "unsuspend"}
+CHANGES = {"ban", "unban", "suspend", "unsuspend", "pause", "unpause"}
 INVESTIGATE_MAX = 3500     # characters of a report in one message
 # The command menu, set for the admin's chat only (setMyCommands)
 MENU = [
@@ -70,6 +73,8 @@ MENU = [
     ("status", "Blocked or suspended? /status EMAIL"),
     ("suspend", "Read-only: /suspend EMAIL [12h|1d|2d|1w] [reason]"),
     ("unsuspend", "Lift a suspension: /unsuspend EMAIL"),
+    ("pause", "No codes to an address: /pause EMAIL [hours]"),
+    ("unpause", "Codes again: /unpause EMAIL"),
     ("ipstatus", "Where an IP is banned: /ipstatus IP"),
     ("ban", "Ban an IP for 7 days: /ban IP"),
     ("unban", "Lift every ban on an IP: /unban IP"),
@@ -82,6 +87,8 @@ HELP = """<b>Admin commands</b>
 /ipstatus IP: where it's banned
 /suspend EMAIL [12h|1d|2d|1w] [REASON]: read-only (no length: the next on the ladder, 12h → 1d → 2d → 1w)
 /unsuspend EMAIL
+/pause EMAIL [HOURS]: no sign-in codes to it (email bombing; default 24 h)
+/unpause EMAIL
 /status EMAIL: blocked? suspended?
 /blocked: blocks in force
 /investigate IP|EMAIL [HOURS]
@@ -273,6 +280,10 @@ class Bot:
             how = f"for {LENGTH_NAMES[args['hours']]}" if args["hours"] else "for the next length on the ladder"
             why = f" (reason: {esc(args['reason'])})" if args.get("reason") else ""
             return f"Suspend {who} {how}{why}?"
+        if action == "pause":
+            return f"Stop sign-in codes to {who} for {args['hours']} hours?"
+        if action == "unpause":
+            return f"Send sign-in codes to {who} again?"
         return f"Lift the suspension of {who}?"
 
     @staticmethod
@@ -313,6 +324,11 @@ class Bot:
             return text
         if action == "unsuspend":
             return f"✅ Lifted the suspension of {who}. It still counts towards the next one."
+        if action == "pause":
+            return (f"⏸ No sign-in codes to {who} until {esc((result.get('until') or '')[:16].replace('T', ' '))} UTC. "
+                    "Whoever asks is told a code was sent.")
+        if action == "unpause":
+            return f"✅ Sign-in codes go to {who} again."
         lines = [f"{who} is blocked {until(result)}." if result.get("blocked") else f"{who} isn't blocked."]
         s = result.get("suspension")
         if s and s.get("suspended"):
@@ -321,6 +337,8 @@ class Bot:
         elif s:
             nxt = LENGTH_NAMES.get(s.get("next_hours"), "12 hours")
             lines.append(f"Not suspended ({s.get('in_row') or 0} in a row; the next would be {nxt}).")
+        if result.get("codes_paused_until"):
+            lines.append(f"Sign-in codes paused until {esc(result['codes_paused_until'][:16].replace('T', ' '))} UTC.")
         return "\n".join(lines)
 
 
@@ -329,6 +347,8 @@ def command_for(action, args):
     if action == "suspend":
         length = HOUR_TOKENS[args["hours"]] if args["hours"] else ""
         return " ".join(w for w in (action, args["email"], length, args["reason"]) if w)
+    if action == "pause":
+        return f"pause {args['email']} {args['hours']}"
     target = args.get("ip") or args.get("email")
     return f"{action} {target}" if target else action
 

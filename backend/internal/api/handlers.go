@@ -103,6 +103,12 @@ func (h *Handler) RequestLoginCode(c *gin.Context) {
 		c.JSON(http.StatusAccepted, gin.H{"message": "code sent"})
 		return
 	}
+	if errors.Is(err, services.ErrCodesPaused) {
+		// The same for a paused address: its owner gets no more mail
+		logAuthEvent(c, "paused", req.Email)
+		c.JSON(http.StatusAccepted, gin.H{"message": "code sent"})
+		return
+	}
 	if errors.Is(err, services.ErrTooManyRequests) {
 		logAuthEvent(c, "limited", req.Email)
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})

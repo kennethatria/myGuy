@@ -123,6 +123,8 @@ Over a limit, the request is refused with `429`, `code: rate_limited`, `retry_af
 
 **Accounts to review.** The security checks point at accounts, they never act on them: one that **signed in from an IP fail2ban banned** (that day or the day before; sign-ins now log `user="<username>"`), went **over a limit twice or more**, or is one of **three or more new accounts from one IP**. They're listed with their username and masked email under *Needs a look* in the daily summary, and in full (up to 30) with the bot's `/caught [hours]` (`myguy-security caught`). You decide: `/suspend`, or a block over SSH.
 
+**Pausing sign-in codes for an address.** For an address someone is flooding with codes (email bombing): its owner, not the flooder, is the one affected. For 1 to 72 hours, asking for a code answers `202` as usual but sends nothing (`auth event=paused`); the account, if any, stays signed in and a code already sent still works. Endpoints (internal key): `POST /internal/v1/code-pauses` `{email, hours, by}`, `DELETE` and `GET /internal/v1/code-pauses/:email`; logged `codes event=paused|unpaused`. From the bot: `/pause EMAIL [hours]` (default 24) and `/unpause EMAIL`.
+
 **Suspending an account.** A lighter, temporary step than a block, by account (it must exist):
 
 - **Read-only:** the person can sign in and look around, but every service refuses anything that changes data (`403`, `code: account_suspended`, with `until`): posting, applying, booking, reviewing, messaging, editing. The app shows a banner with the end date, and their chats say they can read but not write.
@@ -554,6 +556,7 @@ What each security message means and what to do. Every message ends with its nex
 | `/ipstatus <IP>` | Which jails have it banned |
 | `/suspend <email> [12h\|1d\|2d\|1w] [reason]` | Makes the account read-only (see *Suspending an account*). No length: the next on the ladder, 12 h → 1 d → 2 d → 1 w; from the 4th in a row it suggests a block |
 | `/unsuspend <email>` | Ends it early (it still counts towards the next) |
+| `/pause <email> [hours]`, `/unpause <email>` | Stops sign-in codes to an address being email-bombed (default 24 h, at most 72; see *Pausing sign-in codes*) |
 | `/status <email>`, `/blocked` | Whether an address is blocked or suspended (and how many in a row); the blocks in force |
 | `/investigate <IP\|email> [hours]` | The same report as `investigate` |
 | `/caught [hours]` | The accounts to review (see *Accounts to review*): username, masked email, why |
@@ -571,6 +574,7 @@ The bot sets its own `/` menu at start, for your chat only (`setMyCommands` with
 | :--- | :--- | :--- |
 | **Attack needs a look**: answered without an error | A serious attack request got a 2xx/3xx. The WAF only logs, so the app answered it. | Open *Investigate IP*, read the WAF entry (path, rule, status). If the endpoint returned data it shouldn't, treat it as a possible breach: ban the IP and fix the endpoint. Usually it's harmless (e.g. a search that returned nothing). |
 | **Attack needs a look**: fail2ban hasn't banned it | 5+ flagged requests and still no ban after 5 minutes: fail2ban isn't doing its job for this IP. | Check *Signed in from this IP*. If no one did, ban it: `ssh ops@<app IP> 'sudo fail2ban-client set manual banip <IP>'` (7 days). Then check fail2ban: `sudo fail2ban-client status nginx-modsecurity`. |
+| **Possible email bombing** | One address got 5+ code requests from 3+ IPs in the last hour (`myguy-security check`, once per address per 6 hours). The channel shows it masked; your private chat with the bot gets the full address and the command to copy. | Look: `/investigate <email>`. If it's a flood, `/pause <email>` (24 h). An address already paused isn't reported again. |
 | **Attack needs a look**: sign-in calls | Code guessing or email bombing from one IP; the message lists the addresses it tried (masked). fail2ban bans at 15 calls. | Usually it bans itself. On the monitoring server, `investigate <IP>` shows the addresses in full, and `investigate <email>` shows every IP that asked codes for one address (many IPs, one address: someone is email-bombing it). Ban by hand if it's slow and steady. Many IPs at once shows up as *Sign-in code surge* instead. |
 | **Attack ended** | The IP has been quiet for 30 minutes: totals and whether it was banned. | Nothing, unless it was never banned and you think it'll come back. |
 | **Unexpected SSH login** | A login the rules didn't expect (CI key outside a deploy, `ops` from a new IP, the monitoring server reached directly, another user). | If it was you, nothing (the IP is now known). If not: replace the key (`SSH_PRIVATE_KEY` or `OPS_SSH_PUBLIC_KEY`), run a full deploy so `users.yml` installs it, and check *Defences*: sudo by people. |
