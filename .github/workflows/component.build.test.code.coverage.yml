@@ -283,7 +283,7 @@ jobs:
       # through Google's public Docker Hub mirror instead (Docker Hub if the
       # mirror lacks an image).  The pushed images build with a login.
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
         with:
           buildkitd-config-inline: |
             [registry."docker.io"]
